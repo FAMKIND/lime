@@ -48,7 +48,10 @@ pub struct JamPostInfo {
     pub jam_id: String,
     pub author: String,
     pub tier: String,
+    /// `quick` (no title), `article` or `record`.
+    pub kind: String,
     pub title: String,
+    pub subtitle: String,
     pub markdown: String,
     pub plain: String,
     /// The post's attachment descriptors, as received (a JSON array).
@@ -75,7 +78,7 @@ pub struct JamAttachmentInfo {
     pub attachment_id: String,
     pub name: String,
     pub mime: String,
-    /// `image`, `video` or `file`.
+    /// `image`, `video`, `audio` (a voice clip) or `file`.
     pub kind: String,
     pub size: u64,
     pub width: Option<u32>,
@@ -98,6 +101,8 @@ pub struct JamPageInfo {
     pub about: String,
     pub topics: Vec<String>,
     pub post_count: u32,
+    /// How many teachers follow it (public, with the page: LIME-188b).
+    pub subscriber_count: u32,
 }
 
 /// The largest file in a jam post (the server's blob cap is 25 MiB, and the sealed form is a little larger).
@@ -134,7 +139,9 @@ fn post_info(row: jam_store::PostRow) -> JamPostInfo {
         jam_id: row.jam_id,
         author: row.author,
         tier: row.tier,
+        kind: row.kind,
         title: row.title,
+        subtitle: row.subtitle,
         markdown: row.markdown,
         plain: row.plain,
         attachments_json: row.attachments,
@@ -194,8 +201,11 @@ fn blob_json(blob: &jam_store::BlobRef) -> Value {
 }
 
 /// What a post's content is, as the bytes that are sealed into its blob.
-fn post_plaintext(post_id: &str, jam_id: &str, tier: &str, title: &str, markdown: &str, attachments: &Value, created: i64) -> Vec<u8> {
-    json!({ "post_id": post_id, "jam_id": jam_id, "tier": tier, "title": title, "markdown": markdown, "attachments": attachments, "created": created }).to_string().into_bytes()
+#[allow(clippy::too_many_arguments)] // one field each
+fn post_plaintext(post_id: &str, jam_id: &str, tier: &str, kind: &str, title: &str, subtitle: &str, markdown: &str, attachments: &Value, created: i64) -> Vec<u8> {
+    json!({ "post_id": post_id, "jam_id": jam_id, "tier": tier, "kind": kind, "title": title, "subtitle": subtitle, "markdown": markdown, "attachments": attachments, "created": created })
+        .to_string()
+        .into_bytes()
 }
 
 fn blob_text_to_ref(value: &Value) -> Option<jam_store::BlobRef> {
@@ -344,10 +354,19 @@ impl LimeStore {
     /// Publishes a post to my jam's subscribers: its content is sealed into a blob (uploaded by the next delivery pass), and a small notice is
     /// encrypted here once and queued for everyone who may read it. `tier` is `free` or `subscribers`; `attachments` are the files (already
     /// shrunk and stripped by the app; at most 10, each under 24 MiB): each becomes a jam-class blob of its own, uploaded before the post. Returns the post's id. Nothing is sent yet: the passes do that, in order and in chunks.
-    pub fn publish_jam_post(&self, jam_id: String, title: String, markdown: String, tier: String, attachments: Vec<OutgoingAttachment>) -> Result<String, StoreError> {
+    #[allow(clippy::too_many_arguments)] // one field of a post each, for the app
+    pub fn publish_jam_post(&self, jam_id: String, kind: String, title: String, subtitle: String, markdown: String, tier: String, attachments: Vec<OutgoingAttachment>) -> Result<String, StoreError> {
         let state = self.load_or_create_account()?;
         let me = self.registered_user(&state)?;
-        let title = jam_store::clean_line(&title, jam_store::MAX_POST_TITLE_CHARS).ok_or(StoreError::Rejected)?;
+        if !jam_store::valid_kind(&kind) {
+            return Err(StoreError::Rejected);
+        }
+        // A quick post has no title; an article needs one (and may have a subtitle); a recording may have a title and needs a video or voice clip.
+        let title = if kind == "quick" { String::new() } else { jam_store::clean_optional_line(&title, jam_store::MAX_POST_TITLE_CHARS).ok_or(StoreError::Rejected)? };
+        let subtitle = if kind == "article" { jam_store::clean_optional_line(&subtitle, jam_store::MAX_SUBTITLE_CHARS).ok_or(StoreError::Rejected)? } else { String::new() };
+        if (kind == "article" && title.is_empty()) || (kind == "record" && !attachments.iter().any(|a| a.mime.starts_with("video/") || a.mime.starts_with("audio/"))) {
+            return Err(StoreError::Rejected);
+        }
         let markdown = crate::format::normalise(&markdown);
         if markdown.len() > jam_store::MAX_POST_BYTES || !jam_store::valid_tier(&tier) {
             return Err(StoreError::Rejected);
@@ -394,7 +413,7 @@ impl LimeStore {
         // The blob: a fresh key and id, the content sealed (one chunk: a post is under 1 MiB), its hash and size noted for the notice.
         let blob_id = new_id();
         let key = crate::store::attachments::new_key();
-        let sealed = crate::store::attachments::seal(&key, &blob_id, &post_plaintext(&post_id, &jam_id, &tier, &title, &markdown, &attachments, now));
+        let sealed = crate::store::attachments::seal(&key, &blob_id, &post_plaintext(&post_id, &jam_id, &tier, &kind, &title, &subtitle, &markdown, &attachments, now));
         let [ciphertext] = <[Vec<u8>; 1]>::try_from(sealed).map_err(|_| StoreError::Rejected)?;
         let blob = jam_store::BlobRef { blob_id, key: vodozemac::base64_encode(&key), sha256: crate::store::attachments::digest_hex(&ciphertext), size: ciphertext.len() as i64 };
         self.with_conn(|conn| {
@@ -404,7 +423,7 @@ impl LimeStore {
                     return Err(StoreError::Rejected);
                 }
                 let mut outbound = self.ensure_jam_session(conn, &state, &jam_id, &tier, now)?;
-                let notice = json!({ "post_id": post_id, "tier": tier, "title": title, "created": now, "blob_id": blob.blob_id, "key": blob.key, "sha256": blob.sha256, "size": blob.size });
+                let notice = json!({ "post_id": post_id, "tier": tier, "kind": kind, "title": title, "subtitle": subtitle, "created": now, "blob_id": blob.blob_id, "key": blob.key, "sha256": blob.sha256, "size": blob.size });
                 let op = signed_op(conn, &state, "jam.post", &jam_id, Some(post_id.clone()), notice, now)?;
                 let inner = SealedInner { sender_user: me.clone(), sender_device: state.device_id.clone(), sender_cert: state.cert(), op }.to_bytes();
                 let encrypted = outbound.session.encrypt(&inner);
@@ -416,9 +435,9 @@ impl LimeStore {
                 let wire_b64 = vodozemac::base64_encode(&wire);
                 let audience = jam_store::audience(conn, &jam_id, &tier)?;
                 conn.execute(
-                    "INSERT INTO jam_posts (post_id, jam_id, author, session_id, idx, tier, title, markdown, plain, attachments, created, wire, blob_id, blob_key, blob_sha, blob_size, uploaded, fetched)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, 0, 1)",
-                    params![post_id, jam_id, me, outbound.session.session_id(), index, tier, title, markdown, plain, attachments.to_string(), now, wire_b64, blob.blob_id, blob.key, blob.sha256, blob.size],
+                    "INSERT INTO jam_posts (post_id, jam_id, author, session_id, idx, tier, title, markdown, plain, attachments, created, wire, blob_id, blob_key, blob_sha, blob_size, uploaded, fetched, kind, subtitle)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, 0, 1, ?17, ?18)",
+                    params![post_id, jam_id, me, outbound.session.session_id(), index, tier, title, markdown, plain, attachments.to_string(), now, wire_b64, blob.blob_id, blob.key, blob.sha256, blob.size, kind, subtitle],
                 )
                 .map_err(db_err)?;
                 for (id, plain, hash, size) in &files {
@@ -444,6 +463,7 @@ impl LimeStore {
                     return Err(StoreError::NotFound);
                 }
                 conn.execute("UPDATE jam_subscribers SET status = 'removed', removed_at = ?3 WHERE jam_id = ?1 AND user_id = ?2", params![jam_id, user_id, now]).map_err(db_err)?;
+                jam_store::mark_page_dirty(conn, &jam_id)?;
                 conn.execute("DELETE FROM jam_wire_outbox WHERE jam_id = ?1 AND recipient = ?2", params![jam_id, user_id]).map_err(db_err)?;
                 conn.execute("DELETE FROM group_outbox WHERE group_id = ?1 AND recipient_user = ?2", params![jam_id, user_id]).map_err(db_err)?;
                 jam_store::mark_rotate(conn, &jam_id)?;
@@ -482,7 +502,7 @@ impl LimeStore {
                 let Some(d) = crate::store::attachments::Descriptor::parse(value) else { continue };
                 out.push(JamAttachmentInfo {
                     available: jam_store::attachment_data(conn, &post_id, &d.id)?.is_some(),
-                    kind: if d.mime.starts_with("image/") { "image" } else if d.mime.starts_with("video/") { "video" } else { "file" }.to_owned(),
+                    kind: if d.mime.starts_with("image/") { "image" } else if d.mime.starts_with("video/") { "video" } else if d.mime.starts_with("audio/") { "audio" } else { "file" }.to_owned(),
                     attachment_id: d.id,
                     name: d.name,
                     mime: d.mime,
@@ -552,6 +572,7 @@ impl LimeStore {
             about: text("about").unwrap_or_default(),
             topics,
             post_count: jam.get("post_count").and_then(Value::as_u64).unwrap_or(0) as u32,
+            subscriber_count: jam.get("subscriber_count").and_then(Value::as_u64).unwrap_or(0) as u32,
         }))
     }
 
@@ -610,6 +631,7 @@ impl LimeStore {
                     params![jam_id, user, now],
                 )
                 .map_err(db_err)?;
+                jam_store::mark_page_dirty(conn, jam_id)?;
             }
         }
         let tier = existing.map(|(_, tier)| tier).unwrap_or_else(|| TIER_FREE.to_owned());
@@ -633,10 +655,12 @@ impl LimeStore {
         for chunk in index.chunks(INDEX_PER_OP) {
             let posts: Vec<Value> = chunk
                 .iter()
-                .map(|(post_id, post_tier, title, created, blob)| {
+                .map(|(post_id, post_tier, title, created, blob, kind, subtitle)| {
                     let mut entry = blob_json(blob);
                     entry["post_id"] = json!(post_id);
                     entry["tier"] = json!(post_tier);
+                    entry["kind"] = json!(kind);
+                    entry["subtitle"] = json!(subtitle);
                     entry["title"] = json!(title);
                     entry["created"] = json!(created);
                     entry
@@ -681,6 +705,7 @@ impl LimeStore {
                     )
                     .map_err(db_err)?;
                     conn.execute("DELETE FROM jam_wire_outbox WHERE jam_id = ?1 AND recipient = ?2", params![jam_id, sender]).map_err(db_err)?;
+                    jam_store::mark_page_dirty(conn, jam_id)?;
                 }
                 Ok(())
             }
@@ -775,12 +800,18 @@ impl LimeStore {
         let Some(posts) = payload.get("posts").and_then(Value::as_array) else { return Ok(()) };
         for entry in posts.iter().take(INDEX_PER_OP) {
             let text = |k: &str| entry.get(k).and_then(Value::as_str);
-            let (Some(post_id), Some(tier), Some(title), Some(created), Some(blob)) =
-                (text("post_id").filter(|p| !p.is_empty() && p.len() <= 64), text("tier").filter(|t| jam_store::valid_tier(t)), text("title").and_then(|t| jam_store::clean_line(t, jam_store::MAX_POST_TITLE_CHARS)), entry.get("created").and_then(Value::as_i64), blob_text_to_ref(entry))
-            else {
+            let kind = text("kind").filter(|k| jam_store::valid_kind(k)).unwrap_or("article");
+            let (Some(post_id), Some(tier), Some(title), Some(subtitle), Some(created), Some(blob)) = (
+                text("post_id").filter(|p| !p.is_empty() && p.len() <= 64),
+                text("tier").filter(|t| jam_store::valid_tier(t)),
+                jam_store::clean_optional_line(text("title").unwrap_or_default(), jam_store::MAX_POST_TITLE_CHARS),
+                jam_store::clean_optional_line(text("subtitle").unwrap_or_default(), jam_store::MAX_SUBTITLE_CHARS),
+                entry.get("created").and_then(Value::as_i64),
+                blob_text_to_ref(entry),
+            ) else {
                 continue;
             };
-            jam_store::insert_notice(conn, post_id, jam_id, writer, "", 0, tier, &title, created, &blob)?;
+            jam_store::insert_notice(conn, post_id, jam_id, writer, "", 0, tier, &title, kind, &subtitle, created, &blob)?;
         }
         Ok(())
     }
@@ -804,14 +835,19 @@ impl LimeStore {
             && op.conversation_id == conversation;
         let payload = &op.payload;
         let text = |k: &str| payload.get(k).and_then(Value::as_str);
-        let (true, Some(title), Some(blob), Some(remote_hlc)) = (
+        let kind = text("kind").filter(|k| jam_store::valid_kind(k)).unwrap_or("article");
+        let (true, Some(title), Some(subtitle), Some(blob), Some(remote_hlc)) = (
             valid && text("post_id") == Some(op.op_id.as_str()) && text("tier") == Some(inbound.tier.as_str()),
-            text("title").and_then(|t| jam_store::clean_line(t, jam_store::MAX_POST_TITLE_CHARS)),
+            jam_store::clean_optional_line(text("title").unwrap_or_default(), jam_store::MAX_POST_TITLE_CHARS),
+            jam_store::clean_optional_line(text("subtitle").unwrap_or_default(), jam_store::MAX_SUBTITLE_CHARS),
             blob_text_to_ref(payload),
             Hlc::parse(&op.hlc),
         ) else {
             return Ok(Outcome::Keep(pending::INVALID));
         };
+        if kind == "article" && title.is_empty() {
+            return Ok(Outcome::Keep(pending::INVALID));
+        }
         let author = inner.sender_user.clone();
         let outcome = self.with_conn(|conn| {
             // The writer's master key must be the one pinned when their session key arrived.
@@ -826,7 +862,7 @@ impl LimeStore {
             }
             jam_store::save_inbound(conn, &self.pickle_key, session_id, &inbound)?;
             let created = payload.get("created").and_then(Value::as_i64).unwrap_or(remote_hlc.wall).min(now);
-            jam_store::insert_notice(conn, &op.op_id, &inbound.jam_id, &author, session_id, decrypted.message_index, &inbound.tier, &title, created, &blob)?;
+            jam_store::insert_notice(conn, &op.op_id, &inbound.jam_id, &author, session_id, decrypted.message_index, &inbound.tier, &title, kind, &subtitle, created, &blob)?;
             Ok(Outcome::Duplicate)
         })?;
         if matches!(outcome, Outcome::Duplicate) {
@@ -887,7 +923,7 @@ impl LimeStore {
         for post in posts {
             let Some(key) = vodozemac::base64_decode(&post.blob.key).ok().filter(|k| k.len() == 32) else { continue };
             let attachments: Value = serde_json::from_str(&post.attachments).unwrap_or(Value::Array(vec![]));
-            let plaintext = post_plaintext(&post.post_id, &post.jam_id, &post.tier, &post.title, &post.markdown, &attachments, post.created);
+            let plaintext = post_plaintext(&post.post_id, &post.jam_id, &post.tier, &post.kind, &post.title, &post.subtitle, &post.markdown, &attachments, post.created);
             let sealed = crate::store::attachments::seal(&key, &post.blob.blob_id, &plaintext);
             let [ciphertext] = <[Vec<u8>; 1]>::try_from(sealed).unwrap_or_default();
             if crate::store::attachments::digest_hex(&ciphertext) != post.blob.sha256 {
@@ -951,7 +987,8 @@ impl LimeStore {
         let Ok(dirty) = self.with_conn(jam_store::pages_to_publish) else { return };
         for jam in dirty {
             let count = self.with_conn(|conn| jam_store::uploaded_count(conn, &jam.jam_id)).unwrap_or(0);
-            let body = json!({ "action": "set", "jam_id": jam.jam_id, "title": jam.title, "about": jam.about, "topics": jam.topics, "post_count": count });
+            let subscribers = self.with_conn(|conn| jam_store::subscriber_count(conn, &jam.jam_id)).unwrap_or(0);
+            let body = json!({ "action": "set", "jam_id": jam.jam_id, "title": jam.title, "about": jam.about, "topics": jam.topics, "post_count": count, "subscriber_count": subscribers });
             match call(transport, Some(token), "jam-page", &body) {
                 Ok((status, _)) if (200..300).contains(&status) => {
                     let _ = self.with_conn(|conn| jam_store::set_page_state(conn, &jam.jam_id, "ok"));

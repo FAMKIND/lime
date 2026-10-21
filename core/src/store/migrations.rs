@@ -682,6 +682,9 @@ const MIGRATIONS: &[&str] = &[
          uploaded  INTEGER NOT NULL DEFAULT 1,
          PRIMARY KEY (post_id, att_id)
      );",
+    // 43 (LIME-188b): a post has a kind (a quick post, an article, a recording) and an article a subtitle. Older posts read as articles.
+    "ALTER TABLE jam_posts ADD COLUMN kind TEXT NOT NULL DEFAULT 'article';
+     ALTER TABLE jam_posts ADD COLUMN subtitle TEXT NOT NULL DEFAULT '';",
 ];
 
 /// The schema version this build writes.

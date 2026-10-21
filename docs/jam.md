@@ -22,6 +22,17 @@ lime is *Education for all: a private community where teachers connect and learn
 | – | **Tiers in the model from v1** (free / paid subscribers; a post is `free` or `subscribers`), **payments off in v1**. **Every jam has free posts** (a writer cannot be paywall-only). Reading even free posts needs a (free) subscription, so every post stays encrypted. |
 | – | Not v1: payments and tips; public feeds. |
 
+### 1b. Redesign decisions (the user, 2026-10-21, after trying LIME-188; LIME-188b)
+
+The first jam tab ("Following" beside a "Your jam" area you had to set up) was confusing. The user wants **the shape of Substack's app**: one feed, a **+** to post, the **profile as the publication page**. Decided:
+
+- **Counts are public, there are no rankings.** ♥, comment and **remix** counts, and a profile's **subscriber count**, are visible to everyone who can see the post or the profile; there is **no "#N in ..." leaderboard and no "top posts"**. This **replaces** the earlier rule (sections 0 and 5) that ♥ counts are visible to the writer only. The wellbeing aim is kept in the other ways: quiet by default, no streaks, no "you haven't posted" nudges, recognition by what was said and not a ranking. (Counts of ♥/comments/remixes arrive with LIME-189; the subscriber count is here.)
+- **Post kinds:** a **quick post** (words and photos, no title), an **article** (title, subtitle, body) and a **recording** (a video or a voice clip, with an optional title). Go Live is later.
+- **One button: Subscribe** (free). There is no separate Follow.
+- **Remix** (Substack's "restack", renamed): a teacher re-shares another's post to their own subscribers. It needs an encryption design of its own (LIME-189b); the feed card shows a dimmed "remix" icon until then.
+- **Nothing to set up:** a teacher's jam is made on their **first post** (named for them, with their profile's about line); its title, about and topics are edited from their profile ("Edit jam page").
+- **The profile is the jam page:** name, username, subscriber count, **Subscribe / Subscribed**, and posts (readable once subscribed; before that the page says "Subscribe to read their posts", because the server's page holds no post text).
+
 ## 2. The model
 
 A **jam** is a new conversation kind beside `dm:` and `grp:`: `jam:<jam_id>`.
@@ -62,7 +73,7 @@ Limits today: groups hold **100** people (`MAX_MEMBERS`); `/v2/send` takes **500
 
 ## 5. Responses (Phase 1 e)
 
-- **♥ likes:** a signed `jam.react` sent **only to the writer** (Olm). The writer's phone keeps the count and the list; subscribers never see counts (wellbeing evidence, §0). Cheap and private.
+- **♥ likes:** a signed `jam.react` sent **only to the writer** (Olm). The writer's phone keeps the count and the list. *Superseded by the 2026-10-21 decision (section 1b): counts are public, so the writer's phone publishes the count with the post's page entry or re-shares it to subscribers; to be designed in LIME-189.*
 - **Private reply to the writer:** opens an ordinary 1:1 chat with the writer (`dm:`), quoting the post. Existing code.
 - **Comments all subscribers see: two options.**
   - **E1: every commenter is a Megolm sender to all subscribers** (as in a group). Each commenter device needs its own outbound session shared with every subscriber device: at 100 subscribers that is up to 100 sessions × 100 devices of key distribution, and every subscriber learns every commenter's device; quadratic growth makes it unworkable beyond ~100.
@@ -97,7 +108,7 @@ A non-subscriber must see *something* to decide to subscribe. **Plot's lean, eva
 
 | Party | Learns |
 |---|---|
-| **The server** | The jam page (public by design). That blobs exist, with their sizes and times, **and which network addresses fetch which blob ids, but not which accounts** (the fetch carries no session). The writer's uploads (account, time, size). The recipient sets of each notice send (the existing limit, api-v2 §9). Timing and IP addresses. **Never**: post, comment or ♥ content; titles; who liked or commented. |
+| **The server** | The jam page (public by design: title, about, topics, **the subscriber count the writer's phone publishes**, post count). That blobs exist, with their sizes and times, **and which network addresses fetch which blob ids, but not which accounts** (the fetch carries no session). The writer's uploads (account, time, size). The recipient sets of each notice send (the existing limit, api-v2 §9). Timing and IP addresses. **Never**: post, comment or ♥ content; titles; who liked or commented. |
 | **The writer** | Everything about their jam: who subscribed (and when), every ♥, every comment, who removed. |
 | **Subscribers** | The posts (all of the archive), the comments the writer republished with their authors. Not who the other subscribers are, not who ♥'d, not how many. |
 | **Non-subscribers** | The jam page only. |

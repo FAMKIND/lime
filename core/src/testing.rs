@@ -57,6 +57,8 @@ pub(crate) struct ServerState {
     pub jam_blobs: HashMap<String, String>,
     /// jam id to (writer, title, post_count, ended): the public pages
     pub jam_pages: HashMap<String, (String, String, i64, bool)>,
+    /// jam id to its published subscriber count
+    pub jam_subscribers: HashMap<String, i64>,
     /// `jam-blob-get` requests that carried a user token (there must be none) and how many were made
     pub jam_gets_with_token: usize,
     pub jam_gets: usize,
@@ -534,7 +536,7 @@ impl Transport for FakeServer {
             "jam-page" if body.get("action").and_then(Value::as_str) == Some("by_writer") => {
                 let writer = text("writer_id");
                 match state.jam_pages.iter().find(|(_, (owner, _, _, ended))| *owner == writer && !*ended) {
-                    Some((id, (_, title, count, _))) => respond(200, json!({ "jam": { "jam_id": id, "writer_id": writer, "title": title, "about": "", "topics": [], "post_count": count } })),
+                    Some((id, (_, title, count, _))) => respond(200, json!({ "jam": { "jam_id": id, "writer_id": writer, "title": title, "about": "", "topics": [], "post_count": count, "subscriber_count": state.jam_subscribers.get(id).copied().unwrap_or(0) } })),
                     None => respond(200, json!({ "jam": null })),
                 }
             }
@@ -549,6 +551,7 @@ impl Transport for FakeServer {
                         if existing.as_ref().is_some_and(|(_, _, _, ended)| *ended) {
                             return respond(409, json!({ "error": "ended" }));
                         }
+                        state.jam_subscribers.insert(jam.clone(), body.get("subscriber_count").and_then(Value::as_i64).unwrap_or(0));
                         state.jam_pages.insert(jam, (user, text("title"), body.get("post_count").and_then(Value::as_i64).unwrap_or(0), false));
                         respond(200, json!({ "ok": true }))
                     }

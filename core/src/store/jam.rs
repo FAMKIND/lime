@@ -41,6 +41,21 @@ pub(crate) fn is_jam_op(op_type: &str) -> bool {
     op_type.starts_with("jam.")
 }
 
+/// The kinds of post: a quick post (no title), an article (title, subtitle, body), a recording (a video or voice clip).
+pub(crate) const KINDS: [&str; 3] = ["quick", "article", "record"];
+
+pub(crate) fn valid_kind(kind: &str) -> bool {
+    KINDS.contains(&kind)
+}
+
+pub(crate) const MAX_SUBTITLE_CHARS: usize = 200;
+
+/// A title that may be empty (a quick post has none).
+pub(crate) fn clean_optional_line(text: &str, max: usize) -> Option<String> {
+    let text: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    (text.chars().count() <= max).then_some(text)
+}
+
 pub(crate) fn valid_tier(tier: &str) -> bool {
     tier == TIER_FREE || tier == TIER_SUBSCRIBERS
 }
@@ -262,11 +277,13 @@ pub(crate) struct PostRow {
     pub attachments: String,
     pub created: i64,
     pub deleted: bool,
+    pub kind: String,
+    pub subtitle: String,
     /// 0 not downloaded yet, 1 ready, 2 gone from the server.
     pub fetched: i64,
 }
 
-const POST: &str = "SELECT post_id, jam_id, author, tier, title, markdown, plain, attachments, created, deleted_at IS NOT NULL, fetched FROM jam_posts";
+const POST: &str = "SELECT post_id, jam_id, author, tier, title, markdown, plain, attachments, created, deleted_at IS NOT NULL, fetched, kind, subtitle FROM jam_posts";
 
 fn read_post(r: &rusqlite::Row<'_>) -> rusqlite::Result<PostRow> {
     Ok(PostRow {
@@ -281,6 +298,8 @@ fn read_post(r: &rusqlite::Row<'_>) -> rusqlite::Result<PostRow> {
         created: r.get(8)?,
         deleted: r.get(9)?,
         fetched: r.get(10)?,
+        kind: r.get(11)?,
+        subtitle: r.get(12)?,
     })
 }
 
@@ -315,14 +334,16 @@ pub(crate) fn insert_notice(
     index: u32,
     tier: &str,
     title: &str,
+    kind: &str,
+    subtitle: &str,
     created: i64,
     blob: &BlobRef,
 ) -> Result<bool, StoreError> {
     let n = conn
         .execute(
-            "INSERT OR IGNORE INTO jam_posts (post_id, jam_id, author, session_id, idx, tier, title, markdown, plain, attachments, created, blob_id, blob_key, blob_sha, blob_size, uploaded, fetched)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, '', '', '[]', ?8, ?9, ?10, ?11, ?12, 1, 0)",
-            params![post_id, jam_id, author, session_id, index, tier, title, created, blob.blob_id, blob.key, blob.sha256, blob.size],
+            "INSERT OR IGNORE INTO jam_posts (post_id, jam_id, author, session_id, idx, tier, title, markdown, plain, attachments, created, blob_id, blob_key, blob_sha, blob_size, uploaded, fetched, kind, subtitle)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, '', '', '[]', ?8, ?9, ?10, ?11, ?12, 1, 0, ?13, ?14)",
+            params![post_id, jam_id, author, session_id, index, tier, title, created, blob.blob_id, blob.key, blob.sha256, blob.size, kind, subtitle],
         )
         .map_err(db_err)?;
     Ok(n > 0)
@@ -358,6 +379,8 @@ pub(crate) struct Unuploaded {
     pub jam_id: String,
     pub tier: String,
     pub title: String,
+    pub kind: String,
+    pub subtitle: String,
     pub markdown: String,
     pub attachments: String,
     pub created: i64,
@@ -367,7 +390,7 @@ pub(crate) struct Unuploaded {
 pub(crate) fn to_upload(conn: &Connection, limit: usize) -> Result<Vec<Unuploaded>, StoreError> {
     let mut statement = conn
         .prepare(
-            "SELECT post_id, jam_id, tier, title, markdown, attachments, created, blob_id, blob_key, blob_sha, blob_size FROM jam_posts
+            "SELECT post_id, jam_id, tier, title, markdown, attachments, created, blob_id, blob_key, blob_sha, blob_size, kind, subtitle FROM jam_posts
              WHERE uploaded = 0 AND wire IS NOT NULL AND deleted_at IS NULL
              AND NOT EXISTS (SELECT 1 FROM jam_attachments a WHERE a.post_id = jam_posts.post_id AND a.uploaded = 0) ORDER BY created, post_id LIMIT ?1",
         )
@@ -383,6 +406,8 @@ pub(crate) fn to_upload(conn: &Connection, limit: usize) -> Result<Vec<Unuploade
                 attachments: r.get(5)?,
                 created: r.get(6)?,
                 blob: BlobRef { blob_id: r.get(7)?, key: r.get(8)?, sha256: r.get(9)?, size: r.get(10)? },
+                kind: r.get(11)?,
+                subtitle: r.get(12)?,
             })
         })
         .map_err(db_err)?
@@ -398,19 +423,19 @@ pub(crate) fn set_uploaded(conn: &Connection, post_id: &str, jam_id: &str) -> Re
 }
 
 /// The index a new subscriber is handed: every uploaded post it may read, oldest first.
-/// (post id, tier, title, created, blob)
-pub(crate) type IndexEntry = (String, String, String, i64, BlobRef);
+/// (post id, tier, title, created, blob, kind, subtitle)
+pub(crate) type IndexEntry = (String, String, String, i64, BlobRef, String, String);
 
 pub(crate) fn index_for(conn: &Connection, jam_id: &str, subscriber_tier: &str) -> Result<Vec<IndexEntry>, StoreError> {
     let mut statement = conn
         .prepare(
-            "SELECT post_id, tier, title, created, blob_id, blob_key, blob_sha, blob_size FROM jam_posts
+            "SELECT post_id, tier, title, created, blob_id, blob_key, blob_sha, blob_size, kind, subtitle FROM jam_posts
              WHERE jam_id = ?1 AND uploaded = 1 AND deleted_at IS NULL AND blob_id IS NOT NULL AND (?2 = 'subscribers' OR tier = 'free') ORDER BY created, post_id",
         )
         .map_err(db_err)?;
     let rows = statement
         .query_map(params![jam_id, subscriber_tier], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, BlobRef { blob_id: r.get(4)?, key: r.get(5)?, sha256: r.get(6)?, size: r.get(7)? }))
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, BlobRef { blob_id: r.get(4)?, key: r.get(5)?, sha256: r.get(6)?, size: r.get(7)? }, r.get(8)?, r.get(9)?))
         })
         .map_err(db_err)?
         .collect::<Result<Vec<_>, _>>()
@@ -500,6 +525,12 @@ pub(crate) fn pages_to_end(conn: &Connection) -> Result<Vec<JamRow>, StoreError>
 
 pub(crate) fn uploaded_count(conn: &Connection, jam_id: &str) -> Result<i64, StoreError> {
     conn.query_row("SELECT COUNT(*) FROM jam_posts WHERE jam_id = ?1 AND uploaded = 1 AND deleted_at IS NULL", params![jam_id], |r| r.get(0)).map_err(db_err)
+}
+
+/// The page on the server is out of date (a new post, a new subscriber, an edit): publish it again at the next pass.
+pub(crate) fn mark_page_dirty(conn: &Connection, jam_id: &str) -> Result<(), StoreError> {
+    conn.execute("UPDATE jams SET page_state = 'dirty' WHERE jam_id = ?1 AND page_state <> 'end' AND page_state <> 'done'", params![jam_id]).map_err(db_err)?;
+    Ok(())
 }
 
 pub(crate) fn set_page_state(conn: &Connection, jam_id: &str, state: &str) -> Result<(), StoreError> {

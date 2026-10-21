@@ -17,14 +17,14 @@ extension ConversationStore {
                               status: "active", ended: false, subscriberCount: old.subscriberCount, postCount: old.postCount, created: old.created)
     }
 
-    func demoPublish(_ jamID: String, title: String, markdown: String, items: [OutgoingAttachment]) {
+    func demoPublish(_ jamID: String, kind: String, title: String, subtitle: String, markdown: String, items: [OutgoingAttachment]) {
         let id = UUID().uuidString.lowercased()
         let info = items.map {
-            JamAttachmentInfo(attachmentId: UUID().uuidString.lowercased(), name: $0.name, mime: $0.mime, kind: $0.mime.hasPrefix("image/") ? "image" : $0.mime.hasPrefix("video/") ? "video" : "file",
+            JamAttachmentInfo(attachmentId: UUID().uuidString.lowercased(), name: $0.name, mime: $0.mime, kind: $0.mime.hasPrefix("image/") ? "image" : $0.mime.hasPrefix("video/") ? "video" : $0.mime.hasPrefix("audio/") ? "audio" : "file",
                               size: UInt64($0.bytes.count), width: $0.width, height: $0.height, durationMs: $0.durationMs, thumb: $0.thumb, poster: $0.poster, available: true)
         }
         demoJamAttachments[id] = info
-        let post = JamPostInfo(postId: id, jamId: jamID, author: meProvider().id, tier: "free", title: title, markdown: markdown, plain: messagePlainText(text: markdown),
+        let post = JamPostInfo(postId: id, jamId: jamID, author: meProvider().id, tier: "free", kind: kind, title: title, subtitle: subtitle, markdown: markdown, plain: messagePlainText(text: markdown),
                                attachmentsJson: "[]", created: Int64(Date().timeIntervalSince1970 * 1000), state: "ready")
         jamPosts[jamID, default: []].append(post)
         if let i = jamsMine.firstIndex(where: { $0.jamId == jamID }) {
@@ -40,13 +40,17 @@ extension ConversationStore {
         jamSubscriptions.removeAll { $0.jamId == page.jamId }
         jamSubscriptions.append(JamInfo(jamId: page.jamId, conversationId: "jam:\(page.jamId)", writer: page.writerId, title: page.title, about: page.about, topics: page.topics, tiers: ["free"],
                                         mine: false, status: "active", ended: false, subscriberCount: 0, postCount: 2, created: now))
-        let first = JamPostInfo(postId: "demo-post-1", jamId: page.jamId, author: page.writerId, tier: "free", title: "Equivalent fractions in ten minutes",
+        let first = JamPostInfo(postId: "demo-post-1", jamId: page.jamId, author: page.writerId, tier: "free", kind: "article", title: "Equivalent fractions in ten minutes", subtitle: "Fold, cut, compare",
                                 markdown: "**Start** with a pizza.\n\n- fold it\n- cut it\n- compare the pieces", plain: "Start with a pizza.\n• fold it\n• cut it\n• compare the pieces",
                                 attachmentsJson: "[]", created: now - 3_600_000, state: "ready")
-        let second = JamPostInfo(postId: "demo-post-2", jamId: page.jamId, author: page.writerId, tier: "free", title: "A quick exit ticket",
-                                 markdown: "Ask one question at the door: *which pieces are equal?*", plain: "Ask one question at the door: which pieces are equal?",
+        let second = JamPostInfo(postId: "demo-post-2", jamId: page.jamId, author: page.writerId, tier: "free", kind: "quick", title: "", subtitle: "",
+                                 markdown: "A quick exit ticket: ask one question at the door, *which pieces are equal?*", plain: "A quick exit ticket: ask one question at the door, which pieces are equal?",
                                  attachmentsJson: "[]", created: now - 600_000, state: "ready")
-        jamPosts[page.jamId] = [first, second]
+        let third = JamPostInfo(postId: "demo-post-3", jamId: page.jamId, author: page.writerId, tier: "free", kind: "record", title: "Ten seconds on fraction walls", subtitle: "", markdown: "", plain: "",
+                                attachmentsJson: "[]", created: now - 60_000, state: "ready")
+        jamPosts[page.jamId] = [first, second, third]
+        demoJamAttachments["demo-post-3"] = [JamAttachmentInfo(attachmentId: "demo-video-1", name: "wall.mp4", mime: "video/mp4", kind: "video", size: 90_000, width: 480, height: 270,
+                                                               durationMs: 10_000, thumb: Data(), poster: Data(), available: true)]
         demoJamAttachments["demo-post-1"] = [JamAttachmentInfo(attachmentId: "demo-photo-1", name: "pizza.jpg", mime: "image/jpeg", kind: "image", size: 40_000, width: 600, height: 400,
                                                                durationMs: nil, thumb: Data(), poster: Data(), available: true)]
     }
@@ -54,7 +58,7 @@ extension ConversationStore {
     /// A jam of my own with one post and two subscribers (to remove one).
     func demoMineWithPost() {
         demoStartJam(title: "Reading circles", about: "What worked in my room", topics: ["Reading", "Grade 2"])
-        demoPublish("demo-my-jam", title: "Our first circle", markdown: "We read **aloud** together.", items: [])
+        demoPublish("demo-my-jam", kind: "article", title: "Our first circle", subtitle: "", markdown: "We read **aloud** together.", items: [])
         jamSubscribers["demo-my-jam"] = [
             JamSubscriberInfo(userId: "sam", name: "Sam Park", since: 1, tier: "free", status: "active"),
             JamSubscriberInfo(userId: "lee", name: "Lee Wong", since: 2, tier: "free", status: "active"),

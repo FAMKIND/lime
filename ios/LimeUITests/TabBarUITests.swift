@@ -62,12 +62,12 @@ final class TabBarUITests: XCTestCase {
         XCTAssertTrue(app.textFields.firstMatch.waitForExistence(timeout: 5) || app.searchFields.firstMatch.waitForExistence(timeout: 5))
     }
 
-    func testJamIsATabWithFollowingAndYourJam() {
+    func testJamIsATabWithOneFeedAndAPlus() {
         let app = demoApp()
         XCTAssertTrue(app.tabBars.buttons["jam"].waitForExistence(timeout: 10))
         app.tabBars.buttons["jam"].tap()
-        XCTAssertTrue(any(app, "jam-parts").waitForExistence(timeout: 5))
-        XCTAssertTrue(app.segmentedControls["jam-parts"].buttons["Following"].exists && app.segmentedControls["jam-parts"].buttons["Your jam"].exists)
+        XCTAssertTrue(app.buttons["new-jam-post"].waitForExistence(timeout: 5), "the same + as the other tabs")
+        XCTAssertFalse(app.segmentedControls["jam-parts"].exists, "no Following / Your jam")
         XCTAssertFalse(app.buttons["jam-notify"].exists, "the coming-soon page is gone")
     }
 

@@ -942,7 +942,7 @@ final class ConversationStore {
         isLoaded = true
         refreshStorageState()
         statuses = ["sam": PeerStatus(state: .dnd, until: nil), "lee": PeerStatus(state: .away, until: nil)]
-        demoJamPages = ["sam": JamPageInfo(jamId: "demo-sam-jam", writerId: "sam", title: "Fractions that stick", about: "Short lessons for grades 3 to 5", topics: ["Maths", "Grade 4"], postCount: 2)]
+        demoJamPages = ["sam": JamPageInfo(jamId: "demo-sam-jam", writerId: "sam", title: "Fractions that stick", about: "Short lessons for grades 3 to 5", topics: ["Maths", "Grade 4"], postCount: 3, subscriberCount: 12)]
         // Their public profiles, as the server would answer (UI tests and screenshots).
         publicProfiles = [
             "sam": PublicProfile(userId: "sam", displayName: "Sam Park", username: "sam.park", school: "Lincoln Elementary", aboutEmoji: "📚", aboutText: "Fourth grade, loves fractions"),
@@ -1054,11 +1054,12 @@ final class ConversationStore {
             ])]
             path.append("dm:fmt")
         case "notif-banner": demoNotification = "banner"
-        case "jam", "jam-following", "jam-mine":
+        case "jam", "jam-following", "jam-mine", "jam-mine-profile":
             // The jam tab, with nothing yet, with a jam I follow (Sam's, two posts), or with a jam of my own (one post, two subscribers).
             section = .jam
             if screen == "jam-following", let page = demoJamPages["sam"] { demoSubscribe(page) }
-            if screen == "jam-mine" { demoMineWithPost() }
+            if screen == "jam-mine" || screen == "jam-mine-profile" { demoMineWithPost() }
+            if screen == "jam-mine-profile" { jamPath.append(ProfileRoute(userID: meProvider().id, name: meProvider().name, isMe: true)) }
         case "group-incoming", "group-incoming-ios-refused":
             loadDemoTeachers()
             groupCalls.demoIncoming(systemRings: screen == "group-incoming")

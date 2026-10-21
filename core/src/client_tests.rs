@@ -5102,7 +5102,7 @@ fn catch_up(writer: &Party, subscribers: &[&Party], transport: &Arc<dyn Transpor
 }
 
 fn publish(writer: &Party, jam_id: &str, title: &str, tier: &str) -> String {
-    writer.store.publish_jam_post(jam_id.to_owned(), title.to_owned(), format!("The words of **{title}**"), tier.to_owned(), vec![]).unwrap()
+    writer.store.publish_jam_post(jam_id.to_owned(), "article".into(), title.to_owned(), String::new(), format!("The words of **{title}**"), tier.to_owned(), vec![]).unwrap()
 }
 
 fn new_jam(writer: &Party) -> String {
@@ -5288,7 +5288,7 @@ fn ending_a_jam_stops_posts_and_tells_the_subscribers() {
     assert_eq!(bob.store.jam(jam.clone()).unwrap().unwrap().title, "Renamed");
     assert_eq!(server.state.lock().unwrap().jam_pages.get(&jam).unwrap().1, "Renamed", "the public page followed");
     alice.store.end_jam(jam.clone()).unwrap();
-    assert!(alice.store.publish_jam_post(jam.clone(), "no".into(), "no".into(), "free".into(), vec![]).is_err());
+    assert!(alice.store.publish_jam_post(jam.clone(), "article".into(), "no".into(), String::new(), "no".into(), "free".into(), vec![]).is_err());
     catch_up(&alice, &[&bob], &transport);
     assert!(bob.store.jam(jam.clone()).unwrap().unwrap().ended);
     assert_eq!(jam_posts_of(&bob, &jam), vec!["last"], "they keep what they have");
@@ -5329,7 +5329,7 @@ fn a_post_reaches_a_thousand_subscribers_with_two_devices_each_in_chunks_and_the
             conn.execute("INSERT INTO jam_subscribers (jam_id, user_id, since) VALUES (?1, ?2, ?3)", params![jam, format!("s{n:04}"), n]).unwrap();
         }
     }
-    store.publish_jam_post(jam.clone(), "One post".into(), "To everyone".into(), "free".into(), vec![]).unwrap();
+    store.publish_jam_post(jam.clone(), "article".into(), "One post".into(), String::new(), "To everyone".into(), "free".into(), vec![]).unwrap();
     // Queued for all: the notice for each of the thousand, and the session key for each of the thousand.
     let progress = store.jam_send_progress(jam.clone()).unwrap();
     assert_eq!((progress.pending, progress.total), (2000, 2000), "queued, nothing sent yet");
@@ -5406,7 +5406,7 @@ fn a_post_with_a_photo_and_a_file_reaches_a_late_subscriber_who_downloads_both_w
     };
     let post = alice
         .store
-        .publish_jam_post(jam.clone(), "Class photo".into(), "**Look** at this".into(), "free".into(), vec![attachment(photo.clone(), "class.jpg", "image/jpeg"), attachment(file.clone(), "slip.pdf", "application/pdf")])
+        .publish_jam_post(jam.clone(), "article".into(), "Class photo".into(), String::new(), "**Look** at this".into(), "free".into(), vec![attachment(photo.clone(), "class.jpg", "image/jpeg"), attachment(file.clone(), "slip.pdf", "application/pdf")])
         .unwrap();
     deliver(&alice, &transport);
     // The writer sees their own post's files at once.
@@ -5442,4 +5442,55 @@ fn a_page_is_found_by_its_writer_and_not_once_the_jam_ended() {
     alice.store.end_jam(jam).unwrap();
     deliver(&alice, &transport);
     assert!(bob.store.fetch_jam_page(transport, bob.token.clone(), alice.user.clone()).unwrap().is_none(), "ended: none");
+}
+
+#[test]
+fn quick_posts_articles_and_recordings_keep_their_kind_and_the_rules_for_each_hold() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let jam = new_jam(&alice);
+    join_jam(&alice, &bob, &jam, &transport);
+    let publish_as = |kind: &str, title: &str, subtitle: &str, body: &str, files: Vec<crate::OutgoingAttachment>| {
+        alice.store.publish_jam_post(jam.clone(), kind.into(), title.into(), subtitle.into(), body.into(), "free".into(), files)
+    };
+    let clip = |mime: &str| crate::OutgoingAttachment { bytes: vec![7; 5000], name: "clip".into(), mime: mime.into(), width: None, height: None, duration_ms: Some(10_000), thumb: vec![], poster: vec![] };
+    // The rules: an article needs a title; a quick post needs words or a file and has no title; a recording needs a video or voice clip.
+    assert!(publish_as("article", "", "", "words", vec![]).is_err(), "an article needs a title");
+    assert!(publish_as("quick", "", "", "", vec![]).is_err(), "a quick post needs something");
+    assert!(publish_as("record", "", "", "", vec![clip("image/jpeg")]).is_err(), "a recording needs a video or a voice clip");
+    assert!(publish_as("poem", "x", "", "x", vec![]).is_err(), "an unknown kind");
+    publish_as("quick", "this title is dropped", "and this", "Thinking about **fractions** today", vec![]).unwrap();
+    publish_as("article", "Exit tickets", "Five questions that work", "- one\n- two", vec![]).unwrap();
+    publish_as("record", "", "", "", vec![clip("video/mp4")]).unwrap();
+    catch_up(&alice, &[&bob], &transport);
+    let posts = bob.store.list_jam_posts(jam.clone()).unwrap();
+    let kinds: Vec<(&str, &str, &str)> = posts.iter().map(|p| (p.kind.as_str(), p.title.as_str(), p.subtitle.as_str())).collect();
+    assert_eq!(kinds, vec![("quick", "", ""), ("article", "Exit tickets", "Five questions that work"), ("record", "", "")]);
+    assert_eq!(posts[0].markdown, "Thinking about **fractions** today");
+    assert!(posts.iter().all(|p| p.state == "ready"));
+    // A late subscriber's index keeps the kinds too.
+    let (carol, _) = party(&server, "carol", 3);
+    join_jam(&alice, &carol, &jam, &transport);
+    let late: Vec<String> = carol.store.list_jam_posts(jam.clone()).unwrap().iter().map(|p| p.kind.clone()).collect();
+    assert_eq!(late, vec!["quick", "article", "record"]);
+}
+
+#[test]
+fn the_page_carries_the_subscriber_count_and_follows_joins_and_leaves() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    let jam = new_jam(&alice);
+    deliver(&alice, &transport);
+    let count = |reader: &Party| reader.store.fetch_jam_page(transport.clone(), reader.token.clone(), alice.user.clone()).unwrap().unwrap().subscriber_count;
+    assert_eq!(count(&bob), 0);
+    join_jam(&alice, &bob, &jam, &transport);
+    join_jam(&alice, &carol, &jam, &transport);
+    deliver(&alice, &transport);
+    assert_eq!(count(&carol), 2, "the page shows how many follow it");
+    alice.store.remove_jam_subscriber(jam.clone(), bob.user.clone()).unwrap();
+    deliver(&alice, &transport);
+    assert_eq!(count(&carol), 1);
 }

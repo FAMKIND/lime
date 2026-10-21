@@ -4,188 +4,148 @@ import SwiftUI
 struct JamPostRoute: Hashable { let postID: String }
 struct JamSubscribersRoute: Hashable { let jamID: String }
 
-/// The jam tab (LIME-188): the posts of the teachers you follow, and your own jam. Quiet by design: no counts shown to anyone but the writer, no
-/// streaks, no nudges (`docs/jam.md` section 0).
+/// The jam tab (LIME-188b): one feed of the posts of the teachers you follow and your own, newest first, as cards; a **+** (the same floating button
+/// as link and call) writes a new one. There is nothing to set up: your jam is made on your first post, and your profile is its page. Quiet by
+/// design: no rankings, no streaks, no nudges (`docs/jam.md` section 0).
 struct JamPage: View {
     @Environment(ConversationStore.self) private var store
-    @State private var part: Part = .following
-    @State private var starting = false
-    @State private var editing: JamInfo?
-    @State private var writing: JamInfo?
-    @State private var confirmingEnd = false
-
-    enum Part: String, CaseIterable, Identifiable {
-        case following = "Following", mine = "Your jam"
-        var id: String { rawValue }
-    }
+    @State private var composing = false
 
     var body: some View {
         @Bindable var store = store
         return NavigationStack(path: $store.jamPath) {
-            VStack(spacing: 0) {
-                Picker("jam", selection: $part) {
-                    ForEach(Part.allCases) { Text($0.rawValue).tag($0) }
+            feed
+                .background(Theme.canvas)
+                .navigationBarTitleDisplayMode(.inline)
+                .rootHeader(searchID: "jam-search-button") { store.jamSearching = true }
+                .overlay { FloatingPlus(label: "New post", id: "new-jam-post") { composing = true } }
+                .navigationDestination(for: ProfileRoute.self) { ProfileView(route: $0) }
+                .navigationDestination(for: SharedListRoute.self) { SharedListView(route: $0) }
+                .navigationDestination(for: JamPostRoute.self) { JamPostView(postID: $0.postID) }
+                .navigationDestination(for: JamSubscribersRoute.self) { JamSubscribersView(jamID: $0.jamID) }
+                .navigationDestination(isPresented: Binding(get: { store.jamSearching }, set: { store.jamSearching = $0 })) {
+                    Text("Nothing to search in jam yet.")
+                        .font(Theme.body).foregroundStyle(Theme.textSecondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Theme.canvas)
+                        .accessibilityIdentifier("jam-search-empty")
                 }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 10)
-                .accessibilityIdentifier("jam-parts")
-                switch part {
-                case .following: following
-                case .mine: mine
-                }
-            }
-            .background(Theme.canvas)
-            .navigationBarTitleDisplayMode(.inline)
-            .rootHeader(searchID: "jam-search-button") { store.jamSearching = true }
-            .navigationDestination(for: ProfileRoute.self) { ProfileView(route: $0) }
-            .navigationDestination(for: SharedListRoute.self) { SharedListView(route: $0) }
-            .navigationDestination(for: JamPostRoute.self) { JamPostView(postID: $0.postID) }
-            .navigationDestination(for: JamSubscribersRoute.self) { JamSubscribersView(jamID: $0.jamID) }
-            .navigationDestination(isPresented: Binding(get: { store.jamSearching }, set: { store.jamSearching = $0 })) {
-                Text("Nothing to search in jam yet.")
-                    .font(Theme.body).foregroundStyle(Theme.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Theme.canvas)
-                    .accessibilityIdentifier("jam-search-empty")
-            }
-            .sheet(isPresented: $starting) { JamDetailsSheet(editing: nil) }
-            .sheet(item: $editing) { JamDetailsSheet(editing: $0) }
-            .fullScreenCover(item: $writing) { JamPostEditor(jam: $0) }
-            .onAppear { store.refreshJams() }
+                .fullScreenCover(isPresented: $composing) { JamComposeSheet() }
+                .onAppear { store.refreshJams() }
         }
     }
 
-    // MARK: Following
-
-    private var following: some View {
-        let posts = store.followingPosts
+    private var feed: some View {
+        let posts = store.jamFeed
         return Group {
             if posts.isEmpty {
                 VStack {
                     Spacer()
-                    Text("Subscribe to a teacher\u{2019}s jam from their profile.")
+                    Text("Subscribe to teachers from their profiles. Your posts show here too.")
                         .font(Theme.body).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
                         .padding(.horizontal, 40)
-                        .accessibilityIdentifier("jam-following-empty")
+                        .accessibilityIdentifier("jam-feed-empty")
                     Spacer()
                 }
-                .padding(.bottom, 60)
+                .padding(.bottom, 80)
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(posts, id: \.postId) { post in
-                            Button { store.jamPath.append(JamPostRoute(postID: post.postId)) } label: { postRow(post, showWriter: true) }
-                                .buttonStyle(.plain)
-                                .accessibilityIdentifier("jam-post-\(post.postId)")
-                            Divider().overlay(Theme.hairline).padding(.leading, 72)
+                            JamPostCard(post: post)
+                            Divider().overlay(Theme.hairline)
                         }
                     }
-                    .padding(.bottom, 20)
+                    .padding(.bottom, FloatingPlus.size + 32)
                 }
-                .accessibilityIdentifier("jam-following-list")
+                .accessibilityIdentifier("jam-feed")
+            }
+        }
+    }
+}
+
+/// One post in a feed or on a profile: who and when, then the post by its kind, then the actions (♥, comment, remix, share: they come with
+/// LIME-189, so they are shown dimmed and do nothing yet).
+struct JamPostCard: View {
+    let post: JamPostInfo
+    /// On a profile the writer is already known: no avatar row.
+    var showsWriter = true
+    /// Where tapping the post goes; the jam tab pushes the reader, a profile presents it.
+    var open: ((String) -> Void)? = nil
+    @Environment(ConversationStore.self) private var store
+
+    var body: some View {
+        let writer = store.teacher(post.author)
+        VStack(alignment: .leading, spacing: 10) {
+            if showsWriter {
+                Button { store.openProfile(ProfileRoute(userID: writer.id, name: writer.name, isMe: writer.id == store.meProvider().id)) } label: {
+                    HStack(spacing: 10) {
+                        AvatarView(person: writer, size: 40).accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(writer.name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
+                            Text(JamDates.text(post.created)).font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(writer.name), \(JamDates.text(post.created))").accessibilityHint("Opens their profile")
+                .accessibilityIdentifier("jam-card-writer-\(post.postId)")
+            } else {
+                Text(JamDates.text(post.created)).font(Theme.caption).foregroundStyle(Theme.textSecondary)
+            }
+            Button { openPost() } label: { content.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle()) }
+                .buttonStyle(.plain)
+                .accessibilityElement(children: .combine)
+                .accessibilityHint("Opens the post")
+                .accessibilityIdentifier("jam-post-\(post.postId)")
+            if post.state == "ready", post.kind != "article" { JamAttachmentsView(postID: post.postId, compact: true) }
+            actions
+        }
+        .padding(.horizontal, 20).padding(.vertical, 14)
+    }
+
+    private func openPost() { if let open { open(post.postId) } else { store.jamPath.append(JamPostRoute(postID: post.postId)) } }
+
+    @ViewBuilder
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            switch post.state {
+            case "fetching":
+                Text(post.title.isEmpty ? "Downloading\u{2026}" : post.title).font(Theme.body).foregroundStyle(Theme.textSecondary)
+            case "gone":
+                Text("No longer available").font(Theme.body).foregroundStyle(Theme.textSecondary)
+            default:
+                if post.kind == "article" {
+                    Text(post.title).font(Theme.font(.title3, weight: .bold)).foregroundStyle(Theme.text).multilineTextAlignment(.leading)
+                    if !post.subtitle.isEmpty { Text(post.subtitle).font(Theme.body).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.leading) }
+                    if !post.plain.isEmpty { Text(post.plain).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(3).multilineTextAlignment(.leading) }
+                } else {
+                    if !post.title.isEmpty { Text(post.title).font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text).multilineTextAlignment(.leading) }
+                    if !post.plain.isEmpty { Text(post.plain).font(Theme.body).foregroundStyle(Theme.text).lineLimit(8).multilineTextAlignment(.leading) }
+                }
             }
         }
     }
 
-    private func postRow(_ post: JamPostInfo, showWriter: Bool) -> some View {
-        let writer = store.teacher(post.author)
-        let excerpt = post.state == "fetching" ? "Downloading\u{2026}" : post.state == "gone" ? "No longer available" : post.plain
-        return HStack(alignment: .top, spacing: 12) {
-            AvatarView(person: writer, size: 44).accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 3) {
-                if showWriter { Text(writer.name).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(1) }
-                Text(post.title).font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(2).multilineTextAlignment(.leading)
-                Text(excerpt).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(2).multilineTextAlignment(.leading)
-                Text(JamDates.text(post.created)).font(Theme.caption).foregroundStyle(Theme.textSecondary)
+    private var actions: some View {
+        HStack(spacing: 28) {
+            ForEach([("heart", "like"), ("bubble.left", "comment"), ("arrow.2.squarepath", "remix"), ("square.and.arrow.up", "share")], id: \.1) { icon, label in
+                Image(systemName: icon).font(.system(size: 18)).frame(minWidth: 28, minHeight: 28)
+                    .accessibilityLabel(label).accessibilityAddTraits(.isButton).accessibilityHint("Coming soon")
+                    .accessibilityIdentifier("jam-action-\(label)-\(post.postId)")
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 20).padding(.vertical, 12)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
-        .accessibilityHint("Opens the post")
-    }
-
-    // MARK: Your jam
-
-    @ViewBuilder
-    private var mine: some View {
-        if let jam = store.jamsMine.first {
-            let posts = (store.jamPosts[jam.jamId] ?? []).sorted { $0.created > $1.created }
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(alignment: .top) {
-                            Text(jam.title).font(Theme.font(.title3, weight: .bold)).foregroundStyle(Theme.text).accessibilityAddTraits(.isHeader).accessibilityIdentifier("jam-mine-title")
-                            Spacer()
-                            Menu {
-                                Button("Edit") { editing = jam }.accessibilityIdentifier("jam-edit")
-                                Button("End jam", role: .destructive) { confirmingEnd = true }.accessibilityIdentifier("jam-end")
-                            } label: {
-                                Image(systemName: "ellipsis.circle").font(.system(size: 22)).foregroundStyle(Theme.text).frame(width: 44, height: 44)
-                            }
-                            .accessibilityLabel("More").accessibilityIdentifier("jam-menu")
-                        }
-                        if !jam.about.isEmpty { Text(jam.about).font(Theme.body).foregroundStyle(Theme.textSecondary) }
-                        if !jam.topics.isEmpty {
-                            Text(jam.topics.joined(separator: " \u{00B7} ")).font(Theme.secondary).foregroundStyle(Theme.textSecondary)
-                        }
-                    }
-                    Button { writing = jam } label: {
-                        Text("New post").font(Theme.title).foregroundStyle(Theme.accentInk)
-                            .frame(maxWidth: .infinity, minHeight: 52).background(Theme.accent, in: Capsule())
-                    }
-                    .buttonStyle(.plain).accessibilityIdentifier("jam-new-post")
-                    // Only the writer sees this.
-                    Button { store.jamPath.append(JamSubscribersRoute(jamID: jam.jamId)) } label: {
-                        HStack {
-                            Text("Subscribers: \(jam.subscriberCount)").font(Theme.body).foregroundStyle(Theme.text)
-                            Spacer()
-                            Image(systemName: "chevron.right").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.textSecondary)
-                        }
-                        .padding(.horizontal, 16).frame(minHeight: 50)
-                        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    }
-                    .buttonStyle(.plain).accessibilityIdentifier("jam-subscribers")
-                    if let progress = store.jamProgress[jam.jamId] {
-                        Text("Sending to \(progress.total - progress.pending) of \(progress.total)").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
-                            .accessibilityIdentifier("jam-progress")
-                    }
-                    ForEach(posts, id: \.postId) { post in
-                        Button { store.jamPath.append(JamPostRoute(postID: post.postId)) } label: { postRow(post, showWriter: false).padding(.horizontal, -20) }
-                            .buttonStyle(.plain)
-                            .accessibilityIdentifier("jam-post-\(post.postId)")
-                    }
-                }
-                .padding(.horizontal, 20).padding(.bottom, 30)
-            }
-            .confirmSheet("End this jam?", isPresented: $confirmingEnd) {
-                Button("End jam", role: .destructive) { Task { await store.endJam(jam.jamId) } }.accessibilityIdentifier("jam-end-confirm")
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("Subscribers keep what they have.")
-            }
-        } else {
-            VStack(spacing: 14) {
-                Spacer()
-                Text("Share lessons and ideas with the teachers who subscribe. Only they can read your posts.")
-                    .font(Theme.body).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
-                    .accessibilityIdentifier("jam-mine-empty")
-                Button { starting = true } label: {
-                    Text("Start your jam").font(Theme.title).foregroundStyle(Theme.accentInk)
-                        .frame(maxWidth: .infinity, minHeight: 52).background(Theme.accent, in: Capsule())
-                }
-                .buttonStyle(.plain).accessibilityIdentifier("jam-start")
-                Spacer()
-            }
-            .padding(.horizontal, 32).padding(.bottom, 60)
-        }
+        .foregroundStyle(Theme.textSecondary.opacity(0.5))
+        .allowsHitTesting(false)
     }
 }
 
 enum JamDates {
     static func text(_ millis: Int64) -> String {
-        Date(timeIntervalSince1970: Double(millis) / 1000).formatted(date: .abbreviated, time: .omitted)
+        Date(timeIntervalSince1970: Double(millis) / 1000).formatted(date: .abbreviated, time: .shortened)
     }
 }
 

@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Start your jam, or edit it (LIME-188): a title, a few lines about it, and up to eight topics.
+/// Edit your jam page (LIME-188b: reached from your profile): a title, a few lines about it, and up to eight topics. The jam itself is made on your first post.
 struct JamDetailsSheet: View {
-    let editing: JamInfo?
+    let editing: JamInfo
     @Environment(ConversationStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var title = ""
@@ -45,17 +45,17 @@ struct JamDetailsSheet: View {
                 .padding(20)
             }
             .background(Theme.canvas)
-            .navigationTitle(editing == nil ? "Start your jam" : "Edit your jam")
+            .navigationTitle("Edit jam page")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.accessibilityIdentifier("jam-details-cancel") }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(editing == nil ? "Start" : "Save") { save() }
+                    Button("Save") { save() }
                         .disabled(!canSave).fontWeight(.semibold).accessibilityIdentifier("jam-details-save")
                 }
             }
             .onAppear {
-                if let editing, title.isEmpty { title = editing.title; about = editing.about; topics = editing.topics }
+                if title.isEmpty { title = editing.title; about = editing.about; topics = editing.topics }
             }
         }
         .presentationDetents([.large])
@@ -87,7 +87,7 @@ struct JamDetailsSheet: View {
     private func save() {
         saving = true
         Task {
-            if let editing { await store.editJam(editing.jamId, title: title, about: about, topics: topics) } else { await store.startJam(title: title, about: about, topics: topics) }
+            await store.editJam(editing.jamId, title: title, about: about, topics: topics)
             dismiss()
         }
     }
@@ -116,60 +116,3 @@ struct FlowChips: View {
     }
 }
 
-/// Write a post (LIME-188): a title, then the same rich text editor as chats with its formatting strip and the + for photos and files. Every post is
-/// free (payments are off, so a subscribers-only post would reach nobody).
-struct JamPostEditor: View {
-    let jam: JamInfo
-    @Environment(ConversationStore.self) private var store
-    @Environment(\.dismiss) private var dismiss
-    @State private var title = ""
-    @State private var composer = RichComposerModel()
-    @State private var sink = ComposerDraftSink()
-    @State private var problem: String?
-    @State private var publishing = false
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                TextField("Title", text: $title, axis: .vertical)
-                    .font(Theme.font(.title3, weight: .bold)).lineLimit(1...3)
-                    .padding(.horizontal, 20).padding(.top, 12)
-                    .accessibilityLabel("Post title").accessibilityIdentifier("jam-post-title-field")
-                if let problem {
-                    Text(problem).font(Theme.secondary).foregroundStyle(.red).padding(.horizontal, 20).padding(.top, 4)
-                        .accessibilityIdentifier("jam-post-problem")
-                }
-                Divider().overlay(Theme.hairline).padding(.top, 10)
-                Spacer(minLength: 0)
-                ChatComposer(model: composer, onSend: { _ in }, onSendAttachments: { _, _ in }, draftSink: sink)
-                    .accessibilityLabel("Post text")
-            }
-            .background(Theme.canvas)
-            .navigationTitle("New post")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.accessibilityIdentifier("jam-post-cancel") }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Publish") { publish() }.fontWeight(.semibold).disabled(publishing).accessibilityIdentifier("jam-publish")
-                }
-            }
-        }
-    }
-
-    private func publish() {
-        let cleanTitle = title.split(whereSeparator: \.isWhitespace).joined(separator: " ")
-        let markdown = composer.markdown()
-        let items = sink.items
-        guard !cleanTitle.isEmpty else { problem = "Add a title."; return }
-        guard cleanTitle.count <= 120 else { problem = "Make the title shorter."; return }
-        guard !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !items.isEmpty else { problem = "Write something, or add a photo or file."; return }
-        guard items.allSatisfy({ $0.bytes.count <= 24 * 1024 * 1024 }) else { problem = "A file is too large for a post (24 MB)."; return }
-        problem = nil
-        publishing = true
-        Task {
-            let ok = await store.publishJamPost(jam.jamId, title: cleanTitle, markdown: markdown, items: items)
-            publishing = false
-            if ok { dismiss() } else { problem = "Could not publish. Try again." }
-        }
-    }
-}

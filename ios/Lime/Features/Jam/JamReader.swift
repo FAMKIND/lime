@@ -13,8 +13,13 @@ struct JamPostView: View {
             if let post {
                 let writer = store.teacher(post.author)
                 VStack(alignment: .leading, spacing: 14) {
-                    Text(post.title).font(Theme.font(.title2, weight: .bold)).foregroundStyle(Theme.text)
-                        .accessibilityAddTraits(.isHeader).accessibilityIdentifier("jam-reader-title")
+                    if !post.title.isEmpty {
+                        Text(post.title).font(Theme.font(.title2, weight: .bold)).foregroundStyle(Theme.text)
+                            .accessibilityAddTraits(.isHeader).accessibilityIdentifier("jam-reader-title")
+                    }
+                    if !post.subtitle.isEmpty {
+                        Text(post.subtitle).font(Theme.font(.title3)).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("jam-reader-subtitle")
+                    }
                     Button { store.openProfile(ProfileRoute(userID: writer.id, name: writer.name, isMe: writer.id == store.meProvider().id)) } label: {
                         HStack(spacing: 10) {
                             AvatarView(person: writer, size: 36).accessibilityHidden(true)
@@ -56,6 +61,8 @@ struct JamPostView: View {
 /// A post's photos (inline), videos (poster, then a player) and files (a card to open or share). Each downloads when it is shown, with no session.
 struct JamAttachmentsView: View {
     let postID: String
+    /// In a feed card: pictures a little smaller.
+    var compact = false
     @Environment(ConversationStore.self) private var store
 
     var body: some View {
@@ -64,6 +71,7 @@ struct JamAttachmentsView: View {
                 switch file.kind {
                 case "image": JamPhoto(postID: postID, file: file)
                 case "video": JamVideo(postID: postID, file: file)
+                case "audio": JamAudio(postID: postID, file: file)
                 default: JamFileCard(postID: postID, file: file)
                 }
             }
@@ -130,6 +138,37 @@ private struct JamVideo: View {
                 player?.play()
             }
             loading = false
+        }
+    }
+}
+
+private struct JamAudio: View {
+    let postID: String
+    let file: JamAttachmentInfo
+    @Environment(ConversationStore.self) private var store
+    @State private var player: AVAudioPlayer?
+    @State private var playing = false
+
+    var body: some View {
+        Button { toggle() } label: {
+            HStack(spacing: 12) {
+                Image(systemName: playing ? "pause.circle.fill" : "play.circle.fill").font(.system(size: 36)).foregroundStyle(Theme.text)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Voice clip").font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text)
+                    Text(file.durationMs.map { "\($0 / 1000) s" } ?? "").font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(14).background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain).accessibilityLabel(playing ? "Pause voice clip" : "Play voice clip").accessibilityIdentifier("jam-audio")
+    }
+
+    private func toggle() {
+        if let player, player.isPlaying { player.pause(); playing = false; return }
+        Task {
+            if player == nil, let data = await store.jamAttachmentData(postID, file.attachmentId) { player = try? AVAudioPlayer(data: data) }
+            player?.play(); playing = player?.isPlaying ?? false
         }
     }
 }
@@ -217,46 +256,94 @@ struct JamSubscribersView: View {
     }
 }
 
-/// On a teacher's profile: their jam, if they have one, with Subscribe (LIME-188). The server learns that this account looked at that page, as it
-/// does for a profile.
-struct JamProfileRow: View {
+/// On a teacher's profile, which is their jam's page (LIME-188b): the subscriber count (public), **Subscribe / Subscribed ✓**, and their posts. Posts
+/// are readable once you subscribe; before that the page says so (the server's page holds no post text). On your own profile: your posts, who follows,
+/// and Edit jam page. The server learns that this account looked at the page, as it does for a profile.
+struct JamProfileSection: View {
     let userID: String
     let isMe: Bool
     @Environment(ConversationStore.self) private var store
     @State private var page: JamPageInfo?
+    @State private var reading: JamPostRoute?
+    @State private var editing: JamInfo?
+    @State private var viewingSubscribers = false
+    @State private var confirmingEnd = false
 
     var body: some View {
         ZStack {
             // Something always in the tree, so the lookup below runs even while there is nothing to show.
             Color.clear.frame(height: 0).accessibilityHidden(true)
-            if let page {
-                let following = store.isFollowing(page.jamId)
-                SettingsCard {
-                    HStack(spacing: 12) {
-                        Image(systemName: "book.pages").font(.system(size: 20)).foregroundStyle(Theme.text).frame(width: 28).accessibilityHidden(true)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(page.title).font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(2).accessibilityIdentifier("profile-jam-row")
-                            Text("jam").font(Theme.caption).foregroundStyle(Theme.textSecondary)
-                        }
-                        Spacer(minLength: 8)
-                        if !isMe {
-                            Button { Task { if following { await store.unsubscribe(page.jamId) } else { await store.subscribe(to: page) } } } label: {
-                                Text(following ? "Subscribed \u{2713}" : "Subscribe").font(Theme.font(.subheadline, weight: .semibold))
-                                    .foregroundStyle(following ? Theme.text : Theme.accentInk)
-                                    .padding(.horizontal, 14).frame(minHeight: 44)
-                                    .background(following ? Theme.surface : Theme.accent, in: Capsule())
-                            }
-                            .buttonStyle(.plain).accessibilityIdentifier("profile-jam-subscribe")
-                            .accessibilityLabel(following ? "Subscribed. Tap to unsubscribe." : "Subscribe to \(page.title)")
-                        }
-                    }
-                    .padding(.horizontal, 16).padding(.vertical, 8)
+            if let page { content(page) }
+        }
+        .task(id: userID) { await load() }
+        .onChange(of: store.jamsMine) { _, _ in if isMe { Task { await load() } } }
+        .sheet(item: $reading) { route in NavigationStack { JamPostView(postID: route.postID).toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { reading = nil } } } } }
+        .sheet(item: $editing) { JamDetailsSheet(editing: $0) }
+        .sheet(isPresented: $viewingSubscribers) { NavigationStack { JamSubscribersView(jamID: page?.jamId ?? "") } }
+    }
+
+    private func load() async {
+        if isMe { page = store.jamsMine.first.map { JamPageInfo(jamId: $0.jamId, writerId: $0.writer, title: $0.title, about: $0.about, topics: $0.topics, postCount: $0.postCount, subscriberCount: $0.subscriberCount) } }
+        else { page = await store.jamPage(of: userID) }
+    }
+
+    @ViewBuilder
+    private func content(_ page: JamPageInfo) -> some View {
+        let following = store.isFollowing(page.jamId)
+        let posts = store.posts(of: page.jamId)
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(page.title).font(Theme.font(.title3, weight: .bold)).foregroundStyle(Theme.text).accessibilityAddTraits(.isHeader).accessibilityIdentifier("profile-jam-row")
+                if !page.topics.isEmpty { Text(page.topics.joined(separator: " \u{00B7} ")).font(Theme.secondary).foregroundStyle(Theme.textSecondary) }
+                Text(page.subscriberCount == 1 ? "1 subscriber" : "\(page.subscriberCount) subscribers").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
+                    .accessibilityIdentifier("profile-jam-subscribers")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if isMe {
+                HStack(spacing: 10) {
+                    pill("Edit jam page", id: "jam-edit-page") { editing = store.jamsMine.first }
+                    pill("Subscribers", id: "jam-subscribers") { store.loadJamSubscribers(page.jamId); viewingSubscribers = true }
+                    pill("End jam", id: "jam-end") { confirmingEnd = true }
                 }
+            } else {
+                Button { Task { if following { await store.unsubscribe(page.jamId) } else { await store.subscribe(to: page) } } } label: {
+                    Text(following ? "Subscribed \u{2713}" : "Subscribe").font(Theme.title).foregroundStyle(following ? Theme.text : Theme.accentInk)
+                        .frame(maxWidth: .infinity, minHeight: 50).background(following ? Theme.surface : Theme.accent, in: Capsule())
+                }
+                .buttonStyle(.plain).accessibilityIdentifier("profile-jam-subscribe")
+                .accessibilityLabel(following ? "Subscribed. Tap to unsubscribe." : "Subscribe to \(page.title)")
+            }
+            Text("Posts").font(Theme.font(.headline, weight: .semibold)).foregroundStyle(Theme.text).accessibilityAddTraits(.isHeader)
+            if isMe || following {
+                if posts.isEmpty {
+                    Text(isMe ? "Your posts show here." : "Nothing here yet.").font(Theme.body).foregroundStyle(Theme.textSecondary)
+                }
+                VStack(spacing: 0) {
+                    ForEach(posts, id: \.postId) { post in
+                        JamPostCard(post: post, showsWriter: false) { reading = JamPostRoute(postID: $0) }
+                        Divider().overlay(Theme.hairline)
+                    }
+                }
+                .padding(.horizontal, -20)
+            } else {
+                Text("Subscribe to read their posts.").font(Theme.body).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("profile-jam-locked")
             }
         }
-        .task(id: userID) {
-            if isMe { page = store.jamsMine.first.map { JamPageInfo(jamId: $0.jamId, writerId: $0.writer, title: $0.title, about: $0.about, topics: $0.topics, postCount: $0.postCount) } }
-            else { page = await store.jamPage(of: userID) }
+        .padding(.top, 6)
+        .confirmSheet("End this jam?", isPresented: $confirmingEnd) {
+            Button("End jam", role: .destructive) { Task { await store.endJam(page.jamId); await load() } }.accessibilityIdentifier("jam-end-confirm")
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Subscribers keep what they have.")
         }
     }
+
+    private func pill(_ label: String, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label).font(Theme.secondary).foregroundStyle(Theme.text).padding(.horizontal, 12).frame(minHeight: 44).background(Theme.surface, in: Capsule())
+        }
+        .buttonStyle(.plain).accessibilityIdentifier(id)
+    }
 }
+
+extension JamPostRoute: Identifiable { var id: String { postID } }

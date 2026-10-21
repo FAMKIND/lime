@@ -5,6 +5,7 @@ import SwiftUI
 /// a thread both use it; `onSend` gets the message as Markdown.
 /// For the jam post editor (LIME-188): the files waiting in the composer, shared with the screen that publishes (which has its own Publish button).
 @MainActor
+@Observable
 final class ComposerDraftSink {
     var items: [OutgoingAttachment] = []
     /// Empties the composer's text and files.
@@ -21,6 +22,8 @@ struct ChatComposer: View {
     var onSendPreview: ((String, OutgoingPreview) -> Void)? = nil
     /// The jam post editor reads the files from here and publishes with its own button: no send or voice button in the row.
     var draftSink: ComposerDraftSink? = nil
+    /// The words shown while the field is empty.
+    var placeholder = "Send message\u{2026}"
     /// Settings → Privacy → "Generate link previews".
     @AppStorage(LinkPreviewSetting.key) private var previewsOn = true
     @State private var previewDraft: PreviewDraft?
@@ -67,7 +70,7 @@ struct ChatComposer: View {
                     RichComposerField(model: model, maxHeight: model.expanded ? model.expandedFieldHeight : model.fieldCap, fills: model.expanded)
                         .onAppear { model.hasText = false }
                     if !model.hasText {
-                        Text("Send message…").font(Theme.body).foregroundStyle(Theme.textSecondary)
+                        Text(placeholder).font(Theme.body).foregroundStyle(Theme.textSecondary)
                             .padding(.leading, 4).padding(.top, 8).allowsHitTesting(false).accessibilityHidden(true)
                     }
                 }
@@ -121,7 +124,8 @@ struct ChatComposer: View {
                 .opacity(recorder.isRecording ? 0 : 1).allowsHitTesting(!recorder.isRecording)
                 Spacer(minLength: 0)
                 if draftSink != nil {
-                    // The screen has its own Publish button.
+                    // The screen has its own Post button; the microphone stays (a voice clip is handed to the screen, not sent).
+                    if voiceEnabled && !recorder.isRecording { micButton }
                 } else if canSend && !recorder.isRecording {
                     Button { send() } label: {
                         Image(systemName: "arrow.up")

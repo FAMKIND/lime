@@ -46,11 +46,14 @@ extension ConversationStore {
         return Person(id: userID, name: teacherName(userID))
     }
 
-    /// The posts of every jam I follow, newest first.
-    var followingPosts: [JamPostInfo] {
-        let live = Set(jamSubscriptions.filter { $0.status == "active" }.map(\.jamId))
+    /// The feed: the posts of every jam I follow and my own, newest first.
+    var jamFeed: [JamPostInfo] {
+        let live = Set(jamSubscriptions.filter { $0.status == "active" }.map(\.jamId) + jamsMine.map(\.jamId))
         return jamPosts.filter { live.contains($0.key) }.values.flatMap { $0 }.sorted { $0.created > $1.created }
     }
+
+    /// The posts of one writer's jam, newest first (mine, or one I follow).
+    func posts(of jamID: String) -> [JamPostInfo] { (jamPosts[jamID] ?? []).sorted { $0.created > $1.created } }
 
     func jamPost(_ postID: String) -> JamPostInfo? {
         for posts in jamPosts.values { if let post = posts.first(where: { $0.postId == postID }) { return post } }
@@ -66,16 +69,17 @@ extension ConversationStore {
 
     // MARK: My jam
 
-    @discardableResult
-    func startJam(title: String, about: String, topics: [String]) async -> Bool {
+    /// My jam, made on my first post: named for me, with my profile's about line; edited later from my profile.
+    func myJamID(about: String) async -> String? {
+        if let jam = jamsMine.first { return jam.jamId }
         #if DEBUG
-        if isDemo { demoStartJam(title: title, about: about, topics: topics); return true }
+        if isDemo { demoStartJam(title: meProvider().name, about: about, topics: []); return jamsMine.first?.jamId }
         #endif
-        guard let core else { return false }
-        let ok = (try? await Task.detached { try core.createJam(title: title, about: about, topics: topics) }.value) != nil
+        guard let core else { return nil }
+        let name = String(meProvider().name.prefix(60))
+        _ = try? await Task.detached { try core.createJam(title: name.isEmpty ? "My jam" : name, about: String(about.prefix(500)), topics: []) }.value
         refreshJams()
-        if ok { await deliverNow() }
-        return ok
+        return jamsMine.first?.jamId
     }
 
     @discardableResult
@@ -100,11 +104,13 @@ extension ConversationStore {
         await deliverNow()
     }
 
-    /// Publishes a post: the core seals it, and the next delivery sends it. Every post is free (payments are off).
+    /// Publishes a post (a quick post, an article or a recording) to my jam, making the jam first if this is my first post: the core seals it, and
+    /// the next delivery sends it. Every post is free (payments are off).
     @discardableResult
-    func publishJamPost(_ jamID: String, title: String, markdown: String, items: [OutgoingAttachment]) async -> Bool {
+    func publishJamPost(kind: String, title: String, subtitle: String, markdown: String, items: [OutgoingAttachment], about: String) async -> Bool {
+        guard let jamID = await myJamID(about: about) else { return false }
         #if DEBUG
-        if isDemo { demoPublish(jamID, title: title, markdown: markdown, items: items); return true }
+        if isDemo { demoPublish(jamID, kind: kind, title: title, subtitle: subtitle, markdown: markdown, items: items); return true }
         #endif
         guard let core else { return false }
         guard StorageGuard.shared.allows(items.reduce(0) { $0 + Int64($1.bytes.count) }) else {
@@ -112,7 +118,9 @@ extension ConversationStore {
             showBanner("Not enough space on your iPhone to send this.")
             return false
         }
-        let ok = (try? await Task.detached(priority: .userInitiated) { try core.publishJamPost(jamId: jamID, title: title, markdown: markdown, tier: "free", attachments: items) }.value) != nil
+        let ok = (try? await Task.detached(priority: .userInitiated) {
+            try core.publishJamPost(jamId: jamID, kind: kind, title: title, subtitle: subtitle, markdown: markdown, tier: "free", attachments: items)
+        }.value) != nil
         refreshJams()
         if ok { await deliverNow() }
         return ok
