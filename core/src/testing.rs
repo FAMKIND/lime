@@ -531,6 +531,13 @@ impl Transport for FakeServer {
                     _ => respond(404, json!({ "error": "not_found" })),
                 }
             }
+            "jam-page" if body.get("action").and_then(Value::as_str) == Some("by_writer") => {
+                let writer = text("writer_id");
+                match state.jam_pages.iter().find(|(_, (owner, _, _, ended))| *owner == writer && !*ended) {
+                    Some((id, (_, title, count, _))) => respond(200, json!({ "jam": { "jam_id": id, "writer_id": writer, "title": title, "about": "", "topics": [], "post_count": count } })),
+                    None => respond(200, json!({ "jam": null })),
+                }
+            }
             "jam-page" => {
                 let jam = text("jam_id");
                 let existing = state.jam_pages.get(&jam).cloned();

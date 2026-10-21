@@ -3,6 +3,8 @@
 //   set  { jam_id, title, about, topics[], post_count } -> { ok }: creates or updates MY jam's page.
 //   get  { jam_id }                                      -> { jam }: any signed-in user.
 //   end  { jam_id }                                      -> { ok, removed }: marks the page ended and deletes all of the jam's posts (the ciphertext).
+//   by_writer { writer_id }                              -> { jam }: that teacher's live (not ended) page, or { jam: null }. Any signed-in user, the same trust
+//                                                           as reading their profile (the server learns that this account looked).
 
 import { admin, requireUser } from "../_shared/db.ts";
 import { isUuid } from "../_shared/bytes.ts";
@@ -20,6 +22,13 @@ Deno.serve(handler(async (req) => {
   const me = await requireUser(req);
   const body = await readJson(req);
   await rateLimit(`jam-page:${me}`, 1, 120, 60);
+  if (body.action === "by_writer") {
+    if (!isUuid(body.writer_id)) throw new HttpError(400, "bad_request", "writer_id must be a UUID.");
+    const { data, error } = await admin().from("jams").select("jam_id, writer_id, title, about, topics, post_count, created_at")
+      .eq("writer_id", (body.writer_id as string).toLowerCase()).is("ended_at", null).order("created_at", { ascending: false }).limit(1);
+    if (error) throw new HttpError(500, "internal");
+    return json({ jam: data?.[0] ?? null });
+  }
   if (!isUuid(body.jam_id)) throw new HttpError(400, "bad_request", "jam_id must be a UUID.");
   const jamId = (body.jam_id as string).toLowerCase();
   const db = admin();

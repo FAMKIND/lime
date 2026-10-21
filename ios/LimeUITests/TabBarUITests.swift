@@ -62,22 +62,13 @@ final class TabBarUITests: XCTestCase {
         XCTAssertTrue(app.textFields.firstMatch.waitForExistence(timeout: 5) || app.searchFields.firstMatch.waitForExistence(timeout: 5))
     }
 
-    func testJamShowsItsPageAndTheNotifyToggle() {
+    func testJamIsATabWithFollowingAndYourJam() {
         let app = demoApp()
         XCTAssertTrue(app.tabBars.buttons["jam"].waitForExistence(timeout: 10))
         app.tabBars.buttons["jam"].tap()
-        XCTAssertTrue(app.staticTexts["jam-text"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["jam-text"].label.contains("Teachers learn best"))
-        XCTAssertTrue(app.staticTexts["Jam is coming"].exists)
-        let notify = app.buttons["jam-notify"]
-        XCTAssertTrue(notify.exists)
-        if notify.label.contains("let you know") { notify.tap() }   // left on by an earlier run
-        XCTAssertEqual(notify.label, "Notify me")
-        notify.tap()
-        XCTAssertTrue(app.buttons["jam-notify"].label.contains("let you know"), "the button flips")
-        app.buttons["jam-notify"].tap()
-        XCTAssertEqual(app.buttons["jam-notify"].label, "Notify me", "and flips back")
-        XCTAssertFalse(app.staticTexts["Jam is coming soon"].exists, "no banner")
+        XCTAssertTrue(any(app, "jam-parts").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.segmentedControls["jam-parts"].buttons["Following"].exists && app.segmentedControls["jam-parts"].buttons["Your jam"].exists)
+        XCTAssertFalse(app.buttons["jam-notify"].exists, "the coming-soon page is gone")
     }
 
     // MARK: LIME-121d: one header, the floating "+", the tab icons

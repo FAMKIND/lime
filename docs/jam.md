@@ -118,6 +118,8 @@ No payment code in v1; the model has `tier` and `tiers` so it can arrive without
 
 ## 11. Proposed split into build briefs (for plot to draft; LIME-186+)
 
+*Built so far: 186 (core), 187 (server), 188 (the jam tab: start a jam, write posts with photos and files, subscribe from a profile, read, the writer's subscriber list). A post's files are jam-class blobs of their own, downloaded when shown, with no session; v1 has no tier picker (every post is free).*
+
 1. **Core (186):** conversation kind `jam:`; `jam.*` ops and state; the writer's session store (first-index keys), rotation on removal / 100 / 7 days; `jam.subscribe` / `welcome` / `post` / `session` / `remove`; tests in the fake server. (No UI.)
 2. **Server (187), only if option C:** a `jams` page table and RLS; a long-retention blob class with quota and deletion on `jam.end`; rate limits; `docs/api-v2.md` + `architecture.md`.
 3. **iOS write and read (188):** a Jam tab: your jam (create, write a post with the existing composer + attachments, free/subscribers), subscriptions list, post reader, the archive.

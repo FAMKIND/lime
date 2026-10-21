@@ -15,6 +15,7 @@
 
 use vodozemac::megolm::{GroupSession, InboundGroupSession, MegolmMessage, SessionConfig as MegolmConfig, SessionKey};
 
+use super::attachments::OutgoingAttachment;
 use super::groups::GROUP_WIRE;
 use super::photos::raw;
 use super::*;
@@ -67,6 +68,40 @@ pub struct JamSubscriberInfo {
     /// `active`, `removed` or `left`.
     pub status: String,
 }
+
+/// One file of a jam post, as the app shows it before it is downloaded.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct JamAttachmentInfo {
+    pub attachment_id: String,
+    pub name: String,
+    pub mime: String,
+    /// `image`, `video` or `file`.
+    pub kind: String,
+    pub size: u64,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub duration_ms: Option<u32>,
+    /// A tiny preview (JPEG), or empty.
+    pub thumb: Vec<u8>,
+    /// A video's cover frame, or empty.
+    pub poster: Vec<u8>,
+    /// This phone already has the file.
+    pub available: bool,
+}
+
+/// A jam's public page as the server shows it to any signed-in teacher.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct JamPageInfo {
+    pub jam_id: String,
+    pub writer_id: String,
+    pub title: String,
+    pub about: String,
+    pub topics: Vec<String>,
+    pub post_count: u32,
+}
+
+/// The largest file in a jam post (the server's blob cap is 25 MiB, and the sealed form is a little larger).
+const MAX_ATTACHMENT_BYTES: usize = 24 * 1024 * 1024;
 
 /// How much of what is queued for a jam has gone out: "sending to 412 of 1,000".
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -307,9 +342,9 @@ impl LimeStore {
     }
 
     /// Publishes a post to my jam's subscribers: its content is sealed into a blob (uploaded by the next delivery pass), and a small notice is
-    /// encrypted here once and queued for everyone who may read it. `tier` is `free` or `subscribers`; `attachments_json` is a JSON array of
-    /// attachment descriptors (`[]` for none). Returns the post's id. Nothing is sent yet: the passes do that, in order and in chunks.
-    pub fn publish_jam_post(&self, jam_id: String, title: String, markdown: String, tier: String, attachments_json: String) -> Result<String, StoreError> {
+    /// encrypted here once and queued for everyone who may read it. `tier` is `free` or `subscribers`; `attachments` are the files (already
+    /// shrunk and stripped by the app; at most 10, each under 24 MiB): each becomes a jam-class blob of its own, uploaded before the post. Returns the post's id. Nothing is sent yet: the passes do that, in order and in chunks.
+    pub fn publish_jam_post(&self, jam_id: String, title: String, markdown: String, tier: String, attachments: Vec<OutgoingAttachment>) -> Result<String, StoreError> {
         let state = self.load_or_create_account()?;
         let me = self.registered_user(&state)?;
         let title = jam_store::clean_line(&title, jam_store::MAX_POST_TITLE_CHARS).ok_or(StoreError::Rejected)?;
@@ -317,11 +352,42 @@ impl LimeStore {
         if markdown.len() > jam_store::MAX_POST_BYTES || !jam_store::valid_tier(&tier) {
             return Err(StoreError::Rejected);
         }
-        let attachments: Value = serde_json::from_str(&attachments_json).map_err(|_| StoreError::Rejected)?;
-        let parsed = crate::store::attachments::parse_payload(&json!({ "attachments": attachments })).ok_or(StoreError::Rejected)?;
-        if markdown.is_empty() && parsed.is_empty() {
+        if attachments.len() > crate::store::attachments::MAX_PER_MESSAGE || attachments.iter().any(|a| a.bytes.is_empty() || a.bytes.len() > MAX_ATTACHMENT_BYTES || !a.mime.contains('/')) {
             return Err(StoreError::Rejected);
         }
+        if markdown.is_empty() && attachments.is_empty() {
+            return Err(StoreError::Rejected);
+        }
+        // Each file: a fresh key, sealed in chunks into one blob (named by the file's own id), its hash and size noted in the post.
+        let mut files: Vec<(String, Vec<u8>, String, i64)> = Vec::new(); // (id, plain bytes, sealed hash, sealed size)
+        let mut descriptors: Vec<Value> = Vec::new();
+        for file in &attachments {
+            let id = new_id();
+            let key = crate::store::attachments::new_key();
+            let sealed = crate::store::attachments::seal(&key, &id, &file.bytes).concat();
+            let (hash, size) = (crate::store::attachments::digest_hex(&sealed), sealed.len() as i64);
+            let descriptor = crate::store::attachments::Descriptor {
+                id: id.clone(),
+                key,
+                digest: crate::store::attachments::digest_hex(&file.bytes),
+                size: file.bytes.len() as u64,
+                mime: file.mime.clone(),
+                name: file.name.clone(),
+                width: file.width,
+                height: file.height,
+                duration_ms: file.duration_ms,
+                thumb: file.thumb.clone(),
+                poster: file.poster.clone(),
+            };
+            let mut value = descriptor.to_json();
+            value["blob_sha"] = json!(hash);
+            value["blob_size"] = json!(size);
+            // What a receiver would accept: refuse here what it would refuse there.
+            crate::store::attachments::Descriptor::parse(&value).ok_or(StoreError::Rejected)?;
+            descriptors.push(value);
+            files.push((id, file.bytes.clone(), hash, size));
+        }
+        let attachments = Value::Array(descriptors);
         let plain = crate::format::plain_text(&markdown);
         let post_id = new_id();
         let now = now_ms();
@@ -355,6 +421,9 @@ impl LimeStore {
                     params![post_id, jam_id, me, outbound.session.session_id(), index, tier, title, markdown, plain, attachments.to_string(), now, wire_b64, blob.blob_id, blob.key, blob.sha256, blob.size],
                 )
                 .map_err(db_err)?;
+                for (id, plain, hash, size) in &files {
+                    jam_store::insert_attachment(conn, &post_id, id, &jam_id, hash, *size, plain)?;
+                }
                 jam_store::queue_wire(conn, &jam_id, &post_id, &audience)?;
                 Ok(())
             })
@@ -401,6 +470,89 @@ impl LimeStore {
                 .map_err(db_err)?;
             Ok(rows)
         })
+    }
+
+    /// The files of a post, as the app lists them before any is downloaded.
+    pub fn list_jam_attachments(&self, post_id: String) -> Result<Vec<JamAttachmentInfo>, StoreError> {
+        self.with_conn(|conn| {
+            let Some(post) = jam_store::post(conn, &post_id)? else { return Ok(Vec::new()) };
+            let list: Value = serde_json::from_str(&post.attachments).unwrap_or(Value::Array(vec![]));
+            let mut out = Vec::new();
+            for value in list.as_array().into_iter().flatten() {
+                let Some(d) = crate::store::attachments::Descriptor::parse(value) else { continue };
+                out.push(JamAttachmentInfo {
+                    available: jam_store::attachment_data(conn, &post_id, &d.id)?.is_some(),
+                    kind: if d.mime.starts_with("image/") { "image" } else if d.mime.starts_with("video/") { "video" } else { "file" }.to_owned(),
+                    attachment_id: d.id,
+                    name: d.name,
+                    mime: d.mime,
+                    size: d.size,
+                    width: d.width,
+                    height: d.height,
+                    duration_ms: d.duration_ms,
+                    thumb: d.thumb,
+                    poster: d.poster,
+                });
+            }
+            Ok(out)
+        })
+    }
+
+    /// A file of a post: what this phone has, else downloaded now **with no session** (`jam-blob-get`), checked against the hash in the post, opened
+    /// and kept. `Rejected` if the server no longer has it or it does not open as announced.
+    pub fn jam_attachment_data(&self, transport: Arc<dyn Transport>, post_id: String, attachment_id: String) -> Result<Vec<u8>, StoreError> {
+        if let Some(data) = self.with_conn(|conn| jam_store::attachment_data(conn, &post_id, &attachment_id))? {
+            return Ok(data);
+        }
+        let (post, descriptor_json) = self.with_conn(|conn| {
+            let post = jam_store::post(conn, &post_id)?.ok_or(StoreError::NotFound)?;
+            let list: Value = serde_json::from_str(&post.attachments).unwrap_or(Value::Array(vec![]));
+            let found = list.as_array().into_iter().flatten().find(|v| v.get("id").and_then(Value::as_str) == Some(attachment_id.as_str())).cloned();
+            Ok((post, found.ok_or(StoreError::NotFound)?))
+        })?;
+        let descriptor = crate::store::attachments::Descriptor::parse(&descriptor_json).ok_or(StoreError::BadMessage)?;
+        let blob_sha = descriptor_json.get("blob_sha").and_then(Value::as_str).unwrap_or_default().to_owned();
+        let blob_size = descriptor_json.get("blob_size").and_then(Value::as_i64).unwrap_or(0);
+        let (status, body) = call(&transport, None, "jam-blob-get", &json!({ "blob_id": descriptor.id }))?;
+        if status == 404 {
+            return Err(StoreError::Rejected);
+        }
+        check(status)?;
+        let url = body.get("url").and_then(Value::as_str).ok_or(StoreError::BadMessage)?;
+        let (status, sealed) = raw(&transport, "GET", url, None, Vec::new())?;
+        check(status)?;
+        if sealed.len() as i64 != blob_size || crate::store::attachments::digest_hex(&sealed) != blob_sha {
+            return Err(StoreError::Rejected);
+        }
+        let chunk = crate::store::attachments::CHUNK + 16;
+        let chunks: Vec<Vec<u8>> = sealed.chunks(chunk).map(<[u8]>::to_vec).collect();
+        let plain = crate::store::attachments::open(&descriptor.key, &descriptor.id, &chunks).ok_or(StoreError::Rejected)?;
+        if crate::store::attachments::digest_hex(&plain) != descriptor.digest {
+            return Err(StoreError::Rejected);
+        }
+        self.with_conn(|conn| jam_store::cache_attachment(conn, &post_id, &descriptor.id, &post.jam_id, &blob_sha, blob_size, &plain))?;
+        Ok(plain)
+    }
+
+    /// A teacher's live jam page, if they have one: any signed-in teacher can look (the same trust as reading their profile; the server learns that
+    /// this account looked). `None` when they have no jam, or it ended.
+    pub fn fetch_jam_page(&self, transport: Arc<dyn Transport>, auth_token: String, writer_user_id: String) -> Result<Option<JamPageInfo>, StoreError> {
+        let (status, body) = call(&transport, Some(&auth_token), "jam-page", &json!({ "action": "by_writer", "writer_id": writer_user_id }))?;
+        if status == 404 {
+            return Ok(None);
+        }
+        check(status)?;
+        let Some(jam) = body.get("jam").filter(|j| j.is_object()) else { return Ok(None) };
+        let text = |k: &str| jam.get(k).and_then(Value::as_str).map(str::to_owned);
+        let topics = jam.get("topics").and_then(Value::as_array).map(|a| a.iter().filter_map(|t| t.as_str().map(str::to_owned)).collect()).unwrap_or_default();
+        Ok(Some(JamPageInfo {
+            jam_id: text("jam_id").ok_or(StoreError::BadMessage)?,
+            writer_id: text("writer_id").unwrap_or(writer_user_id),
+            title: text("title").unwrap_or_default(),
+            about: text("about").unwrap_or_default(),
+            topics,
+            post_count: jam.get("post_count").and_then(Value::as_u64).unwrap_or(0) as u32,
+        }))
     }
 
     /// How much of what is queued for this jam has gone ("sending to 412 of 1,000"). Both zero when nothing waits.
@@ -730,6 +882,7 @@ impl LimeStore {
     /// Uploads the writer's posts that are not on the server yet: each as one blob of ciphertext (the class `jam`: no expiry, fetched without a
     /// session). A post's notice is held back until its blob is up.
     fn upload_jam_posts(&self, transport: &Arc<dyn Transport>, token: &str) {
+        self.upload_jam_attachments(transport, token);
         let Ok(posts) = self.with_conn(|conn| jam_store::to_upload(conn, jam_store::BLOBS_PER_PASS)) else { return };
         for post in posts {
             let Some(key) = vodozemac::base64_decode(&post.blob.key).ok().filter(|k| k.len() == 32) else { continue };
@@ -752,6 +905,39 @@ impl LimeStore {
             match uploaded {
                 Ok(()) => {
                     let _ = self.with_conn(|conn| jam_store::set_uploaded(conn, &post.post_id, &post.jam_id));
+                }
+                Err(StoreError::Network) => return,
+                Err(_) => continue,
+            }
+        }
+    }
+
+    /// Uploads the files of the writer's posts, each as a jam-class blob of its sealed chunks (before the post that names them goes up).
+    fn upload_jam_attachments(&self, transport: &Arc<dyn Transport>, token: &str) {
+        let Ok(rows) = self.with_conn(|conn| jam_store::attachments_to_upload(conn, jam_store::BLOBS_PER_PASS)) else { return };
+        for row in rows {
+            let key = self.with_conn(|conn| {
+                let post = jam_store::post(conn, &row.post_id)?;
+                let list: Value = post.and_then(|p| serde_json::from_str(&p.attachments).ok()).unwrap_or(Value::Array(vec![]));
+                Ok(list.as_array().into_iter().flatten().filter(|v| v.get("id").and_then(Value::as_str) == Some(row.att_id.as_str())).find_map(crate::store::attachments::Descriptor::parse).map(|d| d.key))
+            });
+            let Ok(Some(key)) = key else { continue };
+            let sealed = crate::store::attachments::seal(&key, &row.att_id, &row.data).concat();
+            if sealed.len() as i64 != row.blob_size || crate::store::attachments::digest_hex(&sealed) != row.blob_sha {
+                continue;
+            }
+            let uploaded = (|| -> Result<(), StoreError> {
+                let (status, body) = call(transport, Some(token), "blob", &json!({ "action": "put", "blob_id": row.att_id, "size": sealed.len(), "class": "jam", "jam_id": row.jam_id }))?;
+                check(status)?;
+                let url = body.get("url").and_then(Value::as_str).ok_or(StoreError::BadMessage)?;
+                let (put, _) = raw(transport, "PUT", url, Some("application/octet-stream"), sealed)?;
+                check(put)?;
+                let (status, _) = call(transport, Some(token), "blob", &json!({ "action": "commit", "blob_id": row.att_id }))?;
+                check(status)
+            })();
+            match uploaded {
+                Ok(()) => {
+                    let _ = self.with_conn(|conn| jam_store::set_attachment_uploaded(conn, &row.post_id, &row.att_id));
                 }
                 Err(StoreError::Network) => return,
                 Err(_) => continue,

@@ -70,6 +70,16 @@ final class ConversationStore {
     var callPath = NavigationPath()
     /// The jam tab's own navigation path.
     var jamPath = NavigationPath()
+    /// jam (LIME-188): the jams I write, the ones I follow, their posts by jam id, what is still being sent, and when a download was last kicked off.
+    var jamsMine: [JamInfo] = []
+    var jamSubscriptions: [JamInfo] = []
+    var jamPosts: [String: [JamPostInfo]] = [:]
+    var jamProgress: [String: JamSendProgress] = [:]
+    var jamSubscribers: [String: [JamSubscriberInfo]] = [:]
+    var jamLastKick = Date.distantPast
+    /// Demo mode (UI tests): jam pages of other teachers by user id.
+    var demoJamPages: [String: JamPageInfo] = [:]
+    var demoJamAttachments: [String: [JamAttachmentInfo]] = [:]
     /// The call tab's All | Missed segment and its filters (kept while the app runs).
     var callMissedOnly = false
     var callFilter = CallFilter()
@@ -680,6 +690,7 @@ final class ConversationStore {
     func reload() async {
         refreshStorageState()
         refreshStatuses()
+        refreshJams()
         #if DEBUG
         if isDemo { return }
         #endif
@@ -931,6 +942,7 @@ final class ConversationStore {
         isLoaded = true
         refreshStorageState()
         statuses = ["sam": PeerStatus(state: .dnd, until: nil), "lee": PeerStatus(state: .away, until: nil)]
+        demoJamPages = ["sam": JamPageInfo(jamId: "demo-sam-jam", writerId: "sam", title: "Fractions that stick", about: "Short lessons for grades 3 to 5", topics: ["Maths", "Grade 4"], postCount: 2)]
         // Their public profiles, as the server would answer (UI tests and screenshots).
         publicProfiles = [
             "sam": PublicProfile(userId: "sam", displayName: "Sam Park", username: "sam.park", school: "Lincoln Elementary", aboutEmoji: "📚", aboutText: "Fourth grade, loves fractions"),
@@ -1042,6 +1054,11 @@ final class ConversationStore {
             ])]
             path.append("dm:fmt")
         case "notif-banner": demoNotification = "banner"
+        case "jam", "jam-following", "jam-mine":
+            // The jam tab, with nothing yet, with a jam I follow (Sam's, two posts), or with a jam of my own (one post, two subscribers).
+            section = .jam
+            if screen == "jam-following", let page = demoJamPages["sam"] { demoSubscribe(page) }
+            if screen == "jam-mine" { demoMineWithPost() }
         case "group-incoming", "group-incoming-ios-refused":
             loadDemoTeachers()
             groupCalls.demoIncoming(systemRings: screen == "group-incoming")

@@ -1479,7 +1479,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
              DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP INDEX olm_sessions_by_peer; DROP TABLE received_ciphertexts; DROP TABLE emergency_messages; DROP TABLE emergency_settings; DROP TABLE mesh_outbox; DROP TABLE mesh_packets; DROP TABLE mesh_seen; DROP TABLE mesh_uploaded; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
-             DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; PRAGMA user_version = 9;",
+             DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; PRAGMA user_version = 9;",
         )
         .unwrap();
     }
@@ -5102,7 +5102,7 @@ fn catch_up(writer: &Party, subscribers: &[&Party], transport: &Arc<dyn Transpor
 }
 
 fn publish(writer: &Party, jam_id: &str, title: &str, tier: &str) -> String {
-    writer.store.publish_jam_post(jam_id.to_owned(), title.to_owned(), format!("The words of **{title}**"), tier.to_owned(), "[]".to_owned()).unwrap()
+    writer.store.publish_jam_post(jam_id.to_owned(), title.to_owned(), format!("The words of **{title}**"), tier.to_owned(), vec![]).unwrap()
 }
 
 fn new_jam(writer: &Party) -> String {
@@ -5288,7 +5288,7 @@ fn ending_a_jam_stops_posts_and_tells_the_subscribers() {
     assert_eq!(bob.store.jam(jam.clone()).unwrap().unwrap().title, "Renamed");
     assert_eq!(server.state.lock().unwrap().jam_pages.get(&jam).unwrap().1, "Renamed", "the public page followed");
     alice.store.end_jam(jam.clone()).unwrap();
-    assert!(alice.store.publish_jam_post(jam.clone(), "no".into(), "no".into(), "free".into(), "[]".into()).is_err());
+    assert!(alice.store.publish_jam_post(jam.clone(), "no".into(), "no".into(), "free".into(), vec![]).is_err());
     catch_up(&alice, &[&bob], &transport);
     assert!(bob.store.jam(jam.clone()).unwrap().unwrap().ended);
     assert_eq!(jam_posts_of(&bob, &jam), vec!["last"], "they keep what they have");
@@ -5329,7 +5329,7 @@ fn a_post_reaches_a_thousand_subscribers_with_two_devices_each_in_chunks_and_the
             conn.execute("INSERT INTO jam_subscribers (jam_id, user_id, since) VALUES (?1, ?2, ?3)", params![jam, format!("s{n:04}"), n]).unwrap();
         }
     }
-    store.publish_jam_post(jam.clone(), "One post".into(), "To everyone".into(), "free".into(), "[]".into()).unwrap();
+    store.publish_jam_post(jam.clone(), "One post".into(), "To everyone".into(), "free".into(), vec![]).unwrap();
     // Queued for all: the notice for each of the thousand, and the session key for each of the thousand.
     let progress = store.jam_send_progress(jam.clone()).unwrap();
     assert_eq!((progress.pending, progress.total), (2000, 2000), "queued, nothing sent yet");
@@ -5391,4 +5391,55 @@ fn a_notice_goes_by_the_device_cache_and_a_gone_device_is_caught_and_retried_wit
     publish(&alice, &jam, "three", "free");
     deliver(&alice, &transport);
     assert!(!requests_of(&server).iter().any(|r| r == "users-devices"), "the cache was enough: {:?}", requests_of(&server));
+}
+
+#[test]
+fn a_post_with_a_photo_and_a_file_reaches_a_late_subscriber_who_downloads_both_with_no_session() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let jam = new_jam(&alice);
+    let photo: Vec<u8> = (0..2_500_000u32).map(|n| (n % 251) as u8).collect(); // more than two chunks
+    let file = b"Permission slip, version 3".to_vec();
+    let attachment = |bytes: Vec<u8>, name: &str, mime: &str| crate::OutgoingAttachment {
+        bytes, name: name.into(), mime: mime.into(), width: None, height: None, duration_ms: None, thumb: vec![], poster: vec![],
+    };
+    let post = alice
+        .store
+        .publish_jam_post(jam.clone(), "Class photo".into(), "**Look** at this".into(), "free".into(), vec![attachment(photo.clone(), "class.jpg", "image/jpeg"), attachment(file.clone(), "slip.pdf", "application/pdf")])
+        .unwrap();
+    deliver(&alice, &transport);
+    // The writer sees their own post's files at once.
+    let mine = alice.store.list_jam_attachments(post.clone()).unwrap();
+    assert_eq!(mine.iter().map(|a| (a.kind.as_str(), a.name.as_str(), a.available)).collect::<Vec<_>>(), vec![("image", "class.jpg", true), ("file", "slip.pdf", true)]);
+    // They are jam-class blobs on the server (no expiry), the post's too.
+    assert_eq!(server.state.lock().unwrap().jam_blobs.len(), 3, "two files and the post");
+
+    // Bob subscribes after the post: the index names it; he downloads the post and then each file, with no session.
+    join_jam(&alice, &bob, &jam, &transport);
+    let read = bob.store.list_jam_posts(jam.clone()).unwrap();
+    assert_eq!((read[0].title.as_str(), read[0].markdown.as_str(), read[0].state.as_str()), ("Class photo", "**Look** at this", "ready"));
+    let listed = bob.store.list_jam_attachments(post.clone()).unwrap();
+    assert_eq!(listed.len(), 2);
+    assert!(listed.iter().all(|a| !a.available), "not downloaded until asked for");
+    let got_photo = bob.store.jam_attachment_data(transport.clone(), post.clone(), listed[0].attachment_id.clone()).unwrap();
+    let got_file = bob.store.jam_attachment_data(transport.clone(), post.clone(), listed[1].attachment_id.clone()).unwrap();
+    assert_eq!((got_photo == photo, got_file), (true, file));
+    assert!(bob.store.list_jam_attachments(post).unwrap().iter().all(|a| a.available), "kept after the download");
+    assert_eq!(server.state.lock().unwrap().jam_gets_with_token, 0, "nothing carried a session");
+}
+
+#[test]
+fn a_page_is_found_by_its_writer_and_not_once_the_jam_ended() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    assert!(bob.store.fetch_jam_page(transport.clone(), bob.token.clone(), alice.user.clone()).unwrap().is_none(), "no jam yet");
+    let jam = new_jam(&alice);
+    deliver(&alice, &transport);
+    let page = bob.store.fetch_jam_page(transport.clone(), bob.token.clone(), alice.user.clone()).unwrap().unwrap();
+    assert_eq!((page.jam_id.as_str(), page.title.as_str(), page.writer_id.as_str()), (jam.as_str(), "Fractions that stick", "alice"));
+    alice.store.end_jam(jam).unwrap();
+    deliver(&alice, &transport);
+    assert!(bob.store.fetch_jam_page(transport, bob.token.clone(), alice.user.clone()).unwrap().is_none(), "ended: none");
 }

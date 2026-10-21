@@ -368,7 +368,8 @@ pub(crate) fn to_upload(conn: &Connection, limit: usize) -> Result<Vec<Unuploade
     let mut statement = conn
         .prepare(
             "SELECT post_id, jam_id, tier, title, markdown, attachments, created, blob_id, blob_key, blob_sha, blob_size FROM jam_posts
-             WHERE uploaded = 0 AND wire IS NOT NULL AND deleted_at IS NULL ORDER BY created, post_id LIMIT ?1",
+             WHERE uploaded = 0 AND wire IS NOT NULL AND deleted_at IS NULL
+             AND NOT EXISTS (SELECT 1 FROM jam_attachments a WHERE a.post_id = jam_posts.post_id AND a.uploaded = 0) ORDER BY created, post_id LIMIT ?1",
         )
         .map_err(db_err)?;
     let rows = statement
@@ -424,6 +425,63 @@ pub(crate) fn not_uploaded_ids(conn: &Connection, jam_id: &str, subscriber_tier:
         .map_err(db_err)?;
     let rows = statement.query_map(params![jam_id, subscriber_tier], |r| r.get(0)).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
     Ok(rows)
+}
+
+// ---------------------------------------------------------------- the files of a post
+
+pub(crate) struct AttachmentRow {
+    pub post_id: String,
+    pub att_id: String,
+    pub jam_id: String,
+    pub blob_sha: String,
+    pub blob_size: i64,
+    pub data: Vec<u8>,
+}
+
+/// A file the writer attached: kept in plain (to show, and to seal again for the upload) until it is up.
+pub(crate) fn insert_attachment(conn: &Connection, post_id: &str, att_id: &str, jam_id: &str, blob_sha: &str, blob_size: i64, data: &[u8]) -> Result<(), StoreError> {
+    conn.execute(
+        "INSERT INTO jam_attachments (post_id, att_id, jam_id, blob_sha, blob_size, data, uploaded) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0)",
+        params![post_id, att_id, jam_id, blob_sha, blob_size, data],
+    )
+    .map_err(db_err)?;
+    Ok(())
+}
+
+pub(crate) fn attachments_to_upload(conn: &Connection, limit: usize) -> Result<Vec<AttachmentRow>, StoreError> {
+    let mut statement = conn
+        .prepare("SELECT post_id, att_id, jam_id, blob_sha, blob_size, data FROM jam_attachments WHERE uploaded = 0 AND data IS NOT NULL ORDER BY rowid LIMIT ?1")
+        .map_err(db_err)?;
+    let rows = statement
+        .query_map(params![limit as i64], |r| Ok(AttachmentRow { post_id: r.get(0)?, att_id: r.get(1)?, jam_id: r.get(2)?, blob_sha: r.get(3)?, blob_size: r.get(4)?, data: r.get(5)? }))
+        .map_err(db_err)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(db_err)?;
+    Ok(rows)
+}
+
+pub(crate) fn set_attachment_uploaded(conn: &Connection, post_id: &str, att_id: &str) -> Result<(), StoreError> {
+    conn.execute("UPDATE jam_attachments SET uploaded = 1 WHERE post_id = ?1 AND att_id = ?2", params![post_id, att_id]).map_err(db_err)?;
+    Ok(())
+}
+
+/// The plain bytes of a file, if this phone has them (the writer's own, or downloaded before).
+pub(crate) fn attachment_data(conn: &Connection, post_id: &str, att_id: &str) -> Result<Option<Vec<u8>>, StoreError> {
+    Ok(conn
+        .query_row("SELECT data FROM jam_attachments WHERE post_id = ?1 AND att_id = ?2", params![post_id, att_id], |r| r.get::<_, Option<Vec<u8>>>(0))
+        .optional()
+        .map_err(db_err)?
+        .flatten())
+}
+
+pub(crate) fn cache_attachment(conn: &Connection, post_id: &str, att_id: &str, jam_id: &str, blob_sha: &str, blob_size: i64, data: &[u8]) -> Result<(), StoreError> {
+    conn.execute(
+        "INSERT INTO jam_attachments (post_id, att_id, jam_id, blob_sha, blob_size, data, uploaded) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1)
+         ON CONFLICT (post_id, att_id) DO UPDATE SET data = ?6",
+        params![post_id, att_id, jam_id, blob_sha, blob_size, data],
+    )
+    .map_err(db_err)?;
+    Ok(())
 }
 
 // ---------------------------------------------------------------- the public page on the server

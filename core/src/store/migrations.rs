@@ -670,6 +670,18 @@ const MIGRATIONS: &[&str] = &[
          next_at   INTEGER NOT NULL DEFAULT 0
      );
      DROP TABLE jam_sessions;",
+    // 42 (LIME-188): the files of a jam post. Each is one blob on the server (a jam-class blob, no expiry) holding its sealed chunks; the writer keeps
+    // the plain bytes to show and to seal again for the upload, a subscriber keeps them once downloaded (`data`).
+    "CREATE TABLE jam_attachments (
+         post_id   TEXT NOT NULL,
+         att_id    TEXT NOT NULL,
+         jam_id    TEXT NOT NULL,
+         blob_sha  TEXT NOT NULL,
+         blob_size INTEGER NOT NULL,
+         data      BLOB,
+         uploaded  INTEGER NOT NULL DEFAULT 1,
+         PRIMARY KEY (post_id, att_id)
+     );",
 ];
 
 /// The schema version this build writes.

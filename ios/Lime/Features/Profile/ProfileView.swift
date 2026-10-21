@@ -97,6 +97,7 @@ struct ProfileView: View {
             VStack(spacing: 18) {
                 top
                 if route.isMe { myActions } else if accepted { actions }
+                JamProfileRow(userID: route.userID, isMe: route.isMe)
                 if available.count > 1 {
                     Picker("Section", selection: $section) {
                         ForEach(available, id: \.self) { Text($0.rawValue).tag($0) }

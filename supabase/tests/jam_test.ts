@@ -182,3 +182,17 @@ Deno.test("a fan-out send (50 devices or more) has its own budget; small sends k
     }
   });
 });
+
+Deno.test("jam-page by_writer: a signed-in teacher finds the live page, none once it ended, nothing without a session", opts, async () => {
+  await withUsers(2, async ([writer, other]) => {
+    assertEquals((await call("jam-page", other.token, { action: "by_writer", writer_id: writer.id })).body.jam, null, "no jam yet");
+    const jamId = crypto.randomUUID();
+    assertEquals((await call("jam-page", writer.token, { action: "set", jam_id: jamId, title: "Fractions", about: "x", topics: ["Maths"], post_count: 1 })).status, 200);
+    const found = await call("jam-page", other.token, { action: "by_writer", writer_id: writer.id });
+    assertEquals([found.status, found.body.jam.jam_id, found.body.jam.title, found.body.jam.topics], [200, jamId, "Fractions", ["Maths"]]);
+    assertEquals((await call("jam-page", null, { action: "by_writer", writer_id: writer.id })).status, 401, "a session is needed");
+    assertEquals((await call("jam-page", other.token, { action: "by_writer", writer_id: "nope" })).status, 400);
+    assertEquals((await call("jam-page", writer.token, { action: "end", jam_id: jamId })).status, 200);
+    assertEquals((await call("jam-page", other.token, { action: "by_writer", writer_id: writer.id })).body.jam, null, "ended: none");
+  });
+});
