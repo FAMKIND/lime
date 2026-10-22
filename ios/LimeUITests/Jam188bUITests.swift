@@ -130,6 +130,8 @@ final class Jam188bUITests: LimeUITestCase {
         app.buttons["conversation-row-dm:sam"].tap()
         any(app, "chat-title").tap()
         XCTAssertTrue(any(app, "profile-screen").waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["profile-tab-Posts"].waitForExistence(timeout: 8))
+        app.buttons["profile-tab-Posts"].tap()   // the jam page is the Posts section (LIME-188d)
         XCTAssertTrue(app.staticTexts["profile-jam-row"].waitForExistence(timeout: 8))
         XCTAssertEqual(app.staticTexts["profile-jam-row"].label, "Fractions that stick")
         XCTAssertEqual(app.staticTexts["profile-jam-subscribers"].label, "12 subscribers")
@@ -143,6 +145,8 @@ final class Jam188bUITests: LimeUITestCase {
 
     func testMyProfileShowsMyPostsWhoFollowsAndEditJamPageAndTheWriterCanRemoveSomeone() {
         let app = launch("jam-mine-profile")
+        XCTAssertTrue(app.buttons["profile-tab-Posts"].waitForExistence(timeout: 10))
+        app.buttons["profile-tab-Posts"].tap()
         XCTAssertTrue(app.buttons["jam-edit-page"].waitForExistence(timeout: 10))
         XCTAssertEqual(app.staticTexts["profile-jam-subscribers"].label, "2 subscribers")
         XCTAssertFalse(app.buttons["profile-jam-subscribe"].exists, "no Subscribe on my own page")

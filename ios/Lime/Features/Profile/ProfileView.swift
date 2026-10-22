@@ -53,7 +53,11 @@ struct ProfileView: View {
     @State private var labelling = false
     @State private var labelText = ""
 
-    enum Section: String, CaseIterable { case info = "Info", shared = "Shared", calls = "Calls" }
+    /// Their jam's page, when they have one (LIME-188d: Posts is a section only then).
+    @State private var jamPage: JamPageInfo?
+
+    /// The sections, in order (LIME-188d). Activity, Comments and Replies wait for LIME-189 and say so calmly.
+    enum Section: String, CaseIterable { case info = "Info", activity = "Activity", posts = "Posts", comments = "Comments", replies = "Replies", shared = "Shared", calls = "Calls" }
 
     private var conversation: Conversation? { store.conversation("dm:\(route.userID)") }
     private var person: Person {
@@ -85,7 +89,9 @@ struct ProfileView: View {
         return Array(CallLog.shared.records(with: route.userID).prefix(10))
     }
     private var sections: [Section] {
-        var list: [Section] = [.info]
+        var list: [Section] = [.info, .activity]
+        if jamPage != nil { list.append(.posts) }
+        list.append(contentsOf: [.comments, .replies])
         if !sharedMedia.isEmpty || !sharedFiles.isEmpty || !sharedLinks.isEmpty { list.append(.shared) }
         if !calls.isEmpty { list.append(.calls) }
         return list
@@ -97,16 +103,13 @@ struct ProfileView: View {
             VStack(spacing: 18) {
                 top
                 if route.isMe { myActions } else if accepted { actions }
-                JamProfileSection(userID: route.userID, isMe: route.isMe)
-                if available.count > 1 {
-                    Picker("Section", selection: $section) {
-                        ForEach(available, id: \.self) { Text($0.rawValue).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .accessibilityIdentifier("profile-sections")
-                }
+                ProfileTabs(sections: available, selection: $section)
                 switch section {
                 case .info: info
+                case .activity: emptySection("Nothing here yet.", id: "activity")
+                case .posts: JamProfileSection(userID: route.userID, isMe: route.isMe, page: jamPage)
+                case .comments: emptySection("Nothing here yet.", id: "comments")
+                case .replies: emptySection("Nothing here yet.", id: "replies")
                 case .shared: shared
                 case .calls: callsList
                 }
@@ -128,6 +131,8 @@ struct ProfileView: View {
         .toolbar(.hidden, for: .tabBar)
         .toolbar { toolbarItems }
         .task { await store.loadProfile(route.userID) }
+        .task(id: route.userID) { await loadJam() }
+        .onChange(of: store.jamsMine) { _, _ in if route.isMe { Task { await loadJam() } } }
         .onAppear { if route.callIDs != nil, available.contains(.calls) { section = .calls } }
         .sheet(isPresented: $labelling) {
             LabelSheet(name: displayName, text: $labelText) { saved in
@@ -180,6 +185,19 @@ struct ProfileView: View {
                     .padding(.bottom, 30).accessibilityIdentifier("profile-copied")
             }
         }
+    }
+
+    // MARK: Sections
+
+    /// What a section that waits for LIME-189 shows.
+    private func emptySection(_ line: String, id: String) -> some View {
+        Text(line).font(Theme.body).foregroundStyle(Theme.textSecondary).frame(maxWidth: .infinity).padding(.top, 24)
+            .accessibilityIdentifier("profile-empty-\(id)")
+    }
+
+    private func loadJam() async {
+        if route.isMe { jamPage = store.jamsMine.first.map { JamPageInfo(jamId: $0.jamId, writerId: $0.writer, title: $0.title, about: $0.about, topics: $0.topics, postCount: $0.postCount, subscriberCount: $0.subscriberCount) } }
+        else { jamPage = await store.jamPage(of: route.userID) }
     }
 
     // MARK: The top
@@ -526,5 +544,38 @@ struct SharedListView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
         .accessibilityIdentifier("shared-list")
+    }
+}
+
+
+/// The sections of a profile as one row of tabs (LIME-188d): it scrolls sideways when it is wider than the screen, and the chosen tab sits in a
+/// Liquid Glass capsule. For VoiceOver each reads "Posts, tab, 3 of 7".
+struct ProfileTabs: View {
+    let sections: [ProfileView.Section]
+    @Binding var selection: ProfileView.Section
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    ForEach(Array(sections.enumerated()), id: \.element) { index, section in
+                        let on = selection == section
+                        Button { selection = section } label: {
+                            Text(section.rawValue).font(Theme.font(.subheadline, weight: on ? .semibold : .regular)).foregroundStyle(on ? Theme.text : Theme.textSecondary)
+                                .padding(.horizontal, 14).frame(minHeight: 44)
+                                .background { if on { Capsule().fill(.clear).limeGlass(in: Capsule()) } }
+                        }
+                        .buttonStyle(.plain).id(section)
+                        .accessibilityLabel("\(section.rawValue), tab, \(index + 1) of \(sections.count)")
+                        .accessibilityAddTraits(on ? [.isSelected] : [])
+                        .accessibilityIdentifier("profile-tab-\(section.rawValue)")
+                    }
+                }
+                .padding(4)
+            }
+            .onChange(of: selection) { _, now in withAnimation { proxy.scrollTo(now, anchor: .center) } }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("profile-sections")
     }
 }

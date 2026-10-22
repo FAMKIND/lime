@@ -409,29 +409,39 @@ struct JamSubscribersView: View {
 struct JamProfileSection: View {
     let userID: String
     let isMe: Bool
+    /// Their jam's page, loaded by the profile (which needs to know whether there is a Posts section).
+    let page: JamPageInfo?
     @Environment(ConversationStore.self) private var store
-    @State private var page: JamPageInfo?
+    @State private var kind: PostKind = .all
     @State private var reading: JamPostRoute?
     @State private var editing: JamInfo?
     @State private var viewingSubscribers = false
     @State private var confirmingEnd = false
 
     var body: some View {
-        ZStack {
-            // Something always in the tree, so the lookup below runs even while there is nothing to show.
-            Color.clear.frame(height: 0).accessibilityHidden(true)
+        Group {
             if let page { content(page) }
         }
-        .task(id: userID) { await load() }
-        .onChange(of: store.jamsMine) { _, _ in if isMe { Task { await load() } } }
         .sheet(item: $reading) { route in NavigationStack { JamPostView(postID: route.postID).toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { reading = nil } } } } }
         .sheet(item: $editing) { JamDetailsSheet(editing: $0) }
         .sheet(isPresented: $viewingSubscribers) { NavigationStack { JamSubscribersView(jamID: page?.jamId ?? "") } }
     }
 
-    private func load() async {
-        if isMe { page = store.jamsMine.first.map { JamPageInfo(jamId: $0.jamId, writerId: $0.writer, title: $0.title, about: $0.about, topics: $0.topics, postCount: $0.postCount, subscriberCount: $0.subscriberCount) } }
-        else { page = await store.jamPage(of: userID) }
+    /// The kinds a profile's Posts can be narrowed to (LIME-188d).
+    enum PostKind: String, CaseIterable, Identifiable {
+        case all = "All", articles = "Articles", audio = "Audio", video = "Video", quick = "Quick"
+        var id: String { rawValue }
+    }
+
+    private func matches(_ post: JamPostInfo) -> Bool {
+        switch kind {
+        case .all: return true
+        case .articles: return post.kind == "article"
+        case .quick: return post.kind == "quick"
+        case .audio, .video:
+            let files = store.jamAttachments(post.postId)
+            return post.kind == "record" && files.contains { $0.kind == (kind == .audio ? "audio" : "video") }
+        }
     }
 
     @ViewBuilder
@@ -461,13 +471,13 @@ struct JamProfileSection: View {
                 .buttonStyle(.plain).accessibilityIdentifier("profile-jam-subscribe")
                 .accessibilityLabel(following ? "Subscribed. Tap to unsubscribe." : "Subscribe to \(page.title)")
             }
-            Text("Posts").font(Theme.font(.headline, weight: .semibold)).foregroundStyle(Theme.text).accessibilityAddTraits(.isHeader)
             if isMe || following {
-                if posts.isEmpty {
+                filterRow
+                if posts.filter(matches).isEmpty {
                     Text(isMe ? "Your posts show here." : "Nothing here yet.").font(Theme.body).foregroundStyle(Theme.textSecondary)
                 }
                 VStack(spacing: 0) {
-                    ForEach(posts, id: \.postId) { post in
+                    ForEach(posts.filter(matches), id: \.postId) { post in
                         JamPostCard(post: post, showsWriter: false) { reading = JamPostRoute(postID: $0) }
                         Divider().overlay(Theme.hairline)
                     }
@@ -479,11 +489,27 @@ struct JamProfileSection: View {
         }
         .padding(.top, 6)
         .confirmSheet("End this jam?", isPresented: $confirmingEnd) {
-            Button("End jam", role: .destructive) { Task { await store.endJam(page.jamId); await load() } }.accessibilityIdentifier("jam-end-confirm")
+            Button("End jam", role: .destructive) { Task { await store.endJam(page.jamId);  } }.accessibilityIdentifier("jam-end-confirm")
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Subscribers keep what they have.")
         }
+    }
+
+    private var filterRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(PostKind.allCases) { option in
+                    Button { kind = option } label: {
+                        Text(option.rawValue).font(Theme.secondary).foregroundStyle(Theme.text).padding(.horizontal, 14).frame(minHeight: 44)
+                            .background(kind == option ? Theme.surface : Color.clear, in: Capsule())
+                            .overlay(Capsule().strokeBorder(Theme.hairline, lineWidth: kind == option ? 0 : 1))
+                    }
+                    .buttonStyle(.plain).accessibilityAddTraits(kind == option ? .isSelected : []).accessibilityIdentifier("profile-posts-kind-\(option.rawValue)")
+                }
+            }
+        }
+        .accessibilityIdentifier("profile-posts-kinds")
     }
 
     private func pill(_ label: String, id: String, action: @escaping () -> Void) -> some View {

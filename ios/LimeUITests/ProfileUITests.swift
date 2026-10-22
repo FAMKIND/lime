@@ -41,10 +41,10 @@ final class ProfileUITests: XCTestCase {
         app.buttons["conversation-row-dm:sam"].tap()
         any(app, "chat-title").tap()
         XCTAssertTrue(any(app, "profile-screen").waitForExistence(timeout: 8))
-        app.segmentedControls.firstMatch.buttons["Shared"].tap()
+        app.buttons["profile-tab-Shared"].tap()
         XCTAssertTrue(any(app, "profile-links").waitForExistence(timeout: 5), "the link Sam sent")
         XCTAssertTrue(any(app, "profile-files").exists, "and the file")
-        app.segmentedControls.firstMatch.buttons["Info"].tap()
+        app.buttons["profile-tab-Info"].tap()
         app.buttons["profile-handle"].tap()
         XCTAssertTrue(any(app, "profile-copied").waitForExistence(timeout: 3), "Copied")
     }
@@ -166,7 +166,7 @@ final class ProfileUITests: XCTestCase {
         XCTAssertTrue(any(app, "chat-title").waitForExistence(timeout: 10))
         any(app, "chat-title").tap()
         XCTAssertTrue(any(app, "profile-screen").waitForExistence(timeout: 8))
-        app.segmentedControls.firstMatch.buttons["Shared"].tap()
+        app.buttons["profile-tab-Shared"].tap()
         let cell = app.images.matching(NSPredicate(format: "label == 'Photo' OR label == 'Video'")).firstMatch
         XCTAssertTrue(cell.waitForExistence(timeout: 5), "a media cell")
         cell.tap()
