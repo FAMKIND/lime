@@ -31,6 +31,7 @@ enum LinkPreviewMaker {
         let site = host(of: url)
         var jpeg = Data(), size = CGSize.zero
         let source = metadata.imageProvider ?? metadata.iconProvider
+        CallDiagnostics.shared.log("link preview fetched: title \(title.count) chars, image provider \(metadata.imageProvider != nil ? "yes" : "no"), icon provider \(metadata.iconProvider != nil ? "yes" : "no")")
         if let source, let image = await load(source) {
             let scaled = scaled(image, maxWidth: 640)
             size = scaled.size
@@ -46,11 +47,32 @@ enum LinkPreviewMaker {
         return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 
+    /// The page's picture, if it arrives within five seconds: a picture that never comes must not keep the card from showing (the card then has the
+    /// title and the site). A provider that never calls back was the likely reason a link in a chat showed no card at all.
     @MainActor
     private static func load(_ provider: NSItemProvider) async -> UIImage? {
         await withCheckedContinuation { continuation in
-            guard provider.canLoadObject(ofClass: UIImage.self) else { continuation.resume(returning: nil); return }
-            provider.loadObject(ofClass: UIImage.self) { object, _ in continuation.resume(returning: object as? UIImage) }
+            let once = Once(continuation)
+            guard provider.canLoadObject(ofClass: UIImage.self) else { CallDiagnostics.shared.log("link preview: the picture is not an image"); once.resume(nil); return }
+            provider.loadObject(ofClass: UIImage.self) { object, _ in _ = once.resume(object as? UIImage) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                if once.resume(nil) { CallDiagnostics.shared.log("link preview: the picture took too long, going without it") }
+            }
+        }
+    }
+
+    private final class Once: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<UIImage?, Never>?
+        init(_ continuation: CheckedContinuation<UIImage?, Never>) { self.continuation = continuation }
+        /// True when this call was the one that resumed it.
+        @discardableResult
+        func resume(_ image: UIImage?) -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            guard let continuation else { return false }
+            continuation.resume(returning: image)
+            self.continuation = nil
+            return true
         }
     }
 
