@@ -158,7 +158,7 @@ struct JamPostCard: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel([post.title, post.subtitle, String(post.plain.prefix(80))].filter { !$0.isEmpty }.joined(separator: ", ")).accessibilityHint("Opens the article")
                     .accessibilityIdentifier("jam-post-\(post.postId)")
-            } else {
+            } else if !isAudioRecord {
             Button { openPost() } label: { content.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle()) }
                 .buttonStyle(.plain)
                 .accessibilityElement(children: .combine)
@@ -170,6 +170,9 @@ struct JamPostCard: View {
         }
         .padding(.horizontal, 20).padding(.vertical, 14)
     }
+
+    /// An audio recording's card carries its own title and subtitle (LIME-188u).
+    private var isAudioRecord: Bool { post.kind == "record" && post.state == "ready" && store.jamAttachments(post.postId).contains { $0.kind == "audio" } }
 
     private func openPost() { if let open { open(post.postId) } else { store.jamPath.append(JamPostRoute(postID: post.postId)) } }
 

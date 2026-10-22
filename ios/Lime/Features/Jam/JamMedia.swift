@@ -2,10 +2,10 @@ import AVFoundation
 import AVKit
 import SwiftUI
 
-/// Jam media, one look (LIME-188j): corner radius 24, a portrait (4:5) or a landscape (16:9) frame, 8 pt between items.
+/// Jam media, one look (LIME-188j): corner radius 24, a portrait (4:5) or a landscape (16:9) frame, 12 pt between items.
 enum JamMedia {
     static let radius: CGFloat = 24
-    static let gap: CGFloat = 8
+    static let gap: CGFloat = 12
     static let portrait: CGFloat = 4.0 / 5
     static let landscape: CGFloat = 16.0 / 9
 

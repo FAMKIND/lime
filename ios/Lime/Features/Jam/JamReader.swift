@@ -105,7 +105,7 @@ struct JamAttachmentsView: View {
                 let file = entry.element
                 switch file.kind {
                 case "video": JamVideoCard(postID: postID, file: file, captionFile: JamCaptions.file(for: entry.offset, in: all))
-                case "audio": JamAudioCard(postID: postID, file: file, coverFile: cover, captionFile: JamCaptions.file(for: entry.offset, in: all))
+                case "audio": JamAudioCard(postID: postID, file: file, coverFile: cover, captionFile: JamCaptions.file(for: entry.offset, in: all), showsWords: compact)
                 default: JamFileCard(postID: postID, file: file)
                 }
             }
@@ -151,9 +151,9 @@ struct JamPhotoRow: View {
         let many = files.count > 1
         // One standard frame for the row (the first picture's nearer shape), so the items line up.
         let ratio = JamMedia.ratio(width: files.first?.width, height: files.first?.height)
-        let narrow: CGFloat = compact ? 0.8 : 1
+        // Bigger (LIME-188u): an item is the column less a peek of the next, the row runs to the screen's right edge, 12 pt between.
         let columnWidth = UIScreen.main.bounds.width - 40
-        let tileWidth = (many ? columnWidth * 0.86 : columnWidth) * narrow
+        let tileWidth = many ? columnWidth - 28 : columnWidth
         let height = tileWidth / ratio
         GeometryReader { geo in
             ScrollView(.horizontal, showsIndicators: false) {
@@ -170,6 +170,7 @@ struct JamPhotoRow: View {
             .scrollPosition(id: $current)
         }
         .frame(height: height)
+        .padding(.trailing, many ? -20 : 0)
         .overlay(alignment: .topTrailing) {
             if many {
                 Text("\(index + 1) / \(files.count)").font(Theme.font(.caption, weight: .semibold)).foregroundStyle(.white)

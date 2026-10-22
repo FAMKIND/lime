@@ -49,7 +49,7 @@ final class Jam188tUITests: LimeUITestCase {
         // Media: Audio shows only the recording with audio.
         app.buttons["jam-filter-button"].tap()
         app.buttons["Audio"].tap()
-        XCTAssertTrue(app.buttons["jam-post-demo-post-4"].waitForExistence(timeout: 5), "the audio recording")
+        XCTAssertTrue(any(app, "jam-audio-card-demo-audio-1").waitForExistence(timeout: 5), "the audio recording")
         XCTAssertFalse(app.buttons["jam-post-demo-post-2"].exists)
         XCTAssertFalse(app.buttons["jam-post-demo-post-3"].exists)
         XCTAssertTrue(any(app, "jam-filter-badge").exists || app.buttons["jam-filter-button"].label.contains("1"), "the button counts the filters")

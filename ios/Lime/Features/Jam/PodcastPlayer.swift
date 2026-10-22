@@ -67,6 +67,8 @@ final class PodcastController {
             defer { loading = false }
             guard let bytes = await data() else { failed = true; return }
             guard prepare(bytes) else { failed = true; return }
+            // A position chosen on the card before anything was loaded: start from there.
+            if position > 0.5 { player?.seek(to: CMTime(seconds: position, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero, completionHandler: { _ in }) }
         }
         failed = false
         if let other = Self.current, other !== self { other.pause() }
@@ -266,14 +268,26 @@ struct PodcastBar: View {
     }
 
     private var scrubber: some View {
+        WaveformScrubber(controller: controller, waveform: waveform, id: id, height: 48)
+    }
+}
+
+/// The waveform of a whole recording with the played part solid: tap or drag to scrub. One adjustable element for VoiceOver.
+struct WaveformScrubber: View {
+    let controller: PodcastController
+    let waveform: Data
+    var id = ""
+    var height: CGFloat = 48
+
+    var body: some View {
         GeometryReader { geo in
             Canvas { context, size in
                 let values: [UInt8] = waveform.isEmpty ? [UInt8](repeating: 120, count: 64) : [UInt8](waveform)
                 let gap: CGFloat = 2
                 let width = max(1.5, (size.width - gap * CGFloat(values.count - 1)) / CGFloat(values.count))
                 for (index, value) in values.enumerated() {
-                    let height = waveform.isEmpty ? 4 : max(4, size.height * CGFloat(value) / 255)
-                    let rect = CGRect(x: CGFloat(index) * (width + gap), y: (size.height - height) / 2, width: width, height: height)
+                    let bar = waveform.isEmpty ? 4 : max(4, size.height * CGFloat(value) / 255)
+                    let rect = CGRect(x: CGFloat(index) * (width + gap), y: (size.height - bar) / 2, width: width, height: bar)
                     let played = (Double(index) + 0.5) / Double(values.count) <= controller.fraction
                     context.fill(Path(roundedRect: rect, cornerRadius: width / 2), with: .color(played ? Theme.text : Theme.text.opacity(0.28)))
                 }
@@ -283,7 +297,7 @@ struct PodcastBar: View {
                 controller.seek(to: Double(min(max(value.location.x / max(geo.size.width, 1), 0), 1)) * controller.duration)
             })
         }
-        .frame(height: 48)
+        .frame(height: height)
         .accessibilityElement()
         .accessibilityLabel("Position")
         .accessibilityValue("\(PodcastFormat.spoken(controller.position)) of \(PodcastFormat.spoken(controller.duration))")

@@ -33,13 +33,16 @@ final class NowPlaying {
     }
 }
 
-/// An audio recording as a card (LIME-188k): its cover in the standard frame, a play button and the length. No waveform here (that is in the
-/// now-playing screen). Play starts it in the mini player; the expand button opens the now-playing screen.
+/// An audio recording as a card (LIME-188u, redoing 188k's): inside a rounded surface, **the cover as a 96 pt rounded square on the left; the title and
+/// subtitle on the right; under them a compact player**: play or pause (the one lime control), the waveform (tap or drag to scrub), mute, and the time
+/// left. At the largest text sizes the player drops under the cover and the words. The cover or the title opens now playing.
 struct JamAudioCard: View {
     let postID: String
     let file: JamAttachmentInfo
     var coverFile: JamAttachmentInfo? = nil
     var captionFile: JamAttachmentInfo? = nil
+    /// The reader has the title and subtitle in its own head: the card then shows the player alone beside the cover.
+    var showsWords = true
     @Environment(ConversationStore.self) private var store
     @State private var controller: PodcastController?
     @State private var cover: UIImage?
@@ -49,37 +52,25 @@ struct JamAudioCard: View {
         let controller = self.controller ?? makeController()
         let post = store.jamPost(postID)
         let writer = store.teacher(post?.author ?? "")
-        let playing = NowPlaying.shared.item?.controller === controller && controller.isPlaying
-        ZStack {
-            CoverArt(image: cover, person: writer)
-            VStack {
-                HStack {
-                    Spacer()
-                    Button { open(controller) } label: {
-                        Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(.white).frame(width: 36, height: 36).background(.black.opacity(0.45), in: Circle()).frame(width: 44, height: 44)
-                    }
-                    .accessibilityLabel("Open player").accessibilityIdentifier("jam-audio-expand")
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 14) {
+                coverButton(controller, writer: writer)
+                VStack(alignment: .leading, spacing: 8) {
+                    words(post, controller)
+                    player(controller)
                 }
-                Spacer()
-                HStack(spacing: 10) {
-                    Button { play(controller) } label: {
-                        ZStack {
-                            Circle().fill(Theme.accent).frame(width: 52, height: 52)
-                            Image(systemName: playing ? "pause.fill" : "play.fill").font(.system(size: 20)).foregroundStyle(Theme.accentInk)
-                        }
-                        .frame(width: 56, height: 56)
-                    }
-                    .accessibilityLabel(playing ? "Pause" : "Play").accessibilityIdentifier("jam-audio-play-\(file.attachmentId)")
-                    Text(VoiceFormat.clock(Double(file.durationMs ?? 0) / 1000)).font(Theme.font(.subheadline, weight: .semibold).monospacedDigit()).foregroundStyle(.white)
-                        .padding(.horizontal, 10).padding(.vertical, 4).background(.black.opacity(0.45), in: Capsule())
-                        .accessibilityLabel("Length \(PodcastFormat.spoken(Double(file.durationMs ?? 0) / 1000))").accessibilityIdentifier("jam-audio-length")
-                    Spacer()
-                }
+                .frame(minWidth: 200, maxWidth: .infinity, alignment: .leading)
             }
-            .padding(10)
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 14) {
+                    coverButton(controller, writer: writer)
+                    words(post, controller)
+                }
+                player(controller)
+            }
         }
-        .aspectRatio(JamMedia.landscape, contentMode: .fit)
-        .jamMediaClip()
+        .padding(14)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: JamMedia.radius, style: .continuous))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("jam-audio-card-\(file.attachmentId)")
         .onAppear { if self.controller == nil { self.controller = controller } }
@@ -90,6 +81,53 @@ struct JamAudioCard: View {
         .task(id: captionFile?.attachmentId) {
             guard let captionFile, let data = await store.jamAttachmentData(postID, captionFile.attachmentId), let text = String(data: data, encoding: .utf8) else { return }
             cues = parseCaptions(vtt: text)
+        }
+    }
+
+    private func coverButton(_ controller: PodcastController, writer: Person) -> some View {
+        Button { open(controller) } label: {
+            CoverArt(image: cover, person: writer).frame(width: 96, height: 96).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(.plain).accessibilityLabel("Open player").accessibilityIdentifier("jam-audio-expand")
+    }
+
+    @ViewBuilder
+    private func words(_ post: JamPostInfo?, _ controller: PodcastController) -> some View {
+        if showsWords, let post {
+            Button { open(controller) } label: {
+                VStack(alignment: .leading, spacing: 4) {
+                    if !post.title.isEmpty { Text(post.title).font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(2).multilineTextAlignment(.leading) }
+                    if !post.subtitle.isEmpty { Text(post.subtitle).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(2).multilineTextAlignment(.leading) }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).accessibilityHint("Opens the player").accessibilityIdentifier("jam-audio-title")
+        }
+    }
+
+    /// Play or pause, the waveform to scrub, mute, and the time left.
+    private func player(_ controller: PodcastController) -> some View {
+        let playing = NowPlaying.shared.item?.controller === controller && controller.isPlaying
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Button { play(controller) } label: {
+                    ZStack {
+                        Circle().fill(Theme.accent).frame(width: 36, height: 36)
+                        Image(systemName: playing ? "pause.fill" : "play.fill").font(.system(size: 14)).foregroundStyle(Theme.accentInk)
+                    }
+                    .frame(width: 44, height: 44)
+                }
+                .accessibilityLabel(playing ? "Pause" : "Play").accessibilityIdentifier("jam-audio-play-\(file.attachmentId)")
+                WaveformScrubber(controller: controller, waveform: file.thumb, id: file.attachmentId, height: 32)
+                Button { controller.muted.toggle() } label: {
+                    Image(systemName: controller.muted ? "speaker.slash.fill" : "speaker.wave.2.fill").font(.system(size: 15)).foregroundStyle(Theme.text).frame(width: 44, height: 44)
+                }
+                .accessibilityLabel(controller.muted ? "Unmute" : "Mute").accessibilityIdentifier("jam-audio-mute-\(file.attachmentId)")
+            }
+            Text(VoiceFormat.clock(max(controller.duration - controller.position, 0))).font(Theme.caption.monospacedDigit()).foregroundStyle(Theme.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .trailing).padding(.trailing, 50)
+                .accessibilityLabel("Length \(PodcastFormat.spoken(Double(file.durationMs ?? 0) / 1000))").accessibilityIdentifier("jam-audio-length")
         }
     }
 
