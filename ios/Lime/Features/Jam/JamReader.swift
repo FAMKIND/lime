@@ -408,6 +408,10 @@ struct JamSubscribersView: View {
 /// are readable once you subscribe; before that the page says so (the server's page holds no post text). On your own profile: your posts, who follows,
 /// and Edit jam page. The server learns that this account looked at the page, as it does for a profile.
 struct JamProfileSection: View {
+    /// What the section lists (LIME-188v): with no jam tab, everything and the jam's head; with one, **Posts** is the person's own and **the jam's tab**
+    /// has the head and the posts shown as the jam.
+    enum Scope { case all, own, jam }
+    var scope: Scope = .all
     let userID: String
     let isMe: Bool
     /// Their jam's page, loaded by the profile (which needs to know whether there is a Posts section).
@@ -431,12 +435,19 @@ struct JamProfileSection: View {
 
     private func matches(_ post: JamPostInfo) -> Bool { store.jamPostMatches(post, articles: articles, filter: filter) }
 
+    private func inScope(_ post: JamPostInfo) -> Bool {
+        switch scope { case .all: true; case .own: post.displayAs != "jam"; case .jam: post.displayAs == "jam" }
+    }
+
     @ViewBuilder
     private func content(_ page: JamPageInfo) -> some View {
         let following = store.isFollowing(page.jamId)
         // On my own page: my jam's posts and the ones I am credited on.
-        let posts = isMe ? (store.posts(of: page.jamId) + store.coauthoredPosts.filter { c in !store.posts(of: page.jamId).contains { $0.postId == c.postId } }).sorted { $0.created > $1.created } : store.posts(of: page.jamId)
+        let all = isMe ? (store.posts(of: page.jamId) + store.coauthoredPosts.filter { c in !store.posts(of: page.jamId).contains { $0.postId == c.postId } }).sorted { $0.created > $1.created } : store.posts(of: page.jamId)
+        let posts = all.filter(inScope)
+        let head = scope != .own
         VStack(alignment: .leading, spacing: 14) {
+            if head {
             VStack(alignment: .leading, spacing: 4) {
                 Text(page.title).font(Theme.font(.title3, weight: .bold)).foregroundStyle(Theme.text).accessibilityAddTraits(.isHeader).accessibilityIdentifier("profile-jam-row")
                 if !page.topics.isEmpty { Text(page.topics.joined(separator: " \u{00B7} ")).font(Theme.secondary).foregroundStyle(Theme.textSecondary) }
@@ -444,7 +455,8 @@ struct JamProfileSection: View {
                     .accessibilityIdentifier("profile-jam-subscribers")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            if isMe {
+            }
+            if isMe && head {
                 HStack(spacing: 10) {
                     pill("Edit jam page", id: "jam-edit-page") { editing = store.jamsMine.first }
                     pill("Subscribers", id: "jam-subscribers") { store.loadJamSubscribers(page.jamId); viewingSubscribers = true }

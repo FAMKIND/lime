@@ -57,7 +57,7 @@ struct ProfileView: View {
     @State private var jamPage: JamPageInfo?
 
     /// The sections, in order (LIME-188d). Activity, Comments and Replies wait for LIME-189 and say so calmly.
-    enum Section: String, CaseIterable { case info = "Info", activity = "Activity", posts = "Posts", comments = "Comments", replies = "Replies", shared = "Shared", calls = "Calls" }
+    enum Section: String, CaseIterable { case info = "Info", activity = "Activity", jam = "Jam", posts = "Posts", comments = "Comments", replies = "Replies", shared = "Shared", calls = "Calls" }
 
     private var conversation: Conversation? { store.conversation("dm:\(route.userID)") }
     private var person: Person {
@@ -88,8 +88,17 @@ struct ProfileView: View {
         if let ids = route.callIDs { return CallLog.shared.records.filter { ids.contains($0.id) } }
         return Array(CallLog.shared.records(with: route.userID).prefix(10))
     }
+    /// A tab named after their jam (LIME-188v), after Activity, when the person has posted **as the jam** at least once, or has given the jam a title
+    /// that is not their own name (a jam made on a first post carries the person's name).
+    private var showsJamTab: Bool {
+        guard let page = jamPage else { return false }
+        let postedAsJam = store.posts(of: page.jamId).contains { $0.displayAs == "jam" }
+        let own = displayName.trimmingCharacters(in: .whitespaces).lowercased()
+        return postedAsJam || (!page.title.isEmpty && page.title.trimmingCharacters(in: .whitespaces).lowercased() != own)
+    }
     private var sections: [Section] {
         var list: [Section] = [.info, .activity]
+        if showsJamTab { list.append(.jam) }
         if jamPage != nil { list.append(.posts) }
         list.append(contentsOf: [.comments, .replies])
         if !sharedMedia.isEmpty || !sharedFiles.isEmpty || !sharedLinks.isEmpty { list.append(.shared) }
@@ -103,11 +112,12 @@ struct ProfileView: View {
             VStack(spacing: 18) {
                 top
                 if route.isMe { myActions } else if accepted || jamPage != nil { actions }
-                ProfileTabs(sections: available, selection: $section)
+                ProfileTabs(sections: available, selection: $section, jamTitle: jamPage?.title)
                 switch section {
                 case .info: info
                 case .activity: emptySection("Nothing here yet.", id: "activity")
-                case .posts: JamProfileSection(userID: route.userID, isMe: route.isMe, page: jamPage)
+                case .jam: JamProfileSection(scope: .jam, userID: route.userID, isMe: route.isMe, page: jamPage)
+                case .posts: JamProfileSection(scope: showsJamTab ? .own : .all, userID: route.userID, isMe: route.isMe, page: jamPage)
                 case .comments: emptySection("Nothing here yet.", id: "comments")
                 case .replies: emptySection("Nothing here yet.", id: "replies")
                 case .shared: shared
@@ -573,6 +583,10 @@ struct SharedListView: View {
 struct ProfileTabs: View {
     let sections: [ProfileView.Section]
     @Binding var selection: ProfileView.Section
+    /// The jam's name, for its tab.
+    var jamTitle: String?
+
+    private func title(_ section: ProfileView.Section) -> String { section == .jam ? (jamTitle ?? "Jam") : section.rawValue }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -581,12 +595,12 @@ struct ProfileTabs: View {
                     ForEach(Array(sections.enumerated()), id: \.element) { index, section in
                         let on = selection == section
                         Button { selection = section } label: {
-                            Text(section.rawValue).font(Theme.font(.subheadline, weight: on ? .semibold : .regular)).foregroundStyle(on ? Theme.text : Theme.textSecondary)
+                            Text(title(section)).font(Theme.font(.subheadline, weight: on ? .semibold : .regular)).foregroundStyle(on ? Theme.text : Theme.textSecondary)
                                 .padding(.horizontal, 14).frame(minHeight: 44)
                                 .background { if on { Capsule().fill(.clear).limeGlass(in: Capsule()) } }
                         }
                         .buttonStyle(.plain).id(section)
-                        .accessibilityLabel("\(section.rawValue), tab, \(index + 1) of \(sections.count)")
+                        .accessibilityLabel("\(title(section)), tab, \(index + 1) of \(sections.count)")
                         .accessibilityAddTraits(on ? [.isSelected] : [])
                         .accessibilityIdentifier("profile-tab-\(section.rawValue)")
                     }

@@ -76,7 +76,7 @@ final class ConversationStore {
     var jamPosts: [String: [JamPostInfo]] = [:]
     var jamProgress: [String: JamSendProgress] = [:]
     /// The jam tab's Posts | Articles choice and filters, kept while the app runs (LIME-188t).
-    var jamArticlesOnly = false
+    var jamSegment: JamSegment = .posts
     var jamFilter = JamFilter()
     /// Bumped when the posts hidden on this phone change, so the feed redraws.
     var jamHiddenChanged = 0
@@ -1062,11 +1062,12 @@ final class ConversationStore {
             ])]
             path.append("dm:fmt")
         case "notif-banner": demoNotification = "banner"
-        case "jam", "jam-following", "jam-mine", "jam-mine-profile", "jam-request":
+        case "jam", "jam-following", "jam-mine", "jam-mine-profile", "jam-mine-asjam", "jam-request":
             // The jam tab, with nothing yet, with a jam I follow (Sam's, two posts), or with a jam of my own (one post, two subscribers).
             section = .jam
             if screen == "jam-following", let page = demoJamPages["sam"] { demoSubscribe(page) }
-            if screen == "jam-mine" || screen == "jam-mine-profile" { demoMineWithPost() }
+            if screen == "jam-mine" || screen == "jam-mine-profile" || screen == "jam-mine-asjam" { demoMineWithPost() }
+            if screen == "jam-mine-asjam" { demoPublish("demo-my-jam", kind: "quick", title: "", subtitle: "", markdown: "Welcome from the circle", items: [], displayAs: "jam") }
             if screen == "jam-request" { demoRequest() }
             if screen == "jam-mine-profile" { jamPath.append(ProfileRoute(userID: meProvider().id, name: meProvider().name, isMe: true)) }
         case "group-incoming", "group-incoming-ios-refused":

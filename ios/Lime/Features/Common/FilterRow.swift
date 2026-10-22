@@ -3,21 +3,38 @@ import SwiftUI
 /// The first row of a list tab (LIME-124): a segmented control and, beside it, a round glass filter button with the outline filter
 /// symbol and a lime badge with the number of filters on. It scrolls away with the list.
 struct FilterRow<MenuContent: View>: View {
-    let first: String
-    let second: String
-    @Binding var secondSelected: Bool
+    /// The segments' names, and the chosen one's index. Two for calls and messages; jam has three (LIME-188v).
+    let titles: [String]
+    @Binding var selection: Int
     let activeCount: Int
     var idPrefix = "filter"
     @ViewBuilder let menu: () -> MenuContent
 
+    /// The usual two segments, the second one a Bool.
+    init(first: String, second: String, secondSelected: Binding<Bool>, activeCount: Int, idPrefix: String = "filter", @ViewBuilder menu: @escaping () -> MenuContent) {
+        titles = [first, second]
+        _selection = Binding(get: { secondSelected.wrappedValue ? 1 : 0 }, set: { secondSelected.wrappedValue = $0 == 1 })
+        self.activeCount = activeCount
+        self.idPrefix = idPrefix
+        self.menu = menu
+    }
+
+    init(titles: [String], selection: Binding<Int>, activeCount: Int, idPrefix: String = "filter", @ViewBuilder menu: @escaping () -> MenuContent) {
+        self.titles = titles
+        _selection = selection
+        self.activeCount = activeCount
+        self.idPrefix = idPrefix
+        self.menu = menu
+    }
+
     var body: some View {
         HStack(spacing: 10) {
-            Picker("Show", selection: $secondSelected) {
-                Text(first).tag(false)
-                Text(second).tag(true)
+            Picker("Show", selection: $selection) {
+                ForEach(Array(titles.enumerated()), id: \.offset) { index, title in Text(title).tag(index) }
             }
             .pickerStyle(.segmented)
-            .frame(width: 220)
+            // Three segments still leave room for the filter button on a 320 pt phone.
+            .frame(maxWidth: titles.count > 2 ? 228 : 220)
             .accessibilityIdentifier("\(idPrefix)-segments")
             Menu { menu() } label: {
                 Image(systemName: "line.3.horizontal.decrease")

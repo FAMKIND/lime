@@ -657,32 +657,3 @@ enum ArticlePrint {
         return "<html><body style=\"font-family:\(family);font-size:13pt;line-height:1.5\"><h1>\(escape(post.title))</h1><p style=\"color:#555\">\(escape(post.subtitle))</p><p style=\"color:#555\">\(escape(writer)) \u{00B7} \(escape(JamDates.text(post.created)))</p><hr>\(body)</body></html>"
     }
 }
-
-// MARK: Saved list
-
-/// The posts saved on this phone (reached from the jam tab's menu).
-struct JamSavedView: View {
-    @Environment(ConversationStore.self) private var store
-    @AppStorage(JamSaved.key) private var saved: String = ""
-
-    var body: some View {
-        let ids = JamSaved.ids
-        let posts = ids.compactMap { store.jamPost($0) }
-        List {
-            if posts.isEmpty { Text("Posts you save show here. They stay on this phone.").font(Theme.body).foregroundStyle(Theme.textSecondary).listRowBackground(Theme.canvas).accessibilityIdentifier("jam-saved-empty") }
-            ForEach(posts, id: \.postId) { post in
-                Button { store.jamPath.append(JamPostRoute(postID: post.postId)) } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(post.title.isEmpty ? post.plain : post.title).font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(2)
-                        Text("\(store.teacherName(post.author)) \u{00B7} \(JamDates.text(post.created))").font(Theme.caption).foregroundStyle(Theme.textSecondary)
-                    }
-                    .frame(minHeight: 44, alignment: .leading)
-                }
-                .listRowBackground(Theme.canvas)
-            }
-        }
-        .listStyle(.plain).background(Theme.canvas)
-        .navigationTitle("Saved").navigationBarTitleDisplayMode(.inline)
-        .accessibilityIdentifier("jam-saved")
-    }
-}

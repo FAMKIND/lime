@@ -16,7 +16,7 @@ final class Jam188dUITests: LimeUITestCase {
         app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat"]
         app.launch()
         openSamsProfile(app)
-        let order = ["Info", "Activity", "Posts", "Comments", "Replies"]
+        let order = ["Info", "Activity", "Jam", "Posts", "Comments", "Replies"]   // Jam: Sam's jam has a title of its own (LIME-188v)
         var last: CGFloat = -1
         for name in order {
             let tab = app.buttons["profile-tab-\(name)"]
@@ -34,8 +34,8 @@ final class Jam188dUITests: LimeUITestCase {
         XCTAssertFalse(any(app, "profile-empty-activity").exists, "one section at a time")
         app.buttons["profile-tab-Replies"].tap()
         XCTAssertTrue(any(app, "profile-empty-replies").waitForExistence(timeout: 5))
-        app.buttons["profile-tab-Posts"].tap()
-        XCTAssertTrue(app.staticTexts["profile-jam-row"].waitForExistence(timeout: 5), "the jam's title, subscribers and posts live in Posts")
+        app.buttons["profile-tab-Jam"].tap()
+        XCTAssertTrue(app.staticTexts["profile-jam-row"].waitForExistence(timeout: 5), "the jam's title, subscribers and posts live in its tab")
     }
 
     func testPostsHaveTheSameToggleAndFilterAsTheJamTab() {

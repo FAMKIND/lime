@@ -3,7 +3,6 @@ import SwiftUI
 /// Where a jam post or the subscribers list is pushed on the jam tab.
 struct JamPostRoute: Hashable { let postID: String }
 struct JamSubscribersRoute: Hashable { let jamID: String }
-struct JamSavedRoute: Hashable {}
 
 /// The jam tab (LIME-188b): one feed of the posts of the teachers you follow and your own, newest first, as cards; a **+** (the same floating button
 /// as link and call) writes a new one. There is nothing to set up: your jam is made on your first post, and your profile is its page. Quiet by
@@ -11,20 +10,22 @@ struct JamSavedRoute: Hashable {}
 struct JamPage: View {
     @Environment(ConversationStore.self) private var store
     @State private var composing = false
+    /// Saving or un-saving a post redraws the Saved segment.
+    @AppStorage(JamSaved.key) private var savedList: String = ""
 
     var body: some View {
         @Bindable var store = store
         return NavigationStack(path: $store.jamPath) {
             feed
-                .background(Theme.canvas)
+                .background(Theme.canvas.ignoresSafeArea())
                 .navigationBarTitleDisplayMode(.inline)
-                .rootHeader(searchID: "jam-search-button") { store.jamSearching = true }
+                // The same header as link and call: the feed scrolls under it (LIME-188v).
+                .rootHeader(searchID: "jam-search-button", overlays: true) { store.jamSearching = true }
                 .overlay { FloatingPlus(label: "New post", id: "new-jam-post") { composing = true } }
                 .navigationDestination(for: ProfileRoute.self) { ProfileView(route: $0) }
                 .navigationDestination(for: SharedListRoute.self) { SharedListView(route: $0) }
                 .navigationDestination(for: JamPostRoute.self) { JamPostView(postID: $0.postID) }
                 .navigationDestination(for: JamSubscribersRoute.self) { JamSubscribersView(jamID: $0.jamID) }
-                .navigationDestination(for: JamSavedRoute.self) { _ in JamSavedView() }
                 .navigationDestination(isPresented: Binding(get: { store.jamSearching }, set: { store.jamSearching = $0 })) {
                     Text("Nothing to search in jam yet.")
                         .font(Theme.body).foregroundStyle(Theme.textSecondary)
@@ -62,60 +63,60 @@ struct JamPage: View {
         .padding(.horizontal, 16).padding(.top, store.jamRequests.isEmpty ? 0 : 8)
     }
 
-    /// Posts saved on this phone (LIME-188p): a quiet row at the top, until the jam home has a place for it.
-    @ViewBuilder
-    private var savedRow: some View {
-        if !JamSaved.ids.isEmpty {
-            Button { store.jamPath.append(JamSavedRoute()) } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "bookmark").accessibilityHidden(true)
-                    Text("Saved (\(JamSaved.ids.count))").font(Theme.secondary)
-                    Spacer()
-                    Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
-                }
-                .foregroundStyle(Theme.textSecondary).padding(.horizontal, 20).frame(minHeight: 44)
-            }
-            .buttonStyle(.plain).accessibilityIdentifier("jam-saved-row")
-        }
-    }
-
     private var feed: some View {
         _ = store.jamHiddenChanged   // hiding a post redraws the feed
+        _ = savedList
         let posts = store.jamFeed
-        return VStack(spacing: 0) { requests; savedRow; feedBody(posts) }
+        if #available(iOS 26, *) {
+            return feedBody(posts, topMargin: 8)
+                .scrollEdgeEffectStyle(.soft, for: .top)
+                .scrollEdgeEffectStyle(.soft, for: .bottom)
+        } else {
+            // As Messages and Calls: room for the controls drawn over the list.
+            return feedBody(posts, topMargin: 76)
+        }
     }
 
-    private func feedBody(_ posts: [JamPostInfo]) -> some View {
-        Group {
-            if posts.isEmpty {
-                VStack {
-                    Spacer()
+    /// The posts of the chosen segment: Saved is the bookmarked ones, newest saved first, whoever wrote them.
+    private func shown(_ posts: [JamPostInfo]) -> [JamPostInfo] {
+        let segment = store.jamSegment
+        let source = segment == .saved ? JamSaved.ids.compactMap { store.jamPost($0) } : posts
+        return source.filter { store.jamPostMatches($0, articles: segment.articles, filter: store.jamFilter) }
+    }
+
+    /// Everything is one scroll view, so the requests and the filter row scroll away with the posts and go under the header.
+    private func feedBody(_ posts: [JamPostInfo], topMargin: CGFloat) -> some View {
+        @Bindable var store = store
+        let list = shown(posts)
+        let nothingYet = posts.isEmpty && store.jamSegment != .saved && JamSaved.ids.isEmpty
+        return ScrollView {
+            LazyVStack(spacing: 0) {
+                requests
+                if nothingYet {
                     Text("Subscribe to teachers from their profiles. Your posts show here too.")
                         .font(Theme.body).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
-                        .padding(.horizontal, 40)
+                        .padding(.horizontal, 40).padding(.top, 120)
                         .accessibilityIdentifier("jam-feed-empty")
-                    Spacer()
-                }
-                .padding(.bottom, 80)
-            } else {
-                @Bindable var store = store
-                let shown = posts.filter { store.jamPostMatches($0, articles: store.jamArticlesOnly, filter: store.jamFilter) }
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        JamFilterRow(articles: $store.jamArticlesOnly, filter: $store.jamFilter).padding(.top, 4).padding(.horizontal, 16)
-                        if shown.isEmpty {
-                            FilteredEmpty(text: store.jamArticlesOnly ? "No articles match" : "No posts match") { store.jamFilter = JamFilter(); store.jamArticlesOnly = false }
-                        }
-                        ForEach(shown, id: \.postId) { post in
-                            JamPostCard(post: post)
-                            Divider().overlay(Theme.hairline)
+                } else {
+                    JamFilterRow(segment: $store.jamSegment, filter: $store.jamFilter).padding(.top, 4).padding(.horizontal, 16)
+                    if list.isEmpty {
+                        if store.jamSegment == .saved && !store.jamFilter.isOn {
+                            Text("Nothing saved yet.").font(Theme.body).foregroundStyle(Theme.textSecondary).padding(.top, 60)
+                                .accessibilityIdentifier("jam-saved-empty")
+                        } else {
+                            FilteredEmpty(text: store.jamSegment == .articles ? "No articles match" : "No posts match") { store.jamFilter = JamFilter(); store.jamSegment = .posts }
                         }
                     }
-                    .padding(.bottom, FloatingPlus.size + 32)
+                    ForEach(list, id: \.postId) { post in
+                        JamPostCard(post: post)
+                        Divider().overlay(Theme.hairline)
+                    }
                 }
-                .accessibilityIdentifier("jam-feed")
             }
+            .padding(.top, topMargin)
+            .padding(.bottom, FloatingPlus.size + 32)
         }
+        .accessibilityIdentifier("jam-feed")
     }
 }
 
