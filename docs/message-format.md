@@ -17,11 +17,15 @@ The text of a Lime message is **Markdown, from a small fixed subset**, carried i
 | Link | `[text](https://…)` | **http, https and mailto only**, with something after the scheme. Anything else stays text. |
 | Mention | `[@Name](mention:<user id>)` | LIME-181. The target is a well-formed user id, or the reserved `mention:everyone`; anything else stays text. One atomic run: styles inside it are dropped. `plain_text` gives `@Name`. On receipt the core keeps a mention only if that person is in the conversation, and `mention:everyone` only from a group owner or admin; otherwise it becomes the plain words `@Name`. |
 | Image (jam posts only) | `![caption](attachment:n)` on a line of its own | LIME-188e. A picture, or a file card, in the place it was put in a **jam post**; `n` is the post's n-th attachment counting from 0 (at most 9), the caption is optional plain text, and nothing but an `attachment:` target counts. **A chat never parses one**: `parse_message_markdown` and `normalise_message_markdown` leave it as text (a chat's attachments stay separate, under the message), and only `parse_post_markdown`, `normalise_post_markdown` and `post_plain_text` know it. `plain_text` gives the caption. The writer refuses an image that names an attachment the post does not have. **The attachment's type decides what is drawn**: a photo is a picture, a video (LIME-188f) plays in place, any other file is a card. |
+| Heading (jam posts only) | `# `, `## `, `### ` and a space at the start of a line | LIME-188l. H1 to H3, one line. A chat leaves it as text; a post's paragraph line that begins this way is written with a leading `\` so it reads back as words. |
+| Quote (jam posts only) | lines that start with `> ` | LIME-188l. Consecutive lines are one quote. |
+| Indent (jam posts only) | a paragraph whose every line starts with two spaces | LIME-188l. One level, for paragraphs (lists keep their own levels). `normalise_post_markdown` trims blank lines at the ends, not the spaces of a first indented paragraph. |
+| Button (jam posts only) | `[[Button text]](https://…)` as a paragraph of its own | LIME-188l. A link drawn as a full-width button. **https only** (an `http`, `javascript:` or other address, an empty text or one with brackets stays text); the reader opens it like any link. |
 | Literal character | `\*` | A backslash before ASCII punctuation makes it literal. |
 
 A newline is a line break; a blank line separates paragraphs. A marker only counts when it touches the words (`2 * 3 * 4` is text) and closes on the same paragraph.
 
-**Everything else is plain text.** Headings, quotes, tables, images, raw HTML, `javascript:` links, bare URLs: nothing is rejected, it is just text (`<b>x</b>` shows as `<b>x</b>`). The parser never fails and never needs a second pass.
+**Everything else is plain text.** Headings and quotes in chats, tables, images in chats, raw HTML, `javascript:` links, bare URLs: nothing is rejected, it is just text (`<b>x</b>` shows as `<b>x</b>`). The parser never fails and never needs a second pass.
 
 ## Limits
 

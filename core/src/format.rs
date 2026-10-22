@@ -59,6 +59,14 @@ pub enum Block {
     /// A picture (or file) in the place it was put in a jam post (LIME-188e): `![caption](attachment:n)` on a line of its own, `n` the post's n-th
     /// attachment counting from 0. **Jam posts only**: a chat never parses one (it stays text), and a chat's attachments stay separate.
     Image { caption: String, attachment: u32 },
+    /// A heading (LIME-188l), `#`, `##` or `###` and a space at the start of a line. **Jam posts only**; in a chat the line stays text.
+    Heading { level: u32, spans: Vec<Span> },
+    /// A quotation: consecutive lines that start with `> `. **Jam posts only.**
+    Quote { spans: Vec<Span> },
+    /// A paragraph pushed in one level: every line starts with two spaces (and is not a list). **Jam posts only.**
+    Indent { spans: Vec<Span> },
+    /// A link drawn as a full-width button: `[[Button text]](https://…)` as a paragraph of its own. https only. **Jam posts only.**
+    Button { text: String, url: String },
 }
 
 /// How many attachments a post can have, so the largest `n`.
@@ -112,6 +120,30 @@ fn image_line(line: &str) -> Option<(String, u32)> {
     (n <= MAX_IMAGE_INDEX).then_some((caption, n))
 }
 
+/// `# `, `## ` or `### ` and the heading's words.
+fn heading_line(line: &str) -> Option<(u32, &str)> {
+    let level = line.chars().take_while(|&c| c == '#').count();
+    let rest = line[level..].strip_prefix(' ')?;
+    ((1..=3).contains(&level) && !rest.trim().is_empty()).then_some((level as u32, rest.trim()))
+}
+
+fn quote_line(line: &str) -> Option<&str> {
+    line.strip_prefix("> ").or_else(|| (line == ">").then_some(""))
+}
+
+/// `[[text]](https://…)` as a whole line.
+fn button_line(line: &str) -> Option<(String, String)> {
+    let line = line.trim();
+    let inner = line.strip_prefix("[[")?.strip_suffix(')')?;
+    let (text, url) = inner.split_once("]](")?;
+    let ok_text = !text.trim().is_empty() && !text.contains(['[', ']', '\n']);
+    (ok_text && url.starts_with("https://") && allowed_link(url) && !url.contains([' ', '(', ')'])).then(|| (text.trim().to_owned(), url.to_owned()))
+}
+
+fn starts_a_post_block(line: &str) -> bool {
+    heading_line(line).is_some() || quote_line(line).is_some()
+}
+
 fn parse_with(text: &str, images: bool) -> Vec<Block> {
     let text = text.replace("\r\n", "\n").replace('\r', "\n");
     let lines: Vec<&str> = text.split('\n').collect();
@@ -138,11 +170,38 @@ fn parse_with(text: &str, images: bool) -> Vec<Block> {
             blocks.push(Block::ItemList { items });
         } else if line.trim().is_empty() {
             i += 1;
+        } else if let Some((level, words)) = images.then(|| heading_line(line)).flatten() {
+            blocks.push(Block::Heading { level, spans: parse_inline(words) });
+            i += 1;
+        } else if images && quote_line(line).is_some() {
+            let mut quoted: Vec<&str> = Vec::new();
+            while i < lines.len() {
+                let Some(rest) = quote_line(lines[i]) else { break };
+                quoted.push(rest);
+                i += 1;
+            }
+            blocks.push(Block::Quote { spans: parse_inline(quoted.join("\n").trim()) });
         } else {
             let mut paragraph: Vec<&str> = Vec::new();
-            while i < lines.len() && !lines[i].trim().is_empty() && fence_length(lines[i]).is_none() && list_item(lines[i]).is_none() {
+            while i < lines.len()
+                && !lines[i].trim().is_empty()
+                && fence_length(lines[i]).is_none()
+                && list_item(lines[i]).is_none()
+                && !(images && starts_a_post_block(lines[i]))
+            {
                 paragraph.push(lines[i]);
                 i += 1;
+            }
+            if images && !paragraph.is_empty() && paragraph.iter().all(|l| l.starts_with("  ")) {
+                let words: Vec<&str> = paragraph.iter().map(|l| l.trim_start()).collect();
+                blocks.push(Block::Indent { spans: parse_inline(&words.join("\n")) });
+                continue;
+            }
+            if let (true, [only]) = (images, paragraph.as_slice()) {
+                if let Some((text, url)) = button_line(only) {
+                    blocks.push(Block::Button { text, url });
+                    continue;
+                }
             }
             match (images, paragraph.as_slice()) {
                 (true, [only]) if image_line(only).is_some() => {
@@ -520,6 +579,8 @@ fn plain_of(blocks: Vec<Block>) -> String {
                 }
             }
             Block::Code { text } => lines.push(text),
+            Block::Heading { spans, .. } | Block::Quote { spans } | Block::Indent { spans } => lines.push(spans.iter().map(|s| s.text.as_str()).collect()),
+            Block::Button { text, .. } => lines.push(text),
             Block::Image { caption, .. } => {
                 if !caption.is_empty() {
                     lines.push(caption);
@@ -557,7 +618,7 @@ pub fn restrict_mentions(text: &str, is_member: &dyn Fn(&str) -> bool, everyone_
         match block {
             Block::Paragraph { spans } => fix(spans),
             Block::ItemList { items } => items.iter_mut().for_each(|item| fix(&mut item.spans)),
-            Block::Code { .. } | Block::Image { .. } => {}
+            Block::Code { .. } | Block::Image { .. } | Block::Heading { .. } | Block::Quote { .. } | Block::Indent { .. } | Block::Button { .. } => {}
         }
     }
     if changed { serialize(&blocks) } else { text.to_owned() }
@@ -567,6 +628,38 @@ pub fn restrict_mentions(text: &str, is_member: &dyn Fn(&str) -> bool, everyone_
 
 /// Blocks to canonical text: what is stored and sent.
 pub fn serialize(blocks: &[Block]) -> String {
+    serialize_with(blocks, false)
+}
+
+/// A jam post's canonical text: also escapes a paragraph line that would otherwise read as a heading, quote or button.
+pub fn serialize_post(blocks: &[Block]) -> String {
+    serialize_with(blocks, true)
+}
+
+/// The written lines of a post's heading, quote or indent: line breaks kept (quote, indent) or turned into spaces (heading).
+fn post_line_text(spans: &[Span]) -> String {
+    write_spans(spans)
+}
+
+fn escape_post_starts(text: &str) -> String {
+    text.split('\n')
+        .map(|line| {
+            let indent = line.len() - line.trim_start_matches(' ').len();
+            let rest = &line[indent..];
+            if indent == 0 && (heading_line(line).is_some() || quote_line(line).is_some() || line.starts_with("[[")) {
+                format!("\\{line}")
+            } else if indent >= 2 {
+                // Two spaces at the start would make an indent: only the Indent block writes them.
+                format!(" {}", rest)
+            } else {
+                line.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn serialize_with(blocks: &[Block], posts: bool) -> String {
     let mut parts: Vec<String> = Vec::new();
     for block in blocks {
         match block {
@@ -589,6 +682,9 @@ pub fn serialize(blocks: &[Block]) -> String {
                         }
                     }
                     let mut text = escape_line_starts(&kept.join("\n"));
+                    if posts {
+                        text = escape_post_starts(&text);
+                    }
                     // The paragraph as a whole must read back to the same words (a link whose text spans a
                     // blank line, say, would not): if not, write the words without their styles.
                     let words = |t: &str| t.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -596,6 +692,9 @@ pub fn serialize(blocks: &[Block]) -> String {
                     if words(&plain_text(&text)) != wanted {
                         let plain: Vec<Span> = spans.iter().map(|s| Span { text: s.text.clone(), ..Span::default() }).collect();
                         text = escape_line_starts(&write_level(&merge(plain), 0));
+                        if posts {
+                            text = escape_post_starts(&text);
+                        }
                     }
                     parts.push(text);
                 }
@@ -620,6 +719,32 @@ pub fn serialize(blocks: &[Block]) -> String {
                 let fence = "`".repeat(longest_backtick_run(text).max(2) + 1);
                 parts.push(format!("{fence}\n{text}\n{fence}"));
             }
+            Block::Heading { level, spans } => {
+                let words = post_line_text(spans).replace('\n', " ");
+                if !words.trim().is_empty() {
+                    parts.push(format!("{} {}", "#".repeat((*level).clamp(1, 3) as usize), words.trim()));
+                }
+            }
+            Block::Quote { spans } => {
+                let words = post_line_text(spans);
+                if !words.trim().is_empty() {
+                    let lines: Vec<String> = words.trim().split('\n').map(|l| if l.is_empty() { ">".to_owned() } else { format!("> {l}") }).collect();
+                    parts.push(lines.join("\n"));
+                }
+            }
+            Block::Indent { spans } => {
+                let words = post_line_text(spans);
+                if !words.trim().is_empty() {
+                    let lines: Vec<String> = words.trim().split('\n').filter(|l| !l.trim().is_empty()).map(|l| format!("  {}", l.trim_start())).collect();
+                    parts.push(lines.join("\n"));
+                }
+            }
+            Block::Button { text, url } => {
+                let text: String = text.chars().filter(|c| !matches!(c, '[' | ']' | '\n' | '\r')).collect();
+                if !text.trim().is_empty() && url.starts_with("https://") && allowed_link(url) && !url.contains([' ', '(', ')']) {
+                    parts.push(format!("[[{}]]({})", text.trim(), url));
+                }
+            }
             Block::Image { caption, attachment } => {
                 let caption = caption.split_whitespace().collect::<Vec<_>>().join(" ");
                 parts.push(format!("![{}](attachment:{})", escape_text(&caption), (*attachment).min(MAX_IMAGE_INDEX)));
@@ -631,7 +756,8 @@ pub fn serialize(blocks: &[Block]) -> String {
 
 /// A jam post's one written form (images allowed).
 pub fn normalise_post(text: &str) -> String {
-    serialize(&parse_post(text.trim()))
+    // Only the blank lines and the end are trimmed: the two spaces of an indented first paragraph are part of it.
+    serialize_post(&parse_post(text.trim_end().trim_start_matches(['\n', '\r'])))
 }
 
 /// Parse then serialize: unknown syntax becomes text, and the result is the one written form.
@@ -870,6 +996,12 @@ pub fn parse_post_markdown(text: String) -> Vec<Block> {
 #[uniffi::export]
 pub fn normalise_post_markdown(text: String) -> String {
     normalise_post(&text)
+}
+
+/// Blocks to a jam post's canonical text (headings, quotes, indent, buttons and images kept).
+#[uniffi::export]
+pub fn post_markdown_from_blocks(blocks: Vec<Block>) -> String {
+    serialize_post(&blocks)
 }
 
 /// The words of a jam post (an image reads as its caption).
@@ -1335,5 +1467,38 @@ mod tests {
         let long = "*a ".repeat(5000) + &"[x](https://a.b)".repeat(2000) + &"`".repeat(3000);
         let _ = normalise(&long);
     }
-}
 
+    #[test]
+    fn headings_quotes_indents_and_buttons_are_for_posts_only_and_round_trip() {
+        let text = "# Big\n\n## Medium\n\n### Small\n\n> a quote\n> over two lines\n\n  indented words\n\n[[Read more]](https://example.com/a)\n\nplain";
+        let blocks = parse_post(text);
+        assert!(matches!(&blocks[0], Block::Heading { level: 1, .. }));
+        assert!(matches!(&blocks[1], Block::Heading { level: 2, .. }));
+        assert!(matches!(&blocks[2], Block::Heading { level: 3, .. }));
+        assert!(matches!(&blocks[3], Block::Quote { .. }));
+        assert!(matches!(&blocks[4], Block::Indent { .. }));
+        assert!(matches!(&blocks[5], Block::Button { text, url } if text == "Read more" && url == "https://example.com/a"));
+        assert!(matches!(&blocks[6], Block::Paragraph { .. }));
+        assert_eq!(normalise_post(text), text);
+        assert_eq!(plain_text_post(text), "Big\nMedium\nSmall\na quote\nover two lines\nindented words\nRead more\nplain");
+        // A chat reads every one of them as plain text, and writes them back unchanged.
+        for block in parse(text) {
+            assert!(matches!(block, Block::Paragraph { .. } | Block::ItemList { .. }), "{block:?}");
+        }
+        assert_eq!(normalise("# Big"), "# Big");
+    }
+
+    #[test]
+    fn a_button_needs_an_https_address_and_text_that_starts_a_line_is_escaped() {
+        assert!(matches!(&parse_post("[[Go]](http://example.com)")[0], Block::Paragraph { .. }), "http is not a button");
+        assert!(matches!(&parse_post("[[Go]](javascript:alert(1))")[0], Block::Paragraph { .. }));
+        assert!(matches!(&parse_post("[[]](https://example.com)")[0], Block::Paragraph { .. }));
+        let words = vec![Block::Paragraph { spans: vec![Span { text: "# not a heading\n> not a quote".into(), ..Span::default() }] }];
+        let written = serialize_post(&words);
+        let read = parse_post(&written);
+        assert!(matches!(&read[0], Block::Paragraph { .. }), "{written:?} -> {read:?}");
+        assert_eq!(plain_text_post(&written), "# not a heading\n> not a quote");
+        let bad = vec![Block::Button { text: "x".into(), url: "javascript:alert(1)".into() }];
+        assert_eq!(serialize_post(&bad), "");
+    }
+}

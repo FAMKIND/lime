@@ -155,6 +155,8 @@ struct AddToMessageSheet: View {
     let onPhotos: () -> Void
     let onFiles: () -> Void
     let onAdd: ([RecentItem]) -> Void
+    /// The sheet's heading ("Add to your post" for a jam post).
+    var title = "Add to your message"
 
     @State private var selected: [String] = []
     @State private var height: CGFloat = 360
@@ -224,7 +226,7 @@ struct AddToMessageSheet: View {
 
     private var header: some View {
         ZStack {
-            Text("Add to your message").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
+            Text(title).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
                 .lineLimit(1).minimumScaleFactor(0.75).padding(.horizontal, 96)
                 .accessibilityAddTraits(.isHeader)
             HStack {

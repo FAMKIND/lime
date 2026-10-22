@@ -31,12 +31,18 @@ struct JamComposeSheet: View {
     @State private var coauthors: [Person] = []
     @State private var choosingCoauthors = false
     @State private var postingAs = false
+    @State private var adding = false
+    @State private var recent = RecentMedia()
     @State private var article = JamDraft.shared.article
     @State private var title = JamDraft.shared.title
     @State private var subtitle = JamDraft.shared.subtitle
     @State private var posting = false
     @State private var problem: String?
     @FocusState private var focus: Field?
+    @AppStorage(LinkPreviewSetting.key) private var previewsOn = true
+    @State private var link: JamLinkDraft?
+    @State private var dismissedLink: URL?
+    @State private var linkTask: Task<Void, Never>?
 
     private enum Field { case title, subtitle }
     private enum Chooser: String, Identifiable { case library, camera, files; var id: String { rawValue } }
@@ -63,7 +69,7 @@ struct JamComposeSheet: View {
                 GeometryReader { geo in
                     ZStack(alignment: .topLeading) {
                         RichComposerField(model: composer, maxHeight: geo.size.height, fills: true)
-                            .onAppear { composer.hasText = false }
+                            .onAppear { composer.hasText = false; composer.isPost = true }
                         if !composer.hasText {
                             Text(article ? "Start writing an article\u{2026}" : "What\u{2019}s on your mind?").font(Theme.body).foregroundStyle(Theme.placeholder)
                                 .padding(.leading, 4).padding(.top, 8).allowsHitTesting(false).accessibilityHidden(true)
@@ -72,6 +78,7 @@ struct JamComposeSheet: View {
                     .padding(.horizontal, 16)
                 }
                 if !article, !photos.isEmpty { photosRow }
+                if let link { linkRow(link) }
             }
             .background(Theme.canvas)
             .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
@@ -83,7 +90,19 @@ struct JamComposeSheet: View {
                     Button("Post") { post() }.fontWeight(.semibold).disabled(!canPost).accessibilityIdentifier("jam-post")
                 }
             }
+            .onChange(of: composer.plainText) { refreshLink() }
+            .onChange(of: previewsOn) { refreshLink() }
             .sheet(isPresented: $choosingCoauthors) { JamCoauthorPicker(selected: $coauthors) }
+            .sheet(item: $composer.linkRequest) { request in LinkSheet(request: request, composer: composer) }
+            .sheet(item: $composer.buttonRequest) { _ in ButtonSheet(composer: composer) }
+            .sheet(isPresented: $adding) {
+                AddToMessageSheet(media: recent, room: max(0, 10 - articleFiles.count), onClose: { adding = false },
+                                  onCamera: { adding = false; choose(.camera) }, onPhotos: { adding = false; choose(.library) }, onFiles: { adding = false; choose(.files) },
+                                  onAdd: { items in
+                                      adding = false
+                                      Task { let picked = await recent.resolve(items); await self.picked(images: picked.images, videos: picked.videos) }
+                                  }, title: "Add to your post")
+            }
             .fullScreenCover(item: Binding(get: { recordMode.map(RecordMode.init) }, set: { recordMode = $0?.mode })) { mode in
                 PodcastRecorder(title: $recordTitle, coauthors: $coauthors, camera: mode.mode == 0) { clips = [$0] }
             }
@@ -104,7 +123,7 @@ struct JamComposeSheet: View {
             .task {
                 // The draft's words go back into the field once it exists.
                 try? await Task.sleep(for: .milliseconds(300))
-                if !JamDraft.shared.markdown.isEmpty { composer.textView?.attributedText = ComposerDocument.attributed(fromMarkdown: JamDraft.shared.markdown); composer.didEdit() }
+                if !JamDraft.shared.markdown.isEmpty { composer.textView?.attributedText = ComposerDocument.attributed(fromMarkdown: JamDraft.shared.markdown, post: true); composer.didEdit() }
                 if !article { composer.focus() }
             }
         }
@@ -117,7 +136,7 @@ struct JamComposeSheet: View {
     private var quickHead: some View {
         VStack(alignment: .leading, spacing: 8) {
             postAsChip
-            coauthorChips
+            coauthorRow
         }
         .padding(.horizontal, 20).padding(.top, 12)
     }
@@ -137,18 +156,24 @@ struct JamComposeSheet: View {
         .sheet(isPresented: $postingAs) { PostAsSheet() }
     }
 
-    @ViewBuilder
-    private var coauthorChips: some View {
-        if !coauthors.isEmpty {
-            HStack(spacing: 6) {
-                Text("With").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
-                ForEach(coauthors) { person in
-                    Button { coauthors.removeAll { $0.id == person.id } } label: {
-                        Label(person.name, systemImage: "xmark.circle.fill").font(Theme.secondary).foregroundStyle(Theme.text)
-                            .padding(.horizontal, 10).frame(minHeight: 36).background(Theme.surface, in: Capsule())
+    /// Under your name: a quiet "+ Add co-author", and the people already added as small chips (tap one to take it off).
+    private var coauthorRow: some View {
+        FlowLayout(spacing: 6) {
+            Button { choosingCoauthors = true } label: {
+                Label(coauthors.isEmpty ? "Add co-author" : "Add another", systemImage: "plus").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
+                    .padding(.horizontal, 4).frame(minHeight: 44)
+            }
+            .buttonStyle(.plain).accessibilityLabel("Add co-author").accessibilityIdentifier("jam-add-coauthor")
+            ForEach(coauthors) { person in
+                Button { coauthors.removeAll { $0.id == person.id } } label: {
+                    HStack(spacing: 6) {
+                        AvatarView(person: person, size: 22).accessibilityHidden(true)
+                        Text(person.name).font(Theme.secondary).foregroundStyle(Theme.text)
+                        Image(systemName: "xmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.textSecondary)
                     }
-                    .accessibilityLabel("Remove co-author \(person.name)").accessibilityIdentifier("jam-coauthor-\(person.id)")
+                    .padding(.horizontal, 8).frame(minHeight: 36).background(Theme.surface, in: Capsule())
                 }
+                .accessibilityLabel("Remove co-author \(person.name)").accessibilityIdentifier("jam-coauthor-\(person.id)")
             }
         }
     }
@@ -156,9 +181,9 @@ struct JamComposeSheet: View {
     /// Title (large, up to 120), then a short subtitle (up to 160): Return in either moves on, neither ever holds the article.
     private var articleHead: some View {
         VStack(alignment: .leading, spacing: 4) {
-            postAsChip.padding(.bottom, 4)
-            coauthorChips.padding(.bottom, 4)
-            TextField("Title", text: $title, prompt: Text("Title").foregroundColor(Theme.placeholder), axis: .vertical).font(Theme.font(.title2, weight: .bold)).lineLimit(1...3)
+            postAsChip
+            coauthorRow.padding(.bottom, 6)
+            TextField("Title", text: $title, prompt: Text("Title").foregroundColor(Theme.placeholderLarge), axis: .vertical).font(Theme.font(.title2, weight: .bold)).lineLimit(1...3)
                 .focused($focus, equals: .title).submitLabel(.next).onSubmit { focus = .subtitle }
                 .onChange(of: title) { _, now in
                     if now.contains("\n") { title = now.replacingOccurrences(of: "\n", with: ""); focus = .subtitle }
@@ -180,6 +205,46 @@ struct JamComposeSheet: View {
     private func toBody() {
         focus = nil
         DispatchQueue.main.async { composer.focus() }
+    }
+
+    // MARK: A link's card
+
+    struct JamLinkDraft: Equatable { let url: URL; let preview: OutgoingPreview }
+
+    private func linkRow(_ draft: JamLinkDraft) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            LinkCardView(title: draft.preview.title, site: draft.preview.site, image: UIImage(data: draft.preview.image), width: 220)
+            Button { dismissedLink = draft.url; link = nil } label: {
+                Image(systemName: "xmark.circle.fill").font(.system(size: 22)).foregroundStyle(Theme.textSecondary).frame(width: 44, height: 44)
+            }
+            .accessibilityLabel("Remove link preview").accessibilityIdentifier("jam-link-remove")
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 20).padding(.vertical, 6)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("jam-link-draft")
+    }
+
+    /// The first address in the words gets its card, built on this phone (the same as a chat's, and off when the setting is off).
+    private func refreshLink() {
+        linkTask?.cancel()
+        guard previewsOn, let url = LinkPreviewMaker.firstURL(in: composer.plainText) else {
+            link = nil
+            if LinkPreviewMaker.firstURL(in: composer.plainText) == nil { dismissedLink = nil }
+            return
+        }
+        if url == dismissedLink || link?.url == url { return }
+        link = nil
+        linkTask = Task {
+            try? await Task.sleep(for: .milliseconds(700))
+            guard !Task.isCancelled else { return }
+            #if DEBUG
+            let demo = store.isDemo
+            #else
+            let demo = false
+            #endif
+            if let preview = await LinkPreviewMaker.make(for: url, demo: demo), !Task.isCancelled { link = JamLinkDraft(url: url, preview: preview) }
+        }
     }
 
     private var photosRow: some View {
@@ -226,20 +291,25 @@ struct JamComposeSheet: View {
             if !article {
                 HStack(spacing: 8) {
                     chip("Write an article", system: "doc.text", id: "jam-write-article") { article = true }
-                    chip("Record", system: "mic", id: "jam-record") { recordMode = 1 }
+                    chip("Record", system: "waveform", id: "jam-record") { recordMode = 1 }
                     Spacer()
                 }
                 .padding(.horizontal, 16).padding(.bottom, 4)
             }
             HStack(spacing: 2) {
-                tool("photo.on.rectangle", "Add photos", id: "jam-add-photo") { choose(.library) }
-                tool("camera", "Camera", id: "jam-add-camera") { choose(.camera) }
-                if article { tool("paperclip", "Add a file", id: "jam-add-file") { choose(.files) } }
+                if article {
+                    Button { adding = true } label: {
+                        Label("Add", systemImage: "plus").font(Theme.secondary).foregroundStyle(Theme.text).padding(.horizontal, 12).frame(minHeight: 44)
+                    }
+                    .buttonStyle(.plain).accessibilityLabel("Add photos, videos or files").accessibilityIdentifier("jam-add")
+                } else {
+                    tool("photo.on.rectangle", "Add photos", id: "jam-add-photo") { choose(.library) }
+                    tool("camera", "Camera", id: "jam-add-camera") { choose(.camera) }
+                }
                 tool("textformat", "Formatting", id: "jam-format", on: composer.toolbarVisible) { composer.formattingTapped() }
-                tool("person.badge.plus", "Add co-author", id: "jam-add-coauthor", on: !coauthors.isEmpty) { choosingCoauthors = true }
-                if !article { tool("mic", "Record your voice", id: "jam-add-voice") { recordMode = 1 } }
+                if !article { tool("waveform", "Record your voice", id: "jam-add-voice") { recordMode = 1 } }
                 Spacer()
-                if article { chipPlain("Exit article", id: "jam-exit-article") { article = false } }
+                if article { chipPlain("Back", id: "jam-exit-article") { article = false } }
                 tool(composer.editing ? "keyboard.chevron.compact.down" : "keyboard", composer.editing ? "Hide keyboard" : "Show keyboard", id: "jam-hide-keyboard") { composer.toggleKeyboard() }
             }
             .padding(.horizontal, 8).frame(minHeight: 48)
@@ -307,6 +377,13 @@ struct JamComposeSheet: View {
         }
         for url in videos {
             defer { try? FileManager.default.removeItem(at: url) }
+            #if DEBUG
+            if store.isDemo {
+                let clip = ChatComposer.demoVideoDraft
+                if article { insertIntoArticle(clip.outgoing, preview: clip.preview ?? Self.fileCard(named: "Video")) } else { clips.append(clip.outgoing) }
+                continue
+            }
+            #endif
             guard let made = try? await VideoProcessing.prepare(url, maxBytes: ConversationStore.jamFileLimit - 256 * 1024, progress: { _ in }) else { problem = "Couldn\u{2019}t use that video."; continue }
             if article {
                 // A video stands in the text like a photo (its cover frame shows while you write).
@@ -374,12 +451,13 @@ struct JamComposeSheet: View {
                 if renumber[old] == nil { renumber[old] = files.count; files.append(articleFiles[old]) }
                 copy.addAttribute(.limeImage, value: renumber[old] ?? 0, range: range)
             }
-            markdown = ComposerDocument.markdown(from: copy)
+            markdown = ComposerDocument.markdown(from: copy, post: true)
         } else {
             markdown = composer.markdown()
             files = photos.map(\.outgoing)
         }
         files += clips
+        if let link { files.append(JamLink.attachment(link.preview)) }
         let kind = hasClip ? "record" : article ? "article" : "quick"
         let headline = article ? title : recordTitle
         problem = nil

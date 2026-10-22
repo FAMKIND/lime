@@ -16,6 +16,16 @@ final class Jam188bUITests: LimeUITestCase {
         app.buttons.matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
     }
 
+    /// An article's + Add: the add sheet, then the first recent picture (demo) and Add.
+    private func addArticlePhoto(_ app: XCUIApplication) {
+        app.buttons["jam-add"].tap()
+        let tile = app.descendants(matching: .any).matching(identifier: "add-recent-0").firstMatch
+        XCTAssertTrue(tile.waitForExistence(timeout: 8))
+        tile.tap()
+        app.buttons["add-selected"].tap()
+        sleep(1)
+    }
+
     private func write(_ app: XCUIApplication, _ text: String) {
         let field = app.textViews["composer-field"]
         XCTAssertTrue(field.waitForExistence(timeout: 8))
@@ -84,9 +94,9 @@ final class Jam188bUITests: LimeUITestCase {
         expectation(for: NSPredicate(format: "hasKeyboardFocus == true"), evaluatedWith: body)
         waitForExpectations(timeout: 5)   // Return in the subtitle moved the caret to the body
         body.typeText("Ask one question as they leave.\n\n")
-        app.buttons["jam-add-photo"].tap()
+        addArticlePhoto(app)
         body.typeText((1...20).map { "Line \($0) of the plan" }.joined(separator: "\n") + "\n\n")
-        app.buttons["jam-add-photo"].tap()
+        addArticlePhoto(app)
         XCTAssertFalse((subtitle.value as? String ?? "").contains("Ask one question"), "the subtitle never holds the article")
         app.buttons["jam-post"].tap()
         let article = card(app, containing: "Exit tickets that work")
@@ -157,7 +167,7 @@ final class Jam188bUITests: LimeUITestCase {
         XCTAssertEqual(app.buttons["jam-post-as"].label, "Posting as \(app.buttons["jam-post-as"].label.dropFirst("Posting as ".count))", "the chooser names who it is")
         XCTAssertTrue(app.buttons["jam-post-as"].label.hasPrefix("Posting as "))
         app.buttons["jam-write-article"].tap()
-        XCTAssertEqual(app.buttons["jam-exit-article"].label, "Exit article")
+        XCTAssertEqual(app.buttons["jam-exit-article"].label, "Back")
         XCTAssertTrue(app.buttons["jam-post-as"].exists, "also in article mode")
         let title = app.textFields["jam-article-title"].exists ? app.textFields["jam-article-title"] : app.textViews["jam-article-title"]
         title.tap(); title.typeText("What is liming?")
@@ -167,8 +177,9 @@ final class Jam188bUITests: LimeUITestCase {
         expectation(for: NSPredicate(format: "hasKeyboardFocus == true"), evaluatedWith: body)
         waitForExpectations(timeout: 5)
         body.typeText("Start of the article\n\n")
-        app.buttons["jam-add-photo"].tap()
-        app.buttons["jam-add-camera"].tap()   // in an article the camera button takes a video (demo: a made-up clip)
+        addArticlePhoto(app)
+        app.buttons["jam-add"].tap(); app.buttons["composer-take-photo"].tap()   // the camera in the add sheet: in an article a video (demo: a made-up clip)
+        sleep(1)
         // A co-author.
         app.buttons["jam-add-coauthor"].tap()
         let sam = app.buttons["jam-coauthor-choice-sam"]

@@ -19,6 +19,11 @@ extension NSAttributedString.Key {
     static let limeMention = NSAttributedString.Key("lime.mention")
     /// On the one character of a picture (or file) put into a jam article (LIME-188e): the index of the file in the post's list.
     static let limeImage = NSAttributedString.Key("lime.image")
+    /// On every character of a paragraph of a jam post that is a heading ("h1", "h2", "h3"), a quote, an indented paragraph or a button (LIME-188l).
+    /// A separate attribute from `limeBlock`, so the list and code editing never meets one.
+    static let limePara = NSAttributedString.Key("lime.para")
+    /// On a button paragraph: its https address.
+    static let limeButton = NSAttributedString.Key("lime.button")
 }
 
 enum InlineFormat: CaseIterable {
@@ -31,6 +36,8 @@ enum BlockKind: String { case bullet, number, code }
 struct FormattingState: Equatable {
     var bold = false, italic = false, underline = false, strike = false, code = false
     var link = false, bullets = false, numbers = false
+    /// A jam post's paragraph styles at the caret: the heading level (1 to 3, or 0), a quote, an indented paragraph.
+    var heading = 0, quote = false, indented = false
     /// The caret or selection touches a list item (the Indent and Outdent buttons show), and whether each can change anything.
     var inList = false, canIndent = false, canOutdent = false
 }
@@ -96,9 +103,23 @@ enum ComposerDocument {
                 font = styled(base, traits: [.traitBold])
                 text.addAttribute(.foregroundColor, value: UIColor(Theme.linkOther), range: range)
             }
+            var tint: UIColor?
+            if let para = attributes[.limePara] as? String {
+                switch para {
+                case "h1": font = styled(base.withSize(base.pointSize * 1.6), traits: [.traitBold])
+                case "h2": font = styled(base.withSize(base.pointSize * 1.35), traits: [.traitBold])
+                case "h3": font = styled(base.withSize(base.pointSize * 1.15), traits: [.traitBold])
+                case "quote": font = styled(base, traits: traits.union([.traitItalic])); tint = UIColor(Theme.textSecondary)
+                case "button": font = styled(base, traits: traits.union([.traitBold])); tint = UIColor(Theme.linkOther)
+                default: break
+                }
+                if let tint { text.addAttribute(.foregroundColor, value: tint, range: range) }
+            }
             text.addAttribute(.font, value: font, range: range)
             if inline || block == .code {
                 text.addAttribute(.backgroundColor, value: ink.withAlphaComponent(0.10), range: range)
+            } else if (attributes[.limePara] as? String) == "button" {
+                text.addAttribute(.backgroundColor, value: ink.withAlphaComponent(0.08), range: range)
             } else {
                 text.removeAttribute(.backgroundColor, range: range)
             }
@@ -114,6 +135,13 @@ enum ComposerDocument {
                 let indent = CGFloat(level) * 18
                 style.firstLineHeadIndent = indent
                 style.headIndent = indent + 20
+                text.addAttribute(.paragraphStyle, value: style, range: paragraph)
+            } else if paragraph.length > 0, let para = text.attribute(.limePara, at: paragraph.location, effectiveRange: nil) as? String, ["quote", "indent", "button"].contains(para) {
+                let style = NSMutableParagraphStyle()
+                let inset: CGFloat = para == "indent" ? 24 : para == "quote" ? 16 : 0
+                style.firstLineHeadIndent = inset
+                style.headIndent = inset
+                if para == "button" { style.alignment = .center }
                 text.addAttribute(.paragraphStyle, value: style, range: paragraph)
             } else {
                 text.removeAttribute(.paragraphStyle, range: paragraph)
@@ -239,6 +267,52 @@ enum ComposerDocument {
         return NSRange(location: paragraph.location, length: digits + 2)
     }
 
+    // MARK: Paragraph styles of a jam post (LIME-188l)
+
+    static func paraStyle(in text: NSAttributedString, at location: Int) -> String? {
+        guard location < text.length else { return nil }
+        return text.attribute(.limePara, at: location, effectiveRange: nil) as? String
+    }
+
+    /// Sets `style` ("h1"… "quote", "indent") on the plain paragraphs the selection touches, or takes it off when they all have it already (a list item
+    /// or a code line is left alone). Returns whether it is on now.
+    @discardableResult
+    static func toggleParagraphStyle(_ style: String, in text: NSMutableAttributedString, selection: NSRange) -> Bool {
+        let touched = paragraphs(in: text, covering: selection).filter { $0.length > 0 && blockKind(in: text, at: $0.location) == nil && text.attribute(.limeImage, at: $0.location, effectiveRange: nil) == nil }
+        let off = !touched.isEmpty && touched.allSatisfy { paraStyle(in: text, at: $0.location) == style }
+        for paragraph in touched {
+            text.removeAttribute(.limeButton, range: paragraph)
+            if off { text.removeAttribute(.limePara, range: paragraph) } else { text.addAttribute(.limePara, value: style, range: paragraph) }
+        }
+        restyle(text)
+        return !off
+    }
+
+    /// Indent moves a plain paragraph one level in (a list keeps its own levels); outdent takes it back.
+    static func shiftParagraphs(indent: Bool, in text: NSMutableAttributedString, selection: NSRange) {
+        for paragraph in paragraphs(in: text, covering: selection) where paragraph.length > 0 && blockKind(in: text, at: paragraph.location) == nil {
+            let current = paraStyle(in: text, at: paragraph.location)
+            if indent, current == nil { text.addAttribute(.limePara, value: "indent", range: paragraph) }
+            if !indent, current == "indent" { text.removeAttribute(.limePara, range: paragraph) }
+        }
+        restyle(text)
+    }
+
+    /// A button as a paragraph of its own at `location`; returns the caret after it.
+    @discardableResult
+    static func insertButton(_ title: String, url: String, into text: NSMutableAttributedString, at location: Int) -> Int {
+        let button = NSMutableAttributedString(string: title, attributes: [.limePara: "button", .limeButton: url])
+        var at = min(max(location, 0), text.length)
+        let string = text.string as NSString
+        if at > 0, string.character(at: at - 1) != 0x0A { text.insert(NSAttributedString(string: "\n"), at: at); at += 1 }
+        text.insert(button, at: at)
+        at += button.length
+        let nextIsNewline = at < text.length && (text.string as NSString).character(at: at) == 0x0A
+        if !nextIsNewline { text.insert(NSAttributedString(string: "\n"), at: at) }
+        restyle(text)
+        return at + 1
+    }
+
     // MARK: Converting to Markdown
 
     /// The composer's text as blocks.
@@ -247,8 +321,12 @@ enum ComposerDocument {
         var paragraph: [Span] = []        // the lines of the paragraph being built
         var listItems: [ListItem] = []
         var codeLines: [String] = []
+        var quoted: [Span] = []           // the lines of a quote being built (a jam post)
+        var indented: [Span] = []         // and of an indented paragraph
         func flushParagraph() {
             if !paragraph.isEmpty { blocks.append(.paragraph(spans: paragraph)); paragraph = [] }
+            if !quoted.isEmpty { blocks.append(.quote(spans: quoted)); quoted = [] }
+            if !indented.isEmpty { blocks.append(.indent(spans: indented)); indented = [] }
         }
         func flushList() {
             if !listItems.isEmpty { blocks.append(.itemList(items: listItems)); listItems = [] }
@@ -291,9 +369,31 @@ enum ComposerDocument {
                 } else if content.length == 0 {
                     flushParagraph() // a blank line ends the paragraph
                 } else {
+                    let para = text.attribute(.limePara, at: content.location, effectiveRange: nil) as? String
+                    let newline = Span(text: "\n", bold: false, italic: false, underline: false, strike: false, code: false, link: nil, mention: nil)
                     var lineSpans = spans(in: text, range: content)
-                    if !paragraph.isEmpty { lineSpans.insert(Span(text: "\n", bold: false, italic: false, underline: false, strike: false, code: false, link: nil, mention: nil), at: 0) }
-                    paragraph.append(contentsOf: lineSpans)
+                    switch para {
+                    case "h1", "h2", "h3":
+                        flushParagraph()
+                        blocks.append(.heading(level: UInt32(para!.dropFirst()) ?? 1, spans: lineSpans))
+                    case "button":
+                        flushParagraph()
+                        if let url = text.attribute(.limeButton, at: content.location, effectiveRange: nil) as? String {
+                            blocks.append(.button(text: string.substring(with: content), url: url))
+                        }
+                    case "quote":
+                        if !paragraph.isEmpty || !indented.isEmpty { flushParagraph() }
+                        if !quoted.isEmpty { lineSpans.insert(newline, at: 0) }
+                        quoted.append(contentsOf: lineSpans)
+                    case "indent":
+                        if !paragraph.isEmpty || !quoted.isEmpty { flushParagraph() }
+                        if !indented.isEmpty { lineSpans.insert(newline, at: 0) }
+                        indented.append(contentsOf: lineSpans)
+                    default:
+                        if !quoted.isEmpty || !indented.isEmpty { flushParagraph() }
+                        if !paragraph.isEmpty { lineSpans.insert(newline, at: 0) }
+                        paragraph.append(contentsOf: lineSpans)
+                    }
                 }
             }
         }
@@ -317,15 +417,15 @@ enum ComposerDocument {
     }
 
     /// The text to send.
-    static func markdown(from text: NSAttributedString) -> String {
-        messageMarkdownFromBlocks(blocks: blocks(from: text))
+    static func markdown(from text: NSAttributedString, post: Bool = false) -> String {
+        post ? postMarkdownFromBlocks(blocks: blocks(from: text)) : messageMarkdownFromBlocks(blocks: blocks(from: text))
     }
 
     // MARK: Converting from Markdown
 
     /// A Markdown message as composer text (used to put a message back for editing, and by the tests).
-    static func attributed(fromMarkdown markdown: String) -> NSMutableAttributedString {
-        attributed(from: parseMessageMarkdown(text: markdown))
+    static func attributed(fromMarkdown markdown: String, post: Bool = false) -> NSMutableAttributedString {
+        attributed(from: post ? parsePostMarkdown(text: markdown) : parseMessageMarkdown(text: markdown))
     }
 
     static func attributed(from blocks: [Block]) -> NSMutableAttributedString {
@@ -352,6 +452,10 @@ enum ComposerDocument {
             case .paragraph(let spans): appendSpans(spans)
             case .image(_, let attachment):
                 append("\u{FFFC}", [.limeImage: Int(attachment)])
+            case .heading(let level, let spans): appendSpans(spans, block: [.limePara: "h\(min(max(level, 1), 3))"])
+            case .quote(let spans): appendSpans(spans, block: [.limePara: "quote"])
+            case .indent(let spans): appendSpans(spans, block: [.limePara: "indent"])
+            case .button(let text, let url): append(text, [.limePara: "button", .limeButton: url])
             case .code(let code):
                 let lines = code.split(separator: "\n", omittingEmptySubsequences: false)
                 for (n, line) in lines.enumerated() {
@@ -386,7 +490,7 @@ enum ComposerDocument {
         var typing: [NSAttributedString.Key: Any] = [.font: baseFont(), .foregroundColor: UIColor.label]
         guard caret > 0, caret <= text.length else { return typing }
         let previous = text.attributes(at: caret - 1, effectiveRange: nil)
-        for key in [NSAttributedString.Key.limeBold, .limeItalic, .limeCode, .limeBlock, .limeLevel, .underlineStyle, .strikethroughStyle] {
+        for key in [NSAttributedString.Key.limeBold, .limeItalic, .limeCode, .limeBlock, .limeLevel, .limePara, .underlineStyle, .strikethroughStyle] {
             if let value = previous[key] { typing[key] = value }
         }
         // The start of a new line is not a list item (a list item's line break does not carry the list on: Return
@@ -394,6 +498,8 @@ enum ComposerDocument {
         if (text.string as NSString).substring(with: NSRange(location: caret - 1, length: 1)) == "\n", (previous[.limeBlock] as? String) != BlockKind.code.rawValue {
             typing[.limeBlock] = nil
             typing[.limeLevel] = nil
+            // A quote or an indented paragraph goes on with the next line; a heading or a button does not.
+            if let para = previous[.limePara] as? String, para != "quote", para != "indent" { typing[.limePara] = nil }
         }
         return typing
     }
@@ -415,6 +521,12 @@ enum ComposerDocument {
         state.bullets = !touched.isEmpty && touched.allSatisfy { $0 == .bullet }
         state.numbers = !touched.isEmpty && touched.allSatisfy { $0 == .number }
         state.inList = touched.contains { $0 == .bullet || $0 == .number }
+        let styles = paragraphs(in: text, covering: selection).map { $0.length > 0 ? paraStyle(in: text, at: $0.location) : (typing[.limePara] as? String) }
+        if let first = styles.first, styles.allSatisfy({ $0 == first }), let first {
+            if first.hasPrefix("h") { state.heading = Int(first.dropFirst()) ?? 0 }
+            state.quote = first == "quote"
+            state.indented = first == "indent"
+        }
         if state.inList {
             state.canIndent = shiftedLevels(in: text, selection: selection, indent: true).contains { $0.from != $0.to }
             state.canOutdent = shiftedLevels(in: text, selection: selection, indent: false).contains { $0.from != $0.to }

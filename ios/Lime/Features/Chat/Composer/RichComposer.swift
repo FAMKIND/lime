@@ -8,6 +8,11 @@ struct LinkRequest: Identifiable {
     var initialURL = ""
 }
 
+/// A button the person is adding to a jam post.
+struct ButtonRequest: Identifiable {
+    let id = UUID()
+}
+
 /// The composer's state and actions, shared by the text view, the toolbar above the keyboard, the composer
 /// row and the link sheet.
 @MainActor
@@ -21,6 +26,9 @@ final class RichComposerModel {
     /// Opened with Aa: stays until ✕ or send.
     private(set) var pinned = false
     var linkRequest: LinkRequest?
+    /// A jam post's editor (LIME-188l): headings, quotes, indent and buttons are allowed, and the text is written with the post rules.
+    var isPost = false
+    var buttonRequest: ButtonRequest?
     weak var textView: ComposerTextView?
     /// The emoji keyboard is up (LIME-174): the composer's own text view shows it, so there is one keyboard owner and the keyboard, its accessory and
     /// the composer's place always agree. 😊 toggles it; the icon becomes a keyboard while it shows.
@@ -104,7 +112,7 @@ final class RichComposerModel {
 
     func markdown() -> String {
         guard let textView else { return "" }
-        return ComposerDocument.markdown(from: textView.attributedText)
+        return ComposerDocument.markdown(from: textView.attributedText, post: isPost)
     }
 
     /// Anything to send? (Markup around nothing is nothing.)
@@ -249,6 +257,38 @@ final class RichComposerModel {
         ComposerDocument.restyle(textView.textStorage)
         textView.typingAttributes = ComposerDocument.typingAttributes(in: textView.textStorage, caret: textView.selectedRange.location)
         didEdit()
+    }
+
+    /// H1 to H3, quote: the paragraphs the selection touches (the same again takes it off).
+    func toggleParagraph(_ style: String) {
+        guard let textView else { return }
+        let on = ComposerDocument.toggleParagraphStyle(style, in: textView.textStorage, selection: textView.selectedRange)
+        var typing = textView.typingAttributes
+        typing[.limePara] = on ? style : nil
+        textView.typingAttributes = typing
+        didEdit()
+    }
+
+    func shiftParagraph(indent: Bool) {
+        guard let textView else { return }
+        ComposerDocument.shiftParagraphs(indent: indent, in: textView.textStorage, selection: textView.selectedRange)
+        textView.typingAttributes = ComposerDocument.typingAttributes(in: textView.textStorage, caret: textView.selectedRange.location)
+        didEdit()
+    }
+
+    /// Adds a button after the caret's line. Returns why it cannot, or nil.
+    func applyButton(title: String, address: String) -> String? {
+        guard let textView else { return nil }
+        let words = title.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "[", with: "").replacingOccurrences(of: "]", with: "")
+        guard !words.isEmpty else { return "Say what the button should read." }
+        var text = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !text.contains("://") { text = "https://" + text }
+        guard text.lowercased().hasPrefix("https://"), !text.contains(" "), !text.contains("("), !text.contains(")"), let url = URL(string: text), url.host?.contains(".") == true else { return "Use an https address." }
+        let caret = ComposerDocument.insertButton(words, url: text, into: textView.textStorage, at: textView.selectedRange.location)
+        textView.selectedRange = NSRange(location: caret, length: 0)
+        textView.typingAttributes = ComposerTextView.plainTypingAttributes
+        didEdit()
+        return nil
     }
 
     func toggleCode() {

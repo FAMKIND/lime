@@ -22,4 +22,15 @@ final class PlaceholderContrastTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(ratio(grey, canvas), 4.5, "\(style == .dark ? "dark" : "light"): \(ratio(grey, canvas))")
         }
     }
+
+    func testTheTitleHintMeetsThreeToOneAndIsLighterThanTheRest() {
+        for style in [UIUserInterfaceStyle.light, .dark] {
+            let traits = UITraitCollection(userInterfaceStyle: style)
+            let canvas = UIColor(Theme.canvas).resolvedColor(with: traits)
+            let large = ratio(UIColor(Theme.placeholderLarge).resolvedColor(with: traits), canvas)
+            let regular = ratio(UIColor(Theme.placeholder).resolvedColor(with: traits), canvas)
+            XCTAssertGreaterThanOrEqual(large, 3.0, "\(style == .dark ? "dark" : "light"): \(large)")
+            XCTAssertLessThan(large, regular, "the title's hint is the softer of the two")
+        }
+    }
 }

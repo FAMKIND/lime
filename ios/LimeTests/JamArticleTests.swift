@@ -38,4 +38,31 @@ final class JamArticleTests: XCTestCase {
         XCTAssertEqual(normalisePostMarkdown(text: "![Fig 1](attachment:0)"), "![Fig 1](attachment:0)")
         XCTAssertEqual(postPlainText(text: "Words\n\n![Fig 1](attachment:0)"), "Words\nFig 1")
     }
+
+    // MARK: LIME-188l
+
+    func testHeadingsQuotesIndentsAndButtonsRoundTripThroughTheEditor() {
+        let markdown = "# Big\n\n## Medium\n\n### Small\n\n> quoted\n> twice\n\n  indented\n\n[[Go]](https://example.com/a)\n\nplain"
+        let text = ComposerDocument.attributed(fromMarkdown: markdown, post: true)
+        XCTAssertEqual(ComposerDocument.markdown(from: text, post: true), markdown)
+        XCTAssertFalse(text.string.contains("#"), "the markers are not text in the editor")
+        XCTAssertEqual(MessageRender.blocks(markdown, post: true).count, 7)
+        // A chat reads the same words as plain paragraphs.
+        XCTAssertTrue(MessageRender.blocks(markdown).allSatisfy { if case .paragraph = $0 { true } else { false } })
+    }
+
+    func testTheStripTogglesAParagraphStyleOnAndOff() {
+        let text = ComposerDocument.attributed(fromMarkdown: "One\n\nTwo", post: true)
+        let first = NSRange(location: 1, length: 0)
+        XCTAssertTrue(ComposerDocument.toggleParagraphStyle("h2", in: text, selection: first))
+        XCTAssertEqual(ComposerDocument.markdown(from: text, post: true), "## One\n\nTwo")
+        XCTAssertFalse(ComposerDocument.toggleParagraphStyle("h2", in: text, selection: first), "the same again takes it off")
+        ComposerDocument.shiftParagraphs(indent: true, in: text, selection: first)
+        XCTAssertEqual(ComposerDocument.markdown(from: text, post: true), "  One\n\nTwo")
+        ComposerDocument.shiftParagraphs(indent: false, in: text, selection: first)
+        XCTAssertEqual(ComposerDocument.markdown(from: text, post: true), "One\n\nTwo")
+        let caret = ComposerDocument.insertButton("Go", url: "https://example.com", into: text, at: text.length)
+        XCTAssertGreaterThan(caret, 0)
+        XCTAssertTrue(ComposerDocument.markdown(from: text, post: true).hasSuffix("[[Go]](https://example.com)"))
+    }
 }

@@ -19,6 +19,16 @@ struct FormattingToolbar: View {
                     symbol("chevron.left.forwardslash.chevron.right", on: model.format.code, id: "fmt-code", label: "Code") { model.toggleCode() }
                     symbol("list.bullet", on: model.format.bullets, id: "fmt-bullets", label: "Bulleted list") { model.toggleList(.bullet) }
                     symbol("list.number", on: model.format.numbers, id: "fmt-numbers", label: "Numbered list") { model.toggleList(.number) }
+                    if model.isPost {
+                        // A jam post (LIME-188l): headings, quote, indent for a plain paragraph, and a button.
+                        heading(1); heading(2); heading(3)
+                        symbol("text.quote", on: model.format.quote, id: "fmt-quote", label: "Quote") { model.toggleParagraph("quote") }
+                        if !model.format.inList {
+                            shift("decrease.indent", id: "fmt-para-outdent", label: "Outdent paragraph", enabled: model.format.indented) { model.shiftParagraph(indent: false) }
+                            shift("increase.indent", id: "fmt-para-indent", label: "Indent paragraph", enabled: !model.format.indented) { model.shiftParagraph(indent: true) }
+                        }
+                        symbol("rectangle.and.hand.point.up.left", on: false, id: "fmt-button", label: "Button") { model.buttonRequest = ButtonRequest() }
+                    }
                     if model.format.inList {
                         shift("decrease.indent", id: "fmt-outdent", label: "Outdent", enabled: model.format.canOutdent) { model.shiftList(indent: false) }
                         shift("increase.indent", id: "fmt-indent", label: "Indent", enabled: model.format.canIndent) { model.shiftList(indent: true) }
@@ -45,6 +55,12 @@ struct FormattingToolbar: View {
                 .font(id == "fmt-bold" ? .system(size: 18, weight: .bold) : font)
                 .underline(underline).strikethrough(strike)
                 .foregroundStyle(Theme.text)
+        }
+    }
+
+    private func heading(_ level: Int) -> some View {
+        item(on: model.format.heading == level, id: "fmt-h\(level)", label: "Heading \(level)", action: { model.toggleParagraph("h\(level)") }) {
+            Text("H\(level)").font(.system(size: 15, weight: .bold)).foregroundStyle(Theme.text)
         }
     }
 
@@ -132,5 +148,52 @@ struct LinkSheet: View {
 
     private func add() {
         if let message = composer.applyLink(address: address, text: text) { problem = message } else { dismiss() }
+    }
+}
+
+/// The button sheet (a jam post): the words on the button and its https address.
+struct ButtonSheet: View {
+    let composer: RichComposerModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var title = ""
+    @State private var address = ""
+    @State private var problem: String?
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Button("Cancel") { dismiss() }.foregroundStyle(Theme.text).accessibilityIdentifier("button-cancel")
+                Spacer()
+                Text("Add button").font(Theme.title).foregroundStyle(Theme.text)
+                Spacer()
+                Button("Add") { add() }.font(Theme.title).foregroundStyle(Theme.text)
+                    .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty || address.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .accessibilityIdentifier("button-apply")
+            }
+            TextField("Button text", text: $title).focused($focused).selectionTint()
+                .padding(.horizontal, 16).frame(minHeight: 52)
+                .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .accessibilityIdentifier("button-text")
+            TextField("Address (https://\u{2026})", text: $address)
+                .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled().selectionTint()
+                .padding(.horizontal, 16).frame(minHeight: 52)
+                .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .accessibilityIdentifier("button-url")
+            if let problem {
+                Text(problem).font(Theme.secondary).foregroundStyle(Color.red).accessibilityIdentifier("button-error")
+            } else {
+                Text("A button opens an https address.").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(20)
+        .background(Theme.canvas.ignoresSafeArea())
+        .presentationDetents([.medium])
+        .onAppear { focused = true }
+    }
+
+    private func add() {
+        if let message = composer.applyButton(title: title, address: address) { problem = message } else { dismiss() }
     }
 }

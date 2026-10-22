@@ -43,6 +43,23 @@ struct FormattedMessageText: View {
                         }
                     case .image(let caption, let index):
                         if let postImage { postImage(caption, index) }
+                    case .heading(let level, let spans):
+                        Text(MessageRender.attributed(spans, ink: ink, link: link, mentions: mentions))
+                            .font(Theme.font(level == 1 ? .title : level == 2 ? .title2 : .title3, weight: .bold)).foregroundStyle(ink)
+                            .fixedSize(horizontal: false, vertical: true).padding(.top, 6)
+                            .accessibilityAddTraits(.isHeader)
+                    case .quote(let spans):
+                        HStack(alignment: .top, spacing: 10) {
+                            Capsule().fill(ink.opacity(0.3)).frame(width: 3)
+                            Text(MessageRender.attributed(spans, ink: ink, link: link, mentions: mentions)).font(Theme.body.italic()).foregroundStyle(ink.opacity(0.8))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .fixedSize(horizontal: false, vertical: true)
+                    case .indent(let spans):
+                        Text(MessageRender.attributed(spans, ink: ink, link: link, mentions: mentions)).font(Theme.body).foregroundStyle(ink)
+                            .fixedSize(horizontal: false, vertical: true).padding(.leading, 24)
+                    case .button(let text, let url):
+                        PostButton(text: text, url: url)
                     case .code(let text):
                         ScrollView(.horizontal, showsIndicators: false) {
                             Text(text)
@@ -86,6 +103,10 @@ enum MessageRender {
         case list([ListItem])
         case code(String)
         case image(caption: String, index: Int)
+        case heading(level: Int, [Span])
+        case quote([Span])
+        case indent([Span])
+        case button(text: String, url: String)
     }
 
     /// `post`: a jam post's text, which can hold image blocks; a chat message cannot.
@@ -96,6 +117,10 @@ enum MessageRender {
             case .itemList(let items): .list(items)
             case .code(let text): .code(text)
             case .image(let caption, let attachment): .image(caption: caption, index: Int(attachment))
+            case .heading(let level, let spans): .heading(level: Int(level), spans)
+            case .quote(let spans): .quote(spans)
+            case .indent(let spans): .indent(spans)
+            case .button(let text, let url): .button(text: text, url: url)
             }
         }
     }
@@ -231,4 +256,23 @@ struct MentionContext {
 
 extension EnvironmentValues {
     @Entry var mentionContext: MentionContext? = nil
+}
+
+/// A link drawn as a full-width rounded button in a jam post (LIME-188l). Neutral, not lime: lime is for the one main action on a screen.
+struct PostButton: View {
+    let text: String
+    let url: String
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        Button { if let link = URL(string: url) { openURL(link) } } label: {
+            Text(text).font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text).multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity, minHeight: 50).padding(.horizontal, 12)
+                .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(text).accessibilityHint("Opens a link").accessibilityAddTraits(.isLink)
+        .accessibilityIdentifier("post-button")
+    }
 }

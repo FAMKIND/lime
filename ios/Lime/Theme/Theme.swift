@@ -52,7 +52,10 @@ enum Theme {
     static let text = color(Name.text)
     static let textSecondary = color(Name.textSecondary)
     /// The soft grey of an empty field's hint (LIME-188f): one grey for every placeholder, readable (4.5:1) on the canvas in light and dark.
-    static let placeholder = textSecondary
+    /// (LIME-188l: softer than the text grey, still 4.5:1 on the canvas in light and dark.)
+    static let placeholder = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0x8C / 255, green: 0x85 / 255, blue: 0x7E / 255, alpha: 1) : UIColor(red: 0x6E / 255, green: 0x66 / 255, blue: 0x5E / 255, alpha: 1) })
+    /// The hint of a large field, the article's title (bold, over 14 pt, so WCAG's 3:1 for large text applies): lighter still.
+    static let placeholderLarge = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0x6F / 255, green: 0x69 / 255, blue: 0x62 / 255, alpha: 1) : UIColor(red: 0x8E / 255, green: 0x86 / 255, blue: 0x7E / 255, alpha: 1) })
     static let hairline = color(Name.hairline)
     /// A link in someone else's bubble, and in the composer.
     static let linkOther = color(Name.linkOther)
