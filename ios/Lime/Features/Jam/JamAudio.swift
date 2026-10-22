@@ -148,7 +148,27 @@ struct AudioMiniPlayer: View {
 
     var body: some View {
         let now = NowPlaying.shared
-        if let item = now.item {
+        let speaker = ArticleSpeaker.shared
+        if now.item == nil, speaker.active {
+            // An article read aloud (LIME-188p): its title, play or pause, the speed and close.
+            HStack(spacing: 10) {
+                Image(systemName: "headphones").frame(width: 40, height: 40).background(Theme.surface, in: RoundedRectangle(cornerRadius: 10, style: .continuous)).accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(speaker.title).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
+                    Text("Listening").font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                }
+                Spacer(minLength: 0)
+                Button { speaker.cycleSpeed() } label: {
+                    Text(speaker.rate == 1 ? "1\u{00D7}" : speaker.rate == 1.25 ? "1.25\u{00D7}" : "1.5\u{00D7}").font(Theme.font(.subheadline, weight: .bold)).foregroundStyle(Theme.text).frame(minWidth: 44, minHeight: 44)
+                }
+                .accessibilityLabel("Reading speed").accessibilityIdentifier("speech-mini-speed")
+                Button { speaker.toggle() } label: { Image(systemName: speaker.paused ? "play.fill" : "pause.fill").font(.system(size: 18)).foregroundStyle(Theme.text).frame(width: 44, height: 44) }
+                    .accessibilityLabel(speaker.paused ? "Play" : "Pause").accessibilityIdentifier("speech-mini-play")
+                Button { speaker.stop() } label: { Image(systemName: "xmark").font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.text).frame(width: 44, height: 44) }
+                    .accessibilityLabel("Stop listening").accessibilityIdentifier("speech-mini-close")
+            }
+            .padding(.leading, 12).padding(.trailing, 4).frame(minHeight: 56).limeGlass(in: Capsule()).padding(.horizontal, 16).padding(.bottom, 4)
+        } else if let item = now.item {
             let writer = store.teacher(store.jamPost(item.postID)?.author ?? "")
             HStack(spacing: 10) {
                 Button { now.showsScreen = true } label: {

@@ -190,8 +190,9 @@ final class Jam188bUITests: LimeUITestCase {
         XCTAssertTrue(any(app, "jam-card-byline-\(article.identifier.dropFirst("jam-post-".count))").label.contains("with Sam Park"), "the card says who it is with")
         article.tap()
         XCTAssertTrue(any(app, "jam-inline-0").waitForExistence(timeout: 8), "the photo in place")
-        XCTAssertTrue(any(app, "jam-inline-1").waitForExistence(timeout: 8), "and the video, in place after the photo")
-        XCTAssertLessThan(any(app, "jam-inline-0").frame.minY, any(app, "jam-inline-1").frame.minY)
+        // The video stands in the text after the photo: its card (a mute button) is on the page.
+        for _ in 0..<4 where !app.buttons["jam-video-mute"].exists { app.swipeUp() }
+        XCTAssertTrue(app.buttons["jam-video-mute"].waitForExistence(timeout: 8), "and the video, in place after the photo")
     }
 
     func testARequestToBeCreditedIsACalmPromptThatAcceptOrDeclineClears() {

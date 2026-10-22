@@ -3,6 +3,7 @@ import SwiftUI
 /// Where a jam post or the subscribers list is pushed on the jam tab.
 struct JamPostRoute: Hashable { let postID: String }
 struct JamSubscribersRoute: Hashable { let jamID: String }
+struct JamSavedRoute: Hashable {}
 
 /// The jam tab (LIME-188b): one feed of the posts of the teachers you follow and your own, newest first, as cards; a **+** (the same floating button
 /// as link and call) writes a new one. There is nothing to set up: your jam is made on your first post, and your profile is its page. Quiet by
@@ -23,6 +24,7 @@ struct JamPage: View {
                 .navigationDestination(for: SharedListRoute.self) { SharedListView(route: $0) }
                 .navigationDestination(for: JamPostRoute.self) { JamPostView(postID: $0.postID) }
                 .navigationDestination(for: JamSubscribersRoute.self) { JamSubscribersView(jamID: $0.jamID) }
+                .navigationDestination(for: JamSavedRoute.self) { _ in JamSavedView() }
                 .navigationDestination(isPresented: Binding(get: { store.jamSearching }, set: { store.jamSearching = $0 })) {
                     Text("Nothing to search in jam yet.")
                         .font(Theme.body).foregroundStyle(Theme.textSecondary)
@@ -60,9 +62,27 @@ struct JamPage: View {
         .padding(.horizontal, 16).padding(.top, store.jamRequests.isEmpty ? 0 : 8)
     }
 
+    /// Posts saved on this phone (LIME-188p): a quiet row at the top, until the jam home has a place for it.
+    @ViewBuilder
+    private var savedRow: some View {
+        if !JamSaved.ids.isEmpty {
+            Button { store.jamPath.append(JamSavedRoute()) } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "bookmark").accessibilityHidden(true)
+                    Text("Saved (\(JamSaved.ids.count))").font(Theme.secondary)
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
+                }
+                .foregroundStyle(Theme.textSecondary).padding(.horizontal, 20).frame(minHeight: 44)
+            }
+            .buttonStyle(.plain).accessibilityIdentifier("jam-saved-row")
+        }
+    }
+
     private var feed: some View {
+        _ = store.jamHiddenChanged   // hiding a post redraws the feed
         let posts = store.jamFeed
-        return VStack(spacing: 0) { requests; feedBody(posts) }
+        return VStack(spacing: 0) { requests; savedRow; feedBody(posts) }
     }
 
     private func feedBody(_ posts: [JamPostInfo]) -> some View {
@@ -126,11 +146,18 @@ struct JamPostCard: View {
                 Text([store.byline(post), JamDates.text(post.created)].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary)
                     .accessibilityIdentifier("jam-card-byline-\(post.postId)")
             }
+            if post.kind == "article", post.state == "ready" {
+                Button { openPost() } label: { JamArticleCover(post: post).contentShape(Rectangle()) }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel([post.title, post.subtitle, String(post.plain.prefix(80))].filter { !$0.isEmpty }.joined(separator: ", ")).accessibilityHint("Opens the article")
+                    .accessibilityIdentifier("jam-post-\(post.postId)")
+            } else {
             Button { openPost() } label: { content.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle()) }
                 .buttonStyle(.plain)
                 .accessibilityElement(children: .combine)
                 .accessibilityHint("Opens the post")
                 .accessibilityIdentifier("jam-post-\(post.postId)")
+            }
             if post.state == "ready", post.kind != "article" { JamAttachmentsView(postID: post.postId, compact: true) }
             actions
         }

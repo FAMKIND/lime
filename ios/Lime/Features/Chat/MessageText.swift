@@ -14,6 +14,9 @@ struct FormattedMessageText: View {
     var find: FindStyle? = nil
     /// Who the mentions are (LIME-181); nil outside a chat.
     @Environment(\.mentionContext) private var mentions
+    /// The article reader's face and line spacing (LIME-188p); nil elsewhere.
+    @Environment(\.postBodyFont) private var bodyFont
+    @Environment(\.postLineSpacing) private var lineSpacing
     /// A jam post's text (LIME-188e): reads image blocks, drawn by this closure (caption, attachment number). A chat message never has them.
     var postImage: ((String, Int) -> AnyView)? = nil
     @AppStorage(MentionStyle.storageKey) private var mentionStyle = MentionStyle.fullName.rawValue
@@ -22,19 +25,19 @@ struct FormattedMessageText: View {
         let blocks = MessageRender.blocks(markdown, post: postImage != nil)
         if blocks.count == 1, case .paragraph(let spans) = blocks[0] {
             // The common case, one paragraph, is a single piece of text.
-            Text(MessageRender.attributed(spans, ink: ink, link: link, pressed: pressed, find: find, mentions: mentions, mentionStyle: MentionStyle(rawValue: mentionStyle) ?? .fullName)).font(Theme.body).foregroundStyle(ink).fixedSize(horizontal: false, vertical: true)
+            Text(MessageRender.attributed(spans, ink: ink, link: link, pressed: pressed, find: find, mentions: mentions, mentionStyle: MentionStyle(rawValue: mentionStyle) ?? .fullName)).font(bodyFont ?? Theme.body).lineSpacing(lineSpacing).foregroundStyle(ink).fixedSize(horizontal: false, vertical: true)
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
                     switch block {
                     case .paragraph(let spans):
-                        Text(MessageRender.attributed(spans, ink: ink, link: link, pressed: pressed, find: find, mentions: mentions, mentionStyle: MentionStyle(rawValue: mentionStyle) ?? .fullName)).font(Theme.body).foregroundStyle(ink).fixedSize(horizontal: false, vertical: true)
+                        Text(MessageRender.attributed(spans, ink: ink, link: link, pressed: pressed, find: find, mentions: mentions, mentionStyle: MentionStyle(rawValue: mentionStyle) ?? .fullName)).font(bodyFont ?? Theme.body).lineSpacing(lineSpacing).foregroundStyle(ink).fixedSize(horizontal: false, vertical: true)
                     case .list(let items):
                         VStack(alignment: .leading, spacing: 3) {
                             ForEach(Array(MessageRender.numbered(items).enumerated()), id: \.offset) { _, row in
                                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                                    Text(row.marker).font(Theme.body).foregroundStyle(ink).frame(minWidth: 14, alignment: .trailing)
-                                    Text(MessageRender.attributed(row.item.spans, ink: ink, link: link, pressed: pressed, find: find, mentions: mentions, mentionStyle: MentionStyle(rawValue: mentionStyle) ?? .fullName)).font(Theme.body).foregroundStyle(ink).fixedSize(horizontal: false, vertical: true)
+                                    Text(row.marker).font(bodyFont ?? Theme.body).foregroundStyle(ink).frame(minWidth: 14, alignment: .trailing)
+                                    Text(MessageRender.attributed(row.item.spans, ink: ink, link: link, pressed: pressed, find: find, mentions: mentions, mentionStyle: MentionStyle(rawValue: mentionStyle) ?? .fullName)).font(bodyFont ?? Theme.body).lineSpacing(lineSpacing).foregroundStyle(ink).fixedSize(horizontal: false, vertical: true)
                                 }
                                 .padding(.leading, CGFloat(min(row.item.level, maxListLevel())) * 18)
                                 .accessibilityElement(children: .combine)
@@ -51,7 +54,7 @@ struct FormattedMessageText: View {
                     case .quote(let spans):
                         HStack(alignment: .top, spacing: 10) {
                             Capsule().fill(ink.opacity(0.3)).frame(width: 3)
-                            Text(MessageRender.attributed(spans, ink: ink, link: link, mentions: mentions)).font(Theme.body.italic()).foregroundStyle(ink.opacity(0.8))
+                            Text(MessageRender.attributed(spans, ink: ink, link: link, mentions: mentions)).font((bodyFont ?? Theme.body).italic()).lineSpacing(lineSpacing).foregroundStyle(ink.opacity(0.8))
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         .fixedSize(horizontal: false, vertical: true)

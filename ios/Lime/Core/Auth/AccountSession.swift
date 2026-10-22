@@ -72,7 +72,10 @@ final class AccountSession {
             tokens = AuthTokens(accessToken: "fake-access", refreshToken: "fake-refresh", expiresAt: Date().addingTimeInterval(86_400), userID: "test-user")
             await store.bootstrap(arguments: arguments)
             if arguments.contains("-lime-load-sample-chats") { await store.loadSampleChats() }
-            if arguments.contains("-lime-demo-chat") { store.loadDemo(screen: arguments.firstIndex(of: "-lime-demo-screen").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }) }
+            if arguments.contains("-lime-demo-chat") {
+                // The demo starts from the defaults for what the reader remembers (UI tests change them).
+                for key in [ReaderPrefs.fontKey, ReaderPrefs.sizeKey, ReaderPrefs.lineKey, JamSaved.key, VideoPrefs.captionsKey, VideoPrefs.autoAdvanceKey] { UserDefaults.standard.removeObject(forKey: key) }
+                store.loadDemo(screen: arguments.firstIndex(of: "-lime-demo-screen").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }) }
             phase = .signedIn
             return
         }

@@ -8,9 +8,24 @@ struct JamPostView: View {
     let postID: String
     @Environment(ConversationStore.self) private var store
 
+    @AppStorage(ReaderPrefs.fontKey) private var fontRaw = ReaderFont.newYork.rawValue
+    @AppStorage(ReaderPrefs.sizeKey) private var sizeStep = 0
+    @AppStorage(ReaderPrefs.lineKey) private var lineStep = 0
+
     var body: some View {
         let post = store.jamPost(postID)
-        ScrollView {
+        if post?.kind == "article" {
+            JamArticlePage(postID: postID)
+        } else {
+            quickReader(post)
+        }
+    }
+
+    /// A quick post or a recording, read in the reader's chosen face too.
+    private func quickReader(_ post: JamPostInfo?) -> some View {
+        let face = ReaderFont(rawValue: fontRaw) ?? .newYork
+        let size = ReaderPrefs.points(forStep: sizeStep)
+        return ScrollView {
             if let post {
                 let writer = store.teacher(post.author)
                 VStack(alignment: .leading, spacing: 14) {
@@ -55,6 +70,8 @@ struct JamPostView: View {
             }
         }
         .background(Theme.canvas)
+        .environment(\.postBodyFont, post?.kind == "quick" ? face.font(size: size) : nil)
+        .environment(\.postLineSpacing, post?.kind == "quick" ? ReaderPrefs.lineSpacing(size: size, step: lineStep) : 0)
         .linkOpening()
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
