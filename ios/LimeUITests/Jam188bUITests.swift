@@ -16,13 +16,10 @@ final class Jam188bUITests: LimeUITestCase {
         app.buttons.matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
     }
 
-    /// An article's + Add: the add sheet, then the first recent picture (demo) and Add.
+    /// An article's ⊕ menu: Image (demo: a made-up picture goes in at the caret).
     private func addArticlePhoto(_ app: XCUIApplication) {
         app.buttons["jam-add"].tap()
-        let tile = app.descendants(matching: .any).matching(identifier: "add-recent-0").firstMatch
-        XCTAssertTrue(tile.waitForExistence(timeout: 8))
-        tile.tap()
-        app.buttons["add-selected"].tap()
+        app.buttons["Image"].tap()
         sleep(1)
     }
 
@@ -167,7 +164,7 @@ final class Jam188bUITests: LimeUITestCase {
         XCTAssertEqual(app.buttons["jam-post-as"].label, "Posting as \(app.buttons["jam-post-as"].label.dropFirst("Posting as ".count))", "the chooser names who it is")
         XCTAssertTrue(app.buttons["jam-post-as"].label.hasPrefix("Posting as "))
         app.buttons["jam-write-article"].tap()
-        XCTAssertEqual(app.buttons["jam-exit-article"].label, "Back")
+        XCTAssertEqual(app.buttons["jam-exit-article"].label, "Exit article mode")
         XCTAssertTrue(app.buttons["jam-post-as"].exists, "also in article mode")
         let title = app.textFields["jam-article-title"].exists ? app.textFields["jam-article-title"] : app.textViews["jam-article-title"]
         title.tap(); title.typeText("What is liming?")
@@ -178,7 +175,7 @@ final class Jam188bUITests: LimeUITestCase {
         waitForExpectations(timeout: 5)
         body.typeText("Start of the article\n\n")
         addArticlePhoto(app)
-        app.buttons["jam-add"].tap(); app.buttons["composer-take-photo"].tap()   // the camera in the add sheet: in an article a video (demo: a made-up clip)
+        app.buttons["jam-add"].tap(); app.buttons["Take a photo or video"].tap()   // in an article the camera item takes a video (demo: a made-up clip)
         sleep(1)
         // A co-author.
         app.buttons["jam-add-coauthor"].tap()
@@ -186,7 +183,7 @@ final class Jam188bUITests: LimeUITestCase {
         XCTAssertTrue(sam.waitForExistence(timeout: 5))
         sam.tap()
         app.buttons["jam-coauthor-done"].tap()
-        XCTAssertTrue(app.buttons["jam-coauthor-sam"].waitForExistence(timeout: 5), "a chip for the co-author")
+        XCTAssertTrue(app.buttons["jam-coauthors"].waitForExistence(timeout: 5), "the co-author's avatar on the name line")
         app.buttons["jam-post"].tap()
         let article = card(app, containing: "What is liming?")
         XCTAssertTrue(article.waitForExistence(timeout: 8))

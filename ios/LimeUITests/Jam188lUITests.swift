@@ -16,11 +16,11 @@ final class Jam188lUITests: LimeUITestCase {
         let app = launch()
         app.buttons["new-jam-post"].tap()
         app.buttons["jam-write-article"].tap()
-        XCTAssertEqual(app.buttons["jam-exit-article"].label, "Back")
+        XCTAssertEqual(app.buttons["jam-exit-article"].label, "Exit article mode")
         let add = app.buttons["jam-add-coauthor"]
         XCTAssertTrue(add.exists)
         XCTAssertEqual(app.buttons.matching(identifier: "jam-add-coauthor").count, 1, "only the one by your name")
-        XCTAssertGreaterThan(add.frame.minY, app.buttons["jam-post-as"].frame.minY, "under the name")
+        XCTAssertEqual(add.frame.midY, app.buttons["jam-post-as"].frame.midY, accuracy: 6, "on the name's line")
         XCTAssertLessThan(add.frame.minY, app.buttons["jam-add"].frame.minY, "not in the bottom bar")
 
         let title = app.textFields["jam-article-title"].exists ? app.textFields["jam-article-title"] : app.textViews["jam-article-title"]

@@ -21,6 +21,8 @@ The text of a Lime message is **Markdown, from a small fixed subset**, carried i
 | Quote (jam posts only) | lines that start with `> ` | LIME-188l. Consecutive lines are one quote. |
 | Indent (jam posts only) | a paragraph whose every line starts with two spaces | LIME-188l. One level, for paragraphs (lists keep their own levels). `normalise_post_markdown` trims blank lines at the ends, not the spaces of a first indented paragraph. |
 | Button (jam posts only) | `[[Button text]](https://…)` as a paragraph of its own | LIME-188l. A link drawn as a full-width button. **https only** (an `http`, `javascript:` or other address, an empty text or one with brackets stays text); the reader opens it like any link. |
+| Divider (jam posts only) | `---` on a line of its own | LIME-188n. A thin rule. A chat leaves it as text; a post's paragraph that is only `---` is written escaped. `plain_text` gives nothing. |
+| Freewall (jam posts only) | `[[freewall]]` on a line of its own | LIME-188n. Marks where the subscribers' part starts. **At most one**: a second is read as plain text and a written post keeps only the first. A marker only: the post is still one encrypted blob; the open preview for non-subscribers is LIME-190's. |
 | Literal character | `\*` | A backslash before ASCII punctuation makes it literal. |
 
 A newline is a line break; a blank line separates paragraphs. A marker only counts when it touches the words (`2 * 3 * 4` is text) and closes on the same paragraph.

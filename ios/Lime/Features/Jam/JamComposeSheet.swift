@@ -31,8 +31,6 @@ struct JamComposeSheet: View {
     @State private var coauthors: [Person] = []
     @State private var choosingCoauthors = false
     @State private var postingAs = false
-    @State private var adding = false
-    @State private var recent = RecentMedia()
     @State private var article = JamDraft.shared.article
     @State private var title = JamDraft.shared.title
     @State private var subtitle = JamDraft.shared.subtitle
@@ -59,26 +57,8 @@ struct JamComposeSheet: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                if article { articleHead } else { quickHead }
-                if let problem {
-                    Text(problem).font(Theme.secondary).foregroundStyle(.red).padding(.horizontal, 20).padding(.top, 6).frame(maxWidth: .infinity, alignment: .leading)
-                        .accessibilityIdentifier("jam-compose-problem")
-                }
-                if hasClip { clipsRow }
-                GeometryReader { geo in
-                    ZStack(alignment: .topLeading) {
-                        RichComposerField(model: composer, maxHeight: geo.size.height, fills: true)
-                            .onAppear { composer.hasText = false; composer.isPost = true }
-                        if !composer.hasText {
-                            Text(article ? "Start writing an article\u{2026}" : "What\u{2019}s on your mind?").font(Theme.body).foregroundStyle(Theme.placeholder)
-                                .padding(.leading, 4).padding(.top, 8).allowsHitTesting(false).accessibilityHidden(true)
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                }
-                if !article, !photos.isEmpty { photosRow }
-                if let link { linkRow(link) }
+            Group {
+                if article { articlePage } else { quickPage }
             }
             .background(Theme.canvas)
             .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
@@ -95,16 +75,15 @@ struct JamComposeSheet: View {
             .sheet(isPresented: $choosingCoauthors) { JamCoauthorPicker(selected: $coauthors) }
             .sheet(item: $composer.linkRequest) { request in LinkSheet(request: request, composer: composer) }
             .sheet(item: $composer.buttonRequest) { _ in ButtonSheet(composer: composer) }
-            .sheet(isPresented: $adding) {
-                AddToMessageSheet(media: recent, room: max(0, 10 - articleFiles.count), onClose: { adding = false },
-                                  onCamera: { adding = false; choose(.camera) }, onPhotos: { adding = false; choose(.library) }, onFiles: { adding = false; choose(.files) },
-                                  onAdd: { items in
-                                      adding = false
-                                      Task { let picked = await recent.resolve(items); await self.picked(images: picked.images, videos: picked.videos) }
-                                  }, title: "Add to your post")
-            }
             .fullScreenCover(item: Binding(get: { recordMode.map(RecordMode.init) }, set: { recordMode = $0?.mode })) { mode in
-                PodcastRecorder(title: $recordTitle, coauthors: $coauthors, camera: mode.mode == 0) { clips = [$0] }
+                if mode.mode == 2 {
+                    // Audio for the article: the recorder with no title or co-host steps; the clip goes into the text at the caret.
+                    PodcastRecorder(title: $recordTitle, coauthors: $coauthors, camera: false, forArticle: true) { clip in
+                        insertIntoArticle(clip, preview: Self.fileCard(named: "Audio recording \(VoiceFormat.clock(Double(clip.durationMs ?? 0) / 1000))"))
+                    }
+                } else {
+                    PodcastRecorder(title: $recordTitle, coauthors: $coauthors, camera: mode.mode == 0) { clips = [$0] }
+                }
             }
             .fullScreenCover(item: $chooser) { which in
                 switch which {
@@ -129,14 +108,84 @@ struct JamComposeSheet: View {
         }
     }
 
+    /// A quick post: your name, the words at the top growing down, photos under them.
+    private var quickPage: some View {
+        VStack(spacing: 0) {
+            quickHead
+            problemText
+            if hasClip { clipsRow }
+            GeometryReader { geo in
+                ZStack(alignment: .topLeading) {
+                    RichComposerField(model: composer, maxHeight: geo.size.height, fills: true)
+                        .onAppear { composer.hasText = false; composer.isPost = true }
+                    if !composer.hasText {
+                        Text("What\u{2019}s on your mind?").font(Theme.body).foregroundStyle(Theme.placeholder)
+                            .padding(.leading, 4).padding(.top, 8).allowsHitTesting(false).accessibilityHidden(true)
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+            if !photos.isEmpty { photosRow }
+            if let link { linkRow(link) }
+        }
+    }
+
+    /// An article is one page (LIME-188n): the name line, the title, the subtitle and the body scroll together, under the top bar, and the body is as
+    /// tall as its text (a text view that does not scroll itself; it keeps the page scrolled to the caret). One scroll view, not a field with its own.
+    private var articlePage: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                articleHead
+                problemText
+                if hasClip { clipsRow }
+                ZStack(alignment: .topLeading) {
+                    RichComposerField(model: composer, selfSizing: true)
+                        .onAppear { composer.hasText = false; composer.isPost = true }
+                    if !composer.hasText {
+                        Text("Start writing an article\u{2026}").font(Theme.body).foregroundStyle(Theme.placeholder)
+                            .padding(.leading, 4).padding(.top, 8).allowsHitTesting(false).accessibilityHidden(true)
+                    }
+                }
+                .padding(.horizontal, 16).padding(.top, 16)
+                if let link { linkRow(link) }
+            }
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .accessibilityIdentifier("jam-article-page")
+    }
+
+    @ViewBuilder
+    private var problemText: some View {
+        if let problem {
+            Text(problem).font(Theme.secondary).foregroundStyle(.red).padding(.horizontal, 20).padding(.top, 6).frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("jam-compose-problem")
+        }
+    }
+
+    /// Switching between a quick post and an article keeps what is written (the field is a new view in each).
+    private func setArticle(_ on: Bool) {
+        let saved = composer.textView.map { NSAttributedString(attributedString: $0.attributedText) }
+        article = on
+        guard let saved, saved.length > 0 else { return }
+        Task {
+            try? await Task.sleep(for: .milliseconds(300))
+            composer.textView?.attributedText = saved
+            composer.didEdit()
+        }
+    }
+
+    /// Nothing written or added yet: the "Exit article mode" pill shows.
+    private var isEmptyArticle: Bool {
+        title.isEmpty && subtitle.isEmpty && !hasWords && !hasPictures && link == nil && clips.isEmpty
+    }
+
     private struct RecordMode: Identifiable { let mode: Int; var id: Int { mode } }
 
     // MARK: Heads
 
     private var quickHead: some View {
         VStack(alignment: .leading, spacing: 8) {
-            postAsChip
-            coauthorRow
+            postLine
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20).padding(.top, 12)
@@ -157,33 +206,35 @@ struct JamComposeSheet: View {
         .sheet(isPresented: $postingAs) { PostAsSheet() }
     }
 
-    /// Under your name: a quiet "+ Add co-author", and the people already added as small chips (tap one to take it off).
-    private var coauthorRow: some View {
-        FlowLayout(spacing: 6) {
+    /// One line: who the post is from, a person-with-plus to add a co-author, and the people added as small overlapping avatars (tap to change them).
+    private var postLine: some View {
+        HStack(spacing: 2) {
+            postAsChip
             Button { choosingCoauthors = true } label: {
-                Label(coauthors.isEmpty ? "Add co-author" : "Add another", systemImage: "plus").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
-                    .padding(.horizontal, 4).frame(minHeight: 44)
+                Image(systemName: "person.badge.plus").font(.system(size: 18)).foregroundStyle(Theme.textSecondary).frame(width: 44, height: 44)
             }
             .buttonStyle(.plain).accessibilityLabel("Add co-author").accessibilityIdentifier("jam-add-coauthor")
-            ForEach(coauthors) { person in
-                Button { coauthors.removeAll { $0.id == person.id } } label: {
-                    HStack(spacing: 6) {
-                        AvatarView(person: person, size: 22).accessibilityHidden(true)
-                        Text(person.name).font(Theme.secondary).foregroundStyle(Theme.text)
-                        Image(systemName: "xmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.textSecondary)
+            if !coauthors.isEmpty {
+                Button { choosingCoauthors = true } label: {
+                    HStack(spacing: -8) {
+                        ForEach(coauthors) { person in
+                            AvatarView(person: person, size: 28).overlay(Circle().strokeBorder(Theme.canvas, lineWidth: 2)).accessibilityHidden(true)
+                        }
                     }
-                    .padding(.horizontal, 8).frame(minHeight: 36).background(Theme.surface, in: Capsule())
+                    .frame(minHeight: 44)
                 }
-                .accessibilityLabel("Remove co-author \(person.name)").accessibilityIdentifier("jam-coauthor-\(person.id)")
+                .buttonStyle(.plain)
+                .accessibilityLabel("Co-authors: \(coauthors.map(\.name).joined(separator: ", "))").accessibilityHint("Opens the list to change them")
+                .accessibilityIdentifier("jam-coauthors")
             }
+            Spacer(minLength: 0)
         }
     }
 
     /// Title (large, up to 120), then a short subtitle (up to 160): Return in either moves on, neither ever holds the article.
     private var articleHead: some View {
         VStack(alignment: .leading, spacing: 4) {
-            postAsChip
-            coauthorRow.padding(.bottom, 6)
+            postLine.padding(.bottom, 6)
             TextField("Title", text: $title, prompt: Text("Title").foregroundColor(Theme.placeholderLarge), axis: .vertical).font(Theme.font(.title2, weight: .bold)).lineLimit(1...3)
                 .focused($focus, equals: .title).submitLabel(.next).onSubmit { focus = .subtitle }
                 .onChange(of: title) { _, now in
@@ -289,10 +340,17 @@ struct JamComposeSheet: View {
 
     private var bottomBar: some View {
         VStack(spacing: 0) {
+            if article, isEmptyArticle {
+                Button { setArticle(false) } label: {
+                    Label("Exit article mode", systemImage: "arrow.uturn.backward").font(Theme.secondary).foregroundStyle(Theme.text)
+                        .padding(.horizontal, 14).frame(minHeight: 44).background(Theme.surface, in: Capsule())
+                }
+                .buttonStyle(.plain).padding(.bottom, 6).accessibilityIdentifier("jam-exit-article")
+            }
             if composer.showsStrip { FormattingToolbar(model: composer).transition(.opacity) }
             if !article {
                 HStack(spacing: 8) {
-                    chip("Write an article", system: "doc.text", id: "jam-write-article") { article = true }
+                    chip("Write an article", system: "doc.text", id: "jam-write-article") { setArticle(true) }
                     chip("Record", system: "waveform", id: "jam-record") { recordMode = 1 }
                     Spacer()
                 }
@@ -300,10 +358,7 @@ struct JamComposeSheet: View {
             }
             HStack(spacing: 2) {
                 if article {
-                    Button { adding = true } label: {
-                        Label("Add", systemImage: "plus").font(Theme.secondary).foregroundStyle(Theme.text).padding(.horizontal, 12).frame(minHeight: 44)
-                    }
-                    .buttonStyle(.plain).accessibilityLabel("Add photos, videos or files").accessibilityIdentifier("jam-add")
+                    plusMenu
                 } else {
                     tool("photo.on.rectangle", "Add photos", id: "jam-add-photo") { choose(.library) }
                     tool("camera", "Camera", id: "jam-add-camera") { choose(.camera) }
@@ -311,12 +366,38 @@ struct JamComposeSheet: View {
                 tool("textformat", "Formatting", id: "jam-format", on: composer.toolbarVisible) { composer.formattingTapped() }
                 if !article { tool("waveform", "Record your voice", id: "jam-add-voice") { recordMode = 1 } }
                 Spacer()
-                if article { chipPlain("Back", id: "jam-exit-article") { article = false } }
                 tool(composer.editing ? "keyboard.chevron.compact.down" : "keyboard", composer.editing ? "Hide keyboard" : "Show keyboard", id: "jam-hide-keyboard") { composer.toggleKeyboard() }
             }
             .padding(.horizontal, 8).frame(minHeight: 48)
             .background(.bar)
         }
+    }
+
+    /// The article's ⊕: a menu above the bar. Image and Video (the library; "Take a photo or video" as well), Audio (record, or choose a file), then
+    /// Button, Divider and Freewall. Each goes in at the caret. (Files other than audio are not offered in v1.)
+    private var plusMenu: some View {
+        Menu {
+            Section {
+                Button { choose(.library) } label: { Label("Image", systemImage: "photo") }.accessibilityIdentifier("jam-menu-image")
+                Button { choose(.library) } label: { Label("Video", systemImage: "video") }.accessibilityIdentifier("jam-menu-video")
+                Button { choose(.camera) } label: { Label("Take a photo or video", systemImage: "camera") }.accessibilityIdentifier("jam-menu-camera")
+                Menu {
+                    Button { recordMode = 2 } label: { Label("Record", systemImage: "waveform") }.accessibilityIdentifier("jam-menu-audio-record")
+                    Button { choose(.files) } label: { Label("Choose a file", systemImage: "doc") }.accessibilityIdentifier("jam-menu-audio-file")
+                } label: { Label("Audio", systemImage: "waveform.circle") }
+                    .accessibilityIdentifier("jam-menu-audio")
+            }
+            Section {
+                Button { composer.buttonRequest = ButtonRequest() } label: { Label("Button", systemImage: "rectangle.and.hand.point.up.left") }.accessibilityIdentifier("jam-menu-button")
+                Button { composer.insertRule("divider") } label: { Label("Divider", systemImage: "minus") }.accessibilityIdentifier("jam-menu-divider")
+                Button { composer.insertRule("freewall") } label: { Label("Freewall", systemImage: "lock.open") }
+                    .disabled(composer.textView.map { ComposerDocument.hasFreewall(in: $0.textStorage) } ?? false)
+                    .accessibilityIdentifier("jam-menu-freewall")
+            }
+        } label: {
+            Image(systemName: "plus").font(.system(size: 17, weight: .bold)).foregroundStyle(Theme.canvas).frame(width: 36, height: 36).background(Theme.text, in: Circle()).frame(width: 44, height: 44)
+        }
+        .accessibilityLabel("Add").accessibilityIdentifier("jam-add")
     }
 
     private func tool(_ symbol: String, _ label: String, id: String, on: Bool = false, action: @escaping () -> Void) -> some View {

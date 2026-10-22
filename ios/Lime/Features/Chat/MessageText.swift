@@ -60,6 +60,15 @@ struct FormattedMessageText: View {
                             .fixedSize(horizontal: false, vertical: true).padding(.leading, 24)
                     case .button(let text, let url):
                         PostButton(text: text, url: url)
+                    case .divider:
+                        Rectangle().fill(Theme.hairline).frame(height: 1).padding(.vertical, 14).accessibilityHidden(true).accessibilityIdentifier("post-divider")
+                    case .freewall:
+                        HStack(spacing: 10) {
+                            Rectangle().fill(Theme.hairline).frame(height: 1)
+                            Text("Subscribers\u{2019} part starts here").font(Theme.caption).foregroundStyle(Theme.textSecondary).fixedSize()
+                            Rectangle().fill(Theme.hairline).frame(height: 1)
+                        }
+                        .padding(.vertical, 10).accessibilityElement(children: .combine).accessibilityIdentifier("post-freewall")
                     case .code(let text):
                         ScrollView(.horizontal, showsIndicators: false) {
                             Text(text)
@@ -107,6 +116,8 @@ enum MessageRender {
         case quote([Span])
         case indent([Span])
         case button(text: String, url: String)
+        case divider
+        case freewall
     }
 
     /// `post`: a jam post's text, which can hold image blocks; a chat message cannot.
@@ -121,6 +132,8 @@ enum MessageRender {
             case .quote(let spans): .quote(spans)
             case .indent(let spans): .indent(spans)
             case .button(let text, let url): .button(text: text, url: url)
+            case .divider: .divider
+            case .freewall: .freewall
             }
         }
     }

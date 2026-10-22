@@ -149,3 +149,6 @@ No payment code in v1; the model has `tier` and `tiers` so it can arrive without
 3. **Comments:** E2 (the writer republishes; appear when the writer is online)?
 4. **Page vs posts:** Option 1 (public page, encrypted posts)?
 5. **Who may create a jam** in v1, and the Report/takedown policy before TestFlight.
+
+## Freewall (LIME-188n, marker only) and what is planned
+A post may carry one `[[freewall]]` line (docs/message-format.md). In v1 every reader is a subscriber and sees the whole post, with a quiet "Subscribers' part starts here" rule at the marker; **nothing new goes to the server**. **Planned (LIME-190):** a non-subscriber who opens a post in discovery would see only what stands above the marker. That needs the free part to be readable without the subscribers' session; **what each party will learn then** (the server would hold the open part, or a second blob for it, and so learn that a post has a free part, its size and its time, and who fetched it by network address, as for any jam blob) must be decided in that brief before it is built.

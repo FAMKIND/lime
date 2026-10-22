@@ -11,6 +11,10 @@ struct FormattingToolbar: View {
         HStack(spacing: 8) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 2) {
+                    if model.isPost {
+                        shift("arrow.uturn.backward", id: "fmt-undo", label: "Undo", enabled: model.format.canUndo) { model.undo() }
+                        shift("arrow.uturn.forward", id: "fmt-redo", label: "Redo", enabled: model.format.canRedo) { model.redo() }
+                    }
                     letter("B", on: model.format.bold, id: "fmt-bold", label: "Bold") { model.apply(.bold) }
                     letter("I", Font.body.italic(), on: model.format.italic, id: "fmt-italic", label: "Italic") { model.apply(.italic) }
                     letter("U", .body, underline: true, on: model.format.underline, id: "fmt-underline", label: "Underline") { model.apply(.underline) }

@@ -38,6 +38,8 @@ struct FormattingState: Equatable {
     var link = false, bullets = false, numbers = false
     /// A jam post's paragraph styles at the caret: the heading level (1 to 3, or 0), a quote, an indented paragraph.
     var heading = 0, quote = false, indented = false
+    /// The text view's undo and redo have something to do (a jam post's strip shows both).
+    var canUndo = false, canRedo = false
     /// The caret or selection touches a list item (the Indent and Outdent buttons show), and whether each can change anything.
     var inList = false, canIndent = false, canOutdent = false
 }
@@ -111,6 +113,7 @@ enum ComposerDocument {
                 case "h3": font = styled(base.withSize(base.pointSize * 1.15), traits: [.traitBold])
                 case "quote": font = styled(base, traits: traits.union([.traitItalic])); tint = UIColor(Theme.textSecondary)
                 case "button": font = styled(base, traits: traits.union([.traitBold])); tint = UIColor(Theme.linkOther)
+                case "divider", "freewall": font = styled(base.withSize(base.pointSize * 0.8), traits: []); tint = UIColor(Theme.textSecondary)
                 default: break
                 }
                 if let tint { text.addAttribute(.foregroundColor, value: tint, range: range) }
@@ -136,12 +139,12 @@ enum ComposerDocument {
                 style.firstLineHeadIndent = indent
                 style.headIndent = indent + 20
                 text.addAttribute(.paragraphStyle, value: style, range: paragraph)
-            } else if paragraph.length > 0, let para = text.attribute(.limePara, at: paragraph.location, effectiveRange: nil) as? String, ["quote", "indent", "button"].contains(para) {
+            } else if paragraph.length > 0, let para = text.attribute(.limePara, at: paragraph.location, effectiveRange: nil) as? String, ["quote", "indent", "button", "divider", "freewall"].contains(para) {
                 let style = NSMutableParagraphStyle()
                 let inset: CGFloat = para == "indent" ? 24 : para == "quote" ? 16 : 0
                 style.firstLineHeadIndent = inset
                 style.headIndent = inset
-                if para == "button" { style.alignment = .center }
+                if ["button", "divider", "freewall"].contains(para) { style.alignment = .center }
                 text.addAttribute(.paragraphStyle, value: style, range: paragraph)
             } else {
                 text.removeAttribute(.paragraphStyle, range: paragraph)
@@ -159,8 +162,11 @@ enum ComposerDocument {
     static func insertImage(_ image: UIImage, index: Int, into text: NSMutableAttributedString, at location: Int, width: CGFloat) -> Int {
         let attachment = NSTextAttachment()
         attachment.image = image
+        // The picture at its own proportions (left-aligned in the line), never wider than the column or taller than 320 pt.
         let ratio = image.size.height / max(image.size.width, 1)
-        attachment.bounds = CGRect(x: 0, y: 0, width: width, height: min(width * ratio, 320))
+        var drawnWidth = width, drawnHeight = width * ratio
+        if drawnHeight > 320 { drawnHeight = 320; drawnWidth = 320 / max(ratio, 0.01) }
+        attachment.bounds = CGRect(x: 0, y: 0, width: drawnWidth, height: drawnHeight)
         let picture = NSMutableAttributedString(attachment: attachment)
         picture.addAttribute(.limeImage, value: index, range: NSRange(location: 0, length: picture.length))
         var at = min(max(location, 0), text.length)
@@ -278,7 +284,7 @@ enum ComposerDocument {
     /// or a code line is left alone). Returns whether it is on now.
     @discardableResult
     static func toggleParagraphStyle(_ style: String, in text: NSMutableAttributedString, selection: NSRange) -> Bool {
-        let touched = paragraphs(in: text, covering: selection).filter { $0.length > 0 && blockKind(in: text, at: $0.location) == nil && text.attribute(.limeImage, at: $0.location, effectiveRange: nil) == nil }
+        let touched = paragraphs(in: text, covering: selection).filter { $0.length > 0 && blockKind(in: text, at: $0.location) == nil && text.attribute(.limeImage, at: $0.location, effectiveRange: nil) == nil && !isSpecial(paraStyle(in: text, at: $0.location)) }
         let off = !touched.isEmpty && touched.allSatisfy { paraStyle(in: text, at: $0.location) == style }
         for paragraph in touched {
             text.removeAttribute(.limeButton, range: paragraph)
@@ -290,12 +296,41 @@ enum ComposerDocument {
 
     /// Indent moves a plain paragraph one level in (a list keeps its own levels); outdent takes it back.
     static func shiftParagraphs(indent: Bool, in text: NSMutableAttributedString, selection: NSRange) {
-        for paragraph in paragraphs(in: text, covering: selection) where paragraph.length > 0 && blockKind(in: text, at: paragraph.location) == nil {
+        for paragraph in paragraphs(in: text, covering: selection) where paragraph.length > 0 && blockKind(in: text, at: paragraph.location) == nil && !isSpecial(paraStyle(in: text, at: paragraph.location)) {
             let current = paraStyle(in: text, at: paragraph.location)
             if indent, current == nil { text.addAttribute(.limePara, value: "indent", range: paragraph) }
             if !indent, current == "indent" { text.removeAttribute(.limePara, range: paragraph) }
         }
         restyle(text)
+    }
+
+    static let dividerText = "\u{2015}\u{2015}\u{2015}\u{2015}\u{2015}"
+    static let freewallText = "Subscribers only below"
+
+    /// Blocks that are not words: a button, a divider and the freewall.
+    static func isSpecial(_ style: String?) -> Bool { ["button", "divider", "freewall"].contains(style ?? "") }
+
+    /// Whether the text already has its one freewall.
+    static func hasFreewall(in text: NSAttributedString) -> Bool {
+        var found = false
+        text.enumerateAttribute(.limePara, in: NSRange(location: 0, length: text.length)) { value, _, stop in if (value as? String) == "freewall" { found = true; stop.pointee = true } }
+        return found
+    }
+
+    /// A divider or the freewall as a paragraph of its own at `location`; returns the caret after it.
+    @discardableResult
+    static func insertRule(_ style: String, into text: NSMutableAttributedString, at location: Int) -> Int {
+        let label = style == "freewall" ? freewallText : dividerText
+        let rule = NSAttributedString(string: label, attributes: [.limePara: style])
+        var at = min(max(location, 0), text.length)
+        let string = text.string as NSString
+        if at > 0, string.character(at: at - 1) != 0x0A { text.insert(NSAttributedString(string: "\n"), at: at); at += 1 }
+        text.insert(rule, at: at)
+        at += rule.length
+        let nextIsNewline = at < text.length && (text.string as NSString).character(at: at) == 0x0A
+        if !nextIsNewline { text.insert(NSAttributedString(string: "\n"), at: at) }
+        restyle(text)
+        return at + 1
     }
 
     /// A button as a paragraph of its own at `location`; returns the caret after it.
@@ -376,6 +411,12 @@ enum ComposerDocument {
                     case "h1", "h2", "h3":
                         flushParagraph()
                         blocks.append(.heading(level: UInt32(para!.dropFirst()) ?? 1, spans: lineSpans))
+                    case "divider":
+                        flushParagraph()
+                        blocks.append(.divider)
+                    case "freewall":
+                        flushParagraph()
+                        blocks.append(.freewall)
                     case "button":
                         flushParagraph()
                         if let url = text.attribute(.limeButton, at: content.location, effectiveRange: nil) as? String {
@@ -456,6 +497,8 @@ enum ComposerDocument {
             case .quote(let spans): appendSpans(spans, block: [.limePara: "quote"])
             case .indent(let spans): appendSpans(spans, block: [.limePara: "indent"])
             case .button(let text, let url): append(text, [.limePara: "button", .limeButton: url])
+            case .divider: append(Self.dividerText, [.limePara: "divider"])
+            case .freewall: append(Self.freewallText, [.limePara: "freewall"])
             case .code(let code):
                 let lines = code.split(separator: "\n", omittingEmptySubsequences: false)
                 for (n, line) in lines.enumerated() {

@@ -65,6 +65,11 @@ pub enum Block {
     Quote { spans: Vec<Span> },
     /// A paragraph pushed in one level: every line starts with two spaces (and is not a list). **Jam posts only.**
     Indent { spans: Vec<Span> },
+    /// A thin rule (LIME-188n): `---` on a line of its own. **Jam posts only**; in a chat it stays text.
+    Divider,
+    /// Where the subscribers' part starts (LIME-188n): `[[freewall]]` on a line of its own, at most one per post (a second stays plain text, and a
+    /// written post keeps only the first). **Jam posts only.** A marker: the post is still one encrypted blob for the people who can read it.
+    Freewall,
     /// A link drawn as a full-width button: `[[Button text]](https://…)` as a paragraph of its own. https only. **Jam posts only.**
     Button { text: String, url: String },
 }
@@ -198,6 +203,15 @@ fn parse_with(text: &str, images: bool) -> Vec<Block> {
                 continue;
             }
             if let (true, [only]) = (images, paragraph.as_slice()) {
+                let line = only.trim();
+                if line == "---" {
+                    blocks.push(Block::Divider);
+                    continue;
+                }
+                if line == "[[freewall]]" && !blocks.iter().any(|b| matches!(b, Block::Freewall)) {
+                    blocks.push(Block::Freewall);
+                    continue;
+                }
                 if let Some((text, url)) = button_line(only) {
                     blocks.push(Block::Button { text, url });
                     continue;
@@ -581,6 +595,7 @@ fn plain_of(blocks: Vec<Block>) -> String {
             Block::Code { text } => lines.push(text),
             Block::Heading { spans, .. } | Block::Quote { spans } | Block::Indent { spans } => lines.push(spans.iter().map(|s| s.text.as_str()).collect()),
             Block::Button { text, .. } => lines.push(text),
+            Block::Divider | Block::Freewall => {}
             Block::Image { caption, .. } => {
                 if !caption.is_empty() {
                     lines.push(caption);
@@ -618,7 +633,7 @@ pub fn restrict_mentions(text: &str, is_member: &dyn Fn(&str) -> bool, everyone_
         match block {
             Block::Paragraph { spans } => fix(spans),
             Block::ItemList { items } => items.iter_mut().for_each(|item| fix(&mut item.spans)),
-            Block::Code { .. } | Block::Image { .. } | Block::Heading { .. } | Block::Quote { .. } | Block::Indent { .. } | Block::Button { .. } => {}
+            Block::Code { .. } | Block::Image { .. } | Block::Heading { .. } | Block::Quote { .. } | Block::Indent { .. } | Block::Button { .. } | Block::Divider | Block::Freewall => {}
         }
     }
     if changed { serialize(&blocks) } else { text.to_owned() }
@@ -646,7 +661,7 @@ fn escape_post_starts(text: &str) -> String {
         .map(|line| {
             let indent = line.len() - line.trim_start_matches(' ').len();
             let rest = &line[indent..];
-            if indent == 0 && (heading_line(line).is_some() || quote_line(line).is_some() || line.starts_with("[[")) {
+            if indent == 0 && (heading_line(line).is_some() || quote_line(line).is_some() || line.starts_with("[[") || line.trim() == "---") {
                 format!("\\{line}")
             } else if indent >= 2 {
                 // Two spaces at the start would make an indent: only the Indent block writes them.
@@ -743,6 +758,12 @@ fn serialize_with(blocks: &[Block], posts: bool) -> String {
                 let text: String = text.chars().filter(|c| !matches!(c, '[' | ']' | '\n' | '\r')).collect();
                 if !text.trim().is_empty() && url.starts_with("https://") && allowed_link(url) && !url.contains([' ', '(', ')']) {
                     parts.push(format!("[[{}]]({})", text.trim(), url));
+                }
+            }
+            Block::Divider => parts.push("---".to_owned()),
+            Block::Freewall => {
+                if !parts.iter().any(|p| p == "[[freewall]]") {
+                    parts.push("[[freewall]]".to_owned());
                 }
             }
             Block::Image { caption, attachment } => {
@@ -1500,5 +1521,25 @@ mod tests {
         assert_eq!(plain_text_post(&written), "# not a heading\n> not a quote");
         let bad = vec![Block::Button { text: "x".into(), url: "javascript:alert(1)".into() }];
         assert_eq!(serialize_post(&bad), "");
+    }
+
+    #[test]
+    fn a_divider_and_one_freewall_are_for_posts_only() {
+        let text = "Before\n\n---\n\nMiddle\n\n[[freewall]]\n\nAfter";
+        let blocks = parse_post(text);
+        assert!(matches!(blocks[1], Block::Divider));
+        assert!(matches!(blocks[3], Block::Freewall));
+        assert_eq!(normalise_post(text), text);
+        assert_eq!(plain_text_post(text), "Before\nMiddle\nAfter");
+        // A chat keeps both as text.
+        assert!(parse(text).iter().all(|b| matches!(b, Block::Paragraph { .. })));
+        assert_eq!(normalise("---"), "---");
+        // A second freewall is plain text, and a written post keeps only the first.
+        let twice = parse_post("[[freewall]]\n\n[[freewall]]");
+        assert!(matches!(twice[0], Block::Freewall) && matches!(twice[1], Block::Paragraph { .. }));
+        assert_eq!(serialize_post(&[Block::Freewall, Block::Freewall]), "[[freewall]]");
+        // Paragraph words that are only dashes are escaped so they stay words.
+        let words = vec![Block::Paragraph { spans: vec![Span { text: "---".into(), ..Span::default() }] }];
+        assert!(matches!(parse_post(&serialize_post(&words))[0], Block::Paragraph { .. }));
     }
 }

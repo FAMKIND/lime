@@ -120,6 +120,8 @@ struct PodcastRecorder: View {
     @Binding var title: String
     @Binding var coauthors: [Person]
     let camera: Bool
+    /// Audio for an article (LIME-188n): no title, sharing line or co-hosts; Next puts the clip in the text.
+    var forArticle = false
     let attach: (OutgoingAttachment) -> Void
     @Environment(ConversationStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -218,19 +220,19 @@ struct PodcastRecorder: View {
             Button { cancel() } label: { Text("Cancel").font(Theme.body).foregroundStyle(.white).frame(minWidth: 60, minHeight: 44, alignment: .leading) }
                 .accessibilityIdentifier("podcast-cancel")
             Spacer()
-            if cameraOn && !isRecording {
+            if cameraOn && !isRecording && !forArticle {
                 Button { Task { capture.flip() } } label: {
                     Image(systemName: "arrow.triangle.2.circlepath.camera").font(.system(size: 20)).foregroundStyle(.white).frame(width: 44, height: 44).background(.black.opacity(0.35), in: Circle())
                 }
                 .accessibilityLabel("Flip camera").accessibilityIdentifier("podcast-flip")
             }
-            Button { Task { await turnCamera(on: !cameraOn) } } label: {
+            if !forArticle { Button { Task { await turnCamera(on: !cameraOn) } } label: {
                 Image(systemName: cameraOn ? "video.fill" : "video.slash.fill").font(.system(size: 20)).foregroundStyle(.white).frame(width: 44, height: 44)
                     .background(cameraOn ? Theme.accent.opacity(0.9) : .black.opacity(0.35), in: Circle())
             }
             .disabled(isRecording || clip != nil || preparing)
             .accessibilityLabel("Camera").accessibilityValue(cameraOn ? "On" : "Off").accessibilityHint(cameraOn ? "Turns the camera off" : "Turns the camera on")
-            .accessibilityIdentifier("podcast-camera")
+            .accessibilityIdentifier("podcast-camera") }
         }
         .padding(.horizontal, 16).padding(.top, 8)
     }
@@ -239,12 +241,12 @@ struct PodcastRecorder: View {
         VStack(spacing: 14) {
             Text(VoiceFormat.clock(clip != nil ? seconds : elapsed)).font(Theme.font(.largeTitle, weight: .semibold).monospacedDigit()).foregroundStyle(.white)
                 .accessibilityLabel("Time").accessibilityValue(PodcastFormat.spoken(clip != nil ? seconds : elapsed)).accessibilityIdentifier("podcast-time")
-            TextField("", text: $title, prompt: Text("Add a title\u{2026}").foregroundColor(.white.opacity(0.6)))
+            if !forArticle { TextField("", text: $title, prompt: Text("Add a title\u{2026}").foregroundColor(.white.opacity(0.6)))
                 .font(Theme.font(.title3, weight: .semibold)).foregroundStyle(.white).multilineTextAlignment(.center).submitLabel(.done)
                 .onChange(of: title) { _, now in if now.count > 120 { title = String(now.prefix(120)) } }
                 .accessibilityLabel("Title").accessibilityIdentifier("podcast-title")
             Label("Shared with your subscribers", systemImage: "person.2").font(Theme.secondary).foregroundStyle(.white.opacity(0.85)).accessibilityElement(children: .ignore).accessibilityLabel("Shared with your subscribers")
-                .accessibilityIdentifier("podcast-sharing")
+                .accessibilityIdentifier("podcast-sharing") }
             controls
             Button { next() } label: {
                 Text(preparing ? "Getting ready\u{2026}" : "Next").font(Theme.title).foregroundStyle(clip == nil ? .white.opacity(0.5) : Theme.accentInk)
@@ -371,6 +373,7 @@ struct PodcastRecorder: View {
 
     private func next() {
         guard clip != nil else { return }
+        if forArticle { finishUp(); return }
         choosingHosts = true
     }
 

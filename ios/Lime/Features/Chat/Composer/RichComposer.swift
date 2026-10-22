@@ -219,10 +219,52 @@ final class RichComposerModel {
     func refresh() {
         guard let textView else { return }
         format = ComposerDocument.state(in: textView.attributedText, selection: textView.selectedRange, typing: textView.typingAttributes)
+        format.canUndo = textView.undoManager?.canUndo ?? false
+        format.canRedo = textView.undoManager?.canRedo ?? false
         #if DEBUG
         // UI tests read the Markdown the composer would send.
         textView.accessibilityValue = textView.text.isEmpty ? "" : markdown()
         #endif
+    }
+
+    // MARK: Undo (a jam post's strip)
+
+    /// Runs an edit the toolbar makes (formatting, a picture, a divider) so that Undo takes it back as one step. Typing is the text view's own.
+    func undoable(_ name: String, _ change: () -> Void) {
+        guard isPost, let textView, let manager = textView.undoManager else { change(); return }
+        let before = NSAttributedString(attributedString: textView.attributedText)
+        let selection = textView.selectedRange
+        change()
+        manager.registerUndo(withTarget: self) { model in model.restore(before, selection: selection, name: name) }
+        manager.setActionName(name)
+    }
+
+    private func restore(_ snapshot: NSAttributedString, selection: NSRange, name: String) {
+        guard let textView, let manager = textView.undoManager else { return }
+        let now = NSAttributedString(attributedString: textView.attributedText)
+        let nowSelection = textView.selectedRange
+        manager.registerUndo(withTarget: self) { model in model.restore(now, selection: nowSelection, name: name) }
+        manager.setActionName(name)
+        textView.attributedText = snapshot
+        textView.selectedRange = NSRange(location: min(selection.location, snapshot.length), length: 0)
+        ComposerDocument.restyle(textView.textStorage)
+        textView.typingAttributes = ComposerDocument.typingAttributes(in: textView.textStorage, caret: textView.selectedRange.location)
+        didEdit()
+    }
+
+    func undo() { textView?.undoManager?.undo(); didEdit() }
+    func redo() { textView?.undoManager?.redo(); didEdit() }
+
+    /// A divider or the freewall at the caret.
+    func insertRule(_ style: String) {
+        guard let textView else { return }
+        if style == "freewall", ComposerDocument.hasFreewall(in: textView.textStorage) { return }
+        undoable(style == "freewall" ? "Freewall" : "Divider") {
+            let caret = ComposerDocument.insertRule(style, into: textView.textStorage, at: textView.selectedRange.location)
+            textView.selectedRange = NSRange(location: caret, length: 0)
+            textView.typingAttributes = ComposerTextView.plainTypingAttributes
+        }
+        didEdit()
     }
 
     // MARK: Editing
@@ -262,7 +304,8 @@ final class RichComposerModel {
     /// H1 to H3, quote: the paragraphs the selection touches (the same again takes it off).
     func toggleParagraph(_ style: String) {
         guard let textView else { return }
-        let on = ComposerDocument.toggleParagraphStyle(style, in: textView.textStorage, selection: textView.selectedRange)
+        var on = false
+        undoable("Format") { on = ComposerDocument.toggleParagraphStyle(style, in: textView.textStorage, selection: textView.selectedRange) }
         var typing = textView.typingAttributes
         typing[.limePara] = on ? style : nil
         textView.typingAttributes = typing
@@ -271,7 +314,7 @@ final class RichComposerModel {
 
     func shiftParagraph(indent: Bool) {
         guard let textView else { return }
-        ComposerDocument.shiftParagraphs(indent: indent, in: textView.textStorage, selection: textView.selectedRange)
+        undoable("Indent") { ComposerDocument.shiftParagraphs(indent: indent, in: textView.textStorage, selection: textView.selectedRange) }
         textView.typingAttributes = ComposerDocument.typingAttributes(in: textView.textStorage, caret: textView.selectedRange.location)
         didEdit()
     }
@@ -282,7 +325,8 @@ final class RichComposerModel {
         let words = title.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "[", with: "").replacingOccurrences(of: "]", with: "")
         guard !words.isEmpty else { return "Say what the button should read." }
         guard let text = LinkInput.https(from: address) else { return "That doesn\u{2019}t look like a web address." }
-        let caret = ComposerDocument.insertButton(words, url: text, into: textView.textStorage, at: textView.selectedRange.location)
+        var caret = 0
+        undoable("Button") { caret = ComposerDocument.insertButton(words, url: text, into: textView.textStorage, at: textView.selectedRange.location) }
         textView.selectedRange = NSRange(location: caret, length: 0)
         textView.typingAttributes = ComposerTextView.plainTypingAttributes
         didEdit()
@@ -381,6 +425,18 @@ final class ComposerTextView: UITextView {
     private var keyboardObservers: [NSObjectProtocol] = []
     #endif
     weak var model: RichComposerModel?
+    /// An article's body (LIME-188n): as tall as its text, inside the page's own scroll, which this keeps scrolled to the caret.
+    var selfSizing = false
+
+    /// Scrolls the page (the nearest scroll view above) so the caret is in view above the keyboard.
+    func keepCaretVisible() {
+        guard selfSizing, let range = selectedTextRange else { return }
+        var ancestor = superview
+        while let view = ancestor, !(view is UIScrollView) { ancestor = view.superview }
+        guard let scroll = ancestor as? UIScrollView else { return }
+        let caret = convert(caretRect(for: range.end), to: scroll)
+        scroll.scrollRectToVisible(caret.insetBy(dx: 0, dy: -28), animated: false)
+    }
 
     /// Shows the emoji keyboard instead of the text one (the model flips it, then reloads the input views).
     var showsEmoji = false
@@ -468,6 +524,7 @@ final class ComposerTextView: UITextView {
 
     /// When all the text fits, the text view shows it from the top (a stale scroll offset after a delete left it scrolled by lines that are gone).
     func settleScroll() {
+        guard !selfSizing else { return }
         let room = bounds.height - adjustedContentInset.top - adjustedContentInset.bottom
         if contentSize.height <= room + 0.5, contentOffset.y != -adjustedContentInset.top { setContentOffset(CGPoint(x: 0, y: -adjustedContentInset.top), animated: false) }
     }
@@ -478,12 +535,15 @@ struct RichComposerField: UIViewRepresentable {
     /// The most the field grows to (or, when `fills`, its height); worked out by the composer from the window and the keyboard.
     var maxHeight: CGFloat?
     var fills = false
+    /// As tall as the text, never scrolling itself (an article's body, inside the page's scroll).
+    var selfSizing = false
 
     func makeUIView(context: Context) -> ComposerTextView {
         let view = ComposerTextView()
+        view.selfSizing = selfSizing
         view.delegate = context.coordinator
         view.backgroundColor = .clear
-        view.isScrollEnabled = true
+        view.isScrollEnabled = !selfSizing
         view.textContainerInset = UIEdgeInsets(top: 8, left: 0, bottom: 8, right: 0)
         view.textContainer.lineFragmentPadding = 4
         view.font = ComposerDocument.baseFont()
@@ -521,6 +581,10 @@ struct RichComposerField: UIViewRepresentable {
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: ComposerTextView, context: Context) -> CGSize? {
         let width = proposal.width ?? 280
         let line = uiView.font?.lineHeight ?? 20
+        if selfSizing {
+            let fitted = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height
+            return CGSize(width: width, height: max(fitted, 240))
+        }
         let cap = max(maxHeight ?? 0, ComposerSizing.oneLineHeight(line: line))
         if fills { return CGSize(width: width, height: cap) }
         let fitted = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height
@@ -622,7 +686,7 @@ struct RichComposerField: UIViewRepresentable {
             if selection.length == 0 { setTyping(textView, caret: selection.location) }
             model.didEdit()
             // After a delete the text may fit again: the text view's own content goes back to the top (it scrolls itself, never its container).
-            DispatchQueue.main.async { [weak textView] in (textView as? ComposerTextView)?.settleScroll() }
+            DispatchQueue.main.async { [weak textView] in (textView as? ComposerTextView)?.settleScroll(); (textView as? ComposerTextView)?.keepCaretVisible() }
         }
 
         func textViewDidChangeSelection(_ textView: UITextView) {

@@ -211,6 +211,8 @@ struct JamInlineAttachment: View {
                     JamPhoto(postID: postID, file: file, onLoaded: { full = $0 }, tapToOpen: true)
                 } else if file.kind == "video" {
                     JamVideo(postID: postID, file: file)
+                } else if file.kind == "audio" {
+                    JamAudio(postID: postID, file: file)
                 } else {
                     JamFileCard(postID: postID, file: file)
                 }

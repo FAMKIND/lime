@@ -33,9 +33,7 @@ final class Jam188mUITests: LimeUITestCase {
         waitForExpectations(timeout: 5)
         body.typeText("Words first")
         app.buttons["jam-add"].tap()
-        let tile = app.descendants(matching: .any).matching(identifier: "add-recent-0").firstMatch
-        XCTAssertTrue(tile.waitForExistence(timeout: 8))
-        tile.tap(); app.buttons["add-selected"].tap()
+        app.buttons["Image"].tap()
         sleep(1)
         XCTAssertTrue(app.buttons["jam-post"].isEnabled, "enabled with a title, words and a photo")
         app.buttons["jam-format"].tap()
