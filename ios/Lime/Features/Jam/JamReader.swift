@@ -73,16 +73,19 @@ struct JamAttachmentsView: View {
     @Environment(ConversationStore.self) private var store
 
     var body: some View {
-        let files = store.jamAttachments(postID).enumerated().filter { !skipping.contains($0.offset) }.map(\.element)
+        let all = store.jamAttachments(postID)
+        let indexed = all.enumerated().filter { !skipping.contains($0.offset) && $0.element.mime != "text/vtt" }
+        let files = indexed.map(\.element)
         let photos = files.filter { $0.kind == "image" }
         let links = files.filter { $0.mime == JamLink.mime }
         VStack(alignment: .leading, spacing: 12) {
             // Several photos are one row that scrolls sideways (LIME-188h); a tap opens them in the same viewer chats use.
             if !photos.isEmpty { JamPhotoRow(postID: postID, files: photos, compact: compact) }
             ForEach(links, id: \.attachmentId) { JamLinkCard(postID: postID, file: $0) }
-            ForEach(files.filter { $0.kind != "image" && $0.mime != JamLink.mime }, id: \.attachmentId) { file in
+            ForEach(indexed.filter { $0.element.kind != "image" && $0.element.mime != JamLink.mime }, id: \.element.attachmentId) { entry in
+                let file = entry.element
                 switch file.kind {
-                case "video": JamVideoCard(postID: postID, file: file)
+                case "video": JamVideoCard(postID: postID, file: file, captionFile: JamCaptions.file(for: entry.offset, in: all))
                 case "audio": JamAudio(postID: postID, file: file)
                 default: JamFileCard(postID: postID, file: file)
                 }
@@ -215,7 +218,7 @@ struct JamInlineAttachment: View {
                 if file.kind == "image" {
                     JamPhoto(postID: postID, file: file, onLoaded: { full = $0 }, tapToOpen: true)
                 } else if file.kind == "video" {
-                    JamVideoCard(postID: postID, file: file)
+                    JamVideoCard(postID: postID, file: file, captionFile: JamCaptions.file(for: index, in: files))
                 } else if file.kind == "audio" {
                     JamAudio(postID: postID, file: file)
                 } else {

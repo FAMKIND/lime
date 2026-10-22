@@ -19,7 +19,7 @@ final class JamMediaTests: XCTestCase {
     }
 
     func testTheCaptionLineIsTheCueThatIsShowingNow() {
-        let cues = [CaptionCue(startMs: 0, endMs: 1000, text: "One"), CaptionCue(startMs: 1000, endMs: 2500, text: "Two")]
+        let cues = [CaptionCue(startMs: 0, endMs: 1000, text: "One"), CaptionCue(startMs: 1000, endMs: 2500, text: "Two")]  // the core's record
         XCTAssertEqual(JamCaptions.line(at: 500, in: cues), "One")
         XCTAssertEqual(JamCaptions.line(at: 1000, in: cues), "Two")
         XCTAssertNil(JamCaptions.line(at: 2500, in: cues))

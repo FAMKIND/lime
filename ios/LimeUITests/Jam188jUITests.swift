@@ -10,19 +10,21 @@ final class Jam188jUITests: LimeUITestCase {
         app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-screen", "jam-following"]
         app.launch()
         let card = any(app, "jam-video")
-        for _ in 0..<5 where !card.exists || !card.isHittable { app.swipeUp() }
-        XCTAssertTrue(card.waitForExistence(timeout: 10))
-        XCTAssertTrue(app.buttons["jam-video-mute"].exists)
+        for _ in 0..<5 where !card.exists { app.swipeUp() }
+        XCTAssertTrue(card.waitForExistence(timeout: 10), "the video card")
+        XCTAssertTrue(app.buttons["jam-video-mute"].waitForExistence(timeout: 8))
         XCTAssertEqual(app.buttons["jam-video-mute"].label, "Unmute", "it starts muted")
-        XCTAssertFalse(app.buttons["jam-video-cc"].exists, "no captions toggle without captions")
+        XCTAssertTrue(app.buttons["jam-video-cc"].waitForExistence(timeout: 5), "the demo video has captions (LIME-188o), so CC shows")
         card.coordinate(withNormalizedOffset: CGVector(dx: 0.4, dy: 0.5)).tap()
         XCTAssertTrue(any(app, "jam-video-screen").waitForExistence(timeout: 5), "a tap opens the full screen")
         app.buttons["jam-video-more"].tap()
-        for item in ["Share in lime\u{2026}", "Auto-advance", "Hide post"] { XCTAssertTrue(app.buttons[item].waitForExistence(timeout: 3) || app.switches[item].exists, item) }
+        for item in ["Share in lime", "Transcript", "Auto-advance", "Hide post", "Closed captions"] {
+            let match = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", item)).firstMatch
+            XCTAssertTrue(match.waitForExistence(timeout: 3), item)
+        }
         XCTAssertFalse(app.buttons["Copy link"].exists)
         XCTAssertFalse(app.buttons["Report"].exists)
-        XCTAssertFalse(app.buttons["Closed captions"].exists && app.switches["Closed captions"].exists, "only with captions")
-        app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).tap()   // closes the menu
+        app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.55)).tap()   // closes the menu (away from its items)
         let text = app.buttons["jam-video-text"]
         XCTAssertTrue(text.waitForExistence(timeout: 5))
         text.tap()

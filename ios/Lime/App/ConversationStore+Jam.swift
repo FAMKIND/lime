@@ -58,12 +58,25 @@ extension ConversationStore {
     }
 
     /// Posts hidden from my feed on this phone (never sent anywhere).
-    var hiddenJamPosts: Set<String> { Set(UserDefaults.standard.stringArray(forKey: VideoPrefs.hiddenKey) ?? []) }
+    var hiddenJamPosts: Set<String> {
+        #if DEBUG
+        if isDemo { return Self.demoHidden }   // the demo's posts have fixed ids: never remembered between runs
+        #endif
+        return Set(UserDefaults.standard.stringArray(forKey: VideoPrefs.hiddenKey) ?? [])
+    }
+
+    #if DEBUG
+    nonisolated(unsafe) static var demoHidden: Set<String> = []
+    #endif
 
     func hideJamPost(_ postID: String) {
         var now = hiddenJamPosts
         now.insert(postID)
+        #if DEBUG
+        if isDemo { Self.demoHidden = now } else { UserDefaults.standard.set(Array(now), forKey: VideoPrefs.hiddenKey) }
+        #else
         UserDefaults.standard.set(Array(now), forKey: VideoPrefs.hiddenKey)
+        #endif
         jamHiddenChanged += 1
         showBanner("Post hidden")
     }

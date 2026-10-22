@@ -46,13 +46,6 @@ extension View {
     func jamMediaClip() -> some View { modifier(MediaClip()) }
 }
 
-/// One cue of a video's captions (LIME-188o fills these; until a video has captions the toggle does not show).
-struct CaptionCue: Equatable {
-    let startMs: Int
-    let endMs: Int
-    let text: String
-}
-
 // MARK: The card
 
 /// A video in a feed card, a profile or the reader: the frame, muted autoplay while at least half of it shows, a mute button (and CC when it has
@@ -60,9 +53,11 @@ struct CaptionCue: Equatable {
 struct JamVideoCard: View {
     let postID: String
     let file: JamAttachmentInfo
-    var cues: [CaptionCue] = []
+    /// The captions file of this video in the post, if it has one (LIME-188o).
+    var captionFile: JamAttachmentInfo? = nil
     @Environment(ConversationStore.self) private var store
     @AppStorage(VideoPrefs.captionsKey) private var captionsOn = true
+    @State private var cues: [CaptionCue] = []
     @State private var controller: PodcastController?
     @State private var visible = false
     @State private var opening = false
@@ -126,6 +121,10 @@ struct JamVideoCard: View {
             Task { await autoplay(controller) }
         }
         .onAppear { if self.controller == nil { self.controller = controller } }
+        .task(id: captionFile?.attachmentId) {
+            guard let captionFile, let data = await store.jamAttachmentData(postID, captionFile.attachmentId), let text = String(data: data, encoding: .utf8) else { return }
+            cues = parseCaptions(vtt: text)
+        }
         .onDisappear { controller.pause() }
         .fullScreenCover(isPresented: $opening, onDismiss: { controller.muted = true; Task { await autoplay(controller) } }) {
             JamVideoScreen(postID: postID, file: file, controller: controller, cues: cues)
@@ -165,7 +164,12 @@ struct JamVideoCard: View {
 enum JamCaptions {
     /// The caption line showing at this time, if any.
     static func line(at ms: Int, in cues: [CaptionCue]) -> String? {
-        cues.first { $0.startMs <= ms && ms < $0.endMs }?.text
+        cues.first { Int($0.startMs) <= ms && ms < Int($0.endMs) }?.text
+    }
+
+    /// The captions file that belongs to the post's n-th attachment, if there is one.
+    static func file(for index: Int, in files: [JamAttachmentInfo]) -> JamAttachmentInfo? {
+        files.first { $0.mime == "text/vtt" && captionMediaIndex(name: $0.name) == UInt32(index) }
     }
 }
 
@@ -187,6 +191,7 @@ struct JamVideoScreen: View {
     @State private var hideTask: Task<Void, Never>?
     @State private var textOpen = false
     @State private var sharing = false
+    @State private var transcript = false
     @State private var current: (postID: String, file: JamAttachmentInfo, controller: PodcastController)?
 
     private var active: (postID: String, file: JamAttachmentInfo, controller: PodcastController) { current ?? (postID, file, controller) }
@@ -227,6 +232,7 @@ struct JamVideoScreen: View {
         .onAppear { item.controller.muted = false; scheduleHide() }
         .onChange(of: active.controller.atEnd) { _, ended in if ended { advance() } }
         .sheet(isPresented: $sharing) { if let post { JamShareSheet(post: post) } }
+        .sheet(isPresented: $transcript) { TranscriptSheet(cues: cues) }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("jam-video-screen")
     }
@@ -244,6 +250,7 @@ struct JamVideoScreen: View {
                 }
                 Section {
                     if !cues.isEmpty { Toggle(isOn: $captionsOn) { Label("Closed captions", systemImage: "captions.bubble") }.accessibilityIdentifier("jam-video-captions-toggle") }
+                    if !cues.isEmpty { Button { transcript = true } label: { Label("Transcript", systemImage: "text.alignleft") }.accessibilityIdentifier("jam-video-transcript") }
                     Toggle(isOn: $autoAdvance) { Label("Auto-advance", systemImage: "forward.end") }.accessibilityIdentifier("jam-video-autoadvance")
                 }
                 Section {
@@ -481,5 +488,24 @@ struct JamShareSheet: View {
             store.showBanner("Shared")
             dismiss()
         }
+    }
+}
+
+/// The whole of a video's or recording's words, readable (and for VoiceOver) in one place.
+struct TranscriptSheet: View {
+    let cues: [CaptionCue]
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                Text(cues.map(\.text).joined(separator: "\n")).font(Theme.body).foregroundStyle(Theme.text).frame(maxWidth: .infinity, alignment: .leading).padding(20)
+                    .accessibilityIdentifier("jam-transcript-text")
+            }
+            .background(Theme.canvas)
+            .navigationTitle("Transcript").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        }
+        .presentationDetents([.medium, .large])
     }
 }

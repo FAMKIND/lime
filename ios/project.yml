@@ -59,6 +59,7 @@ targets:
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "lime shows your most recent photos and videos in the add sheet so you can send them. They stay on your iPhone until you send them."
         INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "lime saves a photo to your library only when you ask it to."
+        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "lime turns the speech in a video or recording you post into captions, on this iPhone. Nothing is sent to Apple or anyone else."
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "lime uses the microphone to record voice messages and the sound of videos you record."
         # A call keeps its audio going when the screen locks or Lime is in the background; "voip" is for the system call screen (CallKit).
         INFOPLIST_KEY_UIBackgroundModes: audio voip

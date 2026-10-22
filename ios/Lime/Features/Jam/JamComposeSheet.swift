@@ -25,6 +25,8 @@ struct JamComposeSheet: View {
     @State private var photos: [DraftAttachment] = []          // a quick post's row
     @State private var articleFiles: [OutgoingAttachment] = []  // an article's, in the text by number
     @State private var clips: [OutgoingAttachment] = []         // recordings (video, voice)
+    @State private var captions: [CaptionKey: CaptionDraft] = [:]
+    @State private var editingCaptions: CaptionKey?
     @State private var recordTitle = ""
     @State private var recordMode: Int?
     @State private var chooser: Chooser?
@@ -43,6 +45,11 @@ struct JamComposeSheet: View {
     @State private var linkTask: Task<Void, Never>?
 
     private enum Field { case title, subtitle }
+    /// Which media a set of captions is for: the recording (or video) of a quick post, or a file in an article's list.
+    enum CaptionKey: Hashable, Identifiable {
+        case clip(Int), article(Int)
+        var id: String { switch self { case .clip(let i): "clip\(i)"; case .article(let i): "article\(i)" } }
+    }
     private enum Chooser: String, Identifiable { case library, camera, files; var id: String { rawValue } }
     static let maxTitle = 120, maxSubtitle = 160
 
@@ -73,6 +80,9 @@ struct JamComposeSheet: View {
             .onChange(of: composer.plainText) { refreshLink() }
             .onChange(of: previewsOn) { refreshLink() }
             .sheet(isPresented: $choosingCoauthors) { JamCoauthorPicker(selected: $coauthors) }
+            .sheet(item: $editingCaptions) { key in
+                CaptionsEditor(draft: Binding(get: { captions[key] ?? CaptionDraft(making: false) }, set: { captions[key] = $0 }))
+            }
             .sheet(item: $composer.linkRequest) { request in LinkSheet(request: request, composer: composer) }
             .sheet(item: $composer.buttonRequest) { _ in ButtonSheet(composer: composer) }
             .fullScreenCover(item: Binding(get: { recordMode.map(RecordMode.init) }, set: { recordMode = $0?.mode })) { mode in
@@ -82,7 +92,7 @@ struct JamComposeSheet: View {
                         insertIntoArticle(clip, preview: Self.fileCard(named: "Audio recording \(VoiceFormat.clock(Double(clip.durationMs ?? 0) / 1000))"))
                     }
                 } else {
-                    PodcastRecorder(title: $recordTitle, coauthors: $coauthors, camera: mode.mode == 0) { clips = [$0] }
+                    PodcastRecorder(title: $recordTitle, coauthors: $coauthors, camera: mode.mode == 0) { clip in clips = [clip]; captions = captions.filter { if case .clip = $0.key { false } else { true } }; startCaptions(clip, .clip(0)) }
                 }
             }
             .fullScreenCover(item: $chooser) { which in
@@ -114,6 +124,7 @@ struct JamComposeSheet: View {
             quickHead
             problemText
             if hasClip { clipsRow }
+            captionsRow
             GeometryReader { geo in
                 ZStack(alignment: .topLeading) {
                     RichComposerField(model: composer, maxHeight: geo.size.height, fills: true)
@@ -138,6 +149,7 @@ struct JamComposeSheet: View {
                 articleHead
                 problemText
                 if hasClip { clipsRow }
+                captionsRow
                 ZStack(alignment: .topLeading) {
                     RichComposerField(model: composer, selfSizing: true)
                         .onAppear { composer.hasText = false; composer.isPost = true }
@@ -300,6 +312,46 @@ struct JamComposeSheet: View {
         }
     }
 
+    // MARK: Captions (LIME-188o)
+
+    /// Starts making captions for a video or a recording on this phone (nothing leaves it).
+    private func startCaptions(_ item: OutgoingAttachment, _ key: CaptionKey) {
+        guard item.mime.hasPrefix("video/") || item.mime.hasPrefix("audio/") else { return }
+        if let ms = item.durationMs, Int(ms) / 1000 > CaptionMaker.maxSeconds { captions[key] = CaptionDraft(making: false, none: true); return }
+        captions[key] = CaptionDraft()
+        let ext = item.mime.hasPrefix("video/") ? "mp4" : "m4a"
+        #if DEBUG
+        let demo = store.isDemo
+        #else
+        let demo = false
+        #endif
+        Task {
+            let cues = await CaptionMaker.make(bytes: item.bytes, fileExtension: ext, demo: demo)
+            captions[key] = cues.map { CaptionDraft(cues: $0, making: false) } ?? CaptionDraft(making: false, none: true)
+        }
+    }
+
+    @ViewBuilder
+    private var captionsRow: some View {
+        if !captions.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(captions.keys.sorted { $0.id < $1.id }) { key in
+                    let draft = captions[key] ?? CaptionDraft(making: false)
+                    HStack(spacing: 10) {
+                        Image(systemName: "captions.bubble").foregroundStyle(Theme.textSecondary).accessibilityHidden(true)
+                        Text(draft.making ? "Making captions\u{2026}" : draft.none ? "No captions for this one" : draft.on ? "Captions \u{00B7} \(draft.cues.count) lines" : "Captions off")
+                            .font(Theme.secondary).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("jam-captions-status")
+                        Spacer()
+                        if !draft.making, !draft.none {
+                            Button("Edit") { editingCaptions = key }.font(Theme.secondary).foregroundStyle(Theme.text).frame(minWidth: 44, minHeight: 44).accessibilityIdentifier("jam-captions-edit")
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+        }
+    }
+
     private var photosRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
@@ -325,7 +377,7 @@ struct JamComposeSheet: View {
     private var clipsRow: some View {
         HStack {
             ForEach(Array(clips.enumerated()), id: \.offset) { index, clip in
-                Button { clips.remove(at: index) } label: {
+                Button { clips.remove(at: index); captions[.clip(index)] = nil } label: {
                     Label("Recording \(VoiceFormat.clock(Double(clip.durationMs ?? 0) / 1000))", systemImage: "xmark.circle.fill")
                         .font(Theme.secondary).foregroundStyle(Theme.text).padding(.horizontal, 12).frame(minHeight: 36).background(Theme.surface, in: Capsule())
                 }
@@ -463,7 +515,7 @@ struct JamComposeSheet: View {
             #if DEBUG
             if store.isDemo {
                 let clip = ChatComposer.demoVideoDraft
-                if article { insertIntoArticle(clip.outgoing, preview: clip.preview ?? Self.fileCard(named: "Video")) } else { clips.append(clip.outgoing) }
+                if article { insertIntoArticle(clip.outgoing, preview: clip.preview ?? Self.fileCard(named: "Video")) } else { clips.append(clip.outgoing); startCaptions(clip.outgoing, .clip(clips.count - 1)) }
                 continue
             }
             #endif
@@ -474,6 +526,7 @@ struct JamComposeSheet: View {
                 insertIntoArticle(made.item, preview: made.poster ?? Self.fileCard(named: made.item.name))
             } else {
                 clips.append(made.item)
+                startCaptions(made.item, .clip(clips.count - 1))
             }
         }
     }
@@ -492,6 +545,7 @@ struct JamComposeSheet: View {
     private func insertIntoArticle(_ item: OutgoingAttachment, preview: UIImage) {
         guard let view = composer.textView else { return }
         articleFiles.append(item)
+        startCaptions(item, .article(articleFiles.count - 1))
         let width = max(120, view.bounds.width - 16)
         let small = preview.preparingThumbnail(of: CGSize(width: 900, height: 900)) ?? preview
         let caret = ComposerDocument.insertImage(small, index: articleFiles.count - 1, into: view.textStorage, at: view.selectedRange.location, width: width)
@@ -523,7 +577,19 @@ struct JamComposeSheet: View {
     }
 
     private func post() {
+        guard captions.values.contains(where: \.making) else { buildAndPost(); return }
+        // Captions are still being made: wait a few seconds for them, then post with what there is.
+        posting = true
+        Task {
+            for _ in 0..<20 where captions.values.contains(where: \.making) { try? await Task.sleep(for: .milliseconds(500)) }
+            posting = false
+            buildAndPost()
+        }
+    }
+
+    private func buildAndPost() {
         var files: [OutgoingAttachment] = []
+        var captionTargets: [(index: Int, draft: CaptionDraft)] = []
         var markdown = ""
         if article, let view = composer.textView {
             // Only the files still in the text go, numbered in the order they appear.
@@ -531,7 +597,11 @@ struct JamComposeSheet: View {
             var renumber: [Int: Int] = [:]
             copy.enumerateAttribute(.limeImage, in: NSRange(location: 0, length: copy.length)) { value, range, _ in
                 guard let old = value as? Int, articleFiles.indices.contains(old) else { return }
-                if renumber[old] == nil { renumber[old] = files.count; files.append(articleFiles[old]) }
+                if renumber[old] == nil {
+                    renumber[old] = files.count
+                    if let draft = captions[.article(old)] { captionTargets.append((files.count, draft)) }
+                    files.append(articleFiles[old])
+                }
                 copy.addAttribute(.limeImage, value: renumber[old] ?? 0, range: range)
             }
             markdown = ComposerDocument.markdown(from: copy, post: true)
@@ -539,8 +609,14 @@ struct JamComposeSheet: View {
             markdown = composer.markdown()
             files = photos.map(\.outgoing)
         }
+        for (i, _) in clips.enumerated() { if let draft = captions[.clip(i)] { captionTargets.append((files.count + i, draft)) } }
         files += clips
         if let link { files.append(JamLink.attachment(link.preview)) }
+        // The captions the writer kept go with the post, one small file per video or recording.
+        for target in captionTargets where target.draft.on && !target.draft.making && !target.draft.cues.isEmpty && files.count < 10 {
+            let vtt = Data(captionsToVtt(cues: target.draft.cues).utf8)
+            files.append(OutgoingAttachment(bytes: vtt, name: captionFileName(index: UInt32(target.index)), mime: "text/vtt", width: nil, height: nil, durationMs: nil, thumb: Data(), poster: Data()))
+        }
         let kind = hasClip ? "record" : article ? "article" : "quick"
         let headline = article ? title : recordTitle
         problem = nil

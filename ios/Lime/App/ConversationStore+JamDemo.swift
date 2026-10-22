@@ -17,11 +17,17 @@ extension ConversationStore {
                               status: "active", ended: false, subscriberCount: old.subscriberCount, postCount: old.postCount, created: old.created)
     }
 
+    /// The bytes of demo files that are not pictures (a post's captions), by attachment id.
+    nonisolated(unsafe) static var demoJamBlobs: [String: Data] = [:]
+
     func demoPublish(_ jamID: String, kind: String, title: String, subtitle: String, markdown: String, items: [OutgoingAttachment], coauthors: [String] = []) {
         let id = UUID().uuidString.lowercased()
-        let info = items.map {
-            JamAttachmentInfo(attachmentId: UUID().uuidString.lowercased(), name: $0.name, mime: $0.mime, kind: $0.mime.hasPrefix("image/") ? "image" : $0.mime.hasPrefix("video/") ? "video" : $0.mime.hasPrefix("audio/") ? "audio" : "file",
-                              size: UInt64($0.bytes.count), width: $0.width, height: $0.height, durationMs: $0.durationMs, thumb: $0.thumb, poster: $0.poster, available: true)
+        let info = items.map { item -> JamAttachmentInfo in
+            let fileID = UUID().uuidString.lowercased()
+            if item.mime == "text/vtt" { Self.demoJamBlobs[fileID] = item.bytes }
+            let kind = item.mime.hasPrefix("image/") ? "image" : item.mime.hasPrefix("video/") ? "video" : item.mime.hasPrefix("audio/") ? "audio" : "file"
+            return JamAttachmentInfo(attachmentId: fileID, name: item.name, mime: item.mime, kind: kind, size: UInt64(item.bytes.count), width: item.width, height: item.height,
+                                     durationMs: item.durationMs, thumb: item.thumb, poster: item.poster, available: true)
         }
         demoJamAttachments[id] = info
         let post = JamPostInfo(postId: id, jamId: jamID, author: meProvider().id, tier: "free", kind: kind, title: title, subtitle: subtitle, markdown: markdown, plain: messagePlainText(text: markdown),
@@ -54,7 +60,9 @@ extension ConversationStore {
                                                                durationMs: 1_080_000, thumb: Data((0..<64).map { UInt8(40 + (($0 * 37) % 200)) }), poster: Data(), available: true)]
         jamPosts[page.jamId] = [first, second, third, fourth]
         demoJamAttachments["demo-post-3"] = [JamAttachmentInfo(attachmentId: "demo-video-1", name: "wall.mp4", mime: "video/mp4", kind: "video", size: 90_000, width: 480, height: 270,
-                                                               durationMs: 10_000, thumb: Data(), poster: Data(), available: true)]
+                                                               durationMs: 10_000, thumb: Data(), poster: Data(), available: true),
+                                                 JamAttachmentInfo(attachmentId: "demo-captions-1", name: "captions-0.vtt", mime: "text/vtt", kind: "file", size: 200, width: nil, height: nil,
+                                                                   durationMs: nil, thumb: Data(), poster: Data(), available: true)]
         demoJamAttachments["demo-post-1"] = [JamAttachmentInfo(attachmentId: "demo-photo-1", name: "pizza.jpg", mime: "image/jpeg", kind: "image", size: 40_000, width: 600, height: 400,
                                                                durationMs: nil, thumb: Data(), poster: Data(), available: true)]
     }
@@ -89,6 +97,8 @@ extension ConversationStore {
 
     /// A made-up picture for any demo file.
     func demoJamImage(_ id: String) -> Data? {
+        if let blob = Self.demoJamBlobs[id] { return blob }
+        if id == "demo-captions-1" { return Data("WEBVTT\n\n00:00.000 --> 00:04.000\nA fraction wall in ten seconds.\n\n00:04.000 --> 00:10.000\nFold it, cut it, compare the pieces.\n".utf8) }
         let size = CGSize(width: 600, height: 400)
         let image = UIGraphicsImageRenderer(size: size).image { context in
             UIColor(hue: 0.08, saturation: 0.35, brightness: 0.95, alpha: 1).setFill()
