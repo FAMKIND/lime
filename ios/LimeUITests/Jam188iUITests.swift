@@ -22,7 +22,7 @@ final class Jam188iUITests: LimeUITestCase {
             XCTAssertGreaterThanOrEqual(element.frame.minX, 0, "\(id) starts on the screen")
             XCTAssertLessThanOrEqual(element.frame.maxX, width + 0.5, "\(id) ends on the screen")
         }
-        for id in ["podcast-demo-audio-1", "jam-video"] {
+        for id in ["jam-audio-card-demo-audio-1", "jam-video"] {
             let element = any(app, id)
             for _ in 0..<6 where !element.exists || !element.isHittable { app.swipeUp() }
             XCTAssertGreaterThanOrEqual(element.frame.minX, 0, "\(id) starts on the screen")

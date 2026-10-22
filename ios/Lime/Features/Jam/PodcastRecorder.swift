@@ -122,10 +122,22 @@ struct PodcastRecorder: View {
     let camera: Bool
     /// Audio for an article (LIME-188n): no title, sharing line or co-hosts; Next puts the clip in the text.
     var forArticle = false
+    /// A recording's subtitle, description and cover (LIME-188k), asked after Next, before the co-hosts.
+    @Binding var subtitle: String
+    @Binding var details: String
+    @Binding var cover: OutgoingAttachment?
     let attach: (OutgoingAttachment) -> Void
+    init(title: Binding<String>, coauthors: Binding<[Person]>, camera: Bool, forArticle: Bool = false,
+         subtitle: Binding<String> = .constant(""), details: Binding<String> = .constant(""), cover: Binding<OutgoingAttachment?> = .constant(nil),
+         attach: @escaping (OutgoingAttachment) -> Void) {
+        _title = title; _coauthors = coauthors; self.camera = camera; self.forArticle = forArticle
+        _subtitle = subtitle; _details = details; _cover = cover; self.attach = attach
+    }
+
     @Environment(ConversationStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var choosingDetails = false
     @State private var cameraOn = false
     @State private var voice = VoiceRecorder()
     @State private var capture = PodcastCapture()
@@ -168,6 +180,7 @@ struct PodcastRecorder: View {
             }
         }
         .preferredColorScheme(.dark)
+        .sheet(isPresented: $choosingDetails, onDismiss: { choosingHosts = true }) { PodcastDetailsSheet(subtitle: $subtitle, details: $details, cover: $cover) }
         .sheet(isPresented: $choosingHosts, onDismiss: finishUp) { JamCoauthorPicker(selected: $coauthors, title: "Add co-hosts") }
         .alert("Can\u{2019}t record", isPresented: Binding(get: { problem != nil }, set: { if !$0 { problem = nil } })) {
             Button("OK", role: .cancel) {}
@@ -374,7 +387,7 @@ struct PodcastRecorder: View {
     private func next() {
         guard clip != nil else { return }
         if forArticle { finishUp(); return }
-        choosingHosts = true
+        choosingDetails = true
     }
 
     /// After the co-host list (or Skip), the recording goes back to the post.
@@ -414,5 +427,47 @@ private struct LiveBars: View {
                 context.fill(Path(roundedRect: rect, cornerRadius: width / 2), with: .color(.white.opacity(0.35 + 0.4 * Double(level))))
             }
         }
+    }
+}
+
+/// After Next: a cover, a subtitle and a short description for the recording's post (all optional; with no cover the card shows your picture).
+struct PodcastDetailsSheet: View {
+    @Binding var subtitle: String
+    @Binding var details: String
+    @Binding var cover: OutgoingAttachment?
+    @Environment(\.dismiss) private var dismiss
+    @State private var picking = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Button { picking = true } label: {
+                        HStack(spacing: 12) {
+                            if let cover, let image = UIImage(data: cover.bytes) { Image(uiImage: image).resizable().scaledToFill().frame(width: 64, height: 64).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)) }
+                            else { Image(systemName: "photo").frame(width: 64, height: 64).background(Theme.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous)) }
+                            Text(cover == nil ? "Add cover" : "Change cover").font(Theme.body).foregroundStyle(Theme.text)
+                            Spacer()
+                        }
+                        .frame(minHeight: 44)
+                    }
+                    .accessibilityIdentifier("podcast-add-cover")
+                    if cover != nil { Button("Remove cover", role: .destructive) { cover = nil } }
+                } footer: { Text("Without a cover the card shows your picture.") }
+                Section {
+                    TextField("Subtitle", text: $subtitle).onChange(of: subtitle) { _, now in if now.count > 160 { subtitle = String(now.prefix(160)) } }.accessibilityIdentifier("podcast-subtitle")
+                    TextField("Description", text: $details, axis: .vertical).lineLimit(3...8).accessibilityIdentifier("podcast-description")
+                }
+            }
+            .navigationTitle("Details").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Next") { dismiss() }.fontWeight(.semibold).accessibilityIdentifier("podcast-details-next") } }
+            .fullScreenCover(isPresented: $picking) {
+                MediaLibraryPicker(limit: 1, onPick: { images, _ in
+                    picking = false
+                    if let image = images.first, let made = AttachmentProcessing.photo(image, name: JamCover.name) { cover = made }
+                }, onCancel: { picking = false }).ignoresSafeArea()
+            }
+        }
+        .presentationDetents([.large])
     }
 }

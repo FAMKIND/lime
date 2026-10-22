@@ -172,8 +172,8 @@ final class PodcastController {
         for command in [center.playCommand, center.pauseCommand, center.togglePlayPauseCommand, center.skipForwardCommand, center.skipBackwardCommand, center.changePlaybackPositionCommand] {
             command.removeTarget(nil)
         }
-        center.skipForwardCommand.preferredIntervals = [30]
-        center.skipBackwardCommand.preferredIntervals = [15]
+        center.skipForwardCommand.preferredIntervals = [10]
+        center.skipBackwardCommand.preferredIntervals = [10]
         center.playCommand.isEnabled = true; center.pauseCommand.isEnabled = true; center.togglePlayPauseCommand.isEnabled = true
         center.skipForwardCommand.isEnabled = true; center.skipBackwardCommand.isEnabled = true; center.changePlaybackPositionCommand.isEnabled = true
         center.playCommand.addTarget { [weak self] _ in Task { @MainActor in await self?.toggle(data: { nil }) }; return .success }
@@ -182,8 +182,8 @@ final class PodcastController {
             guard let self else { return }
             if self.isPlaying { self.pause() } else { await self.toggle(data: { nil }) }
         }; return .success }
-        center.skipForwardCommand.addTarget { [weak self] _ in Task { @MainActor in self?.skip(by: 30) }; return .success }
-        center.skipBackwardCommand.addTarget { [weak self] _ in Task { @MainActor in self?.skip(by: -15) }; return .success }
+        center.skipForwardCommand.addTarget { [weak self] _ in Task { @MainActor in self?.skip(by: 10) }; return .success }
+        center.skipBackwardCommand.addTarget { [weak self] _ in Task { @MainActor in self?.skip(by: -10) }; return .success }
         center.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
             Task { @MainActor in self?.seek(to: event.positionTime) }
@@ -234,7 +234,7 @@ struct PodcastBar: View {
                 }
                 .accessibilityLabel("Playback speed \(controller.rate == 1.5 ? "1.5" : "\(Int(controller.rate))")").accessibilityIdentifier("podcast-speed-\(id)")
                 Spacer()
-                skipButton("gobackward.15", "Back 15 seconds", -15)
+                skipButton("gobackward.10", "Back 10 seconds", -10)
                 Button { Task { await controller.toggle(data: load) } } label: {
                     ZStack {
                         Circle().fill(Theme.accent).frame(width: 56, height: 56)
@@ -244,7 +244,7 @@ struct PodcastBar: View {
                     .frame(width: 60, height: 60)
                 }
                 .accessibilityLabel(controller.isPlaying ? "Pause" : "Play").accessibilityIdentifier("podcast-play-\(id)")
-                skipButton("goforward.30", "Forward 30 seconds", 30)
+                skipButton("goforward.10", "Forward 10 seconds", 10)
                 Spacer()
                 Color.clear.frame(width: 48, height: 44).accessibilityHidden(true)
             }
@@ -289,8 +289,8 @@ struct PodcastBar: View {
         .accessibilityValue("\(PodcastFormat.spoken(controller.position)) of \(PodcastFormat.spoken(controller.duration))")
         .accessibilityAdjustableAction { direction in
             switch direction {
-            case .increment: controller.skip(by: 30)
-            case .decrement: controller.skip(by: -15)
+            case .increment: controller.skip(by: 10)
+            case .decrement: controller.skip(by: -10)
             @unknown default: break
             }
         }

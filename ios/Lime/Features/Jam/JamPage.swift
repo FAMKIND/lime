@@ -154,6 +154,7 @@ struct JamPostCard: View {
                     if !post.plain.isEmpty { Text(post.plain).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(3).multilineTextAlignment(.leading) }
                 } else {
                     if !post.title.isEmpty { Text(post.title).font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text).multilineTextAlignment(.leading) }
+                    if post.kind == "record", !post.subtitle.isEmpty { Text(post.subtitle).font(Theme.body).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.leading) }
                     if !post.plain.isEmpty { Text(post.plain).font(Theme.body).foregroundStyle(Theme.text).lineLimit(8).multilineTextAlignment(.leading) }
                 }
             }

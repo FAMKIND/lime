@@ -375,9 +375,9 @@ impl LimeStore {
         if !jam_store::valid_kind(&kind) {
             return Err(StoreError::Rejected);
         }
-        // A quick post has no title; an article needs one (and may have a subtitle); a recording may have a title and needs a video or voice clip.
+        // A quick post has no title; an article needs one (and may have a subtitle); a recording may have a title and a subtitle (LIME-188k) and needs a video or voice clip.
         let title = if kind == "quick" { String::new() } else { jam_store::clean_optional_line(&title, jam_store::MAX_POST_TITLE_CHARS).ok_or(StoreError::Rejected)? };
-        let subtitle = if kind == "article" { jam_store::clean_optional_line(&subtitle, jam_store::MAX_SUBTITLE_CHARS).ok_or(StoreError::Rejected)? } else { String::new() };
+        let subtitle = if kind == "article" || kind == "record" { jam_store::clean_optional_line(&subtitle, jam_store::MAX_SUBTITLE_CHARS).ok_or(StoreError::Rejected)? } else { String::new() };
         if (kind == "article" && title.is_empty()) || (kind == "record" && !attachments.iter().any(|a| a.mime.starts_with("video/") || a.mime.starts_with("audio/"))) {
             return Err(StoreError::Rejected);
         }

@@ -256,7 +256,12 @@ struct CallMiniPlayer: View {
 extension View {
     /// Reserves the bottom of a screen for the call mini player (and shows it there), so the last row is never covered.
     func callMiniPlayerInset() -> some View {
-        safeAreaInset(edge: .bottom, spacing: 0) { CallMiniPlayer() }
+        safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 0) {
+                AudioMiniPlayer()   // a playing recording (LIME-188k), above a minimised call
+                CallMiniPlayer()
+            }
+        }
     }
 }
 

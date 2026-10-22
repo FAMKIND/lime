@@ -74,7 +74,8 @@ struct JamAttachmentsView: View {
 
     var body: some View {
         let all = store.jamAttachments(postID)
-        let indexed = all.enumerated().filter { !skipping.contains($0.offset) && $0.element.mime != "text/vtt" }
+        let indexed = all.enumerated().filter { !skipping.contains($0.offset) && $0.element.mime != "text/vtt" && !JamCover.isCover($0.element) }
+        let cover = all.first(where: JamCover.isCover)
         let files = indexed.map(\.element)
         let photos = files.filter { $0.kind == "image" }
         let links = files.filter { $0.mime == JamLink.mime }
@@ -86,7 +87,7 @@ struct JamAttachmentsView: View {
                 let file = entry.element
                 switch file.kind {
                 case "video": JamVideoCard(postID: postID, file: file, captionFile: JamCaptions.file(for: entry.offset, in: all))
-                case "audio": JamAudio(postID: postID, file: file)
+                case "audio": JamAudioCard(postID: postID, file: file, coverFile: cover, captionFile: JamCaptions.file(for: entry.offset, in: all))
                 default: JamFileCard(postID: postID, file: file)
                 }
             }
@@ -193,6 +194,12 @@ struct JamPhotoRow: View {
         AttachmentItem(id: file.attachmentId, mime: file.mime, name: file.name, size: Int64(file.size), width: file.width.map(Int.init), height: file.height.map(Int.init),
                        durationMs: file.durationMs.map(Int.init), thumb: file.thumb, downloaded: true)
     }
+}
+
+/// A recording's cover is an image attachment named `cover.jpg` (LIME-188k); it is not a photo of the post.
+enum JamCover {
+    static let name = "cover.jpg"
+    static func isCover(_ file: JamAttachmentInfo) -> Bool { file.kind == "image" && file.name == name }
 }
 
 enum JamInline {

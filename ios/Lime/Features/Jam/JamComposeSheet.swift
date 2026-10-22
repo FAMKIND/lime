@@ -28,6 +28,9 @@ struct JamComposeSheet: View {
     @State private var captions: [CaptionKey: CaptionDraft] = [:]
     @State private var editingCaptions: CaptionKey?
     @State private var recordTitle = ""
+    @State private var recordSubtitle = ""
+    @State private var recordDetails = ""
+    @State private var recordCover: OutgoingAttachment?
     @State private var recordMode: Int?
     @State private var chooser: Chooser?
     @State private var coauthors: [Person] = []
@@ -92,7 +95,7 @@ struct JamComposeSheet: View {
                         insertIntoArticle(clip, preview: Self.fileCard(named: "Audio recording \(VoiceFormat.clock(Double(clip.durationMs ?? 0) / 1000))"))
                     }
                 } else {
-                    PodcastRecorder(title: $recordTitle, coauthors: $coauthors, camera: mode.mode == 0) { clip in clips = [clip]; captions = captions.filter { if case .clip = $0.key { false } else { true } }; startCaptions(clip, .clip(0)) }
+                    PodcastRecorder(title: $recordTitle, coauthors: $coauthors, camera: mode.mode == 0, subtitle: $recordSubtitle, details: $recordDetails, cover: $recordCover) { clip in clips = [clip]; captions = captions.filter { if case .clip = $0.key { false } else { true } }; startCaptions(clip, .clip(0)) }
                 }
             }
             .fullScreenCover(item: $chooser) { which in
@@ -617,12 +620,15 @@ struct JamComposeSheet: View {
             let vtt = Data(captionsToVtt(cues: target.draft.cues).utf8)
             files.append(OutgoingAttachment(bytes: vtt, name: captionFileName(index: UInt32(target.index)), mime: "text/vtt", width: nil, height: nil, durationMs: nil, thumb: Data(), poster: Data()))
         }
+        if hasClip, let recordCover, files.count < 10 { files.append(recordCover) }
         let kind = hasClip ? "record" : article ? "article" : "quick"
         let headline = article ? title : recordTitle
+        // A recording's description is its words when no words were written.
+        if hasClip, markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { markdown = recordDetails.trimmingCharacters(in: .whitespacesAndNewlines) }
         problem = nil
         posting = true
         Task {
-            let result = await store.publishJamPost(kind: kind, title: headline, subtitle: article ? subtitle : "", markdown: markdown, items: files, coauthors: coauthors.map(\.id), about: session.profile?.aboutText ?? "")
+            let result = await store.publishJamPost(kind: kind, title: headline, subtitle: article ? subtitle : hasClip ? recordSubtitle : "", markdown: markdown, items: files, coauthors: coauthors.map(\.id), about: session.profile?.aboutText ?? "")
             posting = false
             switch result {
             case .success: JamDraft.shared.clear(); dismiss()

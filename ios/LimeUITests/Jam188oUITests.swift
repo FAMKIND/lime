@@ -16,6 +16,7 @@ final class Jam188oUITests: LimeUITestCase {
         app.buttons["podcast-stop"].tap()
         app.textFields["podcast-title"].tap(); app.textFields["podcast-title"].typeText("Fraction wall")
         app.buttons["podcast-next"].tap()
+        app.buttons["podcast-details-next"].tap()
         app.buttons["jam-coauthor-done"].tap()   // Skip
         let status = any(app, "jam-captions-status")
         XCTAssertTrue(status.waitForExistence(timeout: 8))

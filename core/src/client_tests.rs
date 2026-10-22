@@ -5462,11 +5462,11 @@ fn quick_posts_articles_and_recordings_keep_their_kind_and_the_rules_for_each_ho
     assert!(publish_as("poem", "x", "", "x", vec![]).is_err(), "an unknown kind");
     publish_as("quick", "this title is dropped", "and this", "Thinking about **fractions** today", vec![]).unwrap();
     publish_as("article", "Exit tickets", "Five questions that work", "- one\n- two", vec![]).unwrap();
-    publish_as("record", "", "", "", vec![clip("video/mp4")]).unwrap();
+    publish_as("record", "", "Week four", "", vec![clip("video/mp4")]).unwrap();   // a recording may have a subtitle (LIME-188k)
     catch_up(&alice, &[&bob], &transport);
     let posts = bob.store.list_jam_posts(jam.clone()).unwrap();
     let kinds: Vec<(&str, &str, &str)> = posts.iter().map(|p| (p.kind.as_str(), p.title.as_str(), p.subtitle.as_str())).collect();
-    assert_eq!(kinds, vec![("quick", "", ""), ("article", "Exit tickets", "Five questions that work"), ("record", "", "")]);
+    assert_eq!(kinds, vec![("quick", "", ""), ("article", "Exit tickets", "Five questions that work"), ("record", "", "Week four")]);
     assert_eq!(posts[0].markdown, "Thinking about **fractions** today");
     assert!(posts.iter().all(|p| p.state == "ready"));
     // A late subscriber's index keeps the kinds too.

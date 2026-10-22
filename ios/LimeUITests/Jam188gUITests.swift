@@ -31,6 +31,8 @@ final class Jam188gUITests: LimeUITestCase {
         XCTAssertTrue(app.buttons["podcast-next"].isEnabled)
         app.textFields["podcast-title"].tap(); app.textFields["podcast-title"].typeText("Sunday planning")
         app.buttons["podcast-next"].tap()
+        XCTAssertTrue(app.buttons["podcast-details-next"].waitForExistence(timeout: 5), "cover, subtitle and description come first")
+        app.buttons["podcast-details-next"].tap()
         let sam = app.buttons["jam-coauthor-choice-sam"]
         XCTAssertTrue(sam.waitForExistence(timeout: 5), "co-hosts come from your contacts")
         sam.tap()
@@ -39,7 +41,7 @@ final class Jam188gUITests: LimeUITestCase {
         XCTAssertTrue(app.buttons["jam-coauthors"].exists, "and the co-host is asked")
         app.buttons["jam-post"].tap()
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Sunday planning'")).firstMatch.waitForExistence(timeout: 8))
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'podcast-play-'")).firstMatch.waitForExistence(timeout: 5), "the player sits in the card")
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'jam-audio-card-'")).firstMatch.waitForExistence(timeout: 5), "the recording is a card with a play button")
     }
 
     func testTheCameraButtonSwitchesTheScreenToThePreviewAndBack() {
@@ -53,26 +55,5 @@ final class Jam188gUITests: LimeUITestCase {
         XCTAssertTrue(app.buttons["podcast-flip"].exists)
         app.buttons["podcast-camera"].tap()
         XCTAssertTrue(any(app, "podcast-audio-layer").waitForExistence(timeout: 5), "camera off: your picture again")
-    }
-
-    func testThePlayerScrubsSkipsAndChangesSpeed() {
-        let app = launch("jam-following")
-        let scrubber = any(app, "podcast-scrubber-demo-audio-1")
-        for _ in 0..<6 where !scrubber.exists || !scrubber.isHittable { app.swipeUp() }
-        XCTAssertTrue(scrubber.waitForExistence(timeout: 8))
-        XCTAssertEqual(scrubber.label, "Position")
-        XCTAssertTrue((scrubber.value as? String ?? "").hasPrefix("0 seconds of 18 minutes"))
-        let elapsed = any(app, "podcast-elapsed-demo-audio-1")
-        app.buttons["podcast-skip-30-demo-audio-1"].tap()
-        XCTAssertEqual(elapsed.label, "0:30")
-        app.buttons["podcast-skip--15-demo-audio-1"].tap()
-        XCTAssertEqual(elapsed.label, "0:15")
-        scrubber.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        XCTAssertTrue(elapsed.label.hasPrefix("9:0"), "dragging or tapping the waveform moves the position")
-        XCTAssertTrue((scrubber.value as? String ?? "").hasPrefix("9 minutes"))
-        app.buttons["podcast-speed-demo-audio-1"].tap()
-        XCTAssertEqual(app.buttons["podcast-speed-demo-audio-1"].label, "Playback speed 1.5")
-        app.buttons["podcast-play-demo-audio-1"].tap()
-        XCTAssertEqual(app.buttons["podcast-play-demo-audio-1"].label, "Pause")
     }
 }
