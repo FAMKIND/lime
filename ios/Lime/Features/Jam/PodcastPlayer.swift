@@ -16,9 +16,18 @@ final class PodcastController {
     private(set) var rate: Float = 1
     private(set) var loading = false
     private(set) var failed = false
+    /// The video's own current time is at its end.
+    var atEnd: Bool { duration > 0 && position >= duration - 0.3 && !isPlaying }
     private(set) var player: AVPlayer?
     /// Debug demo and UI tests: no sound, a clock.
     var simulated = false
+    /// A video card starts silent and goes on playing when it is opened full screen (LIME-188j).
+    var muted = false {
+        didSet {
+            player?.isMuted = muted
+            if player != nil, isPlaying { configureSession() }
+        }
+    }
 
     private let title: String
     private let artist: String
@@ -37,6 +46,19 @@ final class PodcastController {
     var remaining: Double { max(duration - position, 0) }
     var fraction: Double { duration > 0 ? min(max(position / duration, 0), 1) : 0 }
 
+    /// Starts playing if it is not already (the autoplay of a video card).
+    func play(data: () async -> Data?) async {
+        if isPlaying { return }
+        await toggle(data: data)
+    }
+
+    private func configureSession() {
+        // A muted card must not stop the music someone else is playing; sound on takes the session.
+        let session = AVAudioSession.sharedInstance()
+        if muted { try? session.setCategory(.ambient, mode: .default) } else { try? session.setCategory(.playback, mode: isVideo ? .moviePlayback : .spokenAudio) }
+        try? session.setActive(true)
+    }
+
     /// Plays, pausing whatever else was playing. `data` is fetched on the first play only.
     func toggle(data: () async -> Data?) async {
         if isPlaying { pause(); return }
@@ -51,8 +73,8 @@ final class PodcastController {
         Self.current = self
         if position >= duration - 0.2 { position = 0; player?.seek(to: .zero, completionHandler: { _ in }) }
         if simulated { isPlaying = true; startTicker() } else {
-            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: isVideo ? .moviePlayback : .spokenAudio)
-            try? AVAudioSession.sharedInstance().setActive(true)
+            configureSession()
+            player?.isMuted = muted
             player?.playImmediately(atRate: rate)
             isPlaying = true
             startTicker()
@@ -91,6 +113,7 @@ final class PodcastController {
         let item = AVPlayerItem(url: url)
         let player = AVPlayer(playerItem: item)
         player.automaticallyWaitsToMinimizeStalling = false
+        player.isMuted = muted
         self.player = player
         Task { [weak self] in
             if let seconds = try? await item.asset.load(.duration).seconds, seconds.isFinite, seconds > 0 { self?.duration = seconds }
@@ -278,6 +301,7 @@ struct PodcastBar: View {
 /// A video from an AVPlayer, edge to edge in its frame.
 struct PlayerLayerView: UIViewRepresentable {
     let player: AVPlayer?
+    var fill = false
 
     final class Host: UIView {
         override class var layerClass: AnyClass { AVPlayerLayer.self }
@@ -286,10 +310,12 @@ struct PlayerLayerView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> Host {
         let view = Host()
-        view.layer_.videoGravity = .resizeAspect
         view.backgroundColor = .black
         return view
     }
 
-    func updateUIView(_ view: Host, context: Context) { view.layer_.player = player }
+    func updateUIView(_ view: Host, context: Context) {
+        view.layer_.videoGravity = fill ? .resizeAspectFill : .resizeAspect
+        view.layer_.player = player
+    }
 }

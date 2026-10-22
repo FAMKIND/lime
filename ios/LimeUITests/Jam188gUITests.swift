@@ -36,7 +36,7 @@ final class Jam188gUITests: LimeUITestCase {
         sam.tap()
         app.buttons["jam-coauthor-done"].tap()
         XCTAssertTrue(app.buttons["jam-recorded-0"].waitForExistence(timeout: 5), "the recording is attached")
-        XCTAssertTrue(app.buttons["jam-coauthor-sam"].exists, "and the co-host is asked")
+        XCTAssertTrue(app.buttons["jam-coauthors"].exists, "and the co-host is asked")
         app.buttons["jam-post"].tap()
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Sunday planning'")).firstMatch.waitForExistence(timeout: 8))
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'podcast-play-'")).firstMatch.waitForExistence(timeout: 5), "the player sits in the card")

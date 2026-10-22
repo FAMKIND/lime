@@ -75,6 +75,8 @@ final class ConversationStore {
     var jamSubscriptions: [JamInfo] = []
     var jamPosts: [String: [JamPostInfo]] = [:]
     var jamProgress: [String: JamSendProgress] = [:]
+    /// Bumped when the posts hidden on this phone change, so the feed redraws.
+    var jamHiddenChanged = 0
     var jamSubscribers: [String: [JamSubscriberInfo]] = [:]
     var jamLastKick = Date.distantPast
     /// Credits I am asked to accept, and the posts I am credited on (LIME-188f).

@@ -82,7 +82,7 @@ struct JamAttachmentsView: View {
             ForEach(links, id: \.attachmentId) { JamLinkCard(postID: postID, file: $0) }
             ForEach(files.filter { $0.kind != "image" && $0.mime != JamLink.mime }, id: \.attachmentId) { file in
                 switch file.kind {
-                case "video": JamVideo(postID: postID, file: file)
+                case "video": JamVideoCard(postID: postID, file: file)
                 case "audio": JamAudio(postID: postID, file: file)
                 default: JamFileCard(postID: postID, file: file)
                 }
@@ -126,14 +126,19 @@ struct JamPhotoRow: View {
     private struct ViewerStart: Identifiable { let index: Int; var id: Int { index } }
 
     var body: some View {
-        let height: CGFloat = compact ? 220 : 280
         let many = files.count > 1
+        // One standard frame for the row (the first picture's nearer shape), so the items line up.
+        let ratio = JamMedia.ratio(width: files.first?.width, height: files.first?.height)
+        let narrow: CGFloat = compact ? 0.8 : 1
+        let columnWidth = UIScreen.main.bounds.width - 40
+        let tileWidth = (many ? columnWidth * 0.86 : columnWidth) * narrow
+        let height = tileWidth / ratio
         GeometryReader { geo in
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 8) {
+                LazyHStack(spacing: JamMedia.gap) {
                     ForEach(Array(files.enumerated()), id: \.element.attachmentId) { index, file in
                         tile(file, index: index)
-                            .frame(width: many ? geo.size.width * 0.86 : geo.size.width, height: height)
+                            .frame(width: tileWidth, height: height)
                             .id(file.attachmentId)
                     }
                 }
@@ -164,7 +169,7 @@ struct JamPhotoRow: View {
             Theme.surface
             if let image = images[file.attachmentId] { Image(uiImage: image).resizable().scaledToFill() } else { ProgressView() }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .jamMediaClip()
         .contentShape(Rectangle())
         .onTapGesture { viewing = ViewerStart(index: index) }
         .accessibilityElement(children: .ignore)
@@ -210,7 +215,7 @@ struct JamInlineAttachment: View {
                 if file.kind == "image" {
                     JamPhoto(postID: postID, file: file, onLoaded: { full = $0 }, tapToOpen: true)
                 } else if file.kind == "video" {
-                    JamVideo(postID: postID, file: file)
+                    JamVideoCard(postID: postID, file: file)
                 } else if file.kind == "audio" {
                     JamAudio(postID: postID, file: file)
                 } else {
@@ -237,7 +242,7 @@ private struct JamPhoto: View {
     var body: some View {
         Group {
             if let image {
-                Image(uiImage: image).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                Image(uiImage: image).resizable().scaledToFit().jamMediaClip()
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityLabel(file.name.isEmpty ? "Photo" : "Photo, \(file.name)")
                     .onTapGesture { if tapToOpen { opened = true } }
@@ -252,7 +257,7 @@ private struct JamPhoto: View {
                         .onTapGesture { opened = false }
                     }
             } else {
-                RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.surface)
+                RoundedRectangle(cornerRadius: JamMedia.radius, style: .continuous).fill(Theme.surface)
                     .aspectRatio(file.width.flatMap { w in file.height.map { CGFloat(w) / CGFloat(max($0, 1)) } } ?? 1.5, contentMode: .fit)
                     .overlay { if failed { Text("Photo not available").font(Theme.caption).foregroundStyle(Theme.textSecondary) } else { ProgressView() } }
             }
@@ -260,45 +265,6 @@ private struct JamPhoto: View {
         .accessibilityIdentifier("jam-photo")
         .task {
             if let data = await store.jamAttachmentData(postID, file.attachmentId), let picture = UIImage(data: data) { image = picture; onLoaded?(picture) } else { failed = true }
-        }
-    }
-}
-
-/// A video in a post: its cover, then the system's own video player (the podcast player is for audio only).
-struct JamVideo: View {
-    let postID: String
-    let file: JamAttachmentInfo
-    @Environment(ConversationStore.self) private var store
-    @State private var player: AVPlayer?
-    @State private var loading = false
-
-    var body: some View {
-        ZStack {
-            if let player {
-                VideoPlayer(player: player).aspectRatio(file.width.flatMap { w in file.height.map { CGFloat(w) / CGFloat(max($0, 1)) } } ?? 16.0 / 9, contentMode: .fit)
-            } else {
-                Button { load() } label: {
-                    ZStack {
-                        if let poster = UIImage(data: file.poster) { Image(uiImage: poster).resizable().scaledToFit() } else { Rectangle().fill(Theme.surface).aspectRatio(16.0 / 9, contentMode: .fit) }
-                        if loading { ProgressView() } else { Image(systemName: "play.circle.fill").font(.system(size: 52)).foregroundStyle(.white).shadow(radius: 4) }
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                }
-                .buttonStyle(.plain).accessibilityLabel("Play video").accessibilityIdentifier("jam-video")
-            }
-        }
-    }
-
-    private func load() {
-        loading = true
-        Task {
-            if let data = await store.jamAttachmentData(postID, file.attachmentId) {
-                let url = FileManager.default.temporaryDirectory.appendingPathComponent("jam-\(file.attachmentId).mp4")
-                try? data.write(to: url)
-                player = AVPlayer(url: url)
-                player?.play()
-            }
-            loading = false
         }
     }
 }

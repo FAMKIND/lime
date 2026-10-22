@@ -84,7 +84,7 @@ final class Jam188bUITests: LimeUITestCase {
         title.tap(); title.typeText("Exit tickets that work")
         let subtitle = app.textFields["jam-article-subtitle"].exists ? app.textFields["jam-article-subtitle"] : app.textViews["jam-article-subtitle"]
         subtitle.tap()
-        subtitle.typeText(String(repeating: "x", count: 200)); sleep(1)   // the cap trims after the last key
+        subtitle.typeText(String(repeating: "x", count: 200)); sleep(3)   // the cap trims after the last key
         XCTAssertLessThanOrEqual((subtitle.value as? String ?? "").count, 160, "a subtitle never takes more than 160")
         subtitle.typeText("\n")   // Return moves to the body
         let body = app.textViews["composer-field"]

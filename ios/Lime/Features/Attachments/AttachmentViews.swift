@@ -292,13 +292,14 @@ struct AttachmentViewer: View {
     @Environment(\.dismiss) private var dismiss
     @State private var page = 0
     @State private var saved = false
+    @State private var zoomed = false
 
     var body: some View {
         ZStack(alignment: .top) {
             Color.black.ignoresSafeArea()
             TabView(selection: $page) {
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                    ZoomablePicture(item: item, load: load).tag(index)
+                    ZoomablePicture(item: item, load: load, onZoom: { zoomed = $0 }).tag(index)
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
@@ -326,6 +327,8 @@ struct AttachmentViewer: View {
             .padding(.horizontal, 16).padding(.top, 8)
         }
         .onAppear { page = min(max(start, 0), items.count - 1) }
+        // Swipe down to close (not while a picture is zoomed: then a drag pans it).
+        .gesture(DragGesture(minimumDistance: 30).onEnded { if !zoomed, $0.translation.height > 120, abs($0.translation.width) < 80 { dismiss() } }, including: zoomed ? .subviews : .all)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("attachment-viewer")
     }
@@ -345,18 +348,26 @@ struct AttachmentViewer: View {
 private struct ZoomablePicture: View {
     let item: AttachmentItem
     var load: ((AttachmentItem) async -> UIImage?)? = nil
+    var onZoom: (Bool) -> Void = { _ in }
     @Environment(ConversationStore.self) private var store
     @State private var image: UIImage?
     @State private var scale: CGFloat = 1
     @State private var base: CGFloat = 1
+    @State private var offset: CGSize = .zero
+    @State private var dragBase: CGSize = .zero
 
     var body: some View {
         ZStack {
             if let image {
                 Image(uiImage: image).resizable().scaledToFit()
                     .scaleEffect(scale)
-                    .gesture(MagnifyGesture().onChanged { scale = min(max(base * $0.magnification, 1), 5) }.onEnded { _ in base = scale; if scale < 1.05 { scale = 1; base = 1 } })
-                    .onTapGesture(count: 2) { withAnimation { scale = scale > 1 ? 1 : 2.5; base = scale } }
+                    .offset(offset)
+                    .gesture(MagnifyGesture().onChanged { scale = min(max(base * $0.magnification, 1), 5); onZoom(scale > 1.02) }
+                        .onEnded { _ in base = scale; if scale < 1.05 { reset() } })
+                    // Zoomed in, a drag pans the picture to see its details.
+                    .gesture(DragGesture().onChanged { offset = CGSize(width: dragBase.width + $0.translation.width, height: dragBase.height + $0.translation.height) }
+                        .onEnded { _ in dragBase = offset }, including: scale > 1.02 ? .all : .subviews)
+                    .onTapGesture(count: 2) { withAnimation { if scale > 1 { reset() } else { scale = 2.5; base = 2.5; onZoom(true) } } }
             } else if let thumb = UIImage(data: item.thumb) {
                 Image(uiImage: thumb).resizable().scaledToFit().blur(radius: 10)
                 ProgressView().tint(.white)
@@ -367,6 +378,11 @@ private struct ZoomablePicture: View {
         .task(id: item.id) {
             if let load { image = await load(item) } else { image = await store.image(for: item) }
         }
+    }
+
+    private func reset() {
+        scale = 1; base = 1; offset = .zero; dragBase = .zero
+        onZoom(false)
     }
 }
 

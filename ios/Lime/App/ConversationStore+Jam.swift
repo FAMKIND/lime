@@ -53,7 +53,24 @@ extension ConversationStore {
     /// The feed: the posts of every jam I follow and my own, newest first.
     var jamFeed: [JamPostInfo] {
         let live = Set(jamSubscriptions.filter { $0.status == "active" }.map(\.jamId) + jamsMine.map(\.jamId))
-        return jamPosts.filter { live.contains($0.key) }.values.flatMap { $0 }.sorted { $0.created > $1.created }
+        let hidden = hiddenJamPosts
+        return jamPosts.filter { live.contains($0.key) }.values.flatMap { $0 }.filter { !hidden.contains($0.postId) }.sorted { $0.created > $1.created }
+    }
+
+    /// Posts hidden from my feed on this phone (never sent anywhere).
+    var hiddenJamPosts: Set<String> { Set(UserDefaults.standard.stringArray(forKey: VideoPrefs.hiddenKey) ?? []) }
+
+    func hideJamPost(_ postID: String) {
+        var now = hiddenJamPosts
+        now.insert(postID)
+        UserDefaults.standard.set(Array(now), forKey: VideoPrefs.hiddenKey)
+        jamHiddenChanged += 1
+        showBanner("Post hidden")
+    }
+
+    func unhideJamPosts() {
+        UserDefaults.standard.removeObject(forKey: VideoPrefs.hiddenKey)
+        jamHiddenChanged += 1
     }
 
     /// "with Jean Chung and Lee Wong" for the co-authors who accepted, or nil.

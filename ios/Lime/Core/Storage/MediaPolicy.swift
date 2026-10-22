@@ -54,13 +54,15 @@ final class StorageGuard {
 
     private let monitor = NWPathMonitor()
     private var onWiFi = true
+    private var constrained = false
     private var freeOverride: UInt64?
     private var networkOverride: Bool?
 
     private init() {
         monitor.pathUpdateHandler = { [weak self] path in
             let wifi = !path.isExpensive && (path.usesInterfaceType(.wifi) || path.usesInterfaceType(.wiredEthernet) || !path.usesInterfaceType(.cellular))
-            Task { @MainActor in self?.onWiFi = wifi }
+            let low = path.isConstrained
+            Task { @MainActor in self?.onWiFi = wifi; self?.constrained = low }
         }
         monitor.start(queue: DispatchQueue(label: "lime.network"))
         #if DEBUG
@@ -71,6 +73,8 @@ final class StorageGuard {
     }
 
     var isOnWiFi: Bool { networkOverride ?? onWiFi }
+    /// Low Data Mode is on for the network in use.
+    var isLowData: Bool { constrained }
 
     /// Bytes free for important data (what the system would let Lime write before it has to clear space).
     var freeBytes: UInt64 {
