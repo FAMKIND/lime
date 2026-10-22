@@ -53,7 +53,8 @@ final class Jam188vUITests: LimeUITestCase {
         toggle.tap()
         XCTAssertTrue(app.staticTexts["Welcome from the circle"].waitForExistence(timeout: 5) || app.buttons.matching(NSPredicate(format: "label CONTAINS 'Welcome from the circle'")).firstMatch.exists, "the post shown as the jam")
         control.buttons["Articles"].tap()
-        XCTAssertTrue(any(app, "filter-clear-empty").waitForExistence(timeout: 5), "my article is as myself: nothing matches")
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS 'How we read together'")).firstMatch.waitForExistence(timeout: 5), "the article shown as the jam")
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Our first circle'")).firstMatch.exists, "not my article as myself")
     }
 
     func testAProfileWithAJamTitleOfItsOwnHasAPillAfterActivityWithTheHeadAndPostsHasNone() {

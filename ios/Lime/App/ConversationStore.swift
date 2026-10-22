@@ -1067,7 +1067,12 @@ final class ConversationStore {
             section = .jam
             if screen == "jam-following", let page = demoJamPages["sam"] { demoSubscribe(page) }
             if screen == "jam-mine" || screen == "jam-mine-profile" || screen == "jam-mine-asjam" { demoMineWithPost() }
-            if screen == "jam-mine-asjam" { demoPublish("demo-my-jam", kind: "quick", title: "", subtitle: "", markdown: "Welcome from the circle", items: [], displayAs: "jam") }
+            if screen == "jam-mine-asjam" {
+                let long = (1...30).map { "Paragraph \($0): we read aloud together and talked about what we noticed." }.joined(separator: "\n\n")
+                demoPublish("demo-my-jam", kind: "article", title: "How we read together", subtitle: "A term of circles", markdown: long, items: [], coauthors: ["sam", "lee"], displayAs: "jam")
+                demoPublish("demo-my-jam", kind: "article", title: "Notes from the circle", subtitle: "", markdown: long, items: [])
+                demoPublish("demo-my-jam", kind: "quick", title: "", subtitle: "", markdown: "Welcome from the circle", items: [], displayAs: "jam")
+            }
             if screen == "jam-request" { demoRequest() }
             if screen == "jam-mine-profile" { jamPath.append(ProfileRoute(userID: meProvider().id, name: meProvider().name, isMe: true)) }
         case "group-incoming", "group-incoming-ios-refused":

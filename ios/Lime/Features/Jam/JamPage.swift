@@ -137,7 +137,7 @@ struct JamPostCard: View {
                 let asJam = post.displayAs == "jam"
                 Button { store.openProfile(ProfileRoute(userID: writer.id, name: writer.name, isMe: writer.id == store.meProvider().id)) } label: {
                     HStack(spacing: 10) {
-                        if asJam { JamInitialTile(title: store.jamTitle(post.jamId), size: 40).accessibilityHidden(true) } else { AvatarView(person: writer, size: 40).accessibilityHidden(true) }
+                        BylineAvatar(people: store.bylinePeople(post), jam: asJam ? store.jamTitle(post.jamId) : nil, size: 40)
                         VStack(alignment: .leading, spacing: 0) {
                             Text(asJam ? store.jamTitle(post.jamId) : writer.name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
                             Text([asJam ? "by \(writer.name)" : nil, store.byline(post), JamDates.text(post.created)].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary)

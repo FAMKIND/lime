@@ -188,6 +188,8 @@ struct JamArticlePage: View {
     @State private var offset: CGFloat = 0
     @State private var lastOffset: CGFloat = 0
     @State private var barHidden = false
+    /// Where the head (title, byline) ends in the scroll view: the title pill comes in once it is above the bar.
+    @State private var headEnd: CGFloat = 1000
     @State private var options = false
     @State private var display = false
     @State private var sharing = false
@@ -213,6 +215,8 @@ struct JamArticlePage: View {
                     }
                     .coordinateSpace(name: "jam-article-scroll")
                     .onPreferenceChange(ArticleOffsetKey.self) { track($0) }
+                    .onPreferenceChange(ArticleHeadEndKey.self) { headEnd = $0 }
+                    .modifier(ArticleScrollTracking(track: track))
                     .onChange(of: scrollTarget) { _, id in if let id { withAnimation { proxy.scrollTo(id, anchor: .center) } } }
                 }
                 .padding(.top, 0)
@@ -247,7 +251,7 @@ struct JamArticlePage: View {
             if !post.subtitle.isEmpty { Text(post.subtitle).font(font.font(size: size + 2)).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("jam-reader-subtitle") }
             Button { store.openProfile(ProfileRoute(userID: writer.id, name: writer.name, isMe: writer.id == store.meProvider().id)) } label: {
                 HStack(spacing: 10) {
-                    if post.displayAs == "jam" { JamInitialTile(title: store.jamTitle(post.jamId), size: 40).accessibilityHidden(true) } else { AvatarView(person: writer, size: 40).accessibilityHidden(true) }
+                    BylineAvatar(people: store.bylinePeople(post), jam: post.displayAs == "jam" ? store.jamTitle(post.jamId) : nil, size: 40)
                     VStack(alignment: .leading, spacing: 0) {
                         Text(post.displayAs == "jam" ? store.jamTitle(post.jamId) : writer.name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
                         Text([post.displayAs == "jam" ? "by \(writer.name)" : nil, store.byline(post), JamDates.text(post.created), "\(minutes) min read"].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary)
@@ -260,6 +264,8 @@ struct JamArticlePage: View {
             .buttonStyle(.plain)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(post.title), by \(writer.name), \(JamDates.text(post.created)), \(minutes) minute read").accessibilityHint("Opens their profile")
+            GeometryReader { geo in Color.clear.preference(key: ArticleHeadEndKey.self, value: geo.frame(in: .named("jam-article-scroll")).minY) }.frame(height: 0)
+                .modifier(HeadEndReporter(report: { headEnd = $0 }))
             Rectangle().fill(Theme.hairline).frame(height: 1).accessibilityHidden(true)
             switch post.state {
             case "fetching": Text("Downloading\u{2026}").font(Theme.body).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("jam-reader-fetching")
@@ -325,21 +331,12 @@ struct JamArticlePage: View {
 
     // MARK: The top bar
 
-    /// Glass circles: back, (when the bar comes back below the head) the writer's picture, then Subscribe and ⋯. It slides away as you read down
-    /// and returns as you scroll up.
+    /// ‹ · the title pill (once the head has scrolled away) · Subscribe · ⋯. Glass; it slides away as you read down and returns as you scroll up.
     private func topBar(_ post: JamPostInfo) -> some View {
-        let writer = store.teacher(post.author)
-        let showsAvatar = !barHidden && offset > 160
+        let showsPill = headEnd < 56
         return HStack(spacing: 10) {
             circle("chevron.left", label: "Back", id: "jam-article-back") { dismiss() }
-            if showsAvatar {
-                Button { store.openProfile(ProfileRoute(userID: writer.id, name: writer.name, isMe: writer.id == store.meProvider().id)) } label: {
-                    AvatarView(person: writer, size: 40).frame(width: 44, height: 44)
-                }
-                .accessibilityLabel(writer.name).accessibilityHint("Opens their profile").accessibilityIdentifier("jam-article-avatar")
-                .transition(.opacity)
-            }
-            Spacer()
+            if showsPill { titlePill(post).transition(.opacity) } else { Spacer() }
             if !store.isFollowing(post.jamId), post.author != store.meProvider().id {
                 Button { Task { if let page = await store.jamPage(of: post.author) { await store.subscribe(to: page) } } } label: {
                     Text("Subscribe").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.accentInk).padding(.horizontal, 16).frame(minHeight: 44).background(Theme.accent, in: Capsule())
@@ -352,8 +349,48 @@ struct JamArticlePage: View {
         .offset(y: barHidden && !reduceMotion ? -90 : 0)
         .opacity(barHidden ? 0 : 1)
         .animation(reduceMotion ? .linear(duration: 0.15) : .easeOut(duration: 0.2), value: barHidden)
-        .animation(.easeOut(duration: 0.2), value: showsAvatar)
+        .animation(.easeOut(duration: 0.2), value: showsPill)
     }
+
+    /// The glass pill like the chat header's: the byline's picture, the title, and who it is by. One button to the profile; with several people
+    /// (a jam and co-authors) a small menu of them.
+    private func titlePill(_ post: JamPostInfo) -> some View {
+        let people = store.bylinePeople(post)
+        let asJam = post.displayAs == "jam"
+        let words = store.bylineText(post)
+        // Where each name goes: the jam is its writer's page.
+        var entries: [(label: String, person: Person)] = asJam ? [(store.jamTitle(post.jamId), people[0])] : [(people[0].name, people[0])]
+        entries += people.dropFirst().map { ($0.name, $0) }
+        let label = HStack(spacing: 8) {
+            BylineAvatar(people: people, jam: asJam ? store.jamTitle(post.jamId) : nil, size: 32)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(post.title).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
+                Text(words).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.leading, 6).padding(.trailing, 14).frame(minHeight: 44).frame(maxWidth: .infinity, alignment: .leading)
+        .limeGlass(in: Capsule())
+        .contentShape(Capsule())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(post.title), by \(words)")
+        return Group {
+            if entries.count > 1 {
+                Menu {
+                    ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
+                        Button(entry.label) { open(entry.person) }
+                    }
+                } label: { label }
+                .accessibilityHint("Choose a profile")
+            } else {
+                Button { open(entries[0].person) } label: { label }.buttonStyle(.plain)
+                    .accessibilityHint("Opens profile")
+            }
+        }
+        .accessibilityIdentifier("jam-article-pill")
+    }
+
+    private func open(_ person: Person) { store.openProfile(ProfileRoute(userID: person.id, name: person.name, isMe: person.id == store.meProvider().id)) }
 
     private func circle(_ symbol: String, label: String, id: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
@@ -402,6 +439,31 @@ struct JamArticlePage: View {
             remaining -= count
         }
     }
+}
+
+/// Scroll position from the scroll view itself (iOS 18 and later; the preference below is what older systems use): the bar hides as you read down.
+private struct ArticleScrollTracking: ViewModifier {
+    let track: (CGFloat) -> Void
+    func body(content: Content) -> some View {
+        if #available(iOS 18, *) {
+            content.onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y + $0.contentInsets.top } action: { _, y in track(y) }
+        } else { content }
+    }
+}
+
+/// Where the article's head ends in the scroll view, for the title pill.
+private struct HeadEndReporter: ViewModifier {
+    let report: (CGFloat) -> Void
+    func body(content: Content) -> some View {
+        if #available(iOS 18, *) {
+            content.onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("jam-article-scroll")).minY } action: { report($0) }
+        } else { content }
+    }
+}
+
+private struct ArticleHeadEndKey: PreferenceKey {
+    static let defaultValue: CGFloat = 1000
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
 private struct ArticleOffsetKey: PreferenceKey {
