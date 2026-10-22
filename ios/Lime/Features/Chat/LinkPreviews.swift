@@ -19,6 +19,13 @@ enum LinkPreviewMaker {
     @MainActor
     static func make(for url: URL, demo: Bool = false) async -> OutgoingPreview? {
         if demo { return demoPreview(for: url) }
+        // An address typed without a scheme ("apple.com") is read as http://: iOS refuses to load a plain http page for an app (App Transport
+        // Security), so the fetch timed out after eight seconds and no card came. The page is fetched, and the card links, over https.
+        var url = url
+        if url.scheme?.lowercased() == "http", var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+            parts.scheme = "https"
+            if let secure = parts.url { url = secure }
+        }
         let provider = LPMetadataProvider()
         provider.timeout = 8
         let fetched: LPLinkMetadata?
