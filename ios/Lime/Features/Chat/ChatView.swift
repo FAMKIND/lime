@@ -804,7 +804,7 @@ struct ChatView: View {
     private func composer(_ conversation: Conversation) -> some View {
         ChatComposer(model: composerModel, onSend: { markdown in store.send(markdown, in: conversation.id) },
                      onSendAttachments: conversation.isRequest ? nil : { items, caption in store.sendAttachments(items, caption: caption, in: conversation.id) },
-                     onSendPreview: conversation.isRequest || conversation.id == store.selfChatID ? nil : { markdown, preview in Task { await store.sendNow(markdown, preview: preview, in: conversation.id) } })
+                     onSendPreview: conversation.isRequest ? nil : { markdown, preview in Task { await store.sendNow(markdown, preview: preview, in: conversation.id) } })
             .composerMentions(composerModel, in: conversation)
     }
 }
