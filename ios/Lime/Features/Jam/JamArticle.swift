@@ -247,10 +247,10 @@ struct JamArticlePage: View {
             if !post.subtitle.isEmpty { Text(post.subtitle).font(font.font(size: size + 2)).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("jam-reader-subtitle") }
             Button { store.openProfile(ProfileRoute(userID: writer.id, name: writer.name, isMe: writer.id == store.meProvider().id)) } label: {
                 HStack(spacing: 10) {
-                    AvatarView(person: writer, size: 40).accessibilityHidden(true)
+                    if post.displayAs == "jam" { JamInitialTile(title: store.jamTitle(post.jamId), size: 40).accessibilityHidden(true) } else { AvatarView(person: writer, size: 40).accessibilityHidden(true) }
                     VStack(alignment: .leading, spacing: 0) {
-                        Text(writer.name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
-                        Text([store.byline(post), JamDates.text(post.created), "\(minutes) min read"].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                        Text(post.displayAs == "jam" ? store.jamTitle(post.jamId) : writer.name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
+                        Text([post.displayAs == "jam" ? "by \(writer.name)" : nil, store.byline(post), JamDates.text(post.created), "\(minutes) min read"].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary)
                             .accessibilityIdentifier("jam-reader-byline")
                     }
                     Spacer(minLength: 0)
@@ -273,6 +273,7 @@ struct JamArticlePage: View {
                             .id("segment-\(index)")
                     }
                 }
+                .environment(\.postContext, PostContext(post: post))
                 .environment(\.postBodyFont, font.font(size: size))
                 .environment(\.postLineSpacing, ReaderPrefs.lineSpacing(size: size, step: lineStep))
                 .accessibilityIdentifier("jam-reader-body-\(font.rawValue)")
@@ -641,12 +642,12 @@ enum ArticlePrint {
         for block in MessageRender.blocks(post.markdown, post: true) {
             switch block {
             case .paragraph(let s): body += "<p>\(spans(s))</p>"
-            case .heading(let level, let s): body += "<h\(min(max(level, 1), 3) + 1)>\(spans(s))</h\(min(max(level, 1), 3) + 1)>"
+            case .heading(let level, let s): body += "<h\(min(max(level, 1), 5) + 1)>\(spans(s))</h\(min(max(level, 1), 5) + 1)>"
             case .quote(let s): body += "<blockquote>\(spans(s))</blockquote>"
             case .indent(let s): body += "<p style=\"margin-left:2em\">\(spans(s))</p>"
             case .list(let items): body += "<ul>" + items.map { "<li>\(spans($0.spans))</li>" }.joined() + "</ul>"
             case .code(let text): body += "<pre>\(escape(text))</pre>"
-            case .button(let text, let url): body += "<p><a href=\"\(escape(url))\">\(escape(text))</a> (\(escape(url)))</p>"
+            case .button(let text, let url, _, _): body += "<p><a href=\"\(escape(url))\">\(escape(text))</a> (\(escape(url)))</p>"
             case .divider: body += "<hr>"
             case .freewall: break
             case .image(let caption, let index):

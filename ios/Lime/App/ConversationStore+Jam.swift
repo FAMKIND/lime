@@ -168,18 +168,18 @@ extension ConversationStore {
     /// Publishes a post (a quick post, an article or a recording) to my jam, making the jam first if this is my first post: the core seals it, and
     /// the next delivery sends it. Every post is free (payments are off). The photos go up afterwards in the background, each on its own and retried
     /// by itself; nothing here waits for the network.
-    func publishJamPost(kind: String, title: String, subtitle: String, markdown: String, items: [OutgoingAttachment], coauthors: [String] = [], about: String) async -> Result<Void, JamPostFailure> {
+    func publishJamPost(kind: String, title: String, subtitle: String, markdown: String, items: [OutgoingAttachment], coauthors: [String] = [], displayAs: String = "person", about: String) async -> Result<Void, JamPostFailure> {
         guard items.count <= 10 else { return .failure(.tooManyFiles) }
         guard items.allSatisfy({ $0.bytes.count <= Self.jamFileLimit }) else { return .failure(.fileTooLarge) }
         guard let jamID = await myJamID(about: about) else { return .failure(.couldNotMake) }
         #if DEBUG
-        if isDemo { demoPublish(jamID, kind: kind, title: title, subtitle: subtitle, markdown: markdown, items: items, coauthors: coauthors); return .success(()) }
+        if isDemo { demoPublish(jamID, kind: kind, title: title, subtitle: subtitle, markdown: markdown, items: items, coauthors: coauthors, displayAs: displayAs); return .success(()) }
         #endif
         guard let core else { return .failure(.couldNotMake) }
         guard StorageGuard.shared.allows(items.reduce(0) { $0 + Int64($1.bytes.count) }) else { return .failure(.noSpace) }
         do {
             _ = try await Task.detached(priority: .userInitiated) {
-                try core.publishJamPost(jamId: jamID, kind: kind, title: title, subtitle: subtitle, markdown: markdown, tier: "free", attachments: items, coauthors: coauthors)
+                try core.publishJamPostAs(jamId: jamID, kind: kind, title: title, subtitle: subtitle, markdown: markdown, tier: "free", attachments: items, coauthors: coauthors, displayAs: displayAs)
             }.value
         } catch {
             CallDiagnostics.shared.log("jam post failed: \(error)")
@@ -204,6 +204,12 @@ extension ConversationStore {
     /// The people a post could be shared with as co-author: the contacts I have accepted.
     var coauthorChoices: [Person] {
         conversations.filter { $0.id.hasPrefix("dm:") && !$0.isRequest && $0.id != selfChatID }.compactMap(\.members.first).filter { $0.id != meProvider().id }
+    }
+
+    /// "Message me" in a post: the chat with its writer (a contact request when they are not yet a contact).
+    func messageWriter(_ userID: String) async {
+        if conversation("dm:\(userID)") != nil { openFromNotification("dm:\(userID)", thread: nil); return }
+        await startChat(with: FoundUser(userId: userID, displayName: teacherName(userID), username: nil, school: nil, aboutEmoji: nil, aboutText: nil, isSelf: false))
     }
 
     func loadJamSubscribers(_ jamID: String) {

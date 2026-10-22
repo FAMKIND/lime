@@ -48,7 +48,7 @@ struct FormattedMessageText: View {
                         if let postImage { postImage(caption, index) }
                     case .heading(let level, let spans):
                         Text(MessageRender.attributed(spans, ink: ink, link: link, mentions: mentions))
-                            .font(Theme.font(level == 1 ? .title : level == 2 ? .title2 : .title3, weight: .bold)).foregroundStyle(ink)
+                            .font(headingFont(level)).foregroundStyle(level == 6 ? ink.opacity(0.7) : ink).textCase(level == 6 ? .uppercase : nil)
                             .fixedSize(horizontal: false, vertical: true).padding(.top, 6)
                             .accessibilityAddTraits(.isHeader)
                     case .quote(let spans):
@@ -61,10 +61,10 @@ struct FormattedMessageText: View {
                     case .indent(let spans):
                         Text(MessageRender.attributed(spans, ink: ink, link: link, mentions: mentions)).font(Theme.body).foregroundStyle(ink)
                             .fixedSize(horizontal: false, vertical: true).padding(.leading, 24)
-                    case .button(let text, let url):
-                        PostButton(text: text, url: url)
+                    case .button(let text, let url, let caption, let colour):
+                        PostButton(text: text, url: url, caption: caption, colour: colour)
                     case .divider:
-                        Rectangle().fill(Theme.hairline).frame(height: 1).padding(.vertical, 14).accessibilityHidden(true).accessibilityIdentifier("post-divider")
+                        Capsule().fill(Theme.hairline).frame(height: 2).padding(.vertical, 24).accessibilityHidden(true).accessibilityIdentifier("post-divider")
                     case .freewall:
                         HStack(spacing: 10) {
                             Rectangle().fill(Theme.hairline).frame(height: 1)
@@ -85,6 +85,20 @@ struct FormattedMessageText: View {
                 }
             }
             .accessibilityElement(children: .contain)
+        }
+    }
+}
+
+extension FormattedMessageText {
+    /// H1 to H6, from a title down to a small caption (LIME-188q).
+    func headingFont(_ level: Int) -> Font {
+        switch level {
+        case 1: Theme.font(.title, weight: .bold)
+        case 2: Theme.font(.title2, weight: .bold)
+        case 3: Theme.font(.title3, weight: .bold)
+        case 4: Theme.font(.headline, weight: .bold)
+        case 5: Theme.font(.subheadline, weight: .semibold)
+        default: Theme.font(.footnote, weight: .semibold)
         }
     }
 }
@@ -118,7 +132,7 @@ enum MessageRender {
         case heading(level: Int, [Span])
         case quote([Span])
         case indent([Span])
-        case button(text: String, url: String)
+        case button(text: String, url: String, caption: String, colour: String)
         case divider
         case freewall
     }
@@ -134,7 +148,7 @@ enum MessageRender {
             case .heading(let level, let spans): .heading(level: Int(level), spans)
             case .quote(let spans): .quote(spans)
             case .indent(let spans): .indent(spans)
-            case .button(let text, let url): .button(text: text, url: url)
+            case .button(let text, let url, let caption, let colour): .button(text: text, url: url, caption: caption, colour: colour)
             case .divider: .divider
             case .freewall: .freewall
             }
@@ -274,21 +288,76 @@ extension EnvironmentValues {
     @Entry var mentionContext: MentionContext? = nil
 }
 
-/// A link drawn as a full-width rounded button in a jam post (LIME-188l). Neutral, not lime: lime is for the one main action on a screen.
+/// A button in a jam post (LIME-188q): a web address, or an action inside lime (Subscribe, Share, Message me). It wears a palette colour (lime by default)
+/// with a label that reads at 4.5:1 in light and dark; an optional caption sits centred above it.
 struct PostButton: View {
     let text: String
     let url: String
+    var caption = ""
+    var colour = ""
     @Environment(\.openURL) private var openURL
+    @Environment(ConversationStore.self) private var store
+    @Environment(\.postContext) private var context
+    @State private var sharing = false
 
     var body: some View {
-        Button { if let link = URL(string: url) { openURL(link) } } label: {
-            Text(text).font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text).multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity, minHeight: 50).padding(.horizontal, 12)
-                .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 1))
+        let action = ButtonAction(url: url)
+        let palette = ButtonPalette.named(colour)
+        VStack(spacing: 6) {
+            if !caption.isEmpty { Text(caption).font(Theme.secondary).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center).frame(maxWidth: .infinity).accessibilityIdentifier("post-button-caption") }
+            Button { perform(action) } label: {
+                Text(label(for: action)).font(Theme.font(.body, weight: .semibold)).foregroundStyle(palette.labelColor).multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity, minHeight: 50).padding(.horizontal, 12)
+                    .background(palette.fill, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(label(for: action)).accessibilityHint(hint(for: action)).accessibilityAddTraits(action.isLink ? .isLink : [])
+            .accessibilityIdentifier("post-button")
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(text).accessibilityHint("Opens a link").accessibilityAddTraits(.isLink)
-        .accessibilityIdentifier("post-button")
+        .padding(.vertical, 4)
+        .sheet(isPresented: $sharing) { if let post = context.post { JamShareSheet(post: post) } }
     }
+
+    private func label(for action: ButtonAction) -> String {
+        if action == .subscribe, let post = context.post, store.isFollowing(post.jamId) { return "Subscribed \u{2713}" }
+        return text
+    }
+
+    private func hint(for action: ButtonAction) -> String {
+        switch action {
+        case .subscribe: "Subscribes you to this jam"
+        case .share: "Sends this post to a chat"
+        case .message: "Opens a chat with the writer"
+        case .comment: "Coming soon"
+        case .link: "Opens a link"
+        }
+    }
+
+    private func perform(_ action: ButtonAction) {
+        guard let post = context.post else {
+            if case .link(let address) = action, let link = URL(string: address) { openURL(link) }
+            return
+        }
+        switch action {
+        case .link(let address): if let link = URL(string: address) { openURL(link) }
+        case .subscribe:
+            // On the writer's own post it is shown but does nothing.
+            guard post.author != store.meProvider().id, !store.isFollowing(post.jamId) else { return }
+            Task { if let page = await store.jamPage(of: post.author) { await store.subscribe(to: page) } }
+        case .share: sharing = true
+        case .message: if post.author != store.meProvider().id { Task { await store.messageWriter(post.author) } }
+        case .comment: break
+        }
+    }
+}
+
+extension ButtonAction {
+    var isLink: Bool { if case .link = self { true } else { false } }
+}
+
+/// The post being read, for what a button inside it does.
+struct PostContext { var post: JamPostInfo? }
+
+extension EnvironmentValues {
+    @Entry var postContext = PostContext()
 }

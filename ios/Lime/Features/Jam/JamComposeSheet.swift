@@ -36,6 +36,8 @@ struct JamComposeSheet: View {
     @State private var coauthors: [Person] = []
     @State private var choosingCoauthors = false
     @State private var postingAs = false
+    /// nil: posted as me; otherwise the id of my jam (LIME-188q).
+    @State private var postAsJam: String?
     @State private var article = JamDraft.shared.article
     @State private var title = JamDraft.shared.title
     @State private var subtitle = JamDraft.shared.subtitle
@@ -206,29 +208,28 @@ struct JamComposeSheet: View {
         .padding(.horizontal, 20).padding(.top, 12)
     }
 
-    /// Who the post is from (LIME-188f): you, for now; the sheet is built to list a school or subject group later, when shared jams exist.
+    /// Who the post is from: you, or your jam (LIME-188q).
     private var postAsChip: some View {
-        Button { postingAs = true } label: {
+        let jam = postAsJam.flatMap { id in store.jamsMine.first { $0.jamId == id } }
+        let name = jam?.title ?? store.meProvider().name
+        return Button { postingAs = true } label: {
             HStack(spacing: 8) {
-                AvatarView(person: store.meProvider(), size: 32).accessibilityHidden(true)
-                Text(store.meProvider().name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
+                if let jam { JamInitialTile(title: jam.title, size: 32).accessibilityHidden(true) } else { AvatarView(person: store.meProvider(), size: 32).accessibilityHidden(true) }
+                Text(name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
                 Image(systemName: "chevron.down").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.textSecondary)
             }
             .frame(minHeight: 44)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Posting as \(store.meProvider().name)").accessibilityHint("Choose who this post is from").accessibilityIdentifier("jam-post-as")
-        .sheet(isPresented: $postingAs) { PostAsSheet() }
+        .accessibilityLabel("Posting as \(name)").accessibilityHint("Choose who this post is from").accessibilityIdentifier("jam-post-as")
+        .sheet(isPresented: $postingAs) { PostAsSheet(selection: $postAsJam) }
     }
 
-    /// One line: who the post is from, a person-with-plus to add a co-author, and the people added as small overlapping avatars (tap to change them).
+    /// One line: who the post is from, the people added as small overlapping avatars (tap to change them), and the person-with-plus **last**, so it
+    /// always sits to the right of the authors and co-authors.
     private var postLine: some View {
         HStack(spacing: 2) {
             postAsChip
-            Button { choosingCoauthors = true } label: {
-                Image(systemName: "person.badge.plus").font(.system(size: 18)).foregroundStyle(Theme.textSecondary).frame(width: 44, height: 44)
-            }
-            .buttonStyle(.plain).accessibilityLabel("Add co-author").accessibilityIdentifier("jam-add-coauthor")
             if !coauthors.isEmpty {
                 Button { choosingCoauthors = true } label: {
                     HStack(spacing: -8) {
@@ -242,6 +243,10 @@ struct JamComposeSheet: View {
                 .accessibilityLabel("Co-authors: \(coauthors.map(\.name).joined(separator: ", "))").accessibilityHint("Opens the list to change them")
                 .accessibilityIdentifier("jam-coauthors")
             }
+            Button { choosingCoauthors = true } label: {
+                Image(systemName: "person.badge.plus").font(.system(size: 18)).foregroundStyle(Theme.textSecondary).frame(width: 44, height: 44)
+            }
+            .buttonStyle(.plain).accessibilityLabel("Add co-author").accessibilityIdentifier("jam-add-coauthor")
             Spacer(minLength: 0)
         }
     }
@@ -402,7 +407,6 @@ struct JamComposeSheet: View {
                 }
                 .buttonStyle(.plain).padding(.bottom, 6).accessibilityIdentifier("jam-exit-article")
             }
-            if composer.showsStrip { FormattingToolbar(model: composer).transition(.opacity) }
             if !article {
                 HStack(spacing: 8) {
                     chip("Write an article", system: "doc.text", id: "jam-write-article") { setArticle(true) }
@@ -411,26 +415,55 @@ struct JamComposeSheet: View {
                 }
                 .padding(.horizontal, 16).padding(.bottom, 4)
             }
-            HStack(spacing: 2) {
+            // The full strip (Aa) sits under the pills in a quick post, above the tool row in an article; never over the text.
+            if composer.showsStrip { FormattingToolbar(model: composer).transition(.opacity) }
+            let width = min(44, (UIScreen.main.bounds.width - 12) / 8)
+            HStack(spacing: 0) {
                 if article {
-                    plusMenu
+                    plusMenu(width: width)
+                    tool("bold", "Bold", id: "jam-bold", on: composer.format.bold, width: width) { composer.apply(.bold) }
+                    tool("italic", "Italic", id: "jam-italic", on: composer.format.italic, width: width) { composer.apply(.italic) }
+                    tool("underline", "Underline", id: "jam-underline", on: composer.format.underline, width: width) { composer.apply(.underline) }
+                    headingMenu(width: width)
+                    tool("link", "Link", id: "jam-link", on: composer.format.link, width: width) { composer.requestLink() }
+                    tool("textformat", "Formatting", id: "jam-format", on: composer.toolbarVisible, width: width) { composer.formattingTapped() }
                 } else {
                     tool("photo.on.rectangle", "Add photos", id: "jam-add-photo") { choose(.library) }
                     tool("camera", "Camera", id: "jam-add-camera") { choose(.camera) }
+                    tool("textformat", "Formatting", id: "jam-format", on: composer.toolbarVisible) { composer.formattingTapped() }
                 }
-                tool("textformat", "Formatting", id: "jam-format", on: composer.toolbarVisible) { composer.formattingTapped() }
-                if !article { tool("waveform", "Record your voice", id: "jam-add-voice") { recordMode = 1 } }
-                Spacer()
-                tool(composer.editing ? "keyboard.chevron.compact.down" : "keyboard", composer.editing ? "Hide keyboard" : "Show keyboard", id: "jam-hide-keyboard") { composer.toggleKeyboard() }
+                Spacer(minLength: 0)
+                tool(composer.editing ? "keyboard.chevron.compact.down" : "keyboard", composer.editing ? "Hide keyboard" : "Show keyboard", id: "jam-hide-keyboard", width: article ? width : 44) { composer.toggleKeyboard() }
             }
-            .padding(.horizontal, 8).frame(minHeight: 48)
+            .padding(.horizontal, 6).frame(minHeight: 48)
             .background(.bar)
         }
     }
 
+    /// H▾: normal text or a heading from 1 to 6, each shown at its own size; its icon says which one the caret is in ("H2", or "H" for normal text).
+    private func headingMenu(width: CGFloat) -> some View {
+        let level = composer.format.heading
+        return Menu {
+            Button { composer.setHeading(nil) } label: { Label("Normal text", systemImage: level == 0 ? "checkmark" : "") }.accessibilityIdentifier("jam-heading-0")
+            ForEach(1...6, id: \.self) { n in
+                Button { composer.setHeading(n) } label: {
+                    Label { Text("Heading \(n)") } icon: { if level == n { Image(systemName: "checkmark") } }
+                }
+                .accessibilityIdentifier("jam-heading-\(n)")
+            }
+        } label: {
+            HStack(spacing: 0) {
+                Text(level == 0 ? "H" : "H\(level)").font(.system(size: 17, weight: .bold)).foregroundStyle(Theme.text)
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).foregroundStyle(Theme.textSecondary).padding(.leading, 1).padding(.top, 6)
+            }
+            .frame(width: width, height: 44).background(level == 0 ? .clear : Theme.surface, in: Circle())
+        }
+        .accessibilityLabel(level == 0 ? "Heading, currently normal text" : "Heading, currently Heading \(level)").accessibilityIdentifier("jam-heading")
+    }
+
     /// The article's ⊕: a menu above the bar. Image and Video (the library; "Take a photo or video" as well), Audio (record, or choose a file), then
     /// Button, Divider and Freewall. Each goes in at the caret. (Files other than audio are not offered in v1.)
-    private var plusMenu: some View {
+    private func plusMenu(width: CGFloat) -> some View {
         Menu {
             Section {
                 Button { choose(.library) } label: { Label("Image", systemImage: "photo") }.accessibilityIdentifier("jam-menu-image")
@@ -450,14 +483,14 @@ struct JamComposeSheet: View {
                     .accessibilityIdentifier("jam-menu-freewall")
             }
         } label: {
-            Image(systemName: "plus").font(.system(size: 17, weight: .bold)).foregroundStyle(Theme.canvas).frame(width: 36, height: 36).background(Theme.text, in: Circle()).frame(width: 44, height: 44)
+            Image(systemName: "plus").font(.system(size: 17, weight: .bold)).foregroundStyle(Theme.canvas).frame(width: 32, height: 32).background(Theme.text, in: Circle()).frame(width: width, height: 44)
         }
         .accessibilityLabel("Add").accessibilityIdentifier("jam-add")
     }
 
-    private func tool(_ symbol: String, _ label: String, id: String, on: Bool = false, action: @escaping () -> Void) -> some View {
+    private func tool(_ symbol: String, _ label: String, id: String, on: Bool = false, width: CGFloat = 44, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 20)).foregroundStyle(Theme.text).frame(width: 44, height: 44)
+            Image(systemName: symbol).font(.system(size: 19)).foregroundStyle(Theme.text).frame(width: width, height: 44)
                 .background(on ? Theme.surface : .clear, in: Circle())
         }
         .accessibilityLabel(label).accessibilityIdentifier(id).accessibilityAddTraits(on ? [.isSelected] : [])
@@ -628,7 +661,7 @@ struct JamComposeSheet: View {
         problem = nil
         posting = true
         Task {
-            let result = await store.publishJamPost(kind: kind, title: headline, subtitle: article ? subtitle : hasClip ? recordSubtitle : "", markdown: markdown, items: files, coauthors: coauthors.map(\.id), about: session.profile?.aboutText ?? "")
+            let result = await store.publishJamPost(kind: kind, title: headline, subtitle: article ? subtitle : hasClip ? recordSubtitle : "", markdown: markdown, items: files, coauthors: coauthors.map(\.id), displayAs: postAsJam == nil ? "person" : "jam", about: session.profile?.aboutText ?? "")
             posting = false
             switch result {
             case .success: JamDraft.shared.clear(); dismiss()
@@ -638,30 +671,61 @@ struct JamComposeSheet: View {
     }
 }
 
-/// Who the post is from (LIME-188f): you. A school or subject group will be listed here when shared jams exist.
+/// Who the post is from (LIME-188q): you, or a jam you write (its name is the author line, with "by you" under it). A school or subject group
+/// comes with LIME-193.
 struct PostAsSheet: View {
+    @Binding var selection: String?
     @Environment(ConversationStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             List {
-                Button { dismiss() } label: {
+                Button { selection = nil; dismiss() } label: {
                     HStack(spacing: 12) {
                         AvatarView(person: store.meProvider(), size: 40).accessibilityHidden(true)
                         Text(store.meProvider().name).font(Theme.body).foregroundStyle(Theme.text)
                         Spacer()
-                        Image(systemName: "checkmark").foregroundStyle(Theme.text)
+                        if selection == nil { Image(systemName: "checkmark").foregroundStyle(Theme.text) }
                     }
                     .frame(minHeight: 48)
                 }
-                .accessibilityLabel("\(store.meProvider().name), selected").accessibilityIdentifier("jam-post-as-me")
-                Text("Posting as a school or a subject group comes with shared jams.").font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                .accessibilityLabel("\(store.meProvider().name)\(selection == nil ? ", selected" : "")").accessibilityIdentifier("jam-post-as-me")
+                ForEach(store.jamsMine, id: \.jamId) { jam in
+                    Button { selection = jam.jamId; dismiss() } label: {
+                        HStack(spacing: 12) {
+                            JamInitialTile(title: jam.title, size: 40).accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text(jam.title).font(Theme.body).foregroundStyle(Theme.text)
+                                Text("Your jam").font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                            }
+                            Spacer()
+                            if selection == jam.jamId { Image(systemName: "checkmark").foregroundStyle(Theme.text) }
+                        }
+                        .frame(minHeight: 48)
+                    }
+                    .accessibilityLabel("\(jam.title), your jam\(selection == jam.jamId ? ", selected" : "")").accessibilityIdentifier("jam-post-as-jam-\(jam.jamId)")
+                }
+                Text("Posting as a school or a subject group comes later.").font(Theme.caption).foregroundStyle(Theme.textSecondary)
             }
             .navigationTitle("Post as").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
         .presentationDetents([.medium])
+    }
+}
+
+/// A jam has no picture yet: its first letter on a soft tint.
+struct JamInitialTile: View {
+    let title: String
+    var size: CGFloat = 40
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: size * 0.28, style: .continuous).fill(Theme.accent.opacity(0.35))
+            Text(String(title.trimmingCharacters(in: .whitespaces).prefix(1)).uppercased()).font(.system(size: size * 0.45, weight: .bold)).foregroundStyle(Theme.text)
+        }
+        .frame(width: size, height: size)
     }
 }
 

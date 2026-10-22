@@ -312,6 +312,17 @@ final class RichComposerModel {
         didEdit()
     }
 
+    /// The heading menu: normal text (nil) or a level from 1 to 6.
+    func setHeading(_ level: Int?) {
+        guard let textView else { return }
+        let style = level.map { "h\(min(max($0, 1), 6))" }
+        undoable("Heading") { ComposerDocument.setHeading(style, in: textView.textStorage, selection: textView.selectedRange) }
+        var typing = textView.typingAttributes
+        typing[.limePara] = style
+        textView.typingAttributes = typing
+        didEdit()
+    }
+
     func shiftParagraph(indent: Bool) {
         guard let textView else { return }
         undoable("Indent") { ComposerDocument.shiftParagraphs(indent: indent, in: textView.textStorage, selection: textView.selectedRange) }
@@ -319,14 +330,20 @@ final class RichComposerModel {
         didEdit()
     }
 
-    /// Adds a button after the caret's line. Returns why it cannot, or nil.
-    func applyButton(title: String, address: String) -> String? {
+    /// Adds a button after the caret's line: a web address, or one of lime's actions (`lime:subscribe`, `lime:share`, `lime:message`). Returns why it
+    /// cannot, or nil.
+    func applyButton(title: String, address: String, caption: String = "", colour: String = "") -> String? {
         guard let textView else { return nil }
         let words = title.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "[", with: "").replacingOccurrences(of: "]", with: "")
         guard !words.isEmpty else { return "Say what the button should read." }
-        guard let text = LinkInput.https(from: address) else { return "That doesn\u{2019}t look like a web address." }
+        let target: String
+        if address.hasPrefix("lime:") { target = address } else {
+            guard let https = LinkInput.https(from: address) else { return "That doesn\u{2019}t look like a web address." }
+            target = https
+        }
+        let line = caption.replacingOccurrences(of: "\"", with: "").replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces)
         var caret = 0
-        undoable("Button") { caret = ComposerDocument.insertButton(words, url: text, into: textView.textStorage, at: textView.selectedRange.location) }
+        undoable("Button") { caret = ComposerDocument.insertButton(words, url: target, caption: String(line.prefix(120)), colour: colour == ButtonPalette.lime.rawValue ? "" : colour, into: textView.textStorage, at: textView.selectedRange.location) }
         textView.selectedRange = NSRange(location: caret, length: 0)
         textView.typingAttributes = ComposerTextView.plainTypingAttributes
         didEdit()

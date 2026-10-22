@@ -24,6 +24,9 @@ extension NSAttributedString.Key {
     static let limePara = NSAttributedString.Key("lime.para")
     /// On a button paragraph: its https address.
     static let limeButton = NSAttributedString.Key("lime.button")
+    /// On a button paragraph: its caption (above it in the reader) and its palette colour name (LIME-188q).
+    static let limeButtonCaption = NSAttributedString.Key("lime.button.caption")
+    static let limeButtonColour = NSAttributedString.Key("lime.button.colour")
 }
 
 enum InlineFormat: CaseIterable {
@@ -111,9 +114,13 @@ enum ComposerDocument {
                 case "h1": font = styled(base.withSize(base.pointSize * 1.6), traits: [.traitBold])
                 case "h2": font = styled(base.withSize(base.pointSize * 1.35), traits: [.traitBold])
                 case "h3": font = styled(base.withSize(base.pointSize * 1.15), traits: [.traitBold])
+                case "h4": font = styled(base.withSize(base.pointSize * 1.05), traits: [.traitBold])
+                case "h5": font = styled(base.withSize(base.pointSize * 0.98), traits: [.traitBold])
+                case "h6": font = styled(base.withSize(base.pointSize * 0.85), traits: [.traitBold]); tint = UIColor(Theme.textSecondary)
                 case "quote": font = styled(base, traits: traits.union([.traitItalic])); tint = UIColor(Theme.textSecondary)
                 case "button": font = styled(base, traits: traits.union([.traitBold])); tint = UIColor(Theme.linkOther)
-                case "divider", "freewall": font = styled(base.withSize(base.pointSize * 0.8), traits: []); tint = UIColor(Theme.textSecondary)
+                case "divider": font = styled(base.withSize(base.pointSize * 0.8), traits: []); tint = UIColor(Theme.hairline)
+                case "freewall": font = styled(base.withSize(base.pointSize * 0.8), traits: []); tint = UIColor(Theme.textSecondary)
                 default: break
                 }
                 if let tint { text.addAttribute(.foregroundColor, value: tint, range: range) }
@@ -145,6 +152,7 @@ enum ComposerDocument {
                 style.firstLineHeadIndent = inset
                 style.headIndent = inset
                 if ["button", "divider", "freewall"].contains(para) { style.alignment = .center }
+                if para == "divider" { style.paragraphSpacingBefore = 12; style.paragraphSpacing = 12 }
                 text.addAttribute(.paragraphStyle, value: style, range: paragraph)
             } else {
                 text.removeAttribute(.paragraphStyle, range: paragraph)
@@ -288,10 +296,23 @@ enum ComposerDocument {
         let off = !touched.isEmpty && touched.allSatisfy { paraStyle(in: text, at: $0.location) == style }
         for paragraph in touched {
             text.removeAttribute(.limeButton, range: paragraph)
+            text.removeAttribute(.limeButtonCaption, range: paragraph)
+            text.removeAttribute(.limeButtonColour, range: paragraph)
             if off { text.removeAttribute(.limePara, range: paragraph) } else { text.addAttribute(.limePara, value: style, range: paragraph) }
         }
         restyle(text)
         return !off
+    }
+
+    /// Sets a heading level on the plain paragraphs the selection touches (`"h1"` to `"h6"`), or turns them back into normal text (`nil`).
+    static func setHeading(_ style: String?, in text: NSMutableAttributedString, selection: NSRange) {
+        let touched = paragraphs(in: text, covering: selection).filter { $0.length > 0 && blockKind(in: text, at: $0.location) == nil && text.attribute(.limeImage, at: $0.location, effectiveRange: nil) == nil && !isSpecial(paraStyle(in: text, at: $0.location)) }
+        for paragraph in touched {
+            let current = paraStyle(in: text, at: paragraph.location)
+            if let style { text.addAttribute(.limePara, value: style, range: paragraph) }
+            else if current?.hasPrefix("h") == true { text.removeAttribute(.limePara, range: paragraph) }
+        }
+        restyle(text)
     }
 
     /// Indent moves a plain paragraph one level in (a list keeps its own levels); outdent takes it back.
@@ -335,8 +356,11 @@ enum ComposerDocument {
 
     /// A button as a paragraph of its own at `location`; returns the caret after it.
     @discardableResult
-    static func insertButton(_ title: String, url: String, into text: NSMutableAttributedString, at location: Int) -> Int {
-        let button = NSMutableAttributedString(string: title, attributes: [.limePara: "button", .limeButton: url])
+    static func insertButton(_ title: String, url: String, caption: String = "", colour: String = "", into text: NSMutableAttributedString, at location: Int) -> Int {
+        var attributes: [NSAttributedString.Key: Any] = [.limePara: "button", .limeButton: url]
+        if !caption.isEmpty { attributes[.limeButtonCaption] = caption }
+        if !colour.isEmpty { attributes[.limeButtonColour] = colour }
+        let button = NSMutableAttributedString(string: title, attributes: attributes)
         var at = min(max(location, 0), text.length)
         let string = text.string as NSString
         if at > 0, string.character(at: at - 1) != 0x0A { text.insert(NSAttributedString(string: "\n"), at: at); at += 1 }
@@ -408,7 +432,7 @@ enum ComposerDocument {
                     let newline = Span(text: "\n", bold: false, italic: false, underline: false, strike: false, code: false, link: nil, mention: nil)
                     var lineSpans = spans(in: text, range: content)
                     switch para {
-                    case "h1", "h2", "h3":
+                    case "h1", "h2", "h3", "h4", "h5", "h6":
                         flushParagraph()
                         blocks.append(.heading(level: UInt32(para!.dropFirst()) ?? 1, spans: lineSpans))
                     case "divider":
@@ -420,7 +444,9 @@ enum ComposerDocument {
                     case "button":
                         flushParagraph()
                         if let url = text.attribute(.limeButton, at: content.location, effectiveRange: nil) as? String {
-                            blocks.append(.button(text: string.substring(with: content), url: url))
+                            let caption = text.attribute(.limeButtonCaption, at: content.location, effectiveRange: nil) as? String ?? ""
+                            let colour = text.attribute(.limeButtonColour, at: content.location, effectiveRange: nil) as? String ?? ""
+                            blocks.append(.button(text: string.substring(with: content), url: url, caption: caption, colour: colour))
                         }
                     case "quote":
                         if !paragraph.isEmpty || !indented.isEmpty { flushParagraph() }
@@ -493,10 +519,14 @@ enum ComposerDocument {
             case .paragraph(let spans): appendSpans(spans)
             case .image(_, let attachment):
                 append("\u{FFFC}", [.limeImage: Int(attachment)])
-            case .heading(let level, let spans): appendSpans(spans, block: [.limePara: "h\(min(max(level, 1), 3))"])
+            case .heading(let level, let spans): appendSpans(spans, block: [.limePara: "h\(min(max(level, 1), 6))"])
             case .quote(let spans): appendSpans(spans, block: [.limePara: "quote"])
             case .indent(let spans): appendSpans(spans, block: [.limePara: "indent"])
-            case .button(let text, let url): append(text, [.limePara: "button", .limeButton: url])
+            case .button(let text, let url, let caption, let colour):
+                var attributes: [NSAttributedString.Key: Any] = [.limePara: "button", .limeButton: url]
+                if !caption.isEmpty { attributes[.limeButtonCaption] = caption }
+                if !colour.isEmpty { attributes[.limeButtonColour] = colour }
+                append(text, attributes)
             case .divider: append(Self.dividerText, [.limePara: "divider"])
             case .freewall: append(Self.freewallText, [.limePara: "freewall"])
             case .code(let code):

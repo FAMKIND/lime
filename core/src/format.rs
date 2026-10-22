@@ -59,7 +59,7 @@ pub enum Block {
     /// A picture (or file) in the place it was put in a jam post (LIME-188e): `![caption](attachment:n)` on a line of its own, `n` the post's n-th
     /// attachment counting from 0. **Jam posts only**: a chat never parses one (it stays text), and a chat's attachments stay separate.
     Image { caption: String, attachment: u32 },
-    /// A heading (LIME-188l), `#`, `##` or `###` and a space at the start of a line. **Jam posts only**; in a chat the line stays text.
+    /// A heading (LIME-188l; levels 4 to 6 in LIME-188q), `#` to `######` and a space at the start of a line. **Jam posts only**; in a chat the line stays text.
     Heading { level: u32, spans: Vec<Span> },
     /// A quotation: consecutive lines that start with `> `. **Jam posts only.**
     Quote { spans: Vec<Span> },
@@ -71,7 +71,9 @@ pub enum Block {
     /// written post keeps only the first). **Jam posts only.** A marker: the post is still one encrypted blob for the people who can read it.
     Freewall,
     /// A link drawn as a full-width button: `[[Button text]](https://…)` as a paragraph of its own. https only. **Jam posts only.**
-    Button { text: String, url: String },
+    /// An action button (LIME-188q) has `lime:subscribe`, `lime:share`, `lime:message` (or the reserved `lime:comment`) for its address; `caption` is
+    /// a short line shown above it (empty: none); `colour` names a palette colour (empty: the default, lime).
+    Button { text: String, url: String, caption: String, colour: String },
 }
 
 /// How many attachments a post can have, so the largest `n`.
@@ -125,24 +127,59 @@ fn image_line(line: &str) -> Option<(String, u32)> {
     (n <= MAX_IMAGE_INDEX).then_some((caption, n))
 }
 
-/// `# `, `## ` or `### ` and the heading's words.
+/// `# ` to `###### ` and the heading's words.
 fn heading_line(line: &str) -> Option<(u32, &str)> {
     let level = line.chars().take_while(|&c| c == '#').count();
     let rest = line[level..].strip_prefix(' ')?;
-    ((1..=3).contains(&level) && !rest.trim().is_empty()).then_some((level as u32, rest.trim()))
+    ((1..=6).contains(&level) && !rest.trim().is_empty()).then_some((level as u32, rest.trim()))
 }
 
 fn quote_line(line: &str) -> Option<&str> {
     line.strip_prefix("> ").or_else(|| (line == ">").then_some(""))
 }
 
-/// `[[text]](https://…)` as a whole line.
-fn button_line(line: &str) -> Option<(String, String)> {
-    let line = line.trim();
+/// The addresses a button may have besides https: lime's own actions (`comment` is reserved for LIME-189; any other `lime:` stays text).
+const BUTTON_ACTIONS: [&str; 4] = ["lime:subscribe", "lime:share", "lime:message", "lime:comment"];
+
+/// The longest caption over a button.
+const MAX_BUTTON_CAPTION: usize = 120;
+
+fn button_address_ok(url: &str) -> bool {
+    BUTTON_ACTIONS.contains(&url) || (url.starts_with("https://") && allowed_link(url) && !url.contains([' ', '(', ')', '"']))
+}
+
+fn colour_name_ok(name: &str) -> bool {
+    !name.is_empty() && name.len() <= 12 && name.bytes().all(|b| b.is_ascii_lowercase())
+}
+
+/// `[[text]](address "caption"){.colour}` as a whole line (the caption and the colour are optional).
+fn button_line(line: &str) -> Option<(String, String, String, String)> {
+    let mut line = line.trim();
+    let mut colour = String::new();
+    if let Some(without) = line.strip_suffix('}') {
+        let at = without.rfind("){.")?;
+        colour = without[at + 3..].to_owned();
+        if !colour_name_ok(&colour) {
+            return None;
+        }
+        line = &without[..=at];
+    }
     let inner = line.strip_prefix("[[")?.strip_suffix(')')?;
-    let (text, url) = inner.split_once("]](")?;
-    let ok_text = !text.trim().is_empty() && !text.contains(['[', ']', '\n']);
-    (ok_text && url.starts_with("https://") && allowed_link(url) && !url.contains([' ', '(', ')'])).then(|| (text.trim().to_owned(), url.to_owned()))
+    let (text, rest) = inner.split_once("]](")?;
+    if text.trim().is_empty() || text.contains(['[', ']', '\n']) {
+        return None;
+    }
+    let (url, caption) = match rest.split_once(' ') {
+        Some((url, tail)) => {
+            let caption = tail.trim().strip_prefix('"')?.strip_suffix('"')?;
+            if caption.contains(['"', '\n']) || caption.chars().count() > MAX_BUTTON_CAPTION {
+                return None;
+            }
+            (url, caption.trim().to_owned())
+        }
+        None => (rest, String::new()),
+    };
+    button_address_ok(url).then(|| (text.trim().to_owned(), url.to_owned(), caption, colour))
 }
 
 fn starts_a_post_block(line: &str) -> bool {
@@ -212,8 +249,8 @@ fn parse_with(text: &str, images: bool) -> Vec<Block> {
                     blocks.push(Block::Freewall);
                     continue;
                 }
-                if let Some((text, url)) = button_line(only) {
-                    blocks.push(Block::Button { text, url });
+                if let Some((text, url, caption, colour)) = button_line(only) {
+                    blocks.push(Block::Button { text, url, caption, colour });
                     continue;
                 }
             }
@@ -737,7 +774,7 @@ fn serialize_with(blocks: &[Block], posts: bool) -> String {
             Block::Heading { level, spans } => {
                 let words = post_line_text(spans).replace('\n', " ");
                 if !words.trim().is_empty() {
-                    parts.push(format!("{} {}", "#".repeat((*level).clamp(1, 3) as usize), words.trim()));
+                    parts.push(format!("{} {}", "#".repeat((*level).clamp(1, 6) as usize), words.trim()));
                 }
             }
             Block::Quote { spans } => {
@@ -754,10 +791,14 @@ fn serialize_with(blocks: &[Block], posts: bool) -> String {
                     parts.push(lines.join("\n"));
                 }
             }
-            Block::Button { text, url } => {
+            Block::Button { text, url, caption, colour } => {
                 let text: String = text.chars().filter(|c| !matches!(c, '[' | ']' | '\n' | '\r')).collect();
-                if !text.trim().is_empty() && url.starts_with("https://") && allowed_link(url) && !url.contains([' ', '(', ')']) {
-                    parts.push(format!("[[{}]]({})", text.trim(), url));
+                if !text.trim().is_empty() && button_address_ok(url) {
+                    let caption: String = caption.chars().filter(|c| !matches!(c, '"' | '\n' | '\r')).take(MAX_BUTTON_CAPTION).collect();
+                    let caption = caption.trim();
+                    let caption = if caption.is_empty() { String::new() } else { format!(" \"{caption}\"") };
+                    let colour = if colour_name_ok(colour) { format!("{{.{colour}}}") } else { String::new() };
+                    parts.push(format!("[[{}]]({}{}){}", text.trim(), url, caption, colour));
                 }
             }
             Block::Divider => parts.push("---".to_owned()),
@@ -1498,7 +1539,7 @@ mod tests {
         assert!(matches!(&blocks[2], Block::Heading { level: 3, .. }));
         assert!(matches!(&blocks[3], Block::Quote { .. }));
         assert!(matches!(&blocks[4], Block::Indent { .. }));
-        assert!(matches!(&blocks[5], Block::Button { text, url } if text == "Read more" && url == "https://example.com/a"));
+        assert!(matches!(&blocks[5], Block::Button { text, url, .. } if text == "Read more" && url == "https://example.com/a"));
         assert!(matches!(&blocks[6], Block::Paragraph { .. }));
         assert_eq!(normalise_post(text), text);
         assert_eq!(plain_text_post(text), "Big\nMedium\nSmall\na quote\nover two lines\nindented words\nRead more\nplain");
@@ -1519,7 +1560,7 @@ mod tests {
         let read = parse_post(&written);
         assert!(matches!(&read[0], Block::Paragraph { .. }), "{written:?} -> {read:?}");
         assert_eq!(plain_text_post(&written), "# not a heading\n> not a quote");
-        let bad = vec![Block::Button { text: "x".into(), url: "javascript:alert(1)".into() }];
+        let bad = vec![Block::Button { text: "x".into(), url: "javascript:alert(1)".into(), caption: String::new(), colour: String::new() }];
         assert_eq!(serialize_post(&bad), "");
     }
 
@@ -1541,5 +1582,33 @@ mod tests {
         // Paragraph words that are only dashes are escaped so they stay words.
         let words = vec![Block::Paragraph { spans: vec![Span { text: "---".into(), ..Span::default() }] }];
         assert!(matches!(parse_post(&serialize_post(&words))[0], Block::Paragraph { .. }));
+    }
+
+    #[test]
+    fn headings_go_to_level_six_for_posts_only() {
+        let text = "#### Four\n\n##### Five\n\n###### Six\n\n####### Seven";
+        let blocks = parse_post(text);
+        assert!(matches!(blocks[0], Block::Heading { level: 4, .. }));
+        assert!(matches!(blocks[1], Block::Heading { level: 5, .. }));
+        assert!(matches!(blocks[2], Block::Heading { level: 6, .. }));
+        assert!(matches!(blocks[3], Block::Paragraph { .. }), "seven # is text");
+        assert_eq!(normalise_post(text), text);
+        assert!(parse(text).iter().all(|b| matches!(b, Block::Paragraph { .. })), "a chat keeps them as text");
+    }
+
+    #[test]
+    fn action_buttons_captions_and_colours_round_trip_and_unknown_actions_stay_text() {
+        let text = "[[Subscribe]](lime:subscribe)\n\n[[Message me]](lime:message \"Questions? Ask me\"){.blue}\n\n[[Read]](https://example.com/a){.purple}\n\n[[Share]](lime:share)";
+        let blocks = parse_post(text);
+        assert!(matches!(&blocks[0], Block::Button { url, caption, colour, .. } if url == "lime:subscribe" && caption.is_empty() && colour.is_empty()));
+        assert!(matches!(&blocks[1], Block::Button { url, caption, colour, .. } if url == "lime:message" && caption == "Questions? Ask me" && colour == "blue"));
+        assert!(matches!(&blocks[2], Block::Button { colour, .. } if colour == "purple"));
+        assert_eq!(normalise_post(text), text);
+        assert!(matches!(&parse_post("[[Hack]](lime:delete)")[0], Block::Paragraph { .. }), "an unknown lime: action is text");
+        assert!(matches!(&parse_post("[[Go]](https://example.com \"unclosed)")[0], Block::Paragraph { .. }));
+        assert!(matches!(&parse_post("[[Go]](https://example.com){.Blue}")[0], Block::Paragraph { .. }), "a colour name is lower-case letters");
+        let long = format!("[[Go]](lime:share \"{}\")", "x".repeat(121));
+        assert!(matches!(&parse_post(&long)[0], Block::Paragraph { .. }), "a caption is at most 120 characters");
+        assert!(parse(text).iter().all(|b| matches!(b, Block::Paragraph { .. })), "chats keep them as text");
     }
 }

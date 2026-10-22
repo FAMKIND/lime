@@ -127,12 +127,13 @@ struct JamPostCard: View {
         let writer = store.teacher(post.author)
         VStack(alignment: .leading, spacing: 10) {
             if showsWriter {
+                let asJam = post.displayAs == "jam"
                 Button { store.openProfile(ProfileRoute(userID: writer.id, name: writer.name, isMe: writer.id == store.meProvider().id)) } label: {
                     HStack(spacing: 10) {
-                        AvatarView(person: writer, size: 40).accessibilityHidden(true)
+                        if asJam { JamInitialTile(title: store.jamTitle(post.jamId), size: 40).accessibilityHidden(true) } else { AvatarView(person: writer, size: 40).accessibilityHidden(true) }
                         VStack(alignment: .leading, spacing: 0) {
-                            Text(writer.name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
-                            Text([store.byline(post), JamDates.text(post.created)].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                            Text(asJam ? store.jamTitle(post.jamId) : writer.name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
+                            Text([asJam ? "by \(writer.name)" : nil, store.byline(post), JamDates.text(post.created)].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary)
                                 .accessibilityIdentifier("jam-card-byline-\(post.postId)")
                         }
                         Spacer(minLength: 0)
@@ -140,7 +141,7 @@ struct JamPostCard: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("\(writer.name), \(JamDates.text(post.created))").accessibilityHint("Opens their profile")
+                .accessibilityLabel("\(asJam ? store.jamTitle(post.jamId) + ", by " + writer.name : writer.name), \(JamDates.text(post.created))").accessibilityHint("Opens their profile")
                 .accessibilityIdentifier("jam-card-writer-\(post.postId)")
             } else {
                 Text([store.byline(post), JamDates.text(post.created)].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary)

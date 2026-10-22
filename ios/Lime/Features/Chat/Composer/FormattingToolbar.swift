@@ -155,37 +155,118 @@ struct LinkSheet: View {
     }
 }
 
-/// The button sheet (a jam post): the words on the button and its https address.
+/// The Add button sheet (LIME-188q): ready buttons first (Standard, or With caption), then Custom button\u{2026}, with a colour row. Presets do something
+/// inside lime and need no web address; "Comment" waits for LIME-189 and is not offered yet.
 struct ButtonSheet: View {
     let composer: RichComposerModel
+    /// Offered once comments exist (LIME-189).
+    static let commentsExist = false
     @Environment(\.dismiss) private var dismiss
+    @State private var captioned = false
+    @State private var colour = ButtonPalette.lime
+    @State private var step = Step.grid
+    @State private var caption = ""
     @State private var title = ""
     @State private var address = ""
     @State private var problem: String?
-    @FocusState private var focused: Bool
+    @FocusState private var focused: Field?
+
+    private enum Field { case caption, title, address }
+    private enum Step: Equatable { case grid, caption(Preset), custom }
+    private enum Preset: String, CaseIterable {
+        case subscribe, share, message
+        var label: String { switch self { case .subscribe: "Subscribe"; case .share: "Share"; case .message: "Message me" } }
+        var address: String { "lime:\(rawValue)" }
+        var sample: String { switch self { case .subscribe: "Never miss a post"; case .share: "Pass it on to a colleague"; case .message: "Questions? Ask me" } }
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Button("Cancel") { dismiss() }.foregroundStyle(Theme.text).accessibilityIdentifier("button-cancel")
-                Spacer()
-                Text("Add button").font(Theme.title).foregroundStyle(Theme.text)
-                Spacer()
-                Button("Add") { add() }.font(Theme.title).foregroundStyle(Theme.text)
-                    .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty || address.trimmingCharacters(in: .whitespaces).isEmpty)
-                    .accessibilityIdentifier("button-apply")
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    switch step {
+                    case .grid: grid
+                    case .caption(let preset): captionStep(preset)
+                    case .custom: custom
+                    }
+                    colours
+                }
+                .padding(20)
             }
-            TextField("Button text", text: $title).focused($focused).selectionTint()
-                .padding(.horizontal, 16).frame(minHeight: 52)
-                .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .accessibilityIdentifier("button-text")
-            TextField("Address (https://\u{2026})", text: $address)
-                .onChange(of: address) { problem = nil }
-                .onSubmit { if let shown = LinkInput.https(from: address) { address = shown } }
-                .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled().selectionTint()
-                .padding(.horizontal, 16).frame(minHeight: 52)
-                .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .accessibilityIdentifier("button-url")
+            .background(Theme.canvas)
+            .navigationTitle("Add button").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button(step == .grid ? "Cancel" : "Back") { if step == .grid { dismiss() } else { step = .grid; problem = nil } }.accessibilityIdentifier("button-cancel") }
+                if step == .custom {
+                    ToolbarItem(placement: .confirmationAction) { Button("Add") { addCustom() }.fontWeight(.semibold).disabled(!customValid).accessibilityIdentifier("button-apply") }
+                }
+            }
+        }
+        .presentationDetents([.large])
+    }
+
+    // MARK: Steps
+
+    private var grid: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Picker("Style", selection: $captioned) {
+                Text("Standard").tag(false)
+                Text("With caption").tag(true)
+            }
+            .pickerStyle(.segmented).accessibilityIdentifier("button-segment")
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 16) {
+                ForEach(Preset.allCases, id: \.self) { preset in
+                    Button { choose(preset) } label: {
+                        VStack(spacing: 6) {
+                            if captioned { Text(preset.sample).font(Theme.caption).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center).lineLimit(2) }
+                            Text(preset.label).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(colour.labelColor).frame(maxWidth: .infinity, minHeight: 46)
+                                .background(colour.fill, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        }
+                    }
+                    .buttonStyle(.plain).accessibilityLabel(preset.label).accessibilityHint("Adds the \(preset.label) button").accessibilityIdentifier("button-preset-\(preset.rawValue)")
+                }
+            }
+            Button { step = .custom } label: {
+                HStack { Text("Custom button\u{2026}").font(Theme.body).foregroundStyle(Theme.text); Spacer(); Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.textSecondary) }
+                    .padding(.horizontal, 16).frame(minHeight: 52).background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+            .buttonStyle(.plain).accessibilityIdentifier("button-custom")
+        }
+    }
+
+    private func captionStep(_ preset: Preset) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("A short line above the button").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
+            TextField("Caption", text: $caption, prompt: Text(preset.sample)).focused($focused, equals: .caption)
+                .onChange(of: caption) { _, now in if now.count > 120 { caption = String(now.prefix(120)) } }
+                .padding(.horizontal, 16).frame(minHeight: 52).background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous)).accessibilityIdentifier("button-caption-field")
+            VStack(spacing: 8) {
+                Text(caption.isEmpty ? preset.sample : caption).font(Theme.secondary).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
+                Text(preset.label).font(Theme.font(.body, weight: .semibold)).foregroundStyle(colour.labelColor).frame(maxWidth: .infinity, minHeight: 50).background(colour.fill, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+            Button { insert(preset.label, preset.address, caption: caption) } label: {
+                Text("Add button").font(Theme.title).foregroundStyle(Theme.accentInk).frame(maxWidth: .infinity, minHeight: 52).background(Theme.accent, in: Capsule())
+            }
+            .accessibilityIdentifier("button-caption-add")
+        }
+        .onAppear { focused = .caption }
+    }
+
+    private var custom: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(spacing: 0) {
+                HStack { Text("Text").font(Theme.body).foregroundStyle(Theme.textSecondary).frame(width: 60, alignment: .leading)
+                    TextField("Button text", text: $title).focused($focused, equals: .title).selectionTint().accessibilityIdentifier("button-text") }
+                    .padding(.horizontal, 16).frame(minHeight: 52)
+                Divider().overlay(Theme.hairline).padding(.leading, 16)
+                HStack { Text("Link").font(Theme.body).foregroundStyle(Theme.textSecondary).frame(width: 60, alignment: .leading)
+                    TextField("limemessenger.com", text: $address).focused($focused, equals: .address).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled().selectionTint()
+                        .onChange(of: address) { problem = nil }
+                        .onSubmit { if let shown = LinkInput.https(from: address) { address = shown } }
+                        .accessibilityIdentifier("button-url") }
+                    .padding(.horizontal, 16).frame(minHeight: 52)
+            }
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             if let problem {
                 Text(problem).font(Theme.secondary).foregroundStyle(Color.red).accessibilityIdentifier("button-error")
             } else if let shown = LinkInput.https(from: address) {
@@ -193,15 +274,42 @@ struct ButtonSheet: View {
             } else {
                 Text("A button opens a web address.").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
             }
-            Spacer(minLength: 0)
         }
-        .padding(20)
-        .background(Theme.canvas.ignoresSafeArea())
-        .presentationDetents([.medium])
-        .onAppear { focused = true }
+        .onAppear { focused = .title }
     }
 
-    private func add() {
-        if let message = composer.applyButton(title: title, address: address) { problem = message } else { dismiss() }
+    /// Lime green first, then five more; each label reads at 4.5:1 on its fill in light and dark.
+    private var colours: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Colour").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.textSecondary)
+            HStack(spacing: 10) {
+                ForEach(ButtonPalette.allCases) { palette in
+                    Button { colour = palette } label: {
+                        Circle().fill(palette.fill).frame(width: 36, height: 36)
+                            .overlay(Circle().strokeBorder(Theme.text, lineWidth: colour == palette ? 3 : 0.5).opacity(colour == palette ? 1 : 0.3))
+                            .frame(width: 44, height: 44)
+                    }
+                    .accessibilityLabel(palette.title).accessibilityAddTraits(colour == palette ? .isSelected : []).accessibilityIdentifier("button-colour-\(palette.rawValue)")
+                }
+            }
+        }
+    }
+
+    // MARK: Doing
+
+    private var customValid: Bool { !title.trimmingCharacters(in: .whitespaces).isEmpty && LinkInput.https(from: address) != nil }
+
+    private func choose(_ preset: Preset) {
+        if captioned { caption = ""; step = .caption(preset) } else { insert(preset.label, preset.address, caption: "") }
+    }
+
+    private func addCustom() {
+        guard let shown = LinkInput.https(from: address) else { problem = "That doesn\u{2019}t look like a web address."; return }
+        address = shown
+        insert(title, shown, caption: "")
+    }
+
+    private func insert(_ text: String, _ target: String, caption: String) {
+        if let message = composer.applyButton(title: text, address: target, caption: caption, colour: colour.rawValue) { problem = message } else { dismiss() }
     }
 }

@@ -5558,3 +5558,21 @@ fn a_co_author_is_credited_only_after_accepting_and_the_credit_reaches_the_subsc
     assert_eq!((mine.len(), mine[0].title.as_str(), mine[0].state.as_str(), mine[0].markdown.as_str()), (1, "What is liming?", "ready", "Words"));
     assert!(dave.store.list_coauthored_posts().unwrap().is_empty(), "a declined credit keeps nothing");
 }
+
+#[test]
+fn a_post_shown_as_the_jam_arrives_so_and_an_ordinary_post_is_shown_as_the_person() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let jam = new_jam(&alice);
+    join_jam(&alice, &bob, &jam, &transport);
+    alice.store.publish_jam_post_as(jam.clone(), "article".into(), "From the jam".into(), String::new(), "Words".into(), "free".into(), vec![], vec![], "jam".into()).unwrap();
+    alice.store.publish_jam_post(jam.clone(), "article".into(), "From me".into(), String::new(), "Words".into(), "free".into(), vec![], vec![]).unwrap();
+    alice.store.publish_jam_post_as(jam.clone(), "article".into(), "Odd".into(), String::new(), "Words".into(), "free".into(), vec![], vec![], "somebody else".into()).unwrap();
+    catch_up(&alice, &[&bob], &transport);
+    let posts = bob.store.list_jam_posts(jam.clone()).unwrap();
+    let shown: Vec<(&str, &str)> = posts.iter().map(|p| (p.title.as_str(), p.display_as.as_str())).collect();
+    assert_eq!(shown, vec![("From the jam", "jam"), ("From me", "person"), ("Odd", "person")]);
+    let mine = alice.store.list_jam_posts(jam).unwrap();
+    assert_eq!(mine[0].display_as, "jam");
+}

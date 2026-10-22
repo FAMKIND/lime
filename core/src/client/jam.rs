@@ -59,6 +59,8 @@ pub struct JamPostInfo {
     pub created: i64,
     /// Co-authors who accepted the credit (user ids): "with Jean Chung".
     pub coauthors: Vec<String>,
+    /// `person` (shown as written by the writer) or `jam` (shown as the jam's, "by <writer>" under it) (LIME-188q).
+    pub display_as: String,
     /// `ready` (the content is here), `fetching` (the title is known, the content is still to come from the server) or `gone` (removed from the
     /// server: the jam ended or the writer deleted it).
     pub state: String,
@@ -149,6 +151,7 @@ fn info(conn: &Connection, row: jam_store::JamRow) -> Result<JamInfo, StoreError
 fn post_info(conn: &Connection, row: jam_store::PostRow) -> JamPostInfo {
     JamPostInfo {
         coauthors: jam_store::credits_in_state(conn, &row.post_id, "accepted").unwrap_or_default(),
+        display_as: row.display_as,
         post_id: row.post_id,
         jam_id: row.jam_id,
         author: row.author,
@@ -216,8 +219,9 @@ fn blob_json(blob: &jam_store::BlobRef) -> Value {
 
 /// What a post's content is, as the bytes that are sealed into its blob.
 #[allow(clippy::too_many_arguments)] // one field each
-fn post_plaintext(post_id: &str, jam_id: &str, tier: &str, kind: &str, title: &str, subtitle: &str, markdown: &str, attachments: &Value, created: i64) -> Vec<u8> {
-    json!({ "post_id": post_id, "jam_id": jam_id, "tier": tier, "kind": kind, "title": title, "subtitle": subtitle, "markdown": markdown, "attachments": attachments, "created": created })
+#[allow(clippy::too_many_arguments)] // one field each
+fn post_plaintext(post_id: &str, jam_id: &str, tier: &str, kind: &str, title: &str, subtitle: &str, markdown: &str, attachments: &Value, created: i64, display_as: &str) -> Vec<u8> {
+    json!({ "post_id": post_id, "jam_id": jam_id, "tier": tier, "kind": kind, "title": title, "subtitle": subtitle, "markdown": markdown, "attachments": attachments, "created": created, "display_as": display_as })
         .to_string()
         .into_bytes()
 }
@@ -370,6 +374,14 @@ impl LimeStore {
     /// shrunk and stripped by the app; at most 10, each under 24 MiB): each becomes a jam-class blob of its own, uploaded before the post. Returns the post's id. Nothing is sent yet: the passes do that, in order and in chunks.
     #[allow(clippy::too_many_arguments)] // one field of a post each, for the app
     pub fn publish_jam_post(&self, jam_id: String, kind: String, title: String, subtitle: String, markdown: String, tier: String, attachments: Vec<OutgoingAttachment>, coauthors: Vec<String>) -> Result<String, StoreError> {
+        self.publish_jam_post_as(jam_id, kind, title, subtitle, markdown, tier, attachments, coauthors, "person".into())
+    }
+
+    /// `publish_jam_post`, saying who the post is shown as written by: `person` (the writer) or `jam` (the jam's name, "by <writer>" under it).
+    /// It travels inside the encrypted post; the server learns nothing new.
+    #[allow(clippy::too_many_arguments)]
+    pub fn publish_jam_post_as(&self, jam_id: String, kind: String, title: String, subtitle: String, markdown: String, tier: String, attachments: Vec<OutgoingAttachment>, coauthors: Vec<String>, display_as: String) -> Result<String, StoreError> {
+        let display_as = if display_as == "jam" { "jam" } else { "person" };
         let state = self.load_or_create_account()?;
         let me = self.registered_user(&state)?;
         if !jam_store::valid_kind(&kind) {
@@ -432,7 +444,7 @@ impl LimeStore {
         // The blob: a fresh key and id, the content sealed (one chunk: a post is under 1 MiB), its hash and size noted for the notice.
         let blob_id = new_id();
         let key = crate::store::attachments::new_key();
-        let sealed = crate::store::attachments::seal(&key, &blob_id, &post_plaintext(&post_id, &jam_id, &tier, &kind, &title, &subtitle, &markdown, &attachments, now));
+        let sealed = crate::store::attachments::seal(&key, &blob_id, &post_plaintext(&post_id, &jam_id, &tier, &kind, &title, &subtitle, &markdown, &attachments, now, &display_as));
         let [ciphertext] = <[Vec<u8>; 1]>::try_from(sealed).map_err(|_| StoreError::Rejected)?;
         let blob = jam_store::BlobRef { blob_id, key: vodozemac::base64_encode(&key), sha256: crate::store::attachments::digest_hex(&ciphertext), size: ciphertext.len() as i64 };
         self.with_conn(|conn| {
@@ -454,9 +466,9 @@ impl LimeStore {
                 let wire_b64 = vodozemac::base64_encode(&wire);
                 let audience = jam_store::audience(conn, &jam_id, &tier)?;
                 conn.execute(
-                    "INSERT INTO jam_posts (post_id, jam_id, author, session_id, idx, tier, title, markdown, plain, attachments, created, wire, blob_id, blob_key, blob_sha, blob_size, uploaded, fetched, kind, subtitle)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, 0, 1, ?17, ?18)",
-                    params![post_id, jam_id, me, outbound.session.session_id(), index, tier, title, markdown, plain, attachments.to_string(), now, wire_b64, blob.blob_id, blob.key, blob.sha256, blob.size, kind, subtitle],
+                    "INSERT INTO jam_posts (post_id, jam_id, author, session_id, idx, tier, title, markdown, plain, attachments, created, wire, blob_id, blob_key, blob_sha, blob_size, uploaded, fetched, kind, subtitle, display_as)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, 0, 1, ?17, ?18, ?19)",
+                    params![post_id, jam_id, me, outbound.session.session_id(), index, tier, title, markdown, plain, attachments.to_string(), now, wire_b64, blob.blob_id, blob.key, blob.sha256, blob.size, kind, subtitle, display_as],
                 )
                 .map_err(db_err)?;
                 for (id, plain, hash, size) in &files {
@@ -1101,7 +1113,7 @@ impl LimeStore {
         for post in posts {
             let Some(key) = vodozemac::base64_decode(&post.blob.key).ok().filter(|k| k.len() == 32) else { continue };
             let attachments: Value = serde_json::from_str(&post.attachments).unwrap_or(Value::Array(vec![]));
-            let plaintext = post_plaintext(&post.post_id, &post.jam_id, &post.tier, &post.kind, &post.title, &post.subtitle, &post.markdown, &attachments, post.created);
+            let plaintext = post_plaintext(&post.post_id, &post.jam_id, &post.tier, &post.kind, &post.title, &post.subtitle, &post.markdown, &attachments, post.created, &post.display_as);
             let sealed = crate::store::attachments::seal(&key, &post.blob.blob_id, &plaintext);
             let [ciphertext] = <[Vec<u8>; 1]>::try_from(sealed).unwrap_or_default();
             if crate::store::attachments::digest_hex(&ciphertext) != post.blob.sha256 {
@@ -1230,10 +1242,11 @@ impl LimeStore {
                     let attachments = value.get("attachments").cloned().unwrap_or(Value::Array(vec![]));
                     crate::store::attachments::parse_payload(&json!({ "attachments": attachments }))?;
                     let markdown = crate::format::normalise_post(text("markdown")?);
-                    (markdown.len() <= jam_store::MAX_POST_BYTES).then_some((markdown, attachments))
+                    let display_as = if text("display_as") == Some("jam") { "jam" } else { "person" };
+                    (markdown.len() <= jam_store::MAX_POST_BYTES).then_some((markdown, attachments, display_as))
                 });
                 match content {
-                    Some((markdown, attachments)) => jam_store::set_fetched(conn, &post_id, Some((&markdown, &crate::format::plain_text_post(&markdown), &attachments))),
+                    Some((markdown, attachments, display_as)) => jam_store::set_fetched(conn, &post_id, Some((&markdown, &crate::format::plain_text_post(&markdown), &attachments, display_as))),
                     // Bytes that do not open as announced: gone for good (a retry would fetch the same).
                     None => jam_store::set_fetched(conn, &post_id, None),
                 }

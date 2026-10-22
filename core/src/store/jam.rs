@@ -281,9 +281,11 @@ pub(crate) struct PostRow {
     pub subtitle: String,
     /// 0 not downloaded yet, 1 ready, 2 gone from the server.
     pub fetched: i64,
+    /// `person` or `jam`: who the post is shown as written by (LIME-188q).
+    pub display_as: String,
 }
 
-const POST: &str = "SELECT post_id, jam_id, author, tier, title, markdown, plain, attachments, created, deleted_at IS NOT NULL, fetched, kind, subtitle FROM jam_posts";
+const POST: &str = "SELECT post_id, jam_id, author, tier, title, markdown, plain, attachments, created, deleted_at IS NOT NULL, fetched, kind, subtitle, display_as FROM jam_posts";
 
 fn read_post(r: &rusqlite::Row<'_>) -> rusqlite::Result<PostRow> {
     Ok(PostRow {
@@ -300,6 +302,7 @@ fn read_post(r: &rusqlite::Row<'_>) -> rusqlite::Result<PostRow> {
         fetched: r.get(10)?,
         kind: r.get(11)?,
         subtitle: r.get(12)?,
+        display_as: r.get(13)?,
     })
 }
 
@@ -363,10 +366,10 @@ pub(crate) fn to_fetch(conn: &Connection, limit: usize) -> Result<Vec<(String, B
 }
 
 /// A downloaded post's content (`fetched = 1`), or that it is gone from the server (`fetched = 2`).
-pub(crate) fn set_fetched(conn: &Connection, post_id: &str, content: Option<(&str, &str, &Value)>) -> Result<(), StoreError> {
+pub(crate) fn set_fetched(conn: &Connection, post_id: &str, content: Option<(&str, &str, &Value, &str)>) -> Result<(), StoreError> {
     match content {
-        Some((markdown, plain, attachments)) => conn
-            .execute("UPDATE jam_posts SET markdown = ?2, plain = ?3, attachments = ?4, fetched = 1 WHERE post_id = ?1", params![post_id, markdown, plain, attachments.to_string()])
+        Some((markdown, plain, attachments, display_as)) => conn
+            .execute("UPDATE jam_posts SET markdown = ?2, plain = ?3, attachments = ?4, display_as = ?5, fetched = 1 WHERE post_id = ?1", params![post_id, markdown, plain, attachments.to_string(), display_as])
             .map_err(db_err)?,
         None => conn.execute("UPDATE jam_posts SET fetched = 2 WHERE post_id = ?1", params![post_id]).map_err(db_err)?,
     };
@@ -385,12 +388,13 @@ pub(crate) struct Unuploaded {
     pub attachments: String,
     pub created: i64,
     pub blob: BlobRef,
+    pub display_as: String,
 }
 
 pub(crate) fn to_upload(conn: &Connection, limit: usize) -> Result<Vec<Unuploaded>, StoreError> {
     let mut statement = conn
         .prepare(
-            "SELECT post_id, jam_id, tier, title, markdown, attachments, created, blob_id, blob_key, blob_sha, blob_size, kind, subtitle FROM jam_posts
+            "SELECT post_id, jam_id, tier, title, markdown, attachments, created, blob_id, blob_key, blob_sha, blob_size, kind, subtitle, display_as FROM jam_posts
              WHERE uploaded = 0 AND wire IS NOT NULL AND deleted_at IS NULL
              AND NOT EXISTS (SELECT 1 FROM jam_attachments a WHERE a.post_id = jam_posts.post_id AND a.uploaded = 0) ORDER BY created, post_id LIMIT ?1",
         )
@@ -408,6 +412,7 @@ pub(crate) fn to_upload(conn: &Connection, limit: usize) -> Result<Vec<Unuploade
                 blob: BlobRef { blob_id: r.get(7)?, key: r.get(8)?, sha256: r.get(9)?, size: r.get(10)? },
                 kind: r.get(11)?,
                 subtitle: r.get(12)?,
+                display_as: r.get(13)?,
             })
         })
         .map_err(db_err)?

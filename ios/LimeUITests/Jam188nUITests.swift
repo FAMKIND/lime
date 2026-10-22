@@ -65,7 +65,7 @@ final class Jam188nUITests: LimeUITestCase {
         let card = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Ten minutes'")).firstMatch
         XCTAssertTrue(card.waitForExistence(timeout: 8))
         card.tap()
-        XCTAssertTrue(any(app, "post-divider").waitForExistence(timeout: 8), "the reader draws the rule")
+        // (The divider is decorative: hidden from VoiceOver, so also from these queries.)
         XCTAssertTrue(any(app, "post-freewall").exists, "and where the subscribers' part starts")
     }
 

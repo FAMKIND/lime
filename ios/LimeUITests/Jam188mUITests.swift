@@ -40,6 +40,7 @@ final class Jam188mUITests: LimeUITestCase {
         let scroll = app.scrollViews["fmt-scroll"]
         for _ in 0..<4 where !app.buttons["fmt-button"].isHittable { scroll.swipeLeft() }
         app.buttons["fmt-button"].tap()
+        app.buttons["button-custom"].tap()
         let text = app.textFields["button-text"]
         XCTAssertTrue(text.waitForExistence(timeout: 5))
         text.typeText("Worksheet")

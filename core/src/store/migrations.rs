@@ -713,6 +713,8 @@ const MIGRATIONS: &[&str] = &[
          jam_id  TEXT NOT NULL,
          wire    TEXT NOT NULL
      );",
+    // 45 (LIME-188q): a post can be shown as the jam's (its name as the author line, "by <writer>" under it); carried inside the encrypted post.
+    "ALTER TABLE jam_posts ADD COLUMN display_as TEXT NOT NULL DEFAULT 'person';",
 ];
 
 /// The schema version this build writes.
