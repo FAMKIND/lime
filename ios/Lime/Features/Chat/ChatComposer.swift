@@ -16,6 +16,9 @@ struct ChatComposer: View {
     @State private var previewDraft: PreviewDraft?
     @State private var dismissedURL: URL?
     @State private var previewTask: Task<Void, Never>?
+    /// A card is being made for what is written (the wait before it, and the fetch): sending waits for it a few seconds (LIME-188s).
+    @State private var previewRunning = false
+    @State private var waitingToSend = false
     @State private var drafts: [DraftAttachment] = []
     @State private var chooser: Chooser?
     @State private var tooLarge = false
@@ -356,6 +359,7 @@ struct ChatComposer: View {
     /// Looks for an address in what is written and builds its card on this phone (not for a request, not when the setting is off).
     private func refreshPreview() {
         previewTask?.cancel()
+        previewRunning = false
         guard previewsOn, onSendPreview != nil, drafts.isEmpty, let url = LinkPreviewMaker.firstURL(in: model.plainText) else {
             if let url = LinkPreviewMaker.firstURL(in: model.plainText), previewDraft == nil {
                 CallDiagnostics.shared.log("link preview skipped for \(url.host ?? "?"): setting \(previewsOn ? "on" : "off"), send path \(onSendPreview != nil ? "yes" : "none"), attachments \(drafts.count)")
@@ -366,7 +370,9 @@ struct ChatComposer: View {
         }
         if url == dismissedURL || previewDraft?.url == url { return }
         previewDraft = nil
+        previewRunning = true
         previewTask = Task {
+            defer { if !Task.isCancelled { previewRunning = false } }
             try? await Task.sleep(for: .milliseconds(700))
             guard !Task.isCancelled else { return }
             #if DEBUG
@@ -384,7 +390,23 @@ struct ChatComposer: View {
         }
     }
 
+    /// Send. A link's card takes a second or two to make (the page is asked for it on this phone): if the send comes before it is ready, wait for it
+    /// for up to four seconds rather than sending a plain link (the log showed messages sent 0.3 s after the address was typed, with no card).
     private func send() {
+        guard !waitingToSend else { return }
+        if drafts.isEmpty, previewDraft == nil, previewRunning, previewsOn, onSendPreview != nil {
+            waitingToSend = true
+            Task {
+                for _ in 0..<40 where previewDraft == nil && previewRunning { try? await Task.sleep(for: .milliseconds(100)) }
+                waitingToSend = false
+                deliver()
+            }
+            return
+        }
+        deliver()
+    }
+
+    private func deliver() {
         let markdown = model.markdown()
         if drafts.isEmpty, let previewDraft, let onSendPreview, !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             CallDiagnostics.shared.log("sending with a link card")
