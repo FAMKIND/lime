@@ -75,10 +75,12 @@ struct JamAttachmentsView: View {
     var body: some View {
         let files = store.jamAttachments(postID).enumerated().filter { !skipping.contains($0.offset) }.map(\.element)
         let photos = files.filter { $0.kind == "image" }
+        let links = files.filter { $0.mime == JamLink.mime }
         VStack(alignment: .leading, spacing: 12) {
             // Several photos are one row that scrolls sideways (LIME-188h); a tap opens them in the same viewer chats use.
             if !photos.isEmpty { JamPhotoRow(postID: postID, files: photos, compact: compact) }
-            ForEach(files.filter { $0.kind != "image" }, id: \.attachmentId) { file in
+            ForEach(links, id: \.attachmentId) { JamLinkCard(postID: postID, file: $0) }
+            ForEach(files.filter { $0.kind != "image" && $0.mime != JamLink.mime }, id: \.attachmentId) { file in
                 switch file.kind {
                 case "video": JamVideo(postID: postID, file: file)
                 case "audio": JamAudio(postID: postID, file: file)
@@ -86,6 +88,28 @@ struct JamAttachmentsView: View {
                 }
             }
         }
+    }
+}
+
+/// A link in a post, drawn as the card chats draw: the picture, the title and the site; a tap opens the address.
+struct JamLinkCard: View {
+    let postID: String
+    let file: JamAttachmentInfo
+    @Environment(ConversationStore.self) private var store
+    @Environment(\.openURL) private var openURL
+    @State private var payload: JamLink.Payload?
+
+    var body: some View {
+        LinkCardView(title: payload?.title ?? file.name, site: payload?.site ?? "", image: UIImage(data: file.poster), width: 280)
+            .contentShape(Rectangle())
+            .onTapGesture { if let payload, let url = URL(string: payload.url) { openURL(url) } }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Link: \(payload?.title ?? file.name), \(payload?.site ?? "")").accessibilityAddTraits(.isLink)
+            .accessibilityIdentifier("jam-link-card")
+            .task {
+                guard payload == nil, let data = await store.jamAttachmentData(postID, file.attachmentId) else { return }
+                payload = try? JSONDecoder().decode(JamLink.Payload.self, from: data)
+            }
     }
 }
 
@@ -212,6 +236,7 @@ private struct JamPhoto: View {
         Group {
             if let image {
                 Image(uiImage: image).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityLabel(file.name.isEmpty ? "Photo" : "Photo, \(file.name)")
                     .onTapGesture { if tapToOpen { opened = true } }
                     .accessibilityAddTraits(tapToOpen ? .isButton : [])
@@ -237,41 +262,42 @@ private struct JamPhoto: View {
     }
 }
 
-/// A recording that is a video: the picture (tap to play or pause) and, under it, the same player as a podcast.
+/// A video in a post: its cover, then the system's own video player (the podcast player is for audio only).
 struct JamVideo: View {
     let postID: String
     let file: JamAttachmentInfo
     @Environment(ConversationStore.self) private var store
-    @State private var controller: PodcastController?
+    @State private var player: AVPlayer?
+    @State private var loading = false
 
     var body: some View {
-        let controller = self.controller ?? makeController()
-        VStack(spacing: 10) {
-            Button { Task { await controller.toggle(data: { await store.jamAttachmentData(postID, file.attachmentId) }) } } label: {
-                ZStack {
-                    if controller.simulated || controller.player == nil {
+        ZStack {
+            if let player {
+                VideoPlayer(player: player).aspectRatio(file.width.flatMap { w in file.height.map { CGFloat(w) / CGFloat(max($0, 1)) } } ?? 16.0 / 9, contentMode: .fit)
+            } else {
+                Button { load() } label: {
+                    ZStack {
                         if let poster = UIImage(data: file.poster) { Image(uiImage: poster).resizable().scaledToFit() } else { Rectangle().fill(Theme.surface).aspectRatio(16.0 / 9, contentMode: .fit) }
-                    } else {
-                        PlayerLayerView(player: controller.player).aspectRatio(file.width.flatMap { w in file.height.map { CGFloat(w) / CGFloat(max($0, 1)) } } ?? 16.0 / 9, contentMode: .fit)
+                        if loading { ProgressView() } else { Image(systemName: "play.circle.fill").font(.system(size: 52)).foregroundStyle(.white).shadow(radius: 4) }
                     }
-                    if controller.loading { ProgressView() }
-                    else if !controller.isPlaying { Image(systemName: "play.circle.fill").font(.system(size: 52)).foregroundStyle(.white).shadow(radius: 4) }
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .buttonStyle(.plain).accessibilityLabel("Play video").accessibilityIdentifier("jam-video")
             }
-            .buttonStyle(.plain).accessibilityLabel(controller.isPlaying ? "Pause video" : "Play video").accessibilityIdentifier("jam-video")
-            PodcastBar(controller: controller, waveform: Data(), load: { await store.jamAttachmentData(postID, file.attachmentId) }, id: file.attachmentId)
         }
-        .onAppear { if self.controller == nil { self.controller = controller } }
     }
 
-    private func makeController() -> PodcastController {
-        let post = store.jamPost(postID)
-        let controller = PodcastController(duration: Double(file.durationMs ?? 0) / 1000, title: post?.title ?? "", artist: store.teacherName(post?.author ?? ""), isVideo: true)
-        #if DEBUG
-        controller.simulated = store.isDemo
-        #endif
-        return controller
+    private func load() {
+        loading = true
+        Task {
+            if let data = await store.jamAttachmentData(postID, file.attachmentId) {
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent("jam-\(file.attachmentId).mp4")
+                try? data.write(to: url)
+                player = AVPlayer(url: url)
+                player?.play()
+            }
+            loading = false
+        }
     }
 }
 

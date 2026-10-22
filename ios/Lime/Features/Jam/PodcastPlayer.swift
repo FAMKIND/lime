@@ -204,10 +204,10 @@ struct PodcastBar: View {
             }
             .font(Theme.caption.monospacedDigit()).foregroundStyle(Theme.textSecondary)
             .accessibilityHidden(true)
-            HStack(spacing: 18) {
+            HStack(spacing: 0) {
                 Button { controller.cycleRate() } label: {
                     Text(controller.rate == 1.5 ? "1.5\u{00D7}" : "\(Int(controller.rate))\u{00D7}").font(Theme.font(.subheadline, weight: .bold)).foregroundStyle(Theme.text)
-                        .frame(minWidth: 52, minHeight: 44).background(Theme.surface, in: Capsule())
+                        .frame(minWidth: 48, minHeight: 44).background(Theme.surface, in: Capsule())
                 }
                 .accessibilityLabel("Playback speed \(controller.rate == 1.5 ? "1.5" : "\(Int(controller.rate))")").accessibilityIdentifier("podcast-speed-\(id)")
                 Spacer()
@@ -223,13 +223,13 @@ struct PodcastBar: View {
                 .accessibilityLabel(controller.isPlaying ? "Pause" : "Play").accessibilityIdentifier("podcast-play-\(id)")
                 skipButton("goforward.30", "Forward 30 seconds", 30)
                 Spacer()
-                Color.clear.frame(width: 52, height: 44).accessibilityHidden(true)
+                Color.clear.frame(width: 48, height: 44).accessibilityHidden(true)
             }
             if controller.failed {
                 Text("Couldn\u{2019}t play this recording.").font(Theme.caption).foregroundStyle(Theme.textSecondary)
             }
         }
-        .padding(14)
+        .padding(12)
         .background(Theme.surface.opacity(0.6), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("podcast-\(id)")
@@ -237,7 +237,7 @@ struct PodcastBar: View {
 
     private func skipButton(_ symbol: String, _ label: String, _ seconds: Double) -> some View {
         Button { controller.skip(by: seconds) } label: {
-            Image(systemName: symbol).font(.system(size: 24)).foregroundStyle(Theme.text).frame(width: 48, height: 48)
+            Image(systemName: symbol).font(.system(size: 24)).foregroundStyle(Theme.text).frame(width: 46, height: 46)
         }
         .accessibilityLabel(label).accessibilityIdentifier("podcast-skip-\(Int(seconds))-\(id)")
     }

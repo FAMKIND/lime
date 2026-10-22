@@ -21,7 +21,12 @@ enum LinkPreviewMaker {
         if demo { return demoPreview(for: url) }
         let provider = LPMetadataProvider()
         provider.timeout = 8
-        guard let metadata = try? await provider.startFetchingMetadata(for: url) else { return nil }
+        let fetched: LPLinkMetadata?
+        do { fetched = try await provider.startFetchingMetadata(for: url) } catch {
+            CallDiagnostics.shared.log("link preview failed: \(error.localizedDescription)")
+            fetched = nil
+        }
+        guard let metadata = fetched else { return nil }
         let title = metadata.title ?? ""
         let site = host(of: url)
         var jpeg = Data(), size = CGSize.zero
@@ -134,5 +139,22 @@ struct MessageLinkCard: View {
                 guard let item = preview.image else { return }
                 picture = await store.image(for: item)
             }
+    }
+}
+
+/// A link card inside a jam post (LIME-188i): built on the writer's phone like a chat's, then carried as one small attachment of the post (the
+/// address, title and site as JSON, the picture as the attachment's cover), so the readers never visit the link and the core needs nothing new.
+enum JamLink {
+    static let mime = "application/vnd.lime.link+json"
+
+    struct Payload: Codable, Equatable {
+        let url: String
+        let title: String
+        let site: String
+    }
+
+    static func attachment(_ preview: OutgoingPreview) -> OutgoingAttachment {
+        let json = (try? JSONEncoder().encode(Payload(url: preview.url, title: preview.title, site: preview.site))) ?? Data()
+        return OutgoingAttachment(bytes: json, name: preview.title, mime: mime, width: preview.imageWidth, height: preview.imageHeight, durationMs: nil, thumb: Data(), poster: preview.image)
     }
 }

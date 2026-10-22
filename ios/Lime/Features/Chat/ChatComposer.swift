@@ -37,6 +37,13 @@ struct ChatComposer: View {
         composerStack
             // The composer's top, so the chat can float the @ list just above it (LIME-181c).
             .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { model.composerTop = $0 }
+            #if DEBUG
+            // LIME-188i: a QA report said the composer lost its side margins on a phone; this leaves the evidence in the diagnostics ("logs").
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                let screen = UIScreen.main.bounds.width
+                if frame.minX < 8 || frame.maxX > screen - 8 { CallDiagnostics.shared.log("composer frame \(Int(frame.minX))...\(Int(frame.maxX)) of a \(Int(screen)) pt screen") }
+            }
+            #endif
     }
 
     private var composerStack: some View {
