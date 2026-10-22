@@ -38,18 +38,16 @@ final class Jam188dUITests: LimeUITestCase {
         XCTAssertTrue(app.staticTexts["profile-jam-row"].waitForExistence(timeout: 5), "the jam's title, subscribers and posts live in Posts")
     }
 
-    func testPostsCanBeNarrowedByKind() {
+    func testPostsHaveTheSameToggleAndFilterAsTheJamTab() {
         let app = XCUIApplication()
         app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-screen", "jam-mine-profile"]
         app.launch()
         XCTAssertTrue(app.buttons["profile-tab-Posts"].waitForExistence(timeout: 10))
         app.buttons["profile-tab-Posts"].tap()
-        XCTAssertTrue(app.buttons["profile-posts-kind-All"].waitForExistence(timeout: 5))
-        for name in ["Articles", "Audio", "Video", "Quick"] { XCTAssertTrue(app.buttons["profile-posts-kind-\(name)"].exists, name) }
-        app.buttons["profile-posts-kind-Video"].tap()
-        XCTAssertTrue(app.buttons["profile-posts-kind-Video"].isSelected)
-        XCTAssertTrue(app.staticTexts["Your posts show here."].waitForExistence(timeout: 5), "nothing of that kind")
-        app.buttons["profile-posts-kind-All"].tap()
-        XCTAssertFalse(app.staticTexts["Your posts show here."].exists)
+        let control = app.segmentedControls["profile-posts-filter-segments"]
+        XCTAssertTrue(control.waitForExistence(timeout: 5), "Posts | Articles")
+        XCTAssertTrue(control.buttons["Posts"].exists && control.buttons["Articles"].exists)
+        XCTAssertTrue(app.buttons["profile-posts-filter-button"].exists, "and the filter button")
+        XCTAssertFalse(app.staticTexts["Quick"].exists || app.buttons["Quick"].exists, "no \"Quick\" in the UI")
     }
 }

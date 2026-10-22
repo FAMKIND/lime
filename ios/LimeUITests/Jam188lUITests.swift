@@ -49,6 +49,7 @@ final class Jam188lUITests: LimeUITestCase {
         app.buttons["button-apply"].tap()
         XCTAssertTrue((body.value as? String ?? "").contains("[[Get the worksheet]](https://example.com/worksheet)"), body.value as? String ?? "")
         app.buttons["jam-post"].tap()
+        app.showJamArticles()
         let card = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Ten minutes of fractions'")).firstMatch
         XCTAssertTrue(card.waitForExistence(timeout: 8))
         card.tap()

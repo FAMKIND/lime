@@ -72,6 +72,7 @@ final class Jam188rUITests: LimeUITestCase {
         any(app, "block-move-down").tap()
         XCTAssertEqual(order(body), ["First", "Second", "picture", "button"])
         app.buttons["jam-post"].tap()
+        app.showJamArticles()
         let card = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Arranged'")).firstMatch
         XCTAssertTrue(card.waitForExistence(timeout: 8))
         card.tap()

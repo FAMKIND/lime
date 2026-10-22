@@ -98,9 +98,15 @@ struct JamPage: View {
                 }
                 .padding(.bottom, 80)
             } else {
+                @Bindable var store = store
+                let shown = posts.filter { store.jamPostMatches($0, articles: store.jamArticlesOnly, filter: store.jamFilter) }
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        ForEach(posts, id: \.postId) { post in
+                        JamFilterRow(articles: $store.jamArticlesOnly, filter: $store.jamFilter).padding(.top, 4).padding(.horizontal, 16)
+                        if shown.isEmpty {
+                            FilteredEmpty(text: store.jamArticlesOnly ? "No articles match" : "No posts match") { store.jamFilter = JamFilter(); store.jamArticlesOnly = false }
+                        }
+                        ForEach(shown, id: \.postId) { post in
                             JamPostCard(post: post)
                             Divider().overlay(Theme.hairline)
                         }

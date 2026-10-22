@@ -102,7 +102,7 @@ struct ProfileView: View {
         ScrollView {
             VStack(spacing: 18) {
                 top
-                if route.isMe { myActions } else if accepted { actions }
+                if route.isMe { myActions } else if accepted || jamPage != nil { actions }
                 ProfileTabs(sections: available, selection: $section)
                 switch section {
                 case .info: info
@@ -225,9 +225,13 @@ struct ProfileView: View {
     @ViewBuilder
     private var actions: some View {
         HStack(spacing: 12) {
-            card("message", "Message", id: "profile-message") { store.openFromNotification("dm:\(route.userID)", thread: nil) }
-            card("phone", "Voice", id: "profile-voice") { Task { _ = await store.calls.start(peerID: route.userID, name: displayName, video: false) } }
-            card("video", "Video", id: "profile-video") { Task { _ = await store.calls.start(peerID: route.userID, name: displayName, video: true) } }
+            // The one lime primary when they have a jam (LIME-188t); neutral and "Subscribed ✓" once subscribed.
+            if let jamPage, !route.isMe { subscribeCard(jamPage) }
+            if accepted {
+                card("message", "Message", id: "profile-message") { store.openFromNotification("dm:\(route.userID)", thread: nil) }
+                card("phone", "Voice", id: "profile-voice") { Task { _ = await store.calls.start(peerID: route.userID, name: displayName, video: false) } }
+                card("video", "Video", id: "profile-video") { Task { _ = await store.calls.start(peerID: route.userID, name: displayName, video: true) } }
+            }
         }
     }
 
@@ -238,6 +242,22 @@ struct ProfileView: View {
             card("pencil", "Edit profile", id: "profile-edit") { settingsLaunch = SettingsLaunch(start: .profile) }
             card("gearshape", "Settings", id: "profile-settings") { settingsLaunch = SettingsLaunch(start: nil) }
         }
+    }
+
+    private func subscribeCard(_ page: JamPageInfo) -> some View {
+        let following = store.isFollowing(page.jamId)
+        return Button { Task { if following { await store.unsubscribe(page.jamId) } else { await store.subscribe(to: page) } } } label: {
+            VStack(spacing: 6) {
+                Image(systemName: following ? "checkmark" : "plus").font(.system(size: 20, weight: .semibold)).frame(height: 24)
+                Text(following ? "Subscribed \u{2713}" : "Subscribe").font(Theme.font(.footnote, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
+            }
+            .foregroundStyle(following ? Theme.text : Theme.accentInk)
+            .frame(maxWidth: .infinity, minHeight: 64)
+            .background(following ? Theme.surface : Theme.accent, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(following ? "Subscribed to \(page.title). Tap to unsubscribe." : "Subscribe to \(page.title)")
+        .accessibilityIdentifier("profile-jam-subscribe")
     }
 
     private func card(_ symbol: String, _ title: String, id: String, perform: @escaping () -> Void) -> some View {

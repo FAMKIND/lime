@@ -9,6 +9,7 @@ final class Jam188pUITests: LimeUITestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-screen", "jam-following"]
         app.launch()
+        app.showJamArticles()
         XCTAssertTrue(any(app, "jam-article-card-title").waitForExistence(timeout: 10), "an article is a cover card with its title over the picture")
         any(app, "jam-post-demo-post-1").tap()
         XCTAssertTrue(any(app, "jam-article-page").waitForExistence(timeout: 8), "a tap opens the reading page")
@@ -41,6 +42,7 @@ final class Jam188pUITests: LimeUITestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-screen", "jam-following"]
         app.launch()
+        app.showJamArticles()
         let save = app.buttons["jam-article-save-demo-post-1"]
         XCTAssertTrue(save.waitForExistence(timeout: 10))
         let before = save.label

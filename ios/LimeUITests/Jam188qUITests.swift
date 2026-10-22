@@ -99,6 +99,7 @@ final class Jam188qUITests: LimeUITestCase {
         app.buttons["button-caption-add"].tap()
         XCTAssertTrue((body.value as? String ?? "").contains("[[Subscribe]](lime:subscribe \"Never miss a post\"){.blue}"), body.value as? String ?? "")
         app.buttons["jam-post"].tap()
+        app.showJamArticles()
         let card = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Ten minutes'")).firstMatch
         XCTAssertTrue(card.waitForExistence(timeout: 8))
         card.tap()

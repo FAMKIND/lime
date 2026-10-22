@@ -412,7 +412,8 @@ struct JamProfileSection: View {
     /// Their jam's page, loaded by the profile (which needs to know whether there is a Posts section).
     let page: JamPageInfo?
     @Environment(ConversationStore.self) private var store
-    @State private var kind: PostKind = .all
+    @State private var articles = false
+    @State private var filter = JamFilter()
     @State private var reading: JamPostRoute?
     @State private var editing: JamInfo?
     @State private var viewingSubscribers = false
@@ -427,22 +428,7 @@ struct JamProfileSection: View {
         .sheet(isPresented: $viewingSubscribers) { NavigationStack { JamSubscribersView(jamID: page?.jamId ?? "") } }
     }
 
-    /// The kinds a profile's Posts can be narrowed to (LIME-188d).
-    enum PostKind: String, CaseIterable, Identifiable {
-        case all = "All", articles = "Articles", audio = "Audio", video = "Video", quick = "Quick"
-        var id: String { rawValue }
-    }
-
-    private func matches(_ post: JamPostInfo) -> Bool {
-        switch kind {
-        case .all: return true
-        case .articles: return post.kind == "article"
-        case .quick: return post.kind == "quick"
-        case .audio, .video:
-            let files = store.jamAttachments(post.postId)
-            return post.kind == "record" && files.contains { $0.kind == (kind == .audio ? "audio" : "video") }
-        }
-    }
+    private func matches(_ post: JamPostInfo) -> Bool { store.jamPostMatches(post, articles: articles, filter: filter) }
 
     @ViewBuilder
     private func content(_ page: JamPageInfo) -> some View {
@@ -463,17 +449,10 @@ struct JamProfileSection: View {
                     pill("Subscribers", id: "jam-subscribers") { store.loadJamSubscribers(page.jamId); viewingSubscribers = true }
                     pill("End jam", id: "jam-end") { confirmingEnd = true }
                 }
-            } else {
-                Button { Task { if following { await store.unsubscribe(page.jamId) } else { await store.subscribe(to: page) } } } label: {
-                    Text(following ? "Subscribed \u{2713}" : "Subscribe").font(Theme.title).foregroundStyle(following ? Theme.text : Theme.accentInk)
-                        .frame(maxWidth: .infinity, minHeight: 50).background(following ? Theme.surface : Theme.accent, in: Capsule())
-                }
-                .buttonStyle(.plain).accessibilityIdentifier("profile-jam-subscribe")
-                .accessibilityLabel(following ? "Subscribed. Tap to unsubscribe." : "Subscribe to \(page.title)")
             }
             if isMe || following {
-                filterRow
-                if posts.filter(matches).isEmpty {
+                JamFilterRow(articles: $articles, filter: $filter, idPrefix: "profile-posts-filter")
+                if posts.filter(matches).isEmpty && (posts.isEmpty || !filter.isOn) {
                     Text(isMe ? "Your posts show here." : "Nothing here yet.").font(Theme.body).foregroundStyle(Theme.textSecondary)
                 }
                 VStack(spacing: 0) {
@@ -494,22 +473,6 @@ struct JamProfileSection: View {
         } message: {
             Text("Subscribers keep what they have.")
         }
-    }
-
-    private var filterRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(PostKind.allCases) { option in
-                    Button { kind = option } label: {
-                        Text(option.rawValue).font(Theme.secondary).foregroundStyle(Theme.text).padding(.horizontal, 14).frame(minHeight: 44)
-                            .background(kind == option ? Theme.surface : Color.clear, in: Capsule())
-                            .overlay(Capsule().strokeBorder(Theme.hairline, lineWidth: kind == option ? 0 : 1))
-                    }
-                    .buttonStyle(.plain).accessibilityAddTraits(kind == option ? .isSelected : []).accessibilityIdentifier("profile-posts-kind-\(option.rawValue)")
-                }
-            }
-        }
-        .accessibilityIdentifier("profile-posts-kinds")
     }
 
     private func pill(_ label: String, id: String, action: @escaping () -> Void) -> some View {

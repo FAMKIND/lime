@@ -75,6 +75,9 @@ final class ConversationStore {
     var jamSubscriptions: [JamInfo] = []
     var jamPosts: [String: [JamPostInfo]] = [:]
     var jamProgress: [String: JamSendProgress] = [:]
+    /// The jam tab's Posts | Articles choice and filters, kept while the app runs (LIME-188t).
+    var jamArticlesOnly = false
+    var jamFilter = JamFilter()
     /// Bumped when the posts hidden on this phone change, so the feed redraws.
     var jamHiddenChanged = 0
     var jamSubscribers: [String: [JamSubscriberInfo]] = [:]

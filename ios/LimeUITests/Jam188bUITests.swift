@@ -96,6 +96,7 @@ final class Jam188bUITests: LimeUITestCase {
         addArticlePhoto(app)
         XCTAssertFalse((subtitle.value as? String ?? "").contains("Ask one question"), "the subtitle never holds the article")
         app.buttons["jam-post"].tap()
+        app.showJamArticles()
         let article = card(app, containing: "Exit tickets that work")
         XCTAssertTrue(article.waitForExistence(timeout: 8))
         article.tap()
@@ -113,10 +114,13 @@ final class Jam188bUITests: LimeUITestCase {
     func testTheFeedShowsWhatIFollowAsCardsOfThreeKindsAndAnArticleOpensToItsBody() {
         let app = launch("jam-following")
         XCTAssertTrue(any(app, "jam-feed").waitForExistence(timeout: 10))
-        let record = app.buttons["jam-post-demo-post-3"], quick = app.buttons["jam-post-demo-post-2"], article = app.buttons["jam-post-demo-post-1"]
-        XCTAssertTrue(record.exists && quick.exists && article.exists)
+        let record = app.buttons["jam-post-demo-post-3"], quick = app.buttons["jam-post-demo-post-2"]
+        XCTAssertTrue(record.exists && quick.exists, "Posts first: the recording and the quick post")
+        XCTAssertFalse(app.buttons["jam-post-demo-post-1"].exists, "an article is under Articles")
         XCTAssertLessThan(record.frame.minY, quick.frame.minY, "newest first")
-        XCTAssertLessThan(quick.frame.minY, article.frame.minY)
+        app.showJamArticles()
+        let article = app.buttons["jam-post-demo-post-1"]
+        XCTAssertTrue(article.waitForExistence(timeout: 5))
         XCTAssertTrue(article.label.contains("Equivalent fractions") && article.label.contains("Fold, cut, compare"))
         XCTAssertTrue(app.buttons["jam-card-writer-demo-post-1"].label.contains("Sam Park"), "who wrote it, tap for their profile")
         article.tap()
@@ -137,9 +141,11 @@ final class Jam188bUITests: LimeUITestCase {
         XCTAssertEqual(app.staticTexts["profile-jam-subscribers"].label, "12 subscribers")
         XCTAssertTrue(app.staticTexts["profile-jam-locked"].exists, "posts are for subscribers")
         XCTAssertFalse(app.buttons["jam-post-demo-post-1"].exists)
+        XCTAssertTrue(app.buttons["profile-jam-subscribe"].exists, "Subscribe is in the header (LIME-188t)")
         app.buttons["profile-jam-subscribe"].tap()
         expectation(for: NSPredicate(format: "label BEGINSWITH 'Subscribed'"), evaluatedWith: app.buttons["profile-jam-subscribe"])
         waitForExpectations(timeout: 8)
+        app.showProfileArticles()
         XCTAssertTrue(app.buttons["jam-post-demo-post-1"].waitForExistence(timeout: 8), "their posts are on the page now")
     }
 
@@ -150,7 +156,8 @@ final class Jam188bUITests: LimeUITestCase {
         XCTAssertTrue(app.buttons["jam-edit-page"].waitForExistence(timeout: 10))
         XCTAssertEqual(app.staticTexts["profile-jam-subscribers"].label, "2 subscribers")
         XCTAssertFalse(app.buttons["profile-jam-subscribe"].exists, "no Subscribe on my own page")
-        XCTAssertTrue(card(app, containing: "We read aloud together").exists, "my post")
+        app.showProfileArticles()
+        XCTAssertTrue(card(app, containing: "We read aloud together").waitForExistence(timeout: 5), "my post")
         app.buttons["jam-subscribers"].tap()
         XCTAssertTrue(app.buttons["jam-remove-sam"].waitForExistence(timeout: 8))
         app.buttons["jam-remove-sam"].tap()
@@ -189,6 +196,7 @@ final class Jam188bUITests: LimeUITestCase {
         app.buttons["jam-coauthor-done"].tap()
         XCTAssertTrue(app.buttons["jam-coauthors"].waitForExistence(timeout: 5), "the co-author's avatar on the name line")
         app.buttons["jam-post"].tap()
+        app.showJamArticles()
         let article = card(app, containing: "What is liming?")
         XCTAssertTrue(article.waitForExistence(timeout: 8))
         XCTAssertTrue(any(app, "jam-card-byline-\(article.identifier.dropFirst("jam-post-".count))").label.contains("with Sam Park"), "the card says who it is with")

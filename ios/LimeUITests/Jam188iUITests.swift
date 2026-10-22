@@ -16,7 +16,7 @@ final class Jam188iUITests: LimeUITestCase {
         let app = launch("jam-following")
         XCTAssertTrue(any(app, "jam-feed").waitForExistence(timeout: 10))
         let width = app.windows.firstMatch.frame.width
-        for id in ["jam-post-demo-post-1", "jam-post-demo-post-2", "jam-post-demo-post-3", "jam-card-writer-demo-post-1"] {
+        for id in ["jam-post-demo-post-2", "jam-post-demo-post-3", "jam-card-writer-demo-post-3"] {
             let element = any(app, id)
             XCTAssertTrue(element.waitForExistence(timeout: 5), id)
             XCTAssertGreaterThanOrEqual(element.frame.minX, 0, "\(id) starts on the screen")
