@@ -70,6 +70,16 @@ enum ButtonAction: Equatable {
         }
     }
 
+    var title: String {
+        switch self {
+        case .subscribe: "Subscribe to this jam"
+        case .share: "Share in lime"
+        case .message: "Message the writer"
+        case .comment: "Comment"
+        case .link(let url): url
+        }
+    }
+
     var address: String {
         switch self {
         case .subscribe: "lime:subscribe"

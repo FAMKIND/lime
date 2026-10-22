@@ -159,6 +159,8 @@ struct LinkSheet: View {
 /// inside lime and need no web address; "Comment" waits for LIME-189 and is not offered yet.
 struct ButtonSheet: View {
     let composer: RichComposerModel
+    /// When set, the paragraph index of the button being changed (LIME-188r): Text, address (a web one), caption and colour, then Save.
+    var editing: Int? = nil
     /// Offered once comments exist (LIME-189).
     static let commentsExist = false
     @Environment(\.dismiss) private var dismiss
@@ -172,7 +174,8 @@ struct ButtonSheet: View {
     @FocusState private var focused: Field?
 
     private enum Field { case caption, title, address }
-    private enum Step: Equatable { case grid, caption(Preset), custom }
+    private enum Step: Equatable { case grid, caption(Preset), custom, edit }
+    @State private var editAddress = ""
     private enum Preset: String, CaseIterable {
         case subscribe, share, message
         var label: String { switch self { case .subscribe: "Subscribe"; case .share: "Share"; case .message: "Message me" } }
@@ -188,6 +191,7 @@ struct ButtonSheet: View {
                     case .grid: grid
                     case .caption(let preset): captionStep(preset)
                     case .custom: custom
+                    case .edit: editForm
                     }
                     colours
                 }
@@ -197,12 +201,20 @@ struct ButtonSheet: View {
             .navigationTitle("Add button").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(step == .grid ? "Cancel" : "Back") { if step == .grid { dismiss() } else { step = .grid; problem = nil } }.accessibilityIdentifier("button-cancel") }
+                if step == .edit {
+                    ToolbarItem(placement: .confirmationAction) { Button("Save") { saveEdit() }.fontWeight(.semibold).disabled(title.trimmingCharacters(in: .whitespaces).isEmpty).accessibilityIdentifier("button-save") }
+                }
                 if step == .custom {
                     ToolbarItem(placement: .confirmationAction) { Button("Add") { addCustom() }.fontWeight(.semibold).disabled(!customValid).accessibilityIdentifier("button-apply") }
                 }
             }
         }
         .presentationDetents([.large])
+        .onAppear {
+            if let editing, let parts = composer.buttonParts(at: editing) {
+                title = parts.text; editAddress = parts.url; caption = parts.caption; colour = ButtonPalette.named(parts.colour); step = .edit
+            }
+        }
     }
 
     // MARK: Steps
@@ -276,6 +288,42 @@ struct ButtonSheet: View {
             }
         }
         .onAppear { focused = .title }
+    }
+
+    private var editForm: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(spacing: 0) {
+                HStack { Text("Text").font(Theme.body).foregroundStyle(Theme.textSecondary).frame(width: 60, alignment: .leading)
+                    TextField("Button text", text: $title).selectionTint().accessibilityIdentifier("button-text") }
+                    .padding(.horizontal, 16).frame(minHeight: 52)
+                Divider().overlay(Theme.hairline).padding(.leading, 16)
+                if editAddress.hasPrefix("lime:") {
+                    HStack { Text("Does").font(Theme.body).foregroundStyle(Theme.textSecondary).frame(width: 60, alignment: .leading)
+                        Text(ButtonAction(url: editAddress).title).font(Theme.body).foregroundStyle(Theme.text); Spacer() }
+                        .padding(.horizontal, 16).frame(minHeight: 52)
+                } else {
+                    HStack { Text("Link").font(Theme.body).foregroundStyle(Theme.textSecondary).frame(width: 60, alignment: .leading)
+                        TextField("limemessenger.com", text: $editAddress).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled().selectionTint().accessibilityIdentifier("button-url") }
+                        .padding(.horizontal, 16).frame(minHeight: 52)
+                }
+                Divider().overlay(Theme.hairline).padding(.leading, 16)
+                HStack { Text("Caption").font(Theme.body).foregroundStyle(Theme.textSecondary).frame(width: 60, alignment: .leading)
+                    TextField("Optional", text: $caption).selectionTint().accessibilityIdentifier("button-caption-field") }
+                    .padding(.horizontal, 16).frame(minHeight: 52)
+            }
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            if let problem { Text(problem).font(Theme.secondary).foregroundStyle(Color.red).accessibilityIdentifier("button-error") }
+        }
+    }
+
+    private func saveEdit() {
+        var target = editAddress
+        if !target.hasPrefix("lime:") {
+            guard let shown = LinkInput.https(from: editAddress) else { problem = "That doesn\u{2019}t look like a web address."; return }
+            target = shown
+        }
+        if let editing { composer.replaceButton(at: editing, text: title, url: target, caption: caption, colour: colour.rawValue) }
+        dismiss()
     }
 
     /// Lime green first, then five more; each label reads at 4.5:1 on its fill in light and dark.

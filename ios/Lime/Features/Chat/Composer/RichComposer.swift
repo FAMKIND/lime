@@ -29,6 +29,9 @@ final class RichComposerModel {
     /// A jam post's editor (LIME-188l): headings, quotes, indent and buttons are allowed, and the text is written with the post rules.
     var isPost = false
     var buttonRequest: ButtonRequest?
+    /// An article's block interaction (LIME-188r): markers, a tap menu and the drag; and the menu a tap on a block asks for.
+    var blocks: BlockInteraction?
+    var blockMenu: BlockMenuRequest?
     weak var textView: ComposerTextView?
     /// The emoji keyboard is up (LIME-174): the composer's own text view shows it, so there is one keyboard owner and the keyboard, its accessory and
     /// the composer's place always agree. 😊 toggles it; the icon becomes a keyboard while it shows.
@@ -219,8 +222,8 @@ final class RichComposerModel {
     func refresh() {
         guard let textView else { return }
         format = ComposerDocument.state(in: textView.attributedText, selection: textView.selectedRange, typing: textView.typingAttributes)
-        format.canUndo = textView.undoManager?.canUndo ?? false
-        format.canRedo = textView.undoManager?.canRedo ?? false
+        format.canUndo = canUndo
+        format.canRedo = canRedo
         #if DEBUG
         // UI tests read the Markdown the composer would send.
         textView.accessibilityValue = textView.text.isEmpty ? "" : markdown()
@@ -229,31 +232,60 @@ final class RichComposerModel {
 
     // MARK: Undo (a jam post's strip)
 
-    /// Runs an edit the toolbar makes (formatting, a picture, a divider) so that Undo takes it back as one step. Typing is the text view's own.
-    func undoable(_ name: String, _ change: () -> Void) {
-        guard isPost, let textView, let manager = textView.undoManager else { change(); return }
-        let before = NSAttributedString(attributedString: textView.attributedText)
-        let selection = textView.selectedRange
-        change()
-        manager.registerUndo(withTarget: self) { model in model.restore(before, selection: selection, name: name) }
-        manager.setActionName(name)
+    private struct Snapshot { let text: NSAttributedString; let selection: NSRange }
+    private var history: [Snapshot] = []
+    private var future: [Snapshot] = []
+    /// Words were typed since the last toolbar edit: Undo then belongs to the text view's own typing undo.
+    var typedSince = true
+
+    private func snapshot() -> Snapshot? {
+        guard let textView else { return nil }
+        return Snapshot(text: NSAttributedString(attributedString: textView.attributedText), selection: textView.selectedRange)
     }
 
-    private func restore(_ snapshot: NSAttributedString, selection: NSRange, name: String) {
-        guard let textView, let manager = textView.undoManager else { return }
-        let now = NSAttributedString(attributedString: textView.attributedText)
-        let nowSelection = textView.selectedRange
-        manager.registerUndo(withTarget: self) { model in model.restore(now, selection: nowSelection, name: name) }
-        manager.setActionName(name)
-        textView.attributedText = snapshot
-        textView.selectedRange = NSRange(location: min(selection.location, snapshot.length), length: 0)
+    /// Runs an edit the toolbar makes (formatting, a picture, a divider, a move) so that Undo takes it back as one step. The text view clears its own
+    /// undo stack whenever its storage is changed from code, so these steps are kept here, one after another; typing keeps the text view's own undo.
+    func undoable(_ name: String, _ change: () -> Void) {
+        guard isPost, let before = snapshot() else { change(); return }
+        change()
+        history.append(before)
+        future.removeAll()
+        typedSince = false
+        if history.count > 50 { history.removeFirst() }
+    }
+
+    private func apply(_ state: Snapshot) {
+        guard let textView else { return }
+        // Through the storage, not `attributedText` (which would also reset the text view's own undo).
+        textView.textStorage.replaceCharacters(in: NSRange(location: 0, length: textView.textStorage.length), with: state.text)
+        textView.selectedRange = NSRange(location: min(state.selection.location, state.text.length), length: 0)
         ComposerDocument.restyle(textView.textStorage)
         textView.typingAttributes = ComposerDocument.typingAttributes(in: textView.textStorage, caret: textView.selectedRange.location)
         didEdit()
     }
 
-    func undo() { textView?.undoManager?.undo(); didEdit() }
-    func redo() { textView?.undoManager?.redo(); didEdit() }
+    var canUndo: Bool { (!typedSince && !history.isEmpty) || (textView?.undoManager?.canUndo ?? false) }
+    var canRedo: Bool { (!typedSince && !future.isEmpty) || (textView?.undoManager?.canRedo ?? false) }
+
+    func undo() {
+        if !typedSince, let previous = history.popLast(), let now = snapshot() {
+            future.append(now)
+            apply(previous)
+        } else {
+            textView?.undoManager?.undo()
+            didEdit()
+        }
+    }
+
+    func redo() {
+        if !typedSince, let next = future.popLast(), let now = snapshot() {
+            history.append(now)
+            apply(next)
+        } else {
+            textView?.undoManager?.redo()
+            didEdit()
+        }
+    }
 
     /// A divider or the freewall at the caret.
     func insertRule(_ style: String) {
@@ -373,6 +405,7 @@ final class RichComposerModel {
         updateMention()
         refresh()
         textView?.invalidateIntrinsicContentSize()
+        blocks?.refreshMarkers()
     }
 
     // MARK: Links
@@ -525,6 +558,7 @@ final class ComposerTextView: UITextView {
     /// Tells the model how big the window is whenever it changes (a turn, Stage Manager, a split), so the composer's room follows (LIME-176).
     override func layoutSubviews() {
         super.layoutSubviews()
+        if selfSizing { model?.blocks?.refreshMarkers() }
         guard let window, let model else { return }
         let height = window.bounds.height, top = window.safeAreaInsets.top, bottom = window.safeAreaInsets.bottom
         if height != model.windowHeight || top != model.topInset || bottom != model.bottomInset {
@@ -558,6 +592,7 @@ struct RichComposerField: UIViewRepresentable {
     func makeUIView(context: Context) -> ComposerTextView {
         let view = ComposerTextView()
         view.selfSizing = selfSizing
+        if selfSizing { model.blocks = BlockInteraction(view: view, model: model) }
         view.delegate = context.coordinator
         view.backgroundColor = .clear
         view.isScrollEnabled = !selfSizing
@@ -701,6 +736,7 @@ struct RichComposerField: UIViewRepresentable {
             ComposerDocument.restyle(textView.textStorage)
             if textView.selectedRange != selection { textView.selectedRange = selection }
             if selection.length == 0 { setTyping(textView, caret: selection.location) }
+            model.typedSince = true
             model.didEdit()
             // After a delete the text may fit again: the text view's own content goes back to the top (it scrolls itself, never its container).
             DispatchQueue.main.async { [weak textView] in (textView as? ComposerTextView)?.settleScroll(); (textView as? ComposerTextView)?.keepCaretVisible() }

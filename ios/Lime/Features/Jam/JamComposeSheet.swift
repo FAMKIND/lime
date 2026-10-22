@@ -35,6 +35,7 @@ struct JamComposeSheet: View {
     @State private var chooser: Chooser?
     @State private var coauthors: [Person] = []
     @State private var choosingCoauthors = false
+    @State private var editingButton: Int?
     @State private var postingAs = false
     /// nil: posted as me; otherwise the id of my jam (LIME-188q).
     @State private var postAsJam: String?
@@ -90,6 +91,14 @@ struct JamComposeSheet: View {
             }
             .sheet(item: $composer.linkRequest) { request in LinkSheet(request: request, composer: composer) }
             .sheet(item: $composer.buttonRequest) { _ in ButtonSheet(composer: composer) }
+            .sheet(isPresented: Binding(get: { editingButton != nil }, set: { if !$0 { editingButton = nil } })) { ButtonSheet(composer: composer, editing: editingButton) }
+            .confirmationDialog(composer.blockMenu?.kind.short ?? "Block", isPresented: Binding(get: { composer.blockMenu != nil }, set: { if !$0 { composer.blockMenu = nil } }), titleVisibility: .visible, presenting: composer.blockMenu) { request in
+                Button("Move up") { composer.moveBlock(request.index, by: -1) }.accessibilityIdentifier("block-move-up")
+                Button("Move down") { composer.moveBlock(request.index, by: 1) }.accessibilityIdentifier("block-move-down")
+                if case .button = request.kind { Button("Edit") { editingButton = request.index }.accessibilityIdentifier("block-edit") }
+                Button("Delete", role: .destructive) { composer.deleteBlock(request.index) }.accessibilityIdentifier("block-delete")
+                Button("Cancel", role: .cancel) {}
+            }
             .fullScreenCover(item: Binding(get: { recordMode.map(RecordMode.init) }, set: { recordMode = $0?.mode })) { mode in
                 if mode.mode == 2 {
                     // Audio for the article: the recorder with no title or co-host steps; the clip goes into the text at the caret.
