@@ -281,9 +281,7 @@ final class RichComposerModel {
         guard let textView else { return nil }
         let words = title.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "[", with: "").replacingOccurrences(of: "]", with: "")
         guard !words.isEmpty else { return "Say what the button should read." }
-        var text = address.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !text.contains("://") { text = "https://" + text }
-        guard text.lowercased().hasPrefix("https://"), !text.contains(" "), !text.contains("("), !text.contains(")"), let url = URL(string: text), url.host?.contains(".") == true else { return "Use an https address." }
+        guard let text = LinkInput.https(from: address) else { return "That doesn\u{2019}t look like a web address." }
         let caret = ComposerDocument.insertButton(words, url: text, into: textView.textStorage, at: textView.selectedRange.location)
         textView.selectedRange = NSRange(location: caret, length: 0)
         textView.typingAttributes = ComposerTextView.plainTypingAttributes
@@ -349,6 +347,17 @@ final class RichComposerModel {
 
 /// What a person types as a link, made into an address (or refused).
 enum LinkInput {
+    /// What a person typed for a button or a link, as the https address it will be: no scheme gets "https://", "http://" becomes "https://".
+    /// nil when it still is not a web address.
+    static func https(from input: String) -> String? {
+        var text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !text.contains(" ") else { return nil }
+        if text.lowercased().hasPrefix("http://") { text = "https://" + text.dropFirst(7) }
+        else if !text.contains("://") { text = "https://" + text }
+        guard text.lowercased().hasPrefix("https://"), !text.contains("("), !text.contains(")"), let url = URL(string: text), let host = url.host, host.contains(".") else { return nil }
+        return "https://" + text.dropFirst(8)
+    }
+
     static func url(from input: String) -> URL? {
         var text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !text.contains(" ") else { return nil }

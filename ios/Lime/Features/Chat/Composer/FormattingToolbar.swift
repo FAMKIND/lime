@@ -136,7 +136,7 @@ struct LinkSheet: View {
             if let problem {
                 Text(problem).font(Theme.secondary).foregroundStyle(Color.red).accessibilityIdentifier("link-error")
             } else {
-                Text("Only http, https and mailto links are supported.").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
+                Text(LinkInput.url(from: address).map { "Opens \($0.absoluteString)" } ?? "Only http, https and mailto links are supported.").font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(2)
             }
             Spacer(minLength: 0)
         }
@@ -176,14 +176,18 @@ struct ButtonSheet: View {
                 .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .accessibilityIdentifier("button-text")
             TextField("Address (https://\u{2026})", text: $address)
+                .onChange(of: address) { problem = nil }
+                .onSubmit { if let shown = LinkInput.https(from: address) { address = shown } }
                 .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled().selectionTint()
                 .padding(.horizontal, 16).frame(minHeight: 52)
                 .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .accessibilityIdentifier("button-url")
             if let problem {
                 Text(problem).font(Theme.secondary).foregroundStyle(Color.red).accessibilityIdentifier("button-error")
+            } else if let shown = LinkInput.https(from: address) {
+                Text("Opens \(shown)").font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(2).accessibilityIdentifier("button-shown")
             } else {
-                Text("A button opens an https address.").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
+                Text("A button opens a web address.").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
             }
             Spacer(minLength: 0)
         }

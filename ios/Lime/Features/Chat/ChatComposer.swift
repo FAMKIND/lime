@@ -37,13 +37,6 @@ struct ChatComposer: View {
         composerStack
             // The composer's top, so the chat can float the @ list just above it (LIME-181c).
             .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { model.composerTop = $0 }
-            #if DEBUG
-            // LIME-188i: a QA report said the composer lost its side margins on a phone; this leaves the evidence in the diagnostics ("logs").
-            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
-                let screen = UIScreen.main.bounds.width
-                if frame.minX < 8 || frame.maxX > screen - 8 { CallDiagnostics.shared.log("composer frame \(Int(frame.minX))...\(Int(frame.maxX)) of a \(Int(screen)) pt screen") }
-            }
-            #endif
     }
 
     private var composerStack: some View {
@@ -364,6 +357,9 @@ struct ChatComposer: View {
     private func refreshPreview() {
         previewTask?.cancel()
         guard previewsOn, onSendPreview != nil, drafts.isEmpty, let url = LinkPreviewMaker.firstURL(in: model.plainText) else {
+            if let url = LinkPreviewMaker.firstURL(in: model.plainText), previewDraft == nil {
+                CallDiagnostics.shared.log("link preview skipped for \(url.host ?? "?"): setting \(previewsOn ? "on" : "off"), send path \(onSendPreview != nil ? "yes" : "none"), attachments \(drafts.count)")
+            }
             previewDraft = nil
             if LinkPreviewMaker.firstURL(in: model.plainText) == nil { dismissedURL = nil }
             return
@@ -378,8 +374,12 @@ struct ChatComposer: View {
             #else
             let demo = false
             #endif
+            CallDiagnostics.shared.log("link preview start \(url.host ?? "?")")
             if let outgoing = await LinkPreviewMaker.make(for: url, demo: demo), !Task.isCancelled {
+                CallDiagnostics.shared.log("link preview ready: title \(outgoing.title.count) chars, picture \(outgoing.image.count) bytes")
                 previewDraft = PreviewDraft(url: url, outgoing: outgoing)
+            } else if !Task.isCancelled {
+                CallDiagnostics.shared.log("link preview: nothing to show for \(url.host ?? "?")")
             }
         }
     }
@@ -387,6 +387,7 @@ struct ChatComposer: View {
     private func send() {
         let markdown = model.markdown()
         if drafts.isEmpty, let previewDraft, let onSendPreview, !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            CallDiagnostics.shared.log("sending with a link card")
             onSendPreview(markdown, previewDraft.outgoing)
             self.previewDraft = nil
             dismissedURL = nil

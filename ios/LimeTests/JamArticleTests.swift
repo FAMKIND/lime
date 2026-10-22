@@ -65,4 +65,13 @@ final class JamArticleTests: XCTestCase {
         XCTAssertGreaterThan(caret, 0)
         XCTAssertTrue(ComposerDocument.markdown(from: text, post: true).hasSuffix("[[Go]](https://example.com)"))
     }
+
+    func testAnAddressTypedForAButtonBecomesAnHttpsAddress() {
+        XCTAssertEqual(LinkInput.https(from: "limemessenger.com"), "https://limemessenger.com")
+        XCTAssertEqual(LinkInput.https(from: " http://example.com/a "), "https://example.com/a")
+        XCTAssertEqual(LinkInput.https(from: "HTTPS://example.com"), "https://example.com")
+        XCTAssertNil(LinkInput.https(from: "not an address"))
+        XCTAssertNil(LinkInput.https(from: "localhost"))
+        XCTAssertNil(LinkInput.https(from: "javascript:alert(1)"))
+    }
 }

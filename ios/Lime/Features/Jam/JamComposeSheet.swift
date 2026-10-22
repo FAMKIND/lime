@@ -138,6 +138,7 @@ struct JamComposeSheet: View {
             postAsChip
             coauthorRow
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20).padding(.top, 12)
     }
 
@@ -149,7 +150,7 @@ struct JamComposeSheet: View {
                 Text(store.meProvider().name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
                 Image(systemName: "chevron.down").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.textSecondary)
             }
-            .padding(.leading, 4).padding(.trailing, 12).frame(minHeight: 44).background(Theme.surface, in: Capsule())
+            .frame(minHeight: 44)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Posting as \(store.meProvider().name)").accessibilityHint("Choose who this post is from").accessibilityIdentifier("jam-post-as")
@@ -198,6 +199,7 @@ struct JamComposeSheet: View {
                 }
                 .accessibilityLabel("Subtitle").accessibilityIdentifier("jam-article-subtitle")
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20).padding(.top, 12)
     }
 

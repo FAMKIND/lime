@@ -176,6 +176,9 @@ struct ChatView: View {
                     }
                     chatRows(rows, in: conversation, lastOwnID: lastOwnID)
                 }
+                // The rows never make the page wider than the screen (a long unbreakable word at a large text size did, and carried the composer's
+                // sides off the screen with it): the column is the screen's width less its margins, whatever a row would like.
+                .containerRelativeFrame(.horizontal) { width, _ in max(width - 40, 0) }
                 .padding(.horizontal, 20)
                 .padding(.top, top)
                 .padding(.bottom, 8)

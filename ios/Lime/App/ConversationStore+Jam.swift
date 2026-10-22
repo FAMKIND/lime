@@ -173,7 +173,7 @@ extension ConversationStore {
 
     /// The people a post could be shared with as co-author: the contacts I have accepted.
     var coauthorChoices: [Person] {
-        conversations.filter { $0.id.hasPrefix("dm:") && !$0.isRequest }.compactMap(\.members.first)
+        conversations.filter { $0.id.hasPrefix("dm:") && !$0.isRequest && $0.id != selfChatID }.compactMap(\.members.first).filter { $0.id != meProvider().id }
     }
 
     func loadJamSubscribers(_ jamID: String) {
