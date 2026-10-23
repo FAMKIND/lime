@@ -202,6 +202,7 @@ struct JamArticlePage: View {
     @State private var query = ""
     @State private var matchIndex = 0
     @State private var scrollTarget: String?
+    @State private var editingPost: JamPostInfo?
 
     private var font: ReaderFont { ReaderFont(rawValue: fontRaw) ?? .newYork }
 
@@ -235,7 +236,8 @@ struct JamArticlePage: View {
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .onAppear { store.refreshJams() }
-        .sheet(isPresented: $options) { if let post { ReaderOptionsSheet(post: post, openDisplay: { options = false; display = true }, find: { options = false; finding = true }, hide: { store.hideJamPost(post.postId); dismiss() }) } }
+        .sheet(isPresented: $options) { if let post { ReaderOptionsSheet(post: post, openDisplay: { options = false; display = true }, find: { options = false; finding = true }, hide: { store.hideJamPost(post.postId); dismiss() }, edit: { editingPost = post }, deleted: { dismiss() }) } }
+        .fullScreenCover(item: $editingPost) { JamComposeSheet(editing: $0) }
         .sheet(isPresented: $display) { ReaderDisplaySheet() }
         .sheet(isPresented: $sharing) { if let post { JamShareSheet(post: post) } }
         .linkOpening()
@@ -259,7 +261,7 @@ struct JamArticlePage: View {
                     BylineAvatar(people: store.bylinePeople(post), jam: post.displayAs == "jam" ? store.jamTitle(post.jamId) : nil, size: 40)
                     VStack(alignment: .leading, spacing: 0) {
                         Text(post.displayAs == "jam" ? store.jamTitle(post.jamId) : writer.name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
-                        Text([post.displayAs == "jam" ? "by \(writer.name)" : nil, store.byline(post), JamDates.text(post.created), "\(minutes) min read"].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                        Text([post.displayAs == "jam" ? "by \(writer.name)" : nil, store.byline(post), JamDates.text(post.created), "\(minutes) min read", post.editedAt > 0 ? "Edited \(JamDates.text(post.editedAt))" : nil].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary)
                             .accessibilityIdentifier("jam-reader-byline")
                     }
                     Spacer(minLength: 0)
@@ -552,14 +554,21 @@ struct ReaderOptionsSheet: View {
     let openDisplay: () -> Void
     let find: () -> Void
     let hide: () -> Void
+    /// Edit and Delete are for the writer's own post (LIME-195).
+    var edit: () -> Void = {}
+    var deleted: () -> Void = {}
     @Environment(ConversationStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var sharing = false
     @State private var saved = false
+    @State private var confirmingDelete = false
 
     var body: some View {
         NavigationStack {
             List {
+                if post.author == store.meProvider().id {
+                    row("pencil", "Edit", id: "options-edit") { dismiss(); Task { try? await Task.sleep(for: .milliseconds(500)); edit() } }   // after the sheet has gone
+                }
                 row("magnifyingglass", "Search in post", id: "options-search") { find() }
                 row("textformat.size", "Display settings", chevron: true, id: "options-display") { openDisplay() }
                 row(ArticleSpeaker.shared.active ? "speaker.slash" : "headphones", ArticleSpeaker.shared.active ? "Stop listening" : "Listen", id: "options-listen") { listen() }
@@ -572,6 +581,9 @@ struct ReaderOptionsSheet: View {
                 row("printer", "Print or save as PDF", id: "options-print") { Task { await ArticlePrint.present(post, store: store) } }
                 row("square.and.arrow.up", "Share in lime\u{2026}", id: "options-share") { sharing = true }
                 row("eye.slash", "Hide post", id: "options-hide") { dismiss(); hide() }
+                if post.author == store.meProvider().id {
+                    row("trash", "Delete post", id: "options-delete") { confirmingDelete = true }
+                }
                 // Report: hidden until LIME-191. No "Download" (posts are already on the phone, encrypted), no "Scan for AI text" (it would send the
                 // text to a model), no "Copy link" (there is no public link until LIME-190).
             }
@@ -582,6 +594,10 @@ struct ReaderOptionsSheet: View {
             }
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { Image(systemName: "xmark") }.accessibilityLabel("Close") } }
             .sheet(isPresented: $sharing) { JamShareSheet(post: post) }
+            .confirmationDialog("Delete this post?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+                Button("Delete post", role: .destructive) { Task { _ = await store.deleteJamPost(post.postId); dismiss(); deleted() } }.accessibilityIdentifier("options-delete-confirm")
+                Button("Cancel", role: .cancel) {}
+            } message: { Text("It goes from your subscribers' phones too.") }
             .onAppear { saved = JamSaved.contains(post.postId) }
         }
         .presentationDetents([.large])
@@ -724,3 +740,5 @@ enum ArticlePrint {
         return "<html><body style=\"font-family:\(family);font-size:13pt;line-height:1.5\"><h1>\(escape(post.title))</h1><p style=\"color:#555\">\(escape(post.subtitle))</p><p style=\"color:#555\">\(escape(writer)) \u{00B7} \(escape(JamDates.text(post.created)))</p><hr>\(body)</body></html>"
     }
 }
+
+extension JamPostInfo: Identifiable { public var id: String { postId } }

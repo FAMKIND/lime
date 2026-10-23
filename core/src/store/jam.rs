@@ -283,9 +283,11 @@ pub(crate) struct PostRow {
     pub fetched: i64,
     /// `person` or `jam`: who the post is shown as written by (LIME-188q).
     pub display_as: String,
+    /// When it was last edited (milliseconds), 0 if never (LIME-195).
+    pub edited_at: i64,
 }
 
-const POST: &str = "SELECT post_id, jam_id, author, tier, title, markdown, plain, attachments, created, deleted_at IS NOT NULL, fetched, kind, subtitle, display_as FROM jam_posts";
+const POST: &str = "SELECT post_id, jam_id, author, tier, title, markdown, plain, attachments, created, deleted_at IS NOT NULL, fetched, kind, subtitle, display_as, COALESCE(edited_at, 0) FROM jam_posts";
 
 fn read_post(r: &rusqlite::Row<'_>) -> rusqlite::Result<PostRow> {
     Ok(PostRow {
@@ -303,6 +305,7 @@ fn read_post(r: &rusqlite::Row<'_>) -> rusqlite::Result<PostRow> {
         kind: r.get(11)?,
         subtitle: r.get(12)?,
         display_as: r.get(13)?,
+        edited_at: r.get(14)?,
     })
 }
 
@@ -718,4 +721,60 @@ mod tests {
         assert_eq!(jam_id_of("grp:abc"), None);
         assert!(tiers_for("free") == [TIER_FREE] && tiers_for("subscribers").len() == 2);
     }
+}
+
+// ---------------------------------------------------------------- edit and delete (LIME-195)
+
+/// A post's edit counter (1 for one never edited).
+pub(crate) fn version(conn: &Connection, post_id: &str) -> Result<i64, StoreError> {
+    Ok(conn.query_row("SELECT version FROM jam_posts WHERE post_id = ?1", params![post_id], |r| r.get(0)).optional().map_err(db_err)?.unwrap_or(0))
+}
+
+/// A subscriber takes a newer version of a post: its words are fetched again from the new blob. Only the post's own writer, in its own jam and tier,
+/// and only a higher version than the one held. `false` if it was not applied.
+#[allow(clippy::too_many_arguments)] // one column each
+pub(crate) fn apply_edit(conn: &Connection, post_id: &str, jam_id: &str, author: &str, tier: &str, version: i64, title: &str, subtitle: &str, blob: &BlobRef, edited_at: i64) -> Result<bool, StoreError> {
+    let n = conn
+        .execute(
+            "UPDATE jam_posts SET title = ?6, subtitle = ?7, blob_id = ?8, blob_key = ?9, blob_sha = ?10, blob_size = ?11, fetched = 0, version = ?5, edited_at = ?12
+             WHERE post_id = ?1 AND jam_id = ?2 AND author = ?3 AND tier = ?4 AND version < ?5 AND deleted_at IS NULL",
+            params![post_id, jam_id, author, tier, version, title, subtitle, blob.blob_id, blob.key, blob.sha256, blob.size, edited_at],
+        )
+        .map_err(db_err)?;
+    Ok(n > 0)
+}
+
+/// A subscriber drops a post its writer deleted, with its downloaded files. `false` if there was no such post of that writer.
+pub(crate) fn apply_delete(conn: &Connection, post_id: &str, jam_id: &str, author: &str, now: i64) -> Result<bool, StoreError> {
+    let n = conn
+        .execute("UPDATE jam_posts SET deleted_at = ?4, markdown = '', plain = '', attachments = '[]' WHERE post_id = ?1 AND jam_id = ?2 AND author = ?3 AND deleted_at IS NULL", params![post_id, jam_id, author, now])
+        .map_err(db_err)?;
+    if n > 0 {
+        conn.execute("DELETE FROM jam_attachments WHERE post_id = ?1", params![post_id]).map_err(db_err)?;
+    }
+    Ok(n > 0)
+}
+
+/// Blobs the writer no longer needs on the server, to be told to it.
+pub(crate) fn queue_blob_delete(conn: &Connection, blob_id: &str) -> Result<(), StoreError> {
+    conn.execute("INSERT OR IGNORE INTO jam_blob_deletes (blob_id) VALUES (?1)", params![blob_id]).map_err(db_err)?;
+    Ok(())
+}
+
+pub(crate) fn blobs_to_delete(conn: &Connection, limit: usize) -> Result<Vec<String>, StoreError> {
+    let mut statement = conn.prepare("SELECT blob_id FROM jam_blob_deletes LIMIT ?1").map_err(db_err)?;
+    let rows = statement.query_map(params![limit as i64], |r| r.get(0)).map_err(db_err)?.collect::<Result<Vec<String>, _>>().map_err(db_err)?;
+    Ok(rows)
+}
+
+pub(crate) fn blob_deleted(conn: &Connection, blob_id: &str) -> Result<(), StoreError> {
+    conn.execute("DELETE FROM jam_blob_deletes WHERE blob_id = ?1", params![blob_id]).map_err(db_err)?;
+    Ok(())
+}
+
+/// The edits whose new blob is up and are not yet announced: (post id, jam id, tier).
+pub(crate) fn edits_to_announce(conn: &Connection) -> Result<Vec<(String, String, String)>, StoreError> {
+    let mut statement = conn.prepare("SELECT post_id, jam_id, tier FROM jam_posts WHERE edit_pending = 1 AND uploaded = 1 AND deleted_at IS NULL").map_err(db_err)?;
+    let rows = statement.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+    Ok(rows)
 }

@@ -61,6 +61,8 @@ pub struct JamPostInfo {
     pub coauthors: Vec<String>,
     /// `person` (shown as written by the writer) or `jam` (shown as the jam's, "by <writer>" under it) (LIME-188q).
     pub display_as: String,
+    /// When the writer last edited it (milliseconds), 0 if never (LIME-195).
+    pub edited_at: i64,
     /// `ready` (the content is here), `fetching` (the title is known, the content is still to come from the server) or `gone` (removed from the
     /// server: the jam ended or the writer deleted it).
     pub state: String,
@@ -152,6 +154,7 @@ fn post_info(conn: &Connection, row: jam_store::PostRow) -> JamPostInfo {
     JamPostInfo {
         coauthors: jam_store::credits_in_state(conn, &row.post_id, "accepted").unwrap_or_default(),
         display_as: row.display_as,
+        edited_at: row.edited_at,
         post_id: row.post_id,
         jam_id: row.jam_id,
         author: row.author,
@@ -487,6 +490,89 @@ impl LimeStore {
             })
         })?;
         Ok(post_id)
+    }
+
+    /// Edits a post I published (LIME-195): its words are sealed into a **new blob** under the same post id (version + 1), uploaded by the next pass,
+    /// then announced to the subscribers in the post's session, who download it and replace the post in place; its date stays. The post's files do not
+    /// change (an image block still names the same files); who it is shown as and its co-authors stay. The old blob is released on the server.
+    pub fn edit_jam_post(&self, post_id: String, title: String, subtitle: String, markdown: String) -> Result<(), StoreError> {
+        let state = self.load_or_create_account()?;
+        self.registered_user(&state)?;
+        let markdown = crate::format::normalise_post(&markdown);
+        if markdown.len() > jam_store::MAX_POST_BYTES {
+            return Err(StoreError::Rejected);
+        }
+        self.with_conn(|conn| {
+            atomically(conn, || {
+                let row = jam_store::post(conn, &post_id)?.filter(|p| !p.deleted).ok_or(StoreError::NotFound)?;
+                let jam = jam_store::get(conn, &row.jam_id)?.filter(|j| j.mine).ok_or(StoreError::NotFound)?;
+                if jam.ended || row.author != jam.writer {
+                    return Err(StoreError::Rejected);
+                }
+                let title = if row.kind == "quick" { String::new() } else { jam_store::clean_optional_line(&title, jam_store::MAX_POST_TITLE_CHARS).ok_or(StoreError::Rejected)? };
+                let subtitle = if row.kind == "article" || row.kind == "record" { jam_store::clean_optional_line(&subtitle, jam_store::MAX_SUBTITLE_CHARS).ok_or(StoreError::Rejected)? } else { String::new() };
+                if row.kind == "article" && title.is_empty() {
+                    return Err(StoreError::Rejected);
+                }
+                let attachments: Value = serde_json::from_str(&row.attachments).unwrap_or(Value::Array(vec![]));
+                let file_count = attachments.as_array().map_or(0, Vec::len);
+                if (markdown.is_empty() && file_count == 0)
+                    || crate::format::parse_post(&markdown).iter().any(|b| matches!(b, crate::format::Block::Image { attachment, .. } if *attachment as usize >= file_count))
+                {
+                    return Err(StoreError::Rejected);
+                }
+                let version = jam_store::version(conn, &post_id)? + 1;
+                let now = now_ms();
+                let blob_id = new_id();
+                let key = crate::store::attachments::new_key();
+                let sealed = crate::store::attachments::seal(&key, &blob_id, &post_plaintext(&post_id, &row.jam_id, &row.tier, &row.kind, &title, &subtitle, &markdown, &attachments, row.created, &row.display_as));
+                let [ciphertext] = <[Vec<u8>; 1]>::try_from(sealed).map_err(|_| StoreError::Rejected)?;
+                let old: Option<String> = conn.query_row("SELECT blob_id FROM jam_posts WHERE post_id = ?1", params![post_id], |r| r.get(0)).map_err(db_err)?;
+                conn.execute(
+                    "UPDATE jam_posts SET title = ?2, subtitle = ?3, markdown = ?4, plain = ?5, blob_id = ?6, blob_key = ?7, blob_sha = ?8, blob_size = ?9, uploaded = 0, edit_pending = 1, version = ?10, edited_at = ?11
+                     WHERE post_id = ?1",
+                    params![post_id, title, subtitle, markdown, crate::format::plain_text_post(&markdown), blob_id, vodozemac::base64_encode(&key), crate::store::attachments::digest_hex(&ciphertext), ciphertext.len() as i64, version, now],
+                )
+                .map_err(db_err)?;
+                if let Some(old) = old {
+                    jam_store::queue_blob_delete(conn, &old)?;
+                }
+                jam_store::mark_page_dirty(conn, &row.jam_id)?;
+                Ok(())
+            })
+        })
+    }
+
+    /// Deletes a post I published (LIME-195): it is gone from my jam at once, its blobs are released on the server, and the subscribers (in the post's
+    /// session) are told to drop it and its files. Whatever was still waiting to be sent about it is dropped.
+    pub fn delete_jam_post(&self, post_id: String) -> Result<(), StoreError> {
+        let state = self.load_or_create_account()?;
+        let me = self.registered_user(&state)?;
+        let now = now_ms();
+        self.with_conn(|conn| {
+            atomically(conn, || {
+                let row = jam_store::post(conn, &post_id)?.filter(|p| !p.deleted).ok_or(StoreError::NotFound)?;
+                let jam = jam_store::get(conn, &row.jam_id)?.filter(|j| j.mine).ok_or(StoreError::NotFound)?;
+                if row.author != jam.writer {
+                    return Err(StoreError::Rejected);
+                }
+                let blob: Option<String> = conn.query_row("SELECT blob_id FROM jam_posts WHERE post_id = ?1", params![post_id], |r| r.get(0)).map_err(db_err)?;
+                if let Some(blob) = blob {
+                    jam_store::queue_blob_delete(conn, &blob)?;
+                }
+                let mut statement = conn.prepare("SELECT att_id FROM jam_attachments WHERE post_id = ?1").map_err(db_err)?;
+                let files = statement.query_map(params![post_id], |r| r.get::<_, String>(0)).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+                drop(statement);
+                for file in files {
+                    jam_store::queue_blob_delete(conn, &file)?;
+                }
+                conn.execute("DELETE FROM jam_wire_outbox WHERE post_id = ?1", params![post_id]).map_err(db_err)?;
+                jam_store::apply_delete(conn, &post_id, &row.jam_id, &row.author, now)?;
+                conn.execute("UPDATE jam_posts SET edit_pending = 0 WHERE post_id = ?1", params![post_id]).map_err(db_err)?;
+                jam_store::mark_page_dirty(conn, &row.jam_id)?;
+                self.announce_post_op(conn, &state, &me, &row.jam_id, &row.tier, "jam.delete", json!({ "post_id": post_id }), now)
+            })
+        })
     }
 
     /// Removes a subscriber: they are told, they get nothing more, and the next post is under a new session they are not given.
@@ -943,6 +1029,57 @@ impl LimeStore {
         jam_store::queue_wire(conn, jam_id, &wire_id, &jam_store::audience(conn, jam_id, &post.tier)?)
     }
 
+    /// Tells my subscribers, in the post's own session, something about it (an edit or a deletion, LIME-195): a small signed op through the same queue.
+    #[allow(clippy::too_many_arguments)] // the context of one announcement
+    fn announce_post_op(&self, conn: &Connection, state: &AccountState, me: &str, jam_id: &str, tier: &str, op_type: &str, payload: Value, now: i64) -> Result<(), StoreError> {
+        let mut outbound = self.ensure_jam_session(conn, state, jam_id, tier, now)?;
+        let op = signed_op(conn, state, op_type, jam_id, None, payload, now)?;
+        let inner = SealedInner { sender_user: me.to_owned(), sender_device: state.device_id.clone(), sender_cert: state.cert(), op }.to_bytes();
+        let encrypted = outbound.session.encrypt(&inner);
+        outbound.posts += 1;
+        jam_store::save_outbound(conn, &self.pickle_key, jam_id, tier, &outbound)?;
+        let mut wire = vec![GROUP_WIRE];
+        wire.extend_from_slice(json!({ "s": outbound.session.session_id(), "c": encrypted.to_base64() }).to_string().as_bytes());
+        let wire_id = new_id();
+        conn.execute("INSERT INTO jam_credit_wires (wire_id, jam_id, wire) VALUES (?1, ?2, ?3)", params![wire_id, jam_id, vodozemac::base64_encode(&wire)]).map_err(db_err)?;
+        jam_store::queue_wire(conn, jam_id, &wire_id, &jam_store::audience(conn, jam_id, tier)?)
+    }
+
+    /// Announces the edits whose new blob is up, and then lets the old blob go.
+    fn announce_post_changes(&self, state: &AccountState) {
+        let now = now_ms();
+        let Ok(me) = self.registered_user(state) else { return };
+        let Ok(pending) = self.with_conn(jam_store::edits_to_announce) else { return };
+        for (post_id, jam_id, tier) in pending {
+            let _ = self.with_conn(|conn| {
+                atomically(conn, || {
+                    let (blob_id, key, sha, size, version, title, subtitle, edited_at): (String, String, String, i64, i64, String, String, i64) = conn
+                        .query_row("SELECT blob_id, blob_key, blob_sha, blob_size, version, title, subtitle, COALESCE(edited_at, 0) FROM jam_posts WHERE post_id = ?1", params![post_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?)))
+                        .map_err(db_err)?;
+                    let payload = json!({ "post_id": post_id, "version": version, "title": title, "subtitle": subtitle, "edited_at": edited_at, "blob_id": blob_id, "key": key, "sha256": sha, "size": size });
+                    self.announce_post_op(conn, state, &me, &jam_id, &tier, "jam.edit", payload, now)?;
+                    conn.execute("UPDATE jam_posts SET edit_pending = 0 WHERE post_id = ?1", params![post_id]).map_err(db_err)?;
+                    Ok(())
+                })
+            });
+        }
+    }
+
+    /// Tells the server to drop the blobs I no longer need (an edited post's old one, a deleted post's), so the quota comes back. Best effort: what fails
+    /// waits for the next pass.
+    fn delete_jam_blobs(&self, transport: &Arc<dyn Transport>, token: &str) {
+        let Ok(ids) = self.with_conn(|conn| jam_store::blobs_to_delete(conn, jam_store::BLOBS_PER_PASS)) else { return };
+        for id in ids {
+            match call(transport, Some(token), "blob", &json!({ "action": "delete", "blob_id": id })).and_then(|(status, _)| check(status)) {
+                Ok(()) => {
+                    let _ = self.with_conn(|conn| jam_store::blob_deleted(conn, &id));
+                }
+                Err(StoreError::Network) => return,
+                Err(_) => continue,
+            }
+        }
+    }
+
     /// Sends the credit requests of posts whose blob is now up (the co-author must be able to download the post if she accepts).
     fn queue_credit_requests(&self, state: &AccountState) {
         let now = now_ms();
@@ -999,7 +1136,7 @@ impl LimeStore {
             && inner.sender_user != me
             && cert.verify()
             && op.verify(&cert.signing_key)
-            && (op.op_type == "jam.post" || op.op_type == "jam.credit")
+            && (op.op_type == "jam.post" || op.op_type == "jam.credit" || op.op_type == "jam.edit" || op.op_type == "jam.delete")
             && op.conversation_id == conversation;
         let payload = &op.payload;
         let text = |k: &str| payload.get(k).and_then(Value::as_str);
@@ -1017,6 +1154,43 @@ impl LimeStore {
                 }
                 jam_store::save_inbound(conn, &self.pickle_key, session_id, &inbound)?;
                 jam_store::set_credit(conn, post_id, user, "accepted")?;
+                Ok(Outcome::Duplicate)
+            })?;
+            if matches!(outcome, Outcome::Duplicate) {
+                self.with_conn(|conn| observe_hlc(conn, remote_hlc, now).map(|_| ()))?;
+            }
+            return Ok(outcome);
+        }
+        // The writer edited or deleted a post (LIME-195).
+        if valid && (op.op_type == "jam.edit" || op.op_type == "jam.delete") {
+            let (Some(post_id), Some(remote_hlc)) = (text("post_id").filter(|p| !p.is_empty() && p.len() <= 64), Hlc::parse(&op.hlc)) else {
+                return Ok(Outcome::Keep(pending::INVALID));
+            };
+            let edit = if op.op_type == "jam.edit" {
+                let version = payload.get("version").and_then(Value::as_i64).filter(|v| *v >= 2);
+                let title = jam_store::clean_optional_line(text("title").unwrap_or_default(), jam_store::MAX_POST_TITLE_CHARS);
+                let subtitle = jam_store::clean_optional_line(text("subtitle").unwrap_or_default(), jam_store::MAX_SUBTITLE_CHARS);
+                let (Some(version), Some(title), Some(subtitle), Some(blob)) = (version, title, subtitle, blob_text_to_ref(payload)) else { return Ok(Outcome::Keep(pending::INVALID)) };
+                Some((version, title, subtitle, blob, payload.get("edited_at").and_then(Value::as_i64).unwrap_or(remote_hlc.wall).min(now)))
+            } else {
+                None
+            };
+            let author = inner.sender_user.clone();
+            let outcome = self.with_conn(|conn| {
+                let pinned: Option<String> = conn.query_row("SELECT master_key FROM peers WHERE user_id = ?1", params![author], |r| r.get(0)).optional().map_err(db_err)?;
+                let jam = jam_store::get(conn, &inbound.jam_id)?;
+                if pinned.as_deref() != Some(cert.master_key.as_str()) || jam.is_none_or(|j| j.mine || j.writer != author || matches!(j.status.as_str(), "removed" | "left")) {
+                    return Ok(Outcome::Keep(pending::INVALID));
+                }
+                jam_store::save_inbound(conn, &self.pickle_key, session_id, &inbound)?;
+                match &edit {
+                    Some((version, title, subtitle, blob, edited_at)) => {
+                        jam_store::apply_edit(conn, post_id, &inbound.jam_id, &author, &inbound.tier, *version, title, subtitle, blob, *edited_at)?;
+                    }
+                    None => {
+                        jam_store::apply_delete(conn, post_id, &inbound.jam_id, &author, now)?;
+                    }
+                }
                 Ok(Outcome::Duplicate)
             })?;
             if matches!(outcome, Outcome::Duplicate) {
@@ -1071,6 +1245,8 @@ impl LimeStore {
         self.queue_credit_requests(state);
         self.deliver_jam_ops(transport, token, state, me);
         self.upload_jam_posts(transport, token);
+        self.announce_post_changes(state);
+        self.delete_jam_blobs(transport, token);
         self.publish_jam_pages(transport, token);
         self.deliver_jam_wires(transport, token);
         self.fetch_jam_posts(transport);

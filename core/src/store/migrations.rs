@@ -715,6 +715,12 @@ const MIGRATIONS: &[&str] = &[
      );",
     // 45 (LIME-188q): a post can be shown as the jam's (its name as the author line, "by <writer>" under it); carried inside the encrypted post.
     "ALTER TABLE jam_posts ADD COLUMN display_as TEXT NOT NULL DEFAULT 'person';",
+    // 46 (LIME-195): a post can be edited (a new blob, `version` counts them, `edited_at` says when) and deleted. An edit is announced once its new blob is
+    // up (`edit_pending`); the blobs the writer no longer needs wait in `jam_blob_deletes` until the server has been told.
+    "ALTER TABLE jam_posts ADD COLUMN version INTEGER NOT NULL DEFAULT 1;
+     ALTER TABLE jam_posts ADD COLUMN edited_at INTEGER;
+     ALTER TABLE jam_posts ADD COLUMN edit_pending INTEGER NOT NULL DEFAULT 0;
+     CREATE TABLE jam_blob_deletes (blob_id TEXT PRIMARY KEY NOT NULL);",
 ];
 
 /// The schema version this build writes.

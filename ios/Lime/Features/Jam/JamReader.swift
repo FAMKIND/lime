@@ -11,6 +11,9 @@ struct JamPostView: View {
     @AppStorage(ReaderPrefs.fontKey) private var fontRaw = ReaderFont.newYork.rawValue
     @AppStorage(ReaderPrefs.sizeKey) private var sizeStep = 0
     @AppStorage(ReaderPrefs.lineKey) private var lineStep = 0
+    @State private var editingPost: JamPostInfo?
+    @State private var confirmingDelete = false
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         let post = store.jamPost(postID)
@@ -44,7 +47,7 @@ struct JamPostView: View {
                             BylineAvatar(people: store.bylinePeople(post), jam: post.displayAs == "jam" ? store.jamTitle(post.jamId) : nil, size: 36)
                             VStack(alignment: .leading, spacing: 0) {
                                 Text(post.displayAs == "jam" ? store.jamTitle(post.jamId) : writer.name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
-                                Text([post.displayAs == "jam" ? "by \(writer.name)" : nil, store.byline(post), JamDates.text(post.created)].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                                Text([post.displayAs == "jam" ? "by \(writer.name)" : nil, store.byline(post), JamDates.text(post.created), post.editedAt > 0 ? "Edited \(JamDates.text(post.editedAt))" : nil].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary)
                                     .accessibilityIdentifier("jam-reader-byline")
                             }
                             Spacer(minLength: 0)
@@ -79,6 +82,23 @@ struct JamPostView: View {
         .linkOpening()
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
+        .toolbar {
+            // The writer's own post: Edit and Delete in a ⋯ (until the cards have theirs, LIME-199).
+            if let post, post.author == store.meProvider().id {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button { editingPost = post } label: { Label("Edit", systemImage: "pencil") }.accessibilityIdentifier("options-edit")
+                        Button(role: .destructive) { confirmingDelete = true } label: { Label("Delete post", systemImage: "trash") }.accessibilityIdentifier("options-delete")
+                    } label: { Image(systemName: "ellipsis") }
+                        .accessibilityLabel("More").accessibilityIdentifier("jam-post-more")
+                }
+            }
+        }
+        .fullScreenCover(item: $editingPost) { JamComposeSheet(editing: $0) }
+        .confirmationDialog("Delete this post?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("Delete post", role: .destructive) { if let post { Task { _ = await store.deleteJamPost(post.postId); dismiss() } } }.accessibilityIdentifier("options-delete-confirm")
+            Button("Cancel", role: .cancel) {}
+        } message: { Text("It goes from your subscribers' phones too.") }
         .accessibilityIdentifier("jam-reader")
         .onAppear { store.refreshJams() }
     }

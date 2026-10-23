@@ -1479,7 +1479,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
              DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP INDEX olm_sessions_by_peer; DROP TABLE received_ciphertexts; DROP TABLE emergency_messages; DROP TABLE emergency_settings; DROP TABLE mesh_outbox; DROP TABLE mesh_packets; DROP TABLE mesh_seen; DROP TABLE mesh_uploaded; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
-             DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_credits; DROP TABLE jam_credit_requests; DROP TABLE jam_credit_wires; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; PRAGMA user_version = 9;",
+             DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_credits; DROP TABLE jam_credit_requests; DROP TABLE jam_credit_wires; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_blob_deletes; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; PRAGMA user_version = 9;",
         )
         .unwrap();
     }
@@ -5575,4 +5575,72 @@ fn a_post_shown_as_the_jam_arrives_so_and_an_ordinary_post_is_shown_as_the_perso
     assert_eq!(shown, vec![("From the jam", "jam"), ("From me", "person"), ("Odd", "person")]);
     let mine = alice.store.list_jam_posts(jam).unwrap();
     assert_eq!(mine[0].display_as, "jam");
+}
+
+#[test]
+fn an_edited_post_replaces_the_subscribers_copy_in_place_and_only_the_writer_may_edit() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let jam = new_jam(&alice);
+    join_jam(&alice, &bob, &jam, &transport);
+    let post = alice.store.publish_jam_post(jam.clone(), "article".into(), "Old title".into(), "Old sub".into(), "Old words".into(), "free".into(), vec![], vec![]).unwrap();
+    for _ in 0..3 {
+        catch_up(&alice, &[&bob], &transport);
+    }
+    let before = bob.store.read_jam_post(post.clone()).unwrap().unwrap();
+    assert_eq!((before.title.as_str(), before.markdown.as_str(), before.edited_at), ("Old title", "Old words", 0));
+    let old_blob = server.state.lock().unwrap().objects.keys().filter(|k| k.starts_with("blobs/")).count();
+    assert!(old_blob >= 1);
+
+    // Only the writer edits: a subscriber has no such post of their own.
+    assert!(bob.store.edit_jam_post(post.clone(), "Mine".into(), String::new(), "Words".into()).is_err());
+    // A bad edit changes nothing (an article needs a title).
+    assert!(alice.store.edit_jam_post(post.clone(), String::new(), String::new(), "Words".into()).is_err());
+
+    alice.store.edit_jam_post(post.clone(), "New title".into(), "New sub".into(), "New **words**".into()).unwrap();
+    assert_eq!(alice.store.read_jam_post(post.clone()).unwrap().unwrap().title, "New title", "the writer sees it at once");
+    for _ in 0..4 {
+        catch_up(&alice, &[&bob], &transport);
+    }
+    let after = bob.store.read_jam_post(post.clone()).unwrap().unwrap();
+    assert_eq!((after.title.as_str(), after.subtitle.as_str(), after.markdown.as_str(), after.state.as_str()), ("New title", "New sub", "New **words**", "ready"));
+    assert!(after.edited_at > 0, "marked as edited");
+    assert_eq!(after.created, before.created, "its date stays");
+    assert_eq!(bob.store.list_jam_posts(jam.clone()).unwrap().len(), 1, "replaced, not added");
+    // The old blob is released on the server: one blob stands where there was one.
+    assert_eq!(server.state.lock().unwrap().objects.keys().filter(|k| k.starts_with("blobs/")).count(), old_blob);
+    // A second edit counts on.
+    alice.store.edit_jam_post(post.clone(), "Third".into(), String::new(), "Third words".into()).unwrap();
+    for _ in 0..4 {
+        catch_up(&alice, &[&bob], &transport);
+    }
+    assert_eq!(bob.store.read_jam_post(post).unwrap().unwrap().title, "Third");
+}
+
+#[test]
+fn a_deleted_post_disappears_from_the_subscribers_and_the_server_and_only_the_writer_may_delete() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let jam = new_jam(&alice);
+    join_jam(&alice, &bob, &jam, &transport);
+    let keep = publish(&alice, &jam, "Keep", "free");
+    let gone = publish(&alice, &jam, "Delete me", "free");
+    for _ in 0..3 {
+        catch_up(&alice, &[&bob], &transport);
+    }
+    assert_eq!(jam_posts_of(&bob, &jam).len(), 2);
+    let blobs = server.state.lock().unwrap().objects.keys().filter(|k| k.starts_with("blobs/")).count();
+    assert!(bob.store.delete_jam_post(gone.clone()).is_err(), "a subscriber cannot delete the writer's post");
+    alice.store.delete_jam_post(gone.clone()).unwrap();
+    assert_eq!(jam_posts_of(&alice, &jam), vec!["Keep".to_owned()], "gone from the writer's jam at once");
+    assert!(alice.store.delete_jam_post(gone.clone()).is_err(), "already gone");
+    for _ in 0..4 {
+        catch_up(&alice, &[&bob], &transport);
+    }
+    assert_eq!(jam_posts_of(&bob, &jam), vec!["Keep".to_owned()]);
+    assert!(bob.store.list_jam_posts(jam.clone()).unwrap().iter().all(|p| p.post_id == keep));
+    assert_eq!(server.state.lock().unwrap().objects.keys().filter(|k| k.starts_with("blobs/")).count(), blobs - 1, "its blob is released");
+    assert_eq!(alice.store.list_my_jams().unwrap()[0].post_count, 1, "the count drops");
 }

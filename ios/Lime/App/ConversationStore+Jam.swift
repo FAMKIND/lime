@@ -190,6 +190,32 @@ extension ConversationStore {
         return .success(())
     }
 
+    /// Edits a post of mine in place (LIME-195): its words, title and subtitle; the subscribers get the new text and see "Edited".
+    func editJamPost(_ post: JamPostInfo, title: String, subtitle: String, markdown: String) async -> Bool {
+        #if DEBUG
+        if isDemo { demoEdit(post.postId, title: title, subtitle: subtitle, markdown: markdown); return true }
+        #endif
+        guard let core else { return false }
+        do { try await Task.detached(priority: .userInitiated) { try core.editJamPost(postId: post.postId, title: title, subtitle: subtitle, markdown: markdown) }.value }
+        catch { CallDiagnostics.shared.log("jam edit failed: \(error)"); return false }
+        refreshJams()
+        await deliverNow()
+        return true
+    }
+
+    /// Deletes a post of mine: it goes from my jam and, a little later, from my subscribers' phones.
+    func deleteJamPost(_ postID: String) async -> Bool {
+        #if DEBUG
+        if isDemo { demoDelete(postID); return true }
+        #endif
+        guard let core else { return false }
+        do { try await Task.detached(priority: .userInitiated) { try core.deleteJamPost(postId: postID) }.value }
+        catch { CallDiagnostics.shared.log("jam delete failed: \(error)"); return false }
+        refreshJams()
+        await deliverNow()
+        return true
+    }
+
     /// Answers a request to be credited: the writer is told, and an accepted post is kept with the ones I am credited on.
     func answerCoauthorRequest(_ request: CoauthorRequest, accept: Bool) async {
         #if DEBUG

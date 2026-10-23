@@ -18,6 +18,9 @@ final class JamDraft {
 /// **Record**. An **article**: a page with the title (large), a one-line subtitle, and the body as the page itself; its bar above the keyboard puts a
 /// **photo, camera picture or file in the text at the caret** (a block of its own), beside the formatting. Your jam is made on your first post.
 struct JamComposeSheet: View {
+    /// A post of mine being edited (LIME-195): the screen opens filled in and **Update** replaces the post in place. Its pictures and files stay as
+    /// they are; its words, title and subtitle change.
+    var editing: JamPostInfo? = nil
     @Environment(ConversationStore.self) private var store
     @Environment(AccountSession.self) private var session
     @Environment(\.dismiss) private var dismiss
@@ -65,6 +68,7 @@ struct JamComposeSheet: View {
     private var hasPictures: Bool { composer.textView.map { !ComposerDocument.imageIndexes(in: $0.textStorage).isEmpty } ?? false }
     private var canPost: Bool {
         guard !posting else { return false }
+        if let editing { return (editing.kind != "article" || !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) && (hasWords || hasPictures || editing.kind == "record" || !store.jamAttachments(editing.postId).isEmpty) }
         if article { return !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (hasWords || hasPictures) }
         return hasWords || !photos.isEmpty || !clips.isEmpty
     }
@@ -76,12 +80,16 @@ struct JamComposeSheet: View {
             }
             .background(Theme.canvas)
             .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
-            .navigationTitle(article ? "Article" : "New post")
+            .navigationTitle(editing != nil ? "Edit" : article ? "Article" : "New post")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { close() }.accessibilityIdentifier("jam-compose-cancel") }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Post") { post() }.fontWeight(.semibold).disabled(!canPost).accessibilityIdentifier("jam-post")
+                    if editing != nil {
+                        Button("Update") { update() }.fontWeight(.semibold).disabled(!canPost).accessibilityIdentifier("jam-update")
+                    } else {
+                        Button("Post") { post() }.fontWeight(.semibold).disabled(!canPost).accessibilityIdentifier("jam-post")
+                    }
                 }
             }
             .onChange(of: composer.plainText) { refreshLink() }
@@ -125,6 +133,13 @@ struct JamComposeSheet: View {
                 }
             }
             .task {
+                if let editing {
+                    // The post's own words, in its own layout (a recording shows its title, subtitle and description on the article page).
+                    article = editing.kind != "quick"; title = editing.title; subtitle = editing.subtitle
+                    try? await Task.sleep(for: .milliseconds(300))
+                    composer.textView?.attributedText = ComposerDocument.attributed(fromMarkdown: editing.markdown, post: true); composer.didEdit()
+                    return
+                }
                 // The draft's words go back into the field once it exists.
                 try? await Task.sleep(for: .milliseconds(300))
                 if !JamDraft.shared.markdown.isEmpty { composer.textView?.attributedText = ComposerDocument.attributed(fromMarkdown: JamDraft.shared.markdown, post: true); composer.didEdit() }
@@ -417,7 +432,7 @@ struct JamComposeSheet: View {
                 }
                 .buttonStyle(.plain).padding(.bottom, 6).accessibilityIdentifier("jam-exit-article")
             }
-            if !article {
+            if !article && editing == nil {
                 HStack(spacing: 8) {
                     chip("Write an article", system: "doc.text", id: "jam-write-article") { setArticle(true) }
                     chip("Record", system: "waveform", id: "jam-record") { recordMode = 1 }
@@ -642,10 +657,24 @@ struct JamComposeSheet: View {
     // MARK: Closing and posting
 
     private func close() {
+        if editing != nil { dismiss(); return }
         let draft = JamDraft.shared
         let text = hasWords && !hasPictures ? composer.markdown() : ""
         draft.article = article; draft.title = title; draft.subtitle = subtitle; draft.markdown = text
         dismiss()
+    }
+
+    /// Update: the words go to the post in place (its pictures keep the numbers the text already has).
+    private func update() {
+        guard let editing, !posting else { return }
+        let markdown = composer.markdown()
+        problem = nil
+        posting = true
+        Task {
+            let result = await store.editJamPost(editing, title: title, subtitle: subtitle, markdown: markdown)
+            posting = false
+            if result { dismiss() } else { problem = "Could not update the post." }
+        }
     }
 
     private func post() {

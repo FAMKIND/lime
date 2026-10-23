@@ -141,7 +141,7 @@ struct JamPostCard: View {
                         BylineAvatar(people: store.bylinePeople(post), jam: asJam ? store.jamTitle(post.jamId) : nil, size: 40)
                         VStack(alignment: .leading, spacing: 0) {
                             Text(asJam ? store.jamTitle(post.jamId) : writer.name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
-                            Text([asJam ? "by \(writer.name)" : nil, store.byline(post), JamDates.text(post.created)].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                            Text([asJam ? "by \(writer.name)" : nil, store.byline(post), JamDates.text(post.created), post.editedAt > 0 ? "Edited" : nil].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary)
                                 .accessibilityIdentifier("jam-card-byline-\(post.postId)")
                         }
                         Spacer(minLength: 0)
@@ -152,7 +152,7 @@ struct JamPostCard: View {
                 .accessibilityLabel("\(asJam ? store.jamTitle(post.jamId) + ", by " + writer.name : writer.name), \(JamDates.text(post.created))").accessibilityHint("Opens their profile")
                 .accessibilityIdentifier("jam-card-writer-\(post.postId)")
             } else {
-                Text([store.byline(post), JamDates.text(post.created)].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                Text([store.byline(post), JamDates.text(post.created), post.editedAt > 0 ? "Edited" : nil].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary)
                     .accessibilityIdentifier("jam-card-byline-\(post.postId)")
             }
             if post.kind == "article", post.state == "ready" {
