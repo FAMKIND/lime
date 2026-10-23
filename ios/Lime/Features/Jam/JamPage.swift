@@ -133,6 +133,10 @@ struct JamPostCard: View {
 
     var body: some View {
         let writer = store.teacher(post.author)
+        if isPodcast {
+            // A recording is a podcast card of its own (LIME-200), not an article or a post.
+            JamPodcastCard(post: post, openPost: { openPost() }).overlay(alignment: .topTrailing) { JamPostMenu(post: post).padding(.trailing, 8).padding(.top, 8) }
+        } else {
         VStack(alignment: .leading, spacing: 10) {
             if showsWriter {
                 let asJam = post.displayAs == "jam"
@@ -176,7 +180,11 @@ struct JamPostCard: View {
         }
         .padding(.horizontal, 20).padding(.vertical, 14)
         .overlay(alignment: .topTrailing) { JamPostMenu(post: post).padding(.trailing, 8).padding(.top, 8) }
+        }
     }
+
+    /// A recording that is ready and has something to play.
+    private var isPodcast: Bool { post.kind == "record" && post.state == "ready" && store.jamAttachments(post.postId).contains { $0.kind == "audio" || $0.kind == "video" } }
 
     /// An audio recording's card carries its own title and subtitle (LIME-188u).
     private var isAudioRecord: Bool { post.kind == "record" && post.state == "ready" && store.jamAttachments(post.postId).contains { $0.kind == "audio" } }

@@ -16,13 +16,13 @@ final class Jam188iUITests: LimeUITestCase {
         let app = launch("jam-following")
         XCTAssertTrue(any(app, "jam-feed").waitForExistence(timeout: 10))
         let width = app.windows.firstMatch.frame.width
-        for id in ["jam-post-demo-post-2", "jam-post-demo-post-3", "jam-card-writer-demo-post-3"] {
+        for id in ["jam-post-demo-post-2", "jam-card-byline-demo-post-3"] {
             let element = any(app, id)
             XCTAssertTrue(element.waitForExistence(timeout: 5), id)
             XCTAssertGreaterThanOrEqual(element.frame.minX, 0, "\(id) starts on the screen")
             XCTAssertLessThanOrEqual(element.frame.maxX, width + 0.5, "\(id) ends on the screen")
         }
-        for id in ["jam-audio-card-demo-audio-1", "jam-video"] {
+        for id in ["jam-audio-card-demo-audio-1"] {
             let element = any(app, id)
             for _ in 0..<6 where !element.exists || !element.isHittable { app.swipeUp() }
             XCTAssertGreaterThanOrEqual(element.frame.minX, 0, "\(id) starts on the screen")
@@ -42,8 +42,10 @@ final class Jam188iUITests: LimeUITestCase {
 
     func testAVideoInAPostHasNoPodcastPlayerAndTheVoiceButtonIsAWaveform() {
         let app = launch("jam-following")
+        app.openDemoVideoPost()
         XCTAssertTrue(any(app, "jam-video").waitForExistence(timeout: 10), "the video is there")
         XCTAssertFalse(any(app, "podcast-demo-video-1").exists, "a video wears no podcast player")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
         app.buttons["new-jam-post"].tap()
         XCTAssertTrue(app.buttons["jam-add-photo"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["jam-add-voice"].exists, "no waveform icon: the Record pill covers it (LIME-188q)")

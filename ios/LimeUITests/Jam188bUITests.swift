@@ -114,7 +114,7 @@ final class Jam188bUITests: LimeUITestCase {
     func testTheFeedShowsWhatIFollowAsCardsOfThreeKindsAndAnArticleOpensToItsBody() {
         let app = launch("jam-following")
         XCTAssertTrue(any(app, "jam-feed").waitForExistence(timeout: 10))
-        let record = app.buttons["jam-post-demo-post-3"], quick = app.buttons["jam-post-demo-post-2"]
+        let record = any(app, "jam-card-byline-demo-post-3"), quick = app.buttons["jam-post-demo-post-2"]
         XCTAssertTrue(record.exists && quick.exists, "All: the recording and the quick post")
         XCTAssertLessThan(record.frame.minY, quick.frame.minY, "newest first")
         app.showJamArticles()

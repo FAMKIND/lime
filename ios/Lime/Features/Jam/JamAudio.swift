@@ -237,7 +237,12 @@ struct AudioMiniPlayer: View {
             HStack(spacing: 10) {
                 Button { now.showsScreen = true } label: {
                     HStack(spacing: 10) {
-                        CoverArt(image: item.cover, person: writer).frame(width: 40, height: 40).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        // A video podcast's thumbnail plays the video (LIME-200); VoiceOver gets the controls, not the picture.
+                        ZStack {
+                            CoverArt(image: item.cover, person: writer)
+                            if item.file.kind == "video", item.controller.player != nil, !item.controller.simulated { PlayerLayerView(player: item.controller.player, fill: true).accessibilityIdentifier("mini-video-layer") }
+                        }
+                        .frame(width: 40, height: 40).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous)).accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 0) {
                             Text(item.title).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
                             Text(item.subtitle).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
@@ -265,7 +270,7 @@ struct AudioMiniPlayer: View {
             }
             .fullScreenCover(isPresented: Binding(get: { now.showsScreen }, set: { now.showsScreen = $0 })) {
                 if let item = now.item {
-                    JamVideoScreen(postID: item.postID, file: item.file, controller: item.controller, cues: item.cues, cover: item.cover, subtitle: item.subtitle, isAudio: true)
+                    JamVideoScreen(postID: item.postID, file: item.file, controller: item.controller, cues: item.cues, cover: item.cover, subtitle: item.subtitle, isAudio: item.file.kind != "video")
                 }
             }
         }

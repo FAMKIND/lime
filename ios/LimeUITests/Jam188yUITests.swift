@@ -30,6 +30,7 @@ final class Jam188yUITests: LimeUITestCase {
 
     func testTheVideoCardShowsElapsedAndTotalAsMinutesAndSeconds() {
         let app = launch()
+        app.openDemoVideoPost()
         let time = any(app, "jam-video-time")
         for _ in 0..<6 where !time.exists { app.swipeUp() }
         XCTAssertTrue(time.waitForExistence(timeout: 8))
@@ -44,15 +45,5 @@ final class Jam188yUITests: LimeUITestCase {
         let width = app.windows.firstMatch.frame.width
         XCTAssertLessThan(like.frame.midX, width * 0.25 + 10, "the first column's centre")
         XCTAssertGreaterThan(share.frame.midX, width * 0.75 - 10, "the last column reaches the right side")
-    }
-
-    func testTheAudioPlayerIsAlwaysRightOfTheCover() {
-        let app = launch()
-        let play = any(app, "jam-audio-play-demo-audio-1"), cover = any(app, "jam-audio-expand")
-        for _ in 0..<6 where !play.exists || !play.isHittable { app.swipeUp() }
-        XCTAssertTrue(play.waitForExistence(timeout: 8))
-        XCTAssertGreaterThan(play.frame.minX, cover.frame.maxX - 1, "play is to the right of the cover")
-        XCTAssertTrue(any(app, "podcast-scrubber-demo-audio-1").frame.minX > cover.frame.maxX - 1)
-        XCTAssertTrue(app.buttons["jam-audio-mute-demo-audio-1"].frame.minX > cover.frame.maxX - 1)
     }
 }

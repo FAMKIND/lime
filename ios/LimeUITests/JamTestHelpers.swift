@@ -12,4 +12,11 @@ extension XCUIApplication {
         let tab = buttons["profile-tab-Articles"]
         if tab.waitForExistence(timeout: 8) { tab.tap() }
     }
+
+    /// Opens the demo video recording's own page from its podcast card (LIME-200): the card's title.
+    func openDemoVideoPost() {
+        let title = buttons.matching(NSPredicate(format: "identifier == 'jam-podcast-title' AND label CONTAINS 'fraction walls'")).firstMatch
+        for _ in 0..<5 where !title.exists || !title.isHittable { swipeUp() }
+        if title.waitForExistence(timeout: 8) { title.tap() }
+    }
 }

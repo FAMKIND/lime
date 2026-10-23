@@ -12,23 +12,11 @@ final class Jam188kUITests: LimeUITestCase {
         let card = any(app, "jam-audio-card-demo-audio-1")
         for _ in 0..<6 where !card.exists { app.swipeUp() }
         XCTAssertTrue(card.waitForExistence(timeout: 10), "the recording is a card")
-        XCTAssertEqual(any(app, "jam-audio-length").label, "Length 18 minutes")
-        // LIME-188u: the card has the waveform to scrub and a mute button.
-        let wave = any(app, "podcast-scrubber-demo-audio-1")
-        XCTAssertTrue(wave.exists)
-        for _ in 0..<4 where !wave.isHittable || wave.frame.maxY > app.windows.firstMatch.frame.height - 140 { app.swipeUp() }
-        XCTAssertEqual(wave.label, "Position")
-        XCTAssertTrue((wave.value as? String ?? "").hasPrefix("0 seconds of 18 minutes"))
-        wave.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        XCTAssertTrue((wave.value as? String ?? "").hasPrefix("9 minutes"), "tapping the wave scrubs: \(wave.value as? String ?? "")")
-        let mute = app.buttons["jam-audio-mute-demo-audio-1"]
-        XCTAssertEqual(mute.label, "Mute")
-        mute.tap()
-        XCTAssertEqual(mute.label, "Unmute")
-        mute.tap()
-        XCTAssertTrue(any(app, "jam-audio-title").exists, "the title and subtitle are on the card")
         XCTAssertFalse(app.buttons["audio-mini-open"].exists, "no mini player before playing")
         app.buttons["jam-audio-play-demo-audio-1"].tap()
+        // LIME-200: pressing play on the card opens the full-screen player; closing it leaves the mini player.
+        XCTAssertTrue(any(app, "jam-video-screen").waitForExistence(timeout: 5))
+        app.buttons["jam-video-close"].tap()
         XCTAssertTrue(app.buttons["audio-mini-open"].waitForExistence(timeout: 5), "playing shows the mini player")
         XCTAssertTrue(app.buttons["audio-mini-open"].label.contains("Sunday planning"))
         // The mini player stays across tabs.
