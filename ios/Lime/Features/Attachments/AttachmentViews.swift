@@ -288,6 +288,8 @@ struct AttachmentViewer: View {
     var conversationID: Conversation.ID?
     /// Where the pictures come from when they are not a chat's (a jam post's, LIME-188h); nil means the chat's own store.
     var load: ((AttachmentItem) async -> UIImage?)? = nil
+    /// Under the picture (a jam post's actions, LIME-188y); chats have none.
+    var bottomBar: AnyView? = nil
     @Environment(ConversationStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var page = 0
@@ -325,6 +327,7 @@ struct AttachmentViewer: View {
                 .accessibilityLabel(saved ? "Saved to Photos" : "Save to Photos").accessibilityIdentifier("attachment-save")
             }
             .padding(.horizontal, 16).padding(.top, 8)
+            if let bottomBar { VStack { Spacer(); bottomBar } }
         }
         .onAppear { page = min(max(start, 0), items.count - 1) }
         // Swipe down to close (not while a picture is zoomed: then a drag pans it).

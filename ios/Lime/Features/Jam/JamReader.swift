@@ -147,17 +147,20 @@ struct JamPhotoRow: View {
     @State private var images: [String: UIImage] = [:]
     @State private var current: String?
     @State private var viewing: ViewerStart?
+    @Environment(\.verticalSizeClass) private var verticalSize
 
     private struct ViewerStart: Identifiable { let index: Int; var id: Int { index } }
 
     var body: some View {
+        let _ = verticalSize   // turning the phone redraws the frames
         let many = files.count > 1
-        // One standard frame for the row (the first picture's nearer shape), so the items line up.
-        let ratio = JamMedia.ratio(width: files.first?.width, height: files.first?.height)
-        // Bigger (LIME-188u): an item is the column less a peek of the next, the row runs to the screen's right edge, 12 pt between.
-        let columnWidth = UIScreen.main.bounds.width - 40
-        let tileWidth = many ? columnWidth - 28 : columnWidth
-        let height = tileWidth / ratio
+        // A row you swipe is always portrait, 4:5 (LIME-188y: the "Pine" frame); one picture takes the standard frame nearest to its own shape.
+        let ratio = many ? JamMedia.portrait : JamMedia.ratio(width: files.first?.width, height: files.first?.height)
+        // An item is the column less a peek of the next, the row runs to the screen's right edge, 12 pt between. A frame never passes 600 pt wide or
+        // 80% of the screen's height, so sideways on a phone it stays in proportion.
+        let size = JamMedia.size(ratio: ratio, column: many ? JamMedia.column - 28 : JamMedia.column, screenHeight: UIScreen.main.bounds.height)
+        let tileWidth = size.width
+        let height = size.height
         GeometryReader { geo in
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: JamMedia.gap) {
@@ -184,7 +187,7 @@ struct JamPhotoRow: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("jam-photo-row")
         .fullScreenCover(item: $viewing) { start in
-            AttachmentViewer(items: files.map(item), start: start.index, load: { await picture(for: $0.id) })
+            AttachmentViewer(items: files.map(item), start: start.index, load: { await picture(for: $0.id) }, bottomBar: AnyView(JamViewerBar(postID: postID)))
         }
     }
 
@@ -274,7 +277,9 @@ private struct JamPhoto: View {
     var body: some View {
         Group {
             if let image {
-                Image(uiImage: image).resizable().scaledToFit().jamMediaClip()
+                Image(uiImage: image).resizable().scaledToFit()
+                    .frame(maxWidth: JamMedia.maxColumn, maxHeight: UIScreen.main.bounds.height * JamMedia.maxHeightShare)
+                    .jamMediaClip()
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityLabel(file.name.isEmpty ? "Photo" : "Photo, \(file.name)")
                     .onTapGesture { if tapToOpen { opened = true } }
@@ -283,6 +288,7 @@ private struct JamPhoto: View {
                         ZStack(alignment: .topTrailing) {
                             Color.black.ignoresSafeArea()
                             Image(uiImage: image).resizable().scaledToFit().ignoresSafeArea()
+                            VStack { Spacer(); JamViewerBar(postID: postID) }.frame(maxWidth: .infinity, maxHeight: .infinity)
                             Button { opened = false } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 30)).foregroundStyle(.white).frame(width: 44, height: 44) }
                                 .padding().accessibilityLabel("Close").accessibilityIdentifier("jam-photo-close")
                         }

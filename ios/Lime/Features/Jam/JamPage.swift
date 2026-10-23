@@ -214,13 +214,13 @@ struct JamPostCard: View {
     }
 
     private var actions: some View {
-        HStack(spacing: 28) {
+        // Four equal columns across the card (LIME-188y).
+        HStack(spacing: 0) {
             ForEach([("heart", "like"), ("bubble.left", "comment"), ("arrow.2.squarepath", "remix"), ("square.and.arrow.up", "share")], id: \.1) { icon, label in
-                Image(systemName: icon).font(.system(size: 18)).frame(minWidth: 28, minHeight: 28)
+                Image(systemName: icon).font(.system(size: 18)).frame(maxWidth: .infinity, minHeight: 28)
                     .accessibilityLabel(label).accessibilityAddTraits(.isButton).accessibilityHint("Coming soon")
                     .accessibilityIdentifier("jam-action-\(label)-\(post.postId)")
             }
-            Spacer(minLength: 0)
         }
         .foregroundStyle(Theme.textSecondary.opacity(0.5))
         .allowsHitTesting(false)

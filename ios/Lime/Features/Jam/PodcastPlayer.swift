@@ -272,6 +272,25 @@ struct PodcastBar: View {
     }
 }
 
+/// The bars of a waveform (LIME-188y): each bar is the same width and gap in every orientation; only how many are drawn follows the width, by
+/// resampling the stored values (the loudest in each stretch).
+enum WaveformBars {
+    static let barWidth: CGFloat = 2.5
+    static let gap: CGFloat = 2
+
+    static func count(forWidth width: CGFloat) -> Int { max(1, Int((width + gap) / (barWidth + gap))) }
+
+    static func resample(_ values: [UInt8], to count: Int) -> [UInt8] {
+        guard !values.isEmpty, count > 0 else { return [] }
+        if values.count == count { return values }
+        return (0..<count).map { index in
+            let from = index * values.count / count
+            let to = max(from + 1, (index + 1) * values.count / count)
+            return values[from..<min(to, values.count)].max() ?? 0
+        }
+    }
+}
+
 /// The waveform of a whole recording with the played part solid: tap or drag to scrub. One adjustable element for VoiceOver.
 struct WaveformScrubber: View {
     let controller: PodcastController
@@ -282,12 +301,14 @@ struct WaveformScrubber: View {
     var body: some View {
         GeometryReader { geo in
             Canvas { context, size in
-                let values: [UInt8] = waveform.isEmpty ? [UInt8](repeating: 120, count: 64) : [UInt8](waveform)
-                let gap: CGFloat = 2
-                let width = max(1.5, (size.width - gap * CGFloat(values.count - 1)) / CGFloat(values.count))
+                let stored: [UInt8] = waveform.isEmpty ? [UInt8](repeating: 120, count: 64) : [UInt8](waveform)
+                let values = WaveformBars.resample(stored, to: WaveformBars.count(forWidth: size.width))
+                let width = WaveformBars.barWidth, gap = WaveformBars.gap
+                let used = CGFloat(values.count) * (width + gap) - gap
+                let left = max(0, (size.width - used) / 2)
                 for (index, value) in values.enumerated() {
                     let bar = waveform.isEmpty ? 4 : max(4, size.height * CGFloat(value) / 255)
-                    let rect = CGRect(x: CGFloat(index) * (width + gap), y: (size.height - bar) / 2, width: width, height: bar)
+                    let rect = CGRect(x: left + CGFloat(index) * (width + gap), y: (size.height - bar) / 2, width: width, height: bar)
                     let played = (Double(index) + 0.5) / Double(values.count) <= controller.fraction
                     context.fill(Path(roundedRect: rect, cornerRadius: width / 2), with: .color(played ? Theme.text : Theme.text.opacity(0.28)))
                 }

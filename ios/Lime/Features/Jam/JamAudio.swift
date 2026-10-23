@@ -52,22 +52,14 @@ struct JamAudioCard: View {
         let controller = self.controller ?? makeController()
         let post = store.jamPost(postID)
         let writer = store.teacher(post?.author ?? "")
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: 14) {
-                coverButton(controller, writer: writer)
-                VStack(alignment: .leading, spacing: 8) {
-                    words(post, controller)
-                    player(controller)
-                }
-                .frame(minWidth: 200, maxWidth: .infinity, alignment: .leading)
-            }
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top, spacing: 14) {
-                    coverButton(controller, writer: writer)
-                    words(post, controller)
-                }
+        // The player is always to the right of the cover, under the words (LIME-188y); at the largest text sizes the cover and the wave shrink.
+        HStack(alignment: .top, spacing: 12) {
+            coverButton(controller, writer: writer)
+            VStack(alignment: .leading, spacing: 8) {
+                words(post, controller)
                 player(controller)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(14)
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: JamMedia.radius, style: .continuous))
@@ -84,9 +76,12 @@ struct JamAudioCard: View {
         }
     }
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+    private var coverSize: CGFloat { typeSize.isAccessibilitySize ? 72 : 96 }
+
     private func coverButton(_ controller: PodcastController, writer: Person) -> some View {
         Button { open(controller) } label: {
-            CoverArt(image: cover, person: writer).frame(width: 96, height: 96).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            CoverArt(image: cover, person: writer).frame(width: coverSize, height: coverSize).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(.plain).accessibilityLabel("Open player").accessibilityIdentifier("jam-audio-expand")
     }
@@ -110,23 +105,23 @@ struct JamAudioCard: View {
     private func player(_ controller: PodcastController) -> some View {
         let playing = NowPlaying.shared.item?.controller === controller && controller.isPlaying
         return VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
+            HStack(spacing: 2) {
                 Button { play(controller) } label: {
                     ZStack {
                         Circle().fill(Theme.accent).frame(width: 36, height: 36)
                         Image(systemName: playing ? "pause.fill" : "play.fill").font(.system(size: 14)).foregroundStyle(Theme.accentInk)
                     }
-                    .frame(width: 44, height: 44)
+                    .frame(width: 40, height: 44)
                 }
                 .accessibilityLabel(playing ? "Pause" : "Play").accessibilityIdentifier("jam-audio-play-\(file.attachmentId)")
                 WaveformScrubber(controller: controller, waveform: file.thumb, id: file.attachmentId, height: 32)
                 Button { controller.muted.toggle() } label: {
-                    Image(systemName: controller.muted ? "speaker.slash.fill" : "speaker.wave.2.fill").font(.system(size: 15)).foregroundStyle(Theme.text).frame(width: 44, height: 44)
+                    Image(systemName: controller.muted ? "speaker.slash.fill" : "speaker.wave.2.fill").font(.system(size: 15)).foregroundStyle(Theme.text).frame(width: 36, height: 44)
                 }
                 .accessibilityLabel(controller.muted ? "Unmute" : "Mute").accessibilityIdentifier("jam-audio-mute-\(file.attachmentId)")
             }
             Text(VoiceFormat.clock(max(controller.duration - controller.position, 0))).font(Theme.caption.monospacedDigit()).foregroundStyle(Theme.textSecondary)
-                .frame(maxWidth: .infinity, alignment: .trailing).padding(.trailing, 50)
+                .frame(maxWidth: .infinity, alignment: .trailing).padding(.trailing, 38)
                 .accessibilityLabel("Length \(PodcastFormat.spoken(Double(file.durationMs ?? 0) / 1000))").accessibilityIdentifier("jam-audio-length")
         }
     }

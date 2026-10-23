@@ -8,6 +8,23 @@ enum JamMedia {
     static let gap: CGFloat = 12
     static let portrait: CGFloat = 4.0 / 5
     static let landscape: CGFloat = 16.0 / 9
+    /// A frame never gets wider than this (LIME-188y): on a phone held sideways the column is capped and centred on the text margin.
+    static let maxColumn: CGFloat = 600
+    /// ...nor taller than this share of the screen's height, so a 4:5 photo always fits in sight.
+    static let maxHeightShare: CGFloat = 0.8
+
+    /// The size of a frame of `ratio` (width ÷ height) in a column `column` points wide on a screen `screenHeight` tall: the column's width, up to
+    /// `maxColumn`; when that would be too tall the frame shrinks in proportion (the shape never changes).
+    static func size(ratio: CGFloat, column: CGFloat, screenHeight: CGFloat) -> CGSize {
+        var width = min(column, maxColumn)
+        var height = width / ratio
+        let cap = screenHeight * maxHeightShare
+        if height > cap { height = cap; width = cap * ratio }
+        return CGSize(width: width, height: height)
+    }
+
+    /// The text column of a card or the reader: the screen less the 20 pt margins.
+    @MainActor static var column: CGFloat { UIScreen.main.bounds.width - 40 }
 
     /// The standard frame nearest to the picture's own shape (a square is nearer 4:5), cropped from the centre; the viewer shows the whole picture.
     static func ratio(width: UInt32?, height: UInt32?) -> CGFloat {
@@ -62,11 +79,15 @@ struct JamVideoCard: View {
     @State private var visible = false
     @State private var opening = false
     @State private var userPaused = false
+    /// Turning the phone redraws the frame (LIME-188y).
+    @Environment(\.verticalSizeClass) private var verticalSize
 
     var body: some View {
+        let _ = verticalSize
         let controller = self.controller ?? makeController()
         let ratio = JamMedia.ratio(width: file.width, height: file.height)
         let screenHeight = UIScreen.main.bounds.height
+        let frame = JamMedia.size(ratio: ratio, column: JamMedia.column, screenHeight: screenHeight)
         ZStack {
             Color.black
             if controller.simulated || controller.player == nil {
@@ -94,17 +115,32 @@ struct JamVideoCard: View {
                         .padding(.horizontal, 10).padding(.vertical, 5).background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                         .accessibilityIdentifier("jam-video-caption")
                 }
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Rectangle().fill(.white.opacity(0.3))
-                        Rectangle().fill(.white).frame(width: geo.size.width * controller.fraction)
+                // The timeline (LIME-188y): "0:16 / 1:05" and a line to drag.
+                HStack(spacing: 10) {
+                    Text("\(VoiceFormat.clock(controller.position)) / \(VoiceFormat.clock(controller.duration))").font(Theme.caption.monospacedDigit()).foregroundStyle(.white)
+                        .accessibilityIdentifier("jam-video-time")
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(.white.opacity(0.3)).frame(height: 3)
+                            Capsule().fill(.white).frame(width: geo.size.width * controller.fraction, height: 3)
+                        }
+                        .frame(maxHeight: .infinity)
+                        .contentShape(Rectangle())
+                        .gesture(DragGesture(minimumDistance: 0).onChanged { value in
+                            controller.seek(to: Double(min(max(value.location.x / max(geo.size.width, 1), 0), 1)) * controller.duration)
+                        })
                     }
+                    .frame(height: 28)
+                    .accessibilityElement().accessibilityLabel("Position")
+                    .accessibilityValue("\(PodcastFormat.spoken(controller.position)) of \(PodcastFormat.spoken(controller.duration))")
+                    .accessibilityAdjustableAction { direction in controller.skip(by: direction == .increment ? 10 : -10) }
+                    .accessibilityIdentifier("jam-video-timeline")
                 }
-                .frame(height: 3).accessibilityHidden(true)
+                .padding(.horizontal, 4).padding(.bottom, 2)
             }
             .padding(.top, 10).padding(.horizontal, 10).padding(.bottom, 0)
         }
-        .aspectRatio(ratio, contentMode: .fit)
+        .frame(width: frame.width, height: frame.height)
         .jamMediaClip()
         .contentShape(Rectangle())
         .onTapGesture { opening = true }
@@ -460,6 +496,20 @@ struct JamActionPill: View {
             }
         }
         .padding(.horizontal, 8).background(dark ? Color.white.opacity(0.14) : Theme.surface, in: Capsule())
+    }
+}
+
+/// The bar under a jam photo in the full-screen viewer (LIME-188y): ♥ · 💬 · remix · share, like the one under the reader; only Share works until
+/// LIME-189.
+struct JamViewerBar: View {
+    let postID: String
+    @Environment(ConversationStore.self) private var store
+    @State private var sharing = false
+
+    var body: some View {
+        JamActionPill(dark: true, share: { sharing = true })
+            .padding(.horizontal, 24).padding(.bottom, 8)
+            .sheet(isPresented: $sharing) { if let post = store.jamPost(postID) { JamShareSheet(post: post) } }
     }
 }
 
