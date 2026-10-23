@@ -10,6 +10,9 @@ struct FloatingPlus: View {
     /// A long-press (LIME-143: emergency mode starts here). Nil: none.
     var onLongPress: (() -> Void)? = nil
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    /// A playing recording's mini player sits above the dock across the width (LIME-196): the + rises above it.
+    private var lift: CGFloat { NowPlaying.shared.item == nil ? 0 : Self.miniPlayerLift }
+    static let miniPlayerLift: CGFloat = 64
 
     static let size: CGFloat = 64
 
@@ -20,9 +23,9 @@ struct FloatingPlus: View {
         GeometryReader { geo in
             if #available(iOS 26, *), Self.fitsBesideBar(width: geo.size.width), verticalSizeClass != .compact {
                 // Beside the platter: its centre line is 52 pt above the screen's bottom edge (measured on the 13 mini and 18 Pro).
-                button.position(x: geo.size.width - 8 - Self.size / 2, y: geo.size.height + geo.safeAreaInsets.bottom - 52)
+                button.position(x: geo.size.width - 8 - Self.size / 2, y: geo.size.height + geo.safeAreaInsets.bottom - 52 - lift)
             } else {
-                button.position(x: geo.size.width - 16 - Self.size / 2, y: geo.size.height - 14 - Self.size / 2)
+                button.position(x: geo.size.width - 16 - Self.size / 2, y: geo.size.height - 14 - Self.size / 2 - lift)
             }
         }
     }

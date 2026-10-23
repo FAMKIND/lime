@@ -160,13 +160,17 @@ struct CoverArt: View {
     let person: Person
 
     var body: some View {
-        ZStack {
-            if let image {
-                Image(uiImage: image).resizable().scaledToFill()
-            } else {
-                Theme.surface
-                LinearGradient(colors: [Theme.accent.opacity(0.35), Theme.surface], startPoint: .topLeading, endPoint: .bottomTrailing)
-                AvatarView(person: person, size: 96)
+        // The art fills what it is given and never asks for more (a picture that fills is bigger than its frame): it is an overlay on a clear
+        // view, clipped to it (LIME-196).
+        Color.clear.overlay {
+            ZStack {
+                if let image {
+                    Image(uiImage: image).resizable().scaledToFill()
+                } else {
+                    Theme.surface
+                    LinearGradient(colors: [Theme.accent.opacity(0.35), Theme.surface], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    AvatarView(person: person, size: 96)
+                }
             }
         }
         .clipped()

@@ -40,3 +40,19 @@ final class JamFrameTests: XCTestCase {
         XCTAssertTrue(WaveformBars.resample([], to: 4).isEmpty)
     }
 }
+
+/// LIME-196: the sideways row's items never overlap, in portrait or landscape.
+final class JamRowTests: XCTestCase {
+    func testItemsOfARowNeverIntersectAndStayInsideTheColumnPortraitAndLandscape() {
+        // (screen width, screen height) of a phone upright and on its side.
+        let screens: [(CGFloat, CGFloat)] = [(320, 568), (375, 812), (430, 932), (667, 320), (844, 375), (932, 430)]
+        for (width, height) in screens {
+            let column = width - 40
+            let size = JamMedia.size(ratio: JamMedia.portrait, column: column - 28, screenHeight: height)
+            let rects = (0..<5).map { CGRect(x: CGFloat($0) * (size.width + JamMedia.gap), y: 0, width: size.width, height: size.height) }
+            for (a, b) in zip(rects, rects.dropFirst()) { XCTAssertFalse(a.intersects(b), "\(width)×\(height)") }
+            XCTAssertLessThanOrEqual(size.width, column - 28 + 0.01)
+            XCTAssertLessThanOrEqual(size.height, height * 0.8 + 0.01)
+        }
+    }
+}

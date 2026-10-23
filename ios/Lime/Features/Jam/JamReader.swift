@@ -165,7 +165,7 @@ struct JamPhotoRow: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: JamMedia.gap) {
                     ForEach(Array(files.enumerated()), id: \.element.attachmentId) { index, file in
-                        tile(file, index: index)
+                        tile(file, index: index, size: size)
                             .frame(width: tileWidth, height: height)
                             .id(file.attachmentId)
                     }
@@ -193,11 +193,15 @@ struct JamPhotoRow: View {
 
     private var index: Int { files.firstIndex { $0.attachmentId == current } ?? 0 }
 
-    private func tile(_ file: JamAttachmentInfo, index: Int) -> some View {
+    private func tile(_ file: JamAttachmentInfo, index: Int, size tileSize: CGSize) -> some View {
+        // The size is set before the clip: a picture that fills the frame is wider or taller than it, and clipping first would draw it over its neighbours
+        // with square corners (LIME-196).
         ZStack {
             Theme.surface
             if let image = images[file.attachmentId] { Image(uiImage: image).resizable().scaledToFill() } else { ProgressView() }
         }
+        .frame(width: tileSize.width, height: tileSize.height)
+        .clipped()
         .jamMediaClip()
         .contentShape(Rectangle())
         .onTapGesture { viewing = ViewerStart(index: index) }
