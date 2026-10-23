@@ -588,6 +588,9 @@ struct ReaderOptionsSheet: View {
                 // text to a model), no "Copy link" (there is no public link until LIME-190).
             }
             .listStyle(.insetGrouped)
+            // Tighter (LIME-199): 44 pt rows, 16 pt sides, small gaps between groups.
+            .environment(\.defaultMinListRowHeight, 44)
+            .listSectionSpacing(.compact)
             .navigationTitle("Options").navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .top) {
                 Text(post.title).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(1).padding(.horizontal, 20)
@@ -600,7 +603,7 @@ struct ReaderOptionsSheet: View {
             } message: { Text("It goes from your subscribers' phones too.") }
             .onAppear { saved = JamSaved.contains(post.postId) }
         }
-        .presentationDetents([.large])
+        .presentationDetents([.medium, .large])
     }
 
     private func row(_ symbol: String, _ title: String, chevron: Bool = false, id: String, action: @escaping () -> Void) -> some View {
@@ -613,6 +616,7 @@ struct ReaderOptionsSheet: View {
             }
             .frame(minHeight: 44)
         }
+        .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
         .accessibilityIdentifier(id)
     }
 

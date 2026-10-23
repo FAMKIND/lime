@@ -6,6 +6,7 @@ import SwiftUI
 @Observable
 final class NowPlaying {
     static let shared = NowPlaying()
+    init() {}
 
     struct Item {
         let postID: String
@@ -18,6 +19,8 @@ final class NowPlaying {
     }
 
     var item: Item?
+    /// Up next (LIME-199): "Play next" puts one first, "Add to queue" last; when what plays ends, the first of these starts. On this phone only.
+    var queue: [Item] = []
     /// The now-playing screen is up (from the mini player or a card's expand button).
     var showsScreen = false
 
@@ -29,7 +32,31 @@ final class NowPlaying {
     func close() {
         item?.controller.pause()
         item = nil
+        queue = []
         showsScreen = false
+    }
+
+    /// A recording (or video) post as something to play: its first audio or video file.
+    func makeItem(for post: JamPostInfo, store: ConversationStore) -> Item? {
+        let files = store.jamAttachments(post.postId)
+        guard let file = files.first(where: { $0.kind == "audio" }) ?? files.first(where: { $0.kind == "video" }) else { return nil }
+        if let now = item, now.postID == post.postId, now.file.attachmentId == file.attachmentId { return now }
+        let controller = PodcastController(duration: Double(file.durationMs ?? 0) / 1000, title: post.title, artist: store.teacherName(post.author), isVideo: file.kind == "video")
+        #if DEBUG
+        controller.simulated = store.isDemo
+        #endif
+        return Item(postID: post.postId, file: file, controller: controller, title: post.title.isEmpty ? "Recording" : post.title,
+                    subtitle: post.subtitle.isEmpty ? store.teacherName(post.author) : post.subtitle)
+    }
+
+    func playNext(_ item: Item) { queue.removeAll { $0.postID == item.postID }; queue.insert(item, at: 0); if self.item == nil { advance() } }
+    func enqueue(_ item: Item) { guard !queue.contains(where: { $0.postID == item.postID }), self.item?.postID != item.postID else { return }; queue.append(item); if self.item == nil { advance() } }
+
+    /// Starts the first of the queue (what was playing ended).
+    func advance() {
+        guard !queue.isEmpty else { return }
+        let next = queue.removeFirst()
+        start(next)
     }
 }
 
@@ -232,6 +259,10 @@ struct AudioMiniPlayer: View {
             .padding(.leading, 12).padding(.trailing, 4).frame(minHeight: 56)
             .limeGlass(in: Capsule())
             .padding(.horizontal, 16).padding(.bottom, 4)
+            .onChange(of: item.controller.atEnd) { _, ended in
+                // What was playing ended: the next in the queue starts.
+                if ended, let next = now.queue.first { now.advance(); Task { await next.controller.toggle(data: { await store.jamAttachmentData(next.postID, next.file.attachmentId) }) } }
+            }
             .fullScreenCover(isPresented: Binding(get: { now.showsScreen }, set: { now.showsScreen = $0 })) {
                 if let item = now.item {
                     JamVideoScreen(postID: item.postID, file: item.file, controller: item.controller, cues: item.cues, cover: item.cover, subtitle: item.subtitle, isAudio: true)

@@ -175,6 +175,7 @@ struct JamPostCard: View {
             actions
         }
         .padding(.horizontal, 20).padding(.vertical, 14)
+        .overlay(alignment: .topTrailing) { JamPostMenu(post: post).padding(.trailing, 8).padding(.top, 8) }
     }
 
     /// An audio recording's card carries its own title and subtitle (LIME-188u).

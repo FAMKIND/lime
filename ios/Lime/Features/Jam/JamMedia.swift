@@ -246,6 +246,14 @@ struct JamVideoScreen: View {
                 ZStack {
                     if isAudio { audioArt(post) } else { video(item) }
                     if showsControls || isAudio { transport(item.controller) }
+                    if isAudio, !NowPlaying.shared.queue.isEmpty {
+                        // Up next (LIME-199): what plays after this, in order.
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Up next (\(NowPlaying.shared.queue.count))").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(.white).accessibilityIdentifier("now-playing-upnext")
+                            ForEach(NowPlaying.shared.queue, id: \.postID) { Text($0.title).font(Theme.caption).foregroundStyle(.white.opacity(0.7)).lineLimit(1) }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 24).padding(.bottom, 8)
+                    }
                 }
                 .frame(maxHeight: .infinity)
                 .contentShape(Rectangle())
