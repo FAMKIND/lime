@@ -30,7 +30,7 @@ final class Jam188lUITests: LimeUITestCase {
         waitForExpectations(timeout: 5)
         app.buttons["jam-format"].tap()
         body.typeText("Why it works")
-        app.buttons["fmt-h2"].tap()
+        app.buttons["jam-heading"].tap(); app.buttons["jam-heading-2"].tap()
         XCTAssertEqual(body.value as? String, "## Why it works")
         body.typeText("\n")
         body.typeText("Fold it first")

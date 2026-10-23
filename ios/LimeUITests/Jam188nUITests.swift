@@ -42,7 +42,7 @@ final class Jam188nUITests: LimeUITestCase {
         waitForExpectations(timeout: 5)
         body.typeText("Intro")
         app.buttons["jam-add"].tap()
-        for id in ["Image", "Video", "Audio", "Button", "Divider", "Freewall"] {
+        for id in ["Photo", "Video", "Audio", "Button", "Divider", "Freewall"] {
             XCTAssertTrue(app.buttons[id].waitForExistence(timeout: 3), id)
         }
         app.buttons["Divider"].tap()
@@ -56,8 +56,8 @@ final class Jam188nUITests: LimeUITestCase {
         XCTAssertFalse(app.buttons["Freewall"].isEnabled, "one freewall per post")
         app.buttons["Divider"].coordinate(withNormalizedOffset: .zero).tap()   // close by choosing another divider
         app.buttons["jam-format"].tap()
-        XCTAssertTrue(app.buttons["fmt-undo"].isEnabled)
-        app.buttons["fmt-undo"].tap()
+        XCTAssertTrue(app.buttons["jam-undo"].isEnabled)
+        app.buttons["jam-undo"].tap()
         let afterUndo = body.value as? String ?? ""
         XCTAssertEqual(afterUndo.components(separatedBy: "---").count - 1, 1, "undo took the last divider back: \(afterUndo)")
         XCTAssertTrue(afterUndo.contains("[[freewall]]"))

@@ -11,10 +11,6 @@ struct FormattingToolbar: View {
         HStack(spacing: 8) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 2) {
-                    if model.isPost {
-                        shift("arrow.uturn.backward", id: "fmt-undo", label: "Undo", enabled: model.format.canUndo) { model.undo() }
-                        shift("arrow.uturn.forward", id: "fmt-redo", label: "Redo", enabled: model.format.canRedo) { model.redo() }
-                    }
                     letter("B", on: model.format.bold, id: "fmt-bold", label: "Bold") { model.apply(.bold) }
                     letter("I", Font.body.italic(), on: model.format.italic, id: "fmt-italic", label: "Italic") { model.apply(.italic) }
                     letter("U", .body, underline: true, on: model.format.underline, id: "fmt-underline", label: "Underline") { model.apply(.underline) }
@@ -24,8 +20,7 @@ struct FormattingToolbar: View {
                     symbol("list.bullet", on: model.format.bullets, id: "fmt-bullets", label: "Bulleted list") { model.toggleList(.bullet) }
                     symbol("list.number", on: model.format.numbers, id: "fmt-numbers", label: "Numbered list") { model.toggleList(.number) }
                     if model.isPost {
-                        // A jam post (LIME-188l): headings, quote, indent for a plain paragraph, and a button.
-                        heading(1); heading(2); heading(3)
+                        // A jam post: quote, indent for a plain paragraph, and a button (undo, redo and headings are in the bar, LIME-197).
                         symbol("text.quote", on: model.format.quote, id: "fmt-quote", label: "Quote") { model.toggleParagraph("quote") }
                         if !model.format.inList {
                             shift("decrease.indent", id: "fmt-para-outdent", label: "Outdent paragraph", enabled: model.format.indented) { model.shiftParagraph(indent: false) }

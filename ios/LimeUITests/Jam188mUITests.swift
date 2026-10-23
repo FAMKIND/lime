@@ -33,7 +33,7 @@ final class Jam188mUITests: LimeUITestCase {
         waitForExpectations(timeout: 5)
         body.typeText("Words first")
         app.buttons["jam-add"].tap()
-        app.buttons["Image"].tap()
+        app.buttons["Photo"].tap(); app.buttons["Library"].tap()
         sleep(1)
         XCTAssertTrue(app.buttons["jam-post"].isEnabled, "enabled with a title, words and a photo")
         app.buttons["jam-format"].tap()

@@ -31,6 +31,7 @@ struct JamComposeSheet: View {
     @State private var recordSubtitle = ""
     @State private var recordDetails = ""
     @State private var recordCover: OutgoingAttachment?
+    @State private var headingOpen = false
     @State private var recordMode: Int?
     @State private var chooser: Chooser?
     @State private var coauthors: [Person] = []
@@ -426,74 +427,100 @@ struct JamComposeSheet: View {
             }
             // The full strip (Aa) sits under the pills in a quick post, above the tool row in an article; never over the text.
             if composer.showsStrip { FormattingToolbar(model: composer).transition(.opacity) }
-            let width = min(44, (UIScreen.main.bounds.width - 12) / 8)
+            // + (or photo, camera) · Aa · H · Undo · Redo on the left, the keyboard on the right; the side margins are Cancel's and Post's (16 pt), so
+            // the first glyph lines up under Cancel's edge and the keyboard under Post's (LIME-197).
+            let items: CGFloat = article ? 6 : 7
+            let width = min(44, (UIScreen.main.bounds.width - 32) / items)
             HStack(spacing: 0) {
                 if article {
-                    plusMenu(width: width)
-                    tool("bold", "Bold", id: "jam-bold", on: composer.format.bold, width: width) { composer.apply(.bold) }
-                    tool("italic", "Italic", id: "jam-italic", on: composer.format.italic, width: width) { composer.apply(.italic) }
-                    tool("underline", "Underline", id: "jam-underline", on: composer.format.underline, width: width) { composer.apply(.underline) }
-                    headingMenu(width: width)
-                    tool("link", "Link", id: "jam-link", on: composer.format.link, width: width) { composer.requestLink() }
-                    tool("textformat", "Formatting", id: "jam-format", on: composer.toolbarVisible, width: width) { composer.formattingTapped() }
+                    plusMenu(width: width).padding(.leading, (width - 32) / 2 * -1)
                 } else {
-                    tool("photo.on.rectangle", "Add photos", id: "jam-add-photo") { choose(.library) }
-                    tool("camera", "Camera", id: "jam-add-camera") { choose(.camera) }
-                    tool("textformat", "Formatting", id: "jam-format", on: composer.toolbarVisible) { composer.formattingTapped() }
+                    tool("photo.on.rectangle", "Add photos", id: "jam-add-photo", width: width) { choose(.library) }
+                    tool("camera", "Camera", id: "jam-add-camera", width: width) { choose(.camera) }
                 }
+                formattingButton(width: width)
+                headingButton(width: width)
+                tool("arrow.uturn.backward", "Undo", id: "jam-undo", width: width) { composer.undo() }
+                    .disabled(!composer.format.canUndo).opacity(composer.format.canUndo ? 1 : 0.35)
+                tool("arrow.uturn.forward", "Redo", id: "jam-redo", width: width) { composer.redo() }
+                    .disabled(!composer.format.canRedo).opacity(composer.format.canRedo ? 1 : 0.35)
                 Spacer(minLength: 0)
-                tool(composer.editing ? "keyboard.chevron.compact.down" : "keyboard", composer.editing ? "Hide keyboard" : "Show keyboard", id: "jam-hide-keyboard", width: article ? width : 44) { composer.toggleKeyboard() }
+                tool(composer.editing ? "keyboard.chevron.compact.down" : "keyboard", composer.editing ? "Hide keyboard" : "Show keyboard", id: "jam-hide-keyboard", width: width) { composer.toggleKeyboard() }
+                    .padding(.trailing, -(width - 28) / 2)
             }
-            .padding(.horizontal, 6).frame(minHeight: 48)
+            .padding(.horizontal, 16).frame(minHeight: 48)
             .background(.bar)
         }
     }
 
-    /// H▾: normal text or a heading from 1 to 6, each shown at its own size; its icon says which one the caret is in ("H2", or "H" for normal text).
-    private func headingMenu(width: CGFloat) -> some View {
-        let level = composer.format.heading
-        return Menu {
-            Button { composer.setHeading(nil) } label: { Label("Normal text", systemImage: level == 0 ? "checkmark" : "") }.accessibilityIdentifier("jam-heading-0")
-            ForEach(1...6, id: \.self) { n in
-                Button { composer.setHeading(n) } label: {
-                    Label { Text("Heading \(n)") } icon: { if level == n { Image(systemName: "checkmark") } }
-                }
-                .accessibilityIdentifier("jam-heading-\(n)")
-            }
-        } label: {
-            HStack(spacing: 0) {
-                Text(level == 0 ? "H" : "H\(level)").font(.system(size: 17, weight: .bold)).foregroundStyle(Theme.text)
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).foregroundStyle(Theme.textSecondary).padding(.leading, 1).padding(.top, 6)
-            }
-            .frame(width: width, height: 44).background(level == 0 ? .clear : Theme.surface, in: Circle())
+    /// Aa opens the strip of text styles (B I U S link code lists quote indent): it also appears under a selection.
+    private func formattingButton(width: CGFloat) -> some View {
+        Button { composer.formattingTapped() } label: {
+            Text("Aa").font(.system(size: 17, weight: composer.toolbarVisible ? .bold : .medium)).foregroundStyle(Theme.text).frame(width: width, height: 44)
+                .background(composer.toolbarVisible ? Theme.surface : .clear, in: Circle())
         }
-        .accessibilityLabel(level == 0 ? "Heading, currently normal text" : "Heading, currently Heading \(level)").accessibilityIdentifier("jam-heading")
+        .accessibilityLabel("Formatting").accessibilityIdentifier("jam-format").accessibilityAddTraits(composer.toolbarVisible ? [.isSelected] : [])
     }
 
-    /// The article's ⊕: a menu above the bar. Image and Video (the library; "Take a photo or video" as well), Audio (record, or choose a file), then
-    /// Button, Divider and Freewall. Each goes in at the caret. (Files other than audio are not offered in v1.)
+    /// H opens a small popover: Normal text and Heading 1 to 6. Every row has the same narrow column on the left for a small check on the current
+    /// one (empty space on the others), then the label, so nothing shifts when the check moves. Its icon says which one the caret is in.
+    private func headingButton(width: CGFloat) -> some View {
+        let level = composer.format.heading
+        return Button { headingOpen = true } label: {
+            Text(level == 0 ? "H" : "H\(level)").font(.system(size: 17, weight: .bold)).foregroundStyle(Theme.text).frame(width: width, height: 44)
+                .background(level == 0 ? .clear : Theme.surface, in: Circle())
+        }
+        .accessibilityLabel(level == 0 ? "Heading, currently normal text" : "Heading, currently Heading \(level)").accessibilityIdentifier("jam-heading")
+        .popover(isPresented: $headingOpen, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(0...6, id: \.self) { n in
+                    Button { composer.setHeading(n == 0 ? nil : n); headingOpen = false } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark").font(.system(size: 12, weight: .semibold)).frame(width: 16).opacity(level == n ? 1 : 0).accessibilityHidden(true)
+                            Text(n == 0 ? "Normal text" : "Heading \(n)").font(n == 0 ? Theme.body : .system(size: CGFloat(20 - n), weight: .bold))
+                            Spacer(minLength: 0)
+                        }
+                        .foregroundStyle(Theme.text).padding(.horizontal, 14).frame(minHeight: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(n == 0 ? "Normal text" : "Heading \(n)").accessibilityAddTraits(level == n ? [.isSelected] : [])
+                    .accessibilityIdentifier("jam-heading-\(n)")
+                }
+            }
+            .frame(width: 210).padding(.vertical, 6)
+            .presentationCompactAdaptation(.popover)
+        }
+    }
+
+    /// The article's ⊕: a menu above the bar, top to bottom as you see it: **Freewall · Divider · Button · Audio › · Photo › · Video ›**
+    /// (`menuOrder(.fixed)`: a menu that opens upward would otherwise reverse them). Each goes in at the caret. (Files other than audio are not
+    /// offered in v1.)
     private func plusMenu(width: CGFloat) -> some View {
         Menu {
-            Section {
-                Button { choose(.library) } label: { Label("Image", systemImage: "photo") }.accessibilityIdentifier("jam-menu-image")
-                Button { choose(.library) } label: { Label("Video", systemImage: "video") }.accessibilityIdentifier("jam-menu-video")
-                Button { choose(.camera) } label: { Label("Take a photo or video", systemImage: "camera") }.accessibilityIdentifier("jam-menu-camera")
-                Menu {
-                    Button { recordMode = 2 } label: { Label("Record", systemImage: "waveform") }.accessibilityIdentifier("jam-menu-audio-record")
-                    Button { choose(.files) } label: { Label("Choose a file", systemImage: "doc") }.accessibilityIdentifier("jam-menu-audio-file")
-                } label: { Label("Audio", systemImage: "waveform.circle") }
-                    .accessibilityIdentifier("jam-menu-audio")
-            }
-            Section {
-                Button { composer.buttonRequest = ButtonRequest() } label: { Label("Button", systemImage: "rectangle.and.hand.point.up.left") }.accessibilityIdentifier("jam-menu-button")
-                Button { composer.insertRule("divider") } label: { Label("Divider", systemImage: "minus") }.accessibilityIdentifier("jam-menu-divider")
-                Button { composer.insertRule("freewall") } label: { Label("Freewall", systemImage: "lock.open") }
-                    .disabled(composer.textView.map { ComposerDocument.hasFreewall(in: $0.textStorage) } ?? false)
-                    .accessibilityIdentifier("jam-menu-freewall")
-            }
+            Button { composer.insertRule("freewall") } label: { Label("Freewall", systemImage: "lock.open") }
+                .disabled(composer.textView.map { ComposerDocument.hasFreewall(in: $0.textStorage) } ?? false)
+                .accessibilityIdentifier("jam-menu-freewall")
+            Button { composer.insertRule("divider") } label: { Label("Divider", systemImage: "minus") }.accessibilityIdentifier("jam-menu-divider")
+            Button { composer.buttonRequest = ButtonRequest() } label: { Label("Button", systemImage: "rectangle.and.hand.point.up.left") }.accessibilityIdentifier("jam-menu-button")
+            Menu {
+                Button { recordMode = 2 } label: { Label("Record", systemImage: "waveform") }.accessibilityIdentifier("jam-menu-audio-record")
+                Button { choose(.files) } label: { Label("Choose a file", systemImage: "doc") }.accessibilityIdentifier("jam-menu-audio-file")
+            } label: { Label("Audio", systemImage: "waveform.circle") }
+                .accessibilityIdentifier("jam-menu-audio")
+            Menu {
+                Button { choose(.library) } label: { Label("Library", systemImage: "photo.on.rectangle") }.accessibilityIdentifier("jam-menu-photo-library")
+                Button { choose(.camera) } label: { Label("Take photo", systemImage: "camera") }.accessibilityIdentifier("jam-menu-photo-camera")
+            } label: { Label("Photo", systemImage: "photo") }
+                .accessibilityIdentifier("jam-menu-photo")
+            Menu {
+                Button { choose(.library) } label: { Label("Library", systemImage: "photo.on.rectangle") }.accessibilityIdentifier("jam-menu-video-library")
+                Button { choose(.camera) } label: { Label("Record video", systemImage: "video") }.accessibilityIdentifier("jam-menu-video-camera")
+            } label: { Label("Video", systemImage: "video") }
+                .accessibilityIdentifier("jam-menu-video")
         } label: {
             Image(systemName: "plus").font(.system(size: 17, weight: .bold)).foregroundStyle(Theme.canvas).frame(width: 32, height: 32).background(Theme.text, in: Circle()).frame(width: width, height: 44)
         }
+        .menuOrder(.fixed)
         .accessibilityLabel("Add").accessibilityIdentifier("jam-add")
     }
 

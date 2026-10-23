@@ -19,7 +19,7 @@ final class Jam188bUITests: LimeUITestCase {
     /// An article's ⊕ menu: Image (demo: a made-up picture goes in at the caret).
     private func addArticlePhoto(_ app: XCUIApplication) {
         app.buttons["jam-add"].tap()
-        app.buttons["Image"].tap()
+        app.buttons["Photo"].tap(); app.buttons["Library"].tap()
         sleep(1)
     }
 
@@ -186,7 +186,7 @@ final class Jam188bUITests: LimeUITestCase {
         waitForExpectations(timeout: 5)
         body.typeText("Start of the article\n\n")
         addArticlePhoto(app)
-        app.buttons["jam-add"].tap(); app.buttons["Take a photo or video"].tap()   // in an article the camera item takes a video (demo: a made-up clip)
+        app.buttons["jam-add"].tap(); app.buttons["Video"].tap(); app.buttons["Record video"].tap()   // in an article the camera item takes a video (demo: a made-up clip)
         sleep(1)
         // A co-author.
         app.buttons["jam-add-coauthor"].tap()

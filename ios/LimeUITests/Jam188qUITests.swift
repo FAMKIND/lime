@@ -23,10 +23,10 @@ final class Jam188qUITests: LimeUITestCase {
         return body
     }
 
-    func testTheArticleBarHasTheSevenItemsInOrderAndTheHeadingMenuMakesAnH4() {
+    func testTheArticleBarIsPlusAaHUndoRedoAndTheKeyboardAndTheMenusAreCleaner() {
         let app = launch()
         let body = openArticleBody(app)
-        let ids = ["jam-add", "jam-bold", "jam-italic", "jam-underline", "jam-heading", "jam-link", "jam-format", "jam-hide-keyboard"]
+        let ids = ["jam-add", "jam-format", "jam-heading", "jam-undo", "jam-redo", "jam-hide-keyboard"]
         var last: CGFloat = -1
         for id in ids {
             let element = any(app, id)
@@ -34,15 +34,34 @@ final class Jam188qUITests: LimeUITestCase {
             XCTAssertGreaterThan(element.frame.minX, last, "\(id) comes after the one before it")
             last = element.frame.minX
         }
+        XCTAssertFalse(any(app, "jam-bold").exists || any(app, "jam-link").exists, "B, I, U and link left the bar")
+        XCTAssertFalse(app.buttons["jam-undo"].isEnabled, "nothing to undo yet")
         body.typeText("Small heading")
+        XCTAssertTrue(app.buttons["jam-undo"].isEnabled, "now there is")
+        // H: the popover's rows, each with the label in the same column.
         app.buttons["jam-heading"].tap()
-        app.buttons["jam-heading-4"].tap()
-        XCTAssertEqual(body.value as? String, "#### Small heading")
-        app.buttons["jam-bold"].tap()
-        XCTAssertTrue(app.buttons["jam-bold"].isSelected || app.buttons["jam-bold"].value as? String == "1" || true)
+        let xs = (0...6).map { app.buttons["jam-heading-\($0)"] }
+        for row in xs { XCTAssertTrue(row.waitForExistence(timeout: 5)) }
+        XCTAssertEqual(xs.map { $0.frame.minX }.max() ?? 0, xs.map { $0.frame.minX }.min() ?? 1, accuracy: 0.5, "rows are aligned")
+        app.buttons["jam-heading-2"].tap()
+        XCTAssertEqual(body.value as? String, "## Small heading")
         app.buttons["jam-heading"].tap()
         app.buttons["jam-heading-0"].tap()
         XCTAssertEqual(body.value as? String, "Small heading", "normal text again")
+        // Aa: the strip has no undo, redo or H1.
+        app.buttons["jam-format"].tap()
+        XCTAssertTrue(app.buttons["fmt-bold"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["fmt-undo"].exists || app.buttons["fmt-redo"].exists || app.buttons["fmt-h1"].exists)
+        // +: Freewall to Video, top to bottom.
+        app.buttons["jam-add"].tap()
+        let order = ["jam-menu-freewall", "jam-menu-divider", "jam-menu-button", "jam-menu-audio", "jam-menu-photo", "jam-menu-video"]
+        var y: CGFloat = -1
+        for id in order {
+            let item = any(app, id)
+            XCTAssertTrue(item.waitForExistence(timeout: 5), id)
+            XCTAssertGreaterThan(item.frame.minY, y, "\(id) is below the one before it")
+            y = item.frame.minY
+        }
     }
 
     func testTheQuickPostHasNoWaveformAndAasStripSitsUnderThePills() {

@@ -24,7 +24,7 @@ final class Jam188rUITests: LimeUITestCase {
         expectation(for: NSPredicate(format: "hasKeyboardFocus == true"), evaluatedWith: body)
         waitForExpectations(timeout: 5)
         body.typeText("First")
-        app.buttons["jam-add"].tap(); app.buttons["Image"].tap(); sleep(1)
+        app.buttons["jam-add"].tap(); app.buttons["Photo"].tap(); app.buttons["Library"].tap(); sleep(1)
         body.typeText("Second")
         app.buttons["jam-add"].tap(); app.buttons["Button"].tap()
         app.buttons["button-preset-subscribe"].tap()
@@ -55,9 +55,9 @@ final class Jam188rUITests: LimeUITestCase {
         XCTAssertEqual(order(body), ["First", "Second", "button", "picture"], "Move up")
         // Undo, one step each.
         app.buttons["jam-format"].tap()
-        app.buttons["fmt-undo"].tap()
+        app.buttons["jam-undo"].tap()
         XCTAssertEqual(order(body), ["First", "Second", "picture", "button"], "undo puts it back")
-        app.buttons["fmt-undo"].tap()
+        app.buttons["jam-undo"].tap()
         XCTAssertEqual(order(body), ["First", "picture", "Second", "button"])
         // Delete.
         any(app, "block-1").tap()
