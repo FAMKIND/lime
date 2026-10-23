@@ -16,7 +16,7 @@ final class Jam188dUITests: LimeUITestCase {
         app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat"]
         app.launch()
         openSamsProfile(app)
-        let order = ["Info", "Activity", "Jam", "Posts", "Comments", "Replies"]   // Jam: Sam's jam has a title of its own (LIME-188v)
+        let order = ["Info", "Posts", "Orgs", "Activity"]   // Posts: locked until you subscribe; Orgs: Sam's jam has a title of its own (LIME-188x)
         var last: CGFloat = -1
         for name in order {
             let tab = app.buttons["profile-tab-\(name)"]
@@ -29,25 +29,21 @@ final class Jam188dUITests: LimeUITestCase {
         XCTAssertFalse(app.staticTexts["profile-jam-row"].exists, "no jam parts in the header or Info")
         app.buttons["profile-tab-Activity"].tap()
         XCTAssertTrue(any(app, "profile-empty-activity").waitForExistence(timeout: 5), "calm and empty until 189")
-        app.buttons["profile-tab-Comments"].tap()
-        XCTAssertTrue(any(app, "profile-empty-comments").waitForExistence(timeout: 5))
+        app.buttons["profile-tab-Orgs"].tap()
         XCTAssertFalse(any(app, "profile-empty-activity").exists, "one section at a time")
-        app.buttons["profile-tab-Replies"].tap()
-        XCTAssertTrue(any(app, "profile-empty-replies").waitForExistence(timeout: 5))
-        app.buttons["profile-tab-Jam"].tap()
-        XCTAssertTrue(app.staticTexts["profile-jam-row"].waitForExistence(timeout: 5), "the jam's title, subscribers and posts live in its tab")
+        any(app, "profile-org-demo-sam-jam").tap()
+        XCTAssertTrue(app.staticTexts["profile-jam-row"].waitForExistence(timeout: 5), "the jam's title, subscribers and posts live on the org's page")
     }
 
-    func testPostsHaveTheSameToggleAndFilterAsTheJamTab() {
+    func testMyProfileHasArticlesAndOrgsTabsAndNoPostsToggle() {
         let app = XCUIApplication()
         app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-screen", "jam-mine-profile"]
         app.launch()
-        XCTAssertTrue(app.buttons["profile-tab-Posts"].waitForExistence(timeout: 10))
-        app.buttons["profile-tab-Posts"].tap()
-        let control = app.segmentedControls["profile-posts-filter-segments"]
-        XCTAssertTrue(control.waitForExistence(timeout: 5), "Posts | Articles")
-        XCTAssertTrue(control.buttons["Posts"].exists && control.buttons["Articles"].exists)
-        XCTAssertTrue(app.buttons["profile-posts-filter-button"].exists, "and the filter button")
+        XCTAssertTrue(app.buttons["profile-tab-Articles"].waitForExistence(timeout: 10), "my article is under Articles")
+        XCTAssertFalse(app.buttons["profile-tab-Podcasts"].exists, "only tabs with something in them")
+        app.buttons["profile-tab-Articles"].tap()
+        XCTAssertFalse(app.segmentedControls["profile-posts-filter-segments"].exists, "no Posts | Articles control in a profile")
+        XCTAssertFalse(app.buttons["profile-tab-Comments"].exists || app.buttons["profile-tab-Replies"].exists)
         XCTAssertFalse(app.staticTexts["Quick"].exists || app.buttons["Quick"].exists, "no \"Quick\" in the UI")
     }
 }

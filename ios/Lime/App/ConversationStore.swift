@@ -76,7 +76,7 @@ final class ConversationStore {
     var jamPosts: [String: [JamPostInfo]] = [:]
     var jamProgress: [String: JamSendProgress] = [:]
     /// The jam tab's Posts | Articles choice and filters, kept while the app runs (LIME-188t).
-    var jamSegment: JamSegment = .posts
+    var jamSegment: JamSegment = .all
     var jamFilter = JamFilter()
     /// Bumped when the posts hidden on this phone change, so the feed redraws.
     var jamHiddenChanged = 0
@@ -1062,7 +1062,7 @@ final class ConversationStore {
             ])]
             path.append("dm:fmt")
         case "notif-banner": demoNotification = "banner"
-        case "jam", "jam-following", "jam-mine", "jam-mine-profile", "jam-mine-asjam", "jam-featured", "jam-request":
+        case "jam", "jam-following", "jam-mine", "jam-mine-profile", "jam-mine-asjam", "jam-request":
             // The jam tab, with nothing yet, with a jam I follow (Sam's, two posts), or with a jam of my own (one post, two subscribers).
             section = .jam
             UserDefaults.standard.removeObject(forKey: JamRead.key)   // every demo run starts with everything unread
@@ -1074,10 +1074,6 @@ final class ConversationStore {
                 demoPublish("demo-my-jam", kind: "article", title: "Notes from the circle", subtitle: "", markdown: long, items: [])
                 demoPublish("demo-my-jam", kind: "quick", title: "", subtitle: "", markdown: (1...14).map { "Line \($0) of a long note" }.joined(separator: "\n\n"), items: [])
                 demoPublish("demo-my-jam", kind: "quick", title: "", subtitle: "", markdown: "Welcome from the circle", items: [], displayAs: "jam")
-            }
-            if screen == "jam-featured" {
-                demoMineWithPost()
-                for n in 1...12 { demoPublish("demo-my-jam", kind: "article", title: "Featured \(n)", subtitle: "", markdown: "Words for article \(n).", items: []) }
             }
             if screen == "jam-request" { demoRequest() }
             if screen == "jam-mine-profile" { jamPath.append(ProfileRoute(userID: meProvider().id, name: meProvider().name, isMe: true)) }

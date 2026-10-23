@@ -7,9 +7,9 @@ extension XCUIApplication {
         if control.waitForExistence(timeout: 8) { control.buttons["Articles"].tap() }
     }
 
-    /// The same control in a profile's Posts section.
+    /// A profile's Articles tab (LIME-188x).
     func showProfileArticles() {
-        let control = segmentedControls["profile-posts-filter-segments"]
-        if control.waitForExistence(timeout: 8) { control.buttons["Articles"].tap() }
+        let tab = buttons["profile-tab-Articles"]
+        if tab.waitForExistence(timeout: 8) { tab.tap() }
     }
 }

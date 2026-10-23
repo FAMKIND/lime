@@ -1,31 +1,35 @@
 import SwiftUI
 
-/// The jam feed's three segments (LIME-188v): **Posts** (everything that is not an article: quick posts, photos, audio, video), **Articles**
-/// (the inbox, LIME-188c) and **Saved** (what is bookmarked on this phone, both kinds).
+/// The jam feed's segments (LIME-188x): **All**, **Posts** (quick posts: words, photos, videos that are not recordings), **Articles** and
+/// **Podcasts** (recordings, audio or video).
 enum JamSegment: Int, CaseIterable {
-    case posts, articles, saved
-    var title: String { ["Posts", "Articles", "Saved"][rawValue] }
-    /// Which kind the segment lists; nil is both.
-    var articles: Bool? { switch self { case .posts: false; case .articles: true; case .saved: nil } }
+    case all, posts, articles, podcasts
+    var title: String { ["All", "Posts", "Articles", "Podcasts"][rawValue] }
+    func includes(kind: String) -> Bool {
+        switch self { case .all: true; case .posts: kind == "quick"; case .articles: kind == "article"; case .podcasts: kind == "record" }
+    }
 }
 
-/// The jam feed's and a profile's filters (LIME-188t): the segment, and on top of it a media kind (within Posts), **Co-authored** and
-/// **From jams & groups** (posts shown as a jam, LIME-188q; LIME-193's organisations will show here too).
+/// The filters on top of the segment: a media kind, **Co-authored**, **Subscribed** (jams you follow, not your own), **Orgs** (posts shown as a jam,
+/// LIME-188q; LIME-193's organisations will show here too) and **Saved** (bookmarked on this phone).
 struct JamFilter: Equatable {
-    enum Media: String, CaseIterable { case audio = "Audio", video = "Video", photos = "Photos" }
+    enum Media: String, CaseIterable { case photos = "Photos", video = "Video", audio = "Audio" }
     var media: Media?
     var coauthored = false
-    /// Only the posts shown as a jam or a group.
+    var subscribed = false
     var orgs = false
+    var saved = false
 
-    var activeCount: Int { (media != nil ? 1 : 0) + (coauthored ? 1 : 0) + (orgs ? 1 : 0) }
+    var activeCount: Int { (media != nil ? 1 : 0) + [coauthored, subscribed, orgs, saved].filter { $0 }.count }
     var isOn: Bool { activeCount > 0 }
 
-    /// The rule both the feed and a profile use. `files` are the kinds of the post's attachments (`image`, `video`, `audio`, `file`).
-    static func matches(kind: String, files: [String], coauthored: Bool, asJam: Bool = false, articles: Bool?, filter: JamFilter) -> Bool {
-        if let articles, (kind == "article") != articles { return false }
+    /// `files` are the kinds of the post's attachments (`image`, `video`, `audio`, `file`).
+    static func matches(kind: String, files: [String], coauthored: Bool, asJam: Bool = false, subscribed: Bool = true, saved: Bool = false, segment: JamSegment, filter: JamFilter) -> Bool {
+        if !segment.includes(kind: kind) { return false }
         if filter.coauthored && !coauthored { return false }
         if filter.orgs && !asJam { return false }
+        if filter.subscribed && !subscribed { return false }
+        if filter.saved && !saved { return false }
         if kind != "article", let media = filter.media {
             switch media {
             case .audio: if !files.contains("audio") { return false }
@@ -38,58 +42,37 @@ struct JamFilter: Equatable {
 }
 
 extension ConversationStore {
-    /// Does this post pass the Posts | Articles choice and the filters?
-    func jamPostMatches(_ post: JamPostInfo, articles: Bool?, filter: JamFilter) -> Bool {
+    /// Does this post pass the segment and the filters?
+    func jamPostMatches(_ post: JamPostInfo, segment: JamSegment, filter: JamFilter) -> Bool {
         let files = post.kind == "article" || filter.media == nil ? [] : jamAttachments(post.postId).filter { !JamCover.isCover($0) }.map(\.kind)
-        return JamFilter.matches(kind: post.kind, files: files, coauthored: !post.coauthors.isEmpty, asJam: post.displayAs == "jam", articles: articles, filter: filter)
+        return JamFilter.matches(kind: post.kind, files: files, coauthored: !post.coauthors.isEmpty, asJam: post.displayAs == "jam",
+                                 subscribed: !jamsMine.contains { $0.jamId == post.jamId }, saved: JamSaved.contains(post.postId), segment: segment, filter: filter)
     }
 }
 
-/// The glass segmented control and the filter button with its menu: the same row as link and call. The feed has three segments (`segment`); a
-/// profile's Posts keeps two (`articles`).
+/// The glass segmented control and the filter button with its menu: the same row as link and call.
 struct JamFilterRow: View {
-    private enum Choice { case segment(Binding<JamSegment>), articles(Binding<Bool>) }
-    private let choice: Choice
+    @Binding var segment: JamSegment
     @Binding var filter: JamFilter
     var idPrefix = "jam-filter"
 
-    init(segment: Binding<JamSegment>, filter: Binding<JamFilter>, idPrefix: String = "jam-filter") {
-        choice = .segment(segment); _filter = filter; self.idPrefix = idPrefix
-    }
-
-    init(articles: Binding<Bool>, filter: Binding<JamFilter>, idPrefix: String = "jam-filter") {
-        choice = .articles(articles); _filter = filter; self.idPrefix = idPrefix
-    }
-
-    private var showsMedia: Bool {
-        switch choice { case .segment(let s): s.wrappedValue == .posts; case .articles(let a): !a.wrappedValue }
-    }
-
     var body: some View {
-        switch choice {
-        case .segment(let segment):
-            FilterRow(titles: JamSegment.allCases.map(\.title), selection: Binding(get: { segment.wrappedValue.rawValue }, set: { segment.wrappedValue = JamSegment(rawValue: $0) ?? .posts }),
-                      activeCount: filter.activeCount, idPrefix: idPrefix, menu: menu)
-        case .articles(let articles):
-            FilterRow(first: "Posts", second: "Articles", secondSelected: articles, activeCount: filter.activeCount, idPrefix: idPrefix, menu: menu)
-        }
-    }
-
-    @ViewBuilder
-    private func menu() -> some View {
-        if showsMedia {
+        FilterRow(titles: JamSegment.allCases.map(\.title), selection: Binding(get: { segment.rawValue }, set: { segment = JamSegment(rawValue: $0) ?? .all }),
+                  activeCount: filter.activeCount, idPrefix: idPrefix) {
             Section("Media") {
                 ForEach(JamFilter.Media.allCases, id: \.self) { media in
                     Toggle(media.rawValue, isOn: Binding(get: { filter.media == media }, set: { filter.media = $0 ? media : nil }))
                 }
             }
-        }
-        Section("Show") {
-            Toggle("Co-authored", isOn: $filter.coauthored)
-            Toggle("From jams & groups", isOn: $filter.orgs)
-        }
-        if filter.isOn {
-            Button("Clear filters", role: .destructive) { filter = JamFilter() }
+            Section("Show") {
+                Toggle("Co-authored", isOn: $filter.coauthored)
+                Toggle("Subscribed", isOn: $filter.subscribed)
+                Toggle("Orgs", isOn: $filter.orgs)
+                Toggle("Saved", isOn: $filter.saved).accessibilityIdentifier("\(idPrefix)-saved")
+            }
+            if filter.isOn {
+                Button("Clear filters", role: .destructive) { filter = JamFilter() }
+            }
         }
     }
 }

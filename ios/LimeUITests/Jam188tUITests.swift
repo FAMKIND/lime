@@ -31,41 +31,51 @@ final class Jam188tUITests: LimeUITestCase {
 
     func testNoSubscribeOnYourOwnProfile() {
         let app = launch("jam-mine-profile")
-        XCTAssertTrue(app.buttons["profile-tab-Posts"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["profile-tab-Info"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["profile-jam-subscribe"].exists)
     }
 
-    func testTheJamTabTogglesPostsAndArticlesAndFiltersByMediaAndCoauthored() {
+    func testTheJamTabTogglesAllPostsArticlesAndPodcastsAndFiltersByMediaAndCoauthored() {
         let app = launch("jam-following")
         let control = app.segmentedControls["jam-filter-segments"]
         XCTAssertTrue(control.waitForExistence(timeout: 10))
-        XCTAssertTrue(control.buttons["Posts"].isSelected, "Posts first, the default")
+        XCTAssertEqual(control.buttons.count, 4)
+        XCTAssertTrue(control.buttons["All"].isSelected, "All first, the default")
+        XCTAssertTrue(app.buttons["jam-post-demo-post-1"].exists && app.buttons["jam-post-demo-post-2"].exists, "everything under All")
+        control.buttons["Posts"].tap()
+        XCTAssertTrue(app.buttons["jam-post-demo-post-2"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["jam-post-demo-post-1"].exists, "no article under Posts")
-        XCTAssertTrue(app.buttons["jam-post-demo-post-2"].exists)
+        XCTAssertFalse(any(app, "jam-audio-card-demo-audio-1").exists, "no recording under Posts")
         control.buttons["Articles"].tap()
         XCTAssertTrue(app.buttons["jam-post-demo-post-1"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["jam-post-demo-post-2"].exists)
-        control.buttons["Posts"].tap()
+        control.buttons["Podcasts"].tap()
+        XCTAssertTrue(any(app, "jam-audio-card-demo-audio-1").waitForExistence(timeout: 5), "the recordings")
+        XCTAssertFalse(app.buttons["jam-post-demo-post-2"].exists)
         // Media: Audio shows only the recording with audio.
+        control.buttons["All"].tap()
         app.buttons["jam-filter-button"].tap()
+        XCTAssertTrue(app.buttons["Photos"].exists && app.buttons["Video"].exists && app.buttons["Audio"].exists)
+        XCTAssertTrue(app.buttons["Co-authored"].exists && app.buttons["Subscribed"].exists && app.buttons["Orgs"].exists && app.buttons["Saved"].exists, "the filters")
         app.buttons["Audio"].tap()
         XCTAssertTrue(any(app, "jam-audio-card-demo-audio-1").waitForExistence(timeout: 5), "the audio recording")
         XCTAssertFalse(app.buttons["jam-post-demo-post-2"].exists)
         XCTAssertFalse(app.buttons["jam-post-demo-post-3"].exists)
         XCTAssertTrue(any(app, "jam-filter-badge").exists || app.buttons["jam-filter-button"].label.contains("1"), "the button counts the filters")
-        // Co-authored: the article by Sam and Lee is under Articles.
+        // Co-authored: the article by Sam and Lee.
         app.buttons["jam-filter-button"].tap()
         app.buttons["Clear filters"].tap()
-        control.buttons["Articles"].tap()
         app.buttons["jam-filter-button"].tap()
         app.buttons["Co-authored"].tap()
         XCTAssertTrue(app.buttons["jam-post-demo-post-1"].waitForExistence(timeout: 5), "credited with Lee")
+        XCTAssertFalse(app.buttons["jam-post-demo-post-2"].exists)
         XCTAssertFalse(app.staticTexts["Quick"].exists || app.buttons["Quick"].exists, "no \"Quick\" anywhere")
     }
 
     func testAnEmptyFilterSaysNoPostsMatchAndClears() {
         let app = launch("jam-following")
         XCTAssertTrue(app.segmentedControls["jam-filter-segments"].waitForExistence(timeout: 10))
+        app.segmentedControls["jam-filter-segments"].buttons["Posts"].tap()
         app.buttons["jam-filter-button"].tap()
         app.buttons["Co-authored"].tap()   // nothing in Posts is co-authored
         XCTAssertTrue(app.staticTexts["No posts match"].waitForExistence(timeout: 5))

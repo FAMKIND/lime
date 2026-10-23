@@ -56,8 +56,8 @@ struct ProfileView: View {
     /// Their jam's page, when they have one (LIME-188d: Posts is a section only then).
     @State private var jamPage: JamPageInfo?
 
-    /// The sections, in order (LIME-188d). Activity, Comments and Replies wait for LIME-189 and say so calmly.
-    enum Section: String, CaseIterable { case info = "Info", activity = "Activity", jam = "Jam", posts = "Posts", comments = "Comments", replies = "Replies", shared = "Shared", calls = "Calls" }
+    /// The sections, in order (LIME-188x). Activity waits for LIME-189 and says so calmly; Comments and Replies come back with it if they are needed.
+    enum Section: String, CaseIterable { case info = "Info", posts = "Posts", articles = "Articles", podcasts = "Podcasts", orgs = "Orgs", activity = "Activity", shared = "Shared", calls = "Calls" }
 
     private var conversation: Conversation? { store.conversation("dm:\(route.userID)") }
     private var person: Person {
@@ -88,19 +88,19 @@ struct ProfileView: View {
         if let ids = route.callIDs { return CallLog.shared.records.filter { ids.contains($0.id) } }
         return Array(CallLog.shared.records(with: route.userID).prefix(10))
     }
-    /// A tab named after their jam (LIME-188v), after Activity, when the person has posted **as the jam** at least once, or has given the jam a title
-    /// that is not their own name (a jam made on a first post carries the person's name).
-    private var showsJamTab: Bool {
-        guard let page = jamPage else { return false }
-        let postedAsJam = store.posts(of: page.jamId).contains { $0.displayAs == "jam" }
-        let own = displayName.trimmingCharacters(in: .whitespaces).lowercased()
-        return postedAsJam || (!page.title.isEmpty && page.title.trimmingCharacters(in: .whitespaces).lowercased() != own)
-    }
+    /// Their posts shown as themselves (LIME-188x); the ones shown as an org are on the org's page.
+    private var ownPosts: [JamPostInfo] { jamPage.map { store.profilePosts(jamID: $0.jamId, isMe: route.isMe) } ?? [] }
+    /// Someone else's posts are readable once you subscribe: before that, Posts says so.
+    private var postsLocked: Bool { jamPage.map { !route.isMe && !store.isFollowing($0.jamId) } ?? false }
+    private var orgs: [JamPageInfo] { store.profileOrgs(page: jamPage, personName: displayName) }
     private var sections: [Section] {
-        var list: [Section] = [.info, .activity]
-        if showsJamTab { list.append(.jam) }
-        if jamPage != nil { list.append(.posts) }
-        list.append(contentsOf: [.comments, .replies])
+        var list: [Section] = [.info]
+        let kinds = Set(ownPosts.map(\.kind))
+        if postsLocked || kinds.contains("quick") { list.append(.posts) }
+        if !postsLocked && kinds.contains("article") { list.append(.articles) }
+        if !postsLocked && kinds.contains("record") { list.append(.podcasts) }
+        if !orgs.isEmpty { list.append(.orgs) }
+        list.append(.activity)
         if !sharedMedia.isEmpty || !sharedFiles.isEmpty || !sharedLinks.isEmpty { list.append(.shared) }
         if !calls.isEmpty { list.append(.calls) }
         return list
@@ -111,15 +111,15 @@ struct ProfileView: View {
         ScrollView {
             VStack(spacing: 18) {
                 top
-                if route.isMe { myActions } else if accepted || jamPage != nil { actions }
-                ProfileTabs(sections: available, selection: $section, jamTitle: jamPage?.title)
+                if route.isMe { myActions } else if accepted { actions }
+                ProfileTabs(sections: available, selection: $section)
                 switch section {
                 case .info: info
+                case .posts: JamProfilePosts(posts: ownPosts.filter { $0.kind == "quick" }, locked: postsLocked)
+                case .articles: JamProfilePosts(posts: ownPosts.filter { $0.kind == "article" }, locked: false)
+                case .podcasts: JamProfilePosts(posts: ownPosts.filter { $0.kind == "record" }, locked: false)
+                case .orgs: JamOrgsSection(orgs: orgs, isMe: route.isMe)
                 case .activity: emptySection("Nothing here yet.", id: "activity")
-                case .jam: JamProfileSection(scope: .jam, userID: route.userID, isMe: route.isMe, page: jamPage)
-                case .posts: JamProfileSection(scope: showsJamTab ? .own : .all, userID: route.userID, isMe: route.isMe, page: jamPage)
-                case .comments: emptySection("Nothing here yet.", id: "comments")
-                case .replies: emptySection("Nothing here yet.", id: "replies")
                 case .shared: shared
                 case .calls: callsList
                 }
@@ -222,9 +222,16 @@ struct ProfileView: View {
                     Image(systemName: "checkmark.seal.fill").foregroundStyle(Theme.text).font(Theme.font(.callout)).accessibilityLabel("Verified in person")
                 }
             }
-            let line = [profile?.username.map { "@\($0)" }, profile?.school].compactMap { $0 }.joined(separator: " \u{00B7} ")
-            if !line.isEmpty {
-                Text(line).font(Theme.secondary).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("profile-handle")
+            let line = [profile?.username.map { "@\($0)" }, profile?.school, orgs.first?.title].compactMap { $0 }.joined(separator: " \u{00B7} ")
+            // `@handle · org · Subscribe` (LIME-188x): Subscribe is a green link at the end of the line.
+            HStack(spacing: 6) {
+                if !line.isEmpty {
+                    Text(line).font(Theme.secondary).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("profile-handle")
+                }
+                if let jamPage, !route.isMe {
+                    if !line.isEmpty { Text("\u{00B7}").font(Theme.secondary).foregroundStyle(Theme.textSecondary).accessibilityHidden(true) }
+                    SubscribeLink(page: jamPage)
+                }
             }
             if let statusLine {
                 Text(statusLine).font(Theme.secondary).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("profile-status")
@@ -235,8 +242,6 @@ struct ProfileView: View {
     @ViewBuilder
     private var actions: some View {
         HStack(spacing: 12) {
-            // The one lime primary when they have a jam (LIME-188t); neutral and "Subscribed ✓" once subscribed.
-            if let jamPage, !route.isMe { subscribeCard(jamPage) }
             if accepted {
                 card("message", "Message", id: "profile-message") { store.openFromNotification("dm:\(route.userID)", thread: nil) }
                 card("phone", "Voice", id: "profile-voice") { Task { _ = await store.calls.start(peerID: route.userID, name: displayName, video: false) } }
@@ -252,22 +257,6 @@ struct ProfileView: View {
             card("pencil", "Edit profile", id: "profile-edit") { settingsLaunch = SettingsLaunch(start: .profile) }
             card("gearshape", "Settings", id: "profile-settings") { settingsLaunch = SettingsLaunch(start: nil) }
         }
-    }
-
-    private func subscribeCard(_ page: JamPageInfo) -> some View {
-        let following = store.isFollowing(page.jamId)
-        return Button { Task { if following { await store.unsubscribe(page.jamId) } else { await store.subscribe(to: page) } } } label: {
-            VStack(spacing: 6) {
-                Image(systemName: following ? "checkmark" : "plus").font(.system(size: 20, weight: .semibold)).frame(height: 24)
-                Text(following ? "Subscribed \u{2713}" : "Subscribe").font(Theme.font(.footnote, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
-            }
-            .foregroundStyle(following ? Theme.text : Theme.accentInk)
-            .frame(maxWidth: .infinity, minHeight: 64)
-            .background(following ? Theme.surface : Theme.accent, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(following ? "Subscribed to \(page.title). Tap to unsubscribe." : "Subscribe to \(page.title)")
-        .accessibilityIdentifier("profile-jam-subscribe")
     }
 
     private func card(_ symbol: String, _ title: String, id: String, perform: @escaping () -> Void) -> some View {
@@ -583,11 +572,6 @@ struct SharedListView: View {
 struct ProfileTabs: View {
     let sections: [ProfileView.Section]
     @Binding var selection: ProfileView.Section
-    /// The jam's name, for its tab.
-    var jamTitle: String?
-
-    private func title(_ section: ProfileView.Section) -> String { section == .jam ? (jamTitle ?? "Jam") : section.rawValue }
-
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
@@ -595,12 +579,12 @@ struct ProfileTabs: View {
                     ForEach(Array(sections.enumerated()), id: \.element) { index, section in
                         let on = selection == section
                         Button { selection = section } label: {
-                            Text(title(section)).font(Theme.font(.subheadline, weight: on ? .semibold : .regular)).foregroundStyle(on ? Theme.text : Theme.textSecondary)
+                            Text(section.rawValue).font(Theme.font(.subheadline, weight: on ? .semibold : .regular)).foregroundStyle(on ? Theme.text : Theme.textSecondary)
                                 .padding(.horizontal, 14).frame(minHeight: 44)
                                 .background { if on { Capsule().fill(.clear).limeGlass(in: Capsule()) } }
                         }
                         .buttonStyle(.plain).id(section)
-                        .accessibilityLabel("\(title(section)), tab, \(index + 1) of \(sections.count)")
+                        .accessibilityLabel("\(section.rawValue), tab, \(index + 1) of \(sections.count)")
                         .accessibilityAddTraits(on ? [.isSelected] : [])
                         .accessibilityIdentifier("profile-tab-\(section.rawValue)")
                     }

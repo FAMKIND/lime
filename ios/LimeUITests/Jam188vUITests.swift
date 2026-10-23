@@ -10,6 +10,11 @@ final class Jam188vUITests: LimeUITestCase {
         return app
     }
 
+    /// The menu's "Saved" (a saved article's bookmark has the same name).
+    private func savedFilter(_ app: XCUIApplication) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "label == 'Saved' AND NOT identifier BEGINSWITH 'jam-article-save'")).firstMatch
+    }
+
     private func any(_ app: XCUIApplication, _ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
 
     func testTheFeedIsOneScrollViewFromTheTopOfTheScreenSoItScrollsUnderTheHeader() {
@@ -21,22 +26,26 @@ final class Jam188vUITests: LimeUITestCase {
         XCTAssertTrue(app.segmentedControls["jam-filter-segments"].exists, "the filter row is inside it")
     }
 
-    func testThreeSegmentsAndSavedListsASavedPostOrSaysNothingYet() {
+    func testSavedIsAFilterAndListsASavedPostOrSaysNothingYet() {
         let app = launch("jam-following")
         let control = app.segmentedControls["jam-filter-segments"]
         XCTAssertTrue(control.waitForExistence(timeout: 10))
-        XCTAssertEqual(control.buttons.count, 3)
-        XCTAssertTrue(control.buttons["Posts"].exists && control.buttons["Articles"].exists && control.buttons["Saved"].exists)
+        XCTAssertFalse(control.buttons["Saved"].exists, "Saved is in the filter menu now")
         XCTAssertFalse(app.buttons["jam-saved-row"].exists, "the Saved (n) row is gone")
-        control.buttons["Saved"].tap()
+        app.buttons["jam-filter-button"].tap()
+        savedFilter(app).tap()
         XCTAssertTrue(any(app, "jam-saved-empty").waitForExistence(timeout: 5))
         XCTAssertEqual(any(app, "jam-saved-empty").label, "Nothing saved yet.")
+        app.buttons["jam-filter-button"].tap()
+        app.buttons["Clear filters"].tap()
         control.buttons["Articles"].tap()
         let save = app.buttons["jam-article-save-demo-post-1"]
         XCTAssertTrue(save.waitForExistence(timeout: 8))
-        for _ in 0..<4 where !save.isHittable || save.frame.maxY > app.windows.firstMatch.frame.height - 150 { app.swipeUp() }   // the featured row pushed the card down
+        for _ in 0..<4 where !save.isHittable || save.frame.maxY > app.windows.firstMatch.frame.height - 150 { app.swipeUp() }
         save.tap()
-        control.buttons["Saved"].tap()
+        control.buttons["All"].tap()
+        app.buttons["jam-filter-button"].tap()
+        savedFilter(app).tap()
         XCTAssertTrue(app.buttons["jam-post-demo-post-1"].waitForExistence(timeout: 5), "the saved article")
         XCTAssertFalse(any(app, "jam-saved-empty").exists)
         // Put it back so the next run starts clean.
@@ -45,12 +54,12 @@ final class Jam188vUITests: LimeUITestCase {
         XCTAssertTrue(any(app, "jam-saved-empty").waitForExistence(timeout: 5))
     }
 
-    func testTheFilterFromJamsAndGroupsShowsOnlyPostsShownAsTheJam() {
+    func testTheOrgsFilterShowsOnlyPostsShownAsTheJam() {
         let app = launch("jam-mine-asjam")
         let control = app.segmentedControls["jam-filter-segments"]
         XCTAssertTrue(control.waitForExistence(timeout: 10))
         app.buttons["jam-filter-button"].tap()
-        let toggle = app.buttons["From jams & groups"]
+        let toggle = app.buttons["Orgs"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
         toggle.tap()
         XCTAssertTrue(app.staticTexts["Welcome from the circle"].waitForExistence(timeout: 5) || app.buttons.matching(NSPredicate(format: "label CONTAINS 'Welcome from the circle'")).firstMatch.exists, "the post shown as the jam")
@@ -59,21 +68,18 @@ final class Jam188vUITests: LimeUITestCase {
         XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Our first circle'")).firstMatch.exists, "not my article as myself")
     }
 
-    func testAProfileWithAJamTitleOfItsOwnHasAPillAfterActivityWithTheHeadAndPostsHasNone() {
+    func testAProfileWithAJamTitleOfItsOwnHasAnOrgsTabAndNoPerJamPill() {
         let app = launch("jam-mine-asjam")
-        // Open my profile from the header's avatar.
         app.buttons["settings-button"].tap()
-        let jam = app.buttons["profile-tab-Jam"]
-        XCTAssertTrue(jam.waitForExistence(timeout: 10))
-        XCTAssertTrue(jam.label.hasPrefix("Reading circles, tab"), jam.label)
-        XCTAssertGreaterThan(jam.frame.minX, app.buttons["profile-tab-Activity"].frame.minX)
-        XCTAssertLessThan(jam.frame.minX, app.buttons["profile-tab-Posts"].frame.minX)
-        jam.tap()
+        let orgs = app.buttons["profile-tab-Orgs"]
+        XCTAssertTrue(orgs.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Reading circles, tab'")).firstMatch.exists, "no pill named after the jam")
+        orgs.tap()
+        XCTAssertTrue(any(app, "profile-org-demo-my-jam").waitForExistence(timeout: 5), "the org's row")
+        any(app, "profile-org-demo-my-jam").tap()
         XCTAssertTrue(app.staticTexts["profile-jam-row"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["jam-edit-page"].exists)
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Welcome from the circle'")).firstMatch.exists || app.staticTexts["Welcome from the circle"].exists, "the post shown as the jam")
-        app.buttons["profile-tab-Posts"].tap()
-        XCTAssertFalse(app.staticTexts["profile-jam-row"].exists, "no head under Posts")
-        XCTAssertFalse(app.staticTexts["Welcome from the circle"].exists, "and not the jam's posts")
+        XCTAssertTrue(app.segmentedControls["profile-org-segments"].exists)
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Welcome from the circle'")).firstMatch.exists || app.staticTexts["Welcome from the circle"].exists, "the post shown as the org")
     }
 }

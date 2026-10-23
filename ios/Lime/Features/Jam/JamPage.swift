@@ -77,18 +77,16 @@ struct JamPage: View {
         }
     }
 
-    /// The posts of the chosen segment: Saved is the bookmarked ones, newest saved first, whoever wrote them.
+    /// The posts of the chosen segment that pass the filters (Saved is one of them).
     private func shown(_ posts: [JamPostInfo]) -> [JamPostInfo] {
-        let segment = store.jamSegment
-        let source = segment == .saved ? JamSaved.ids.compactMap { store.jamPost($0) } : posts
-        return source.filter { store.jamPostMatches($0, articles: segment.articles, filter: store.jamFilter) }
+        posts.filter { store.jamPostMatches($0, segment: store.jamSegment, filter: store.jamFilter) }
     }
 
     /// Everything is one scroll view, so the requests and the filter row scroll away with the posts and go under the header.
     private func feedBody(_ posts: [JamPostInfo], topMargin: CGFloat) -> some View {
         @Bindable var store = store
         let list = shown(posts)
-        let nothingYet = posts.isEmpty && store.jamSegment != .saved && JamSaved.ids.isEmpty
+        let nothingYet = posts.isEmpty
         return ScrollView {
             LazyVStack(spacing: 0) {
                 requests
@@ -98,15 +96,13 @@ struct JamPage: View {
                         .padding(.horizontal, 40).padding(.top, 120)
                         .accessibilityIdentifier("jam-feed-empty")
                 } else {
-                    let featured = JamFeatured.pick(posts) { post in store.jamAttachments(post.postId).contains { ["image", "video", "audio"].contains($0.kind) && !JamCover.isCover($0) } }
-                    if !featured.isEmpty { JamFeaturedRow(posts: featured) }
                     JamFilterRow(segment: $store.jamSegment, filter: $store.jamFilter).padding(.top, 4).padding(.horizontal, 16)
                     if list.isEmpty {
-                        if store.jamSegment == .saved && !store.jamFilter.isOn {
+                        if store.jamSegment == .all && store.jamFilter == JamFilter(saved: true) {
                             Text("Nothing saved yet.").font(Theme.body).foregroundStyle(Theme.textSecondary).padding(.top, 60)
                                 .accessibilityIdentifier("jam-saved-empty")
                         } else {
-                            FilteredEmpty(text: store.jamSegment == .articles ? "No articles match" : "No posts match") { store.jamFilter = JamFilter(); store.jamSegment = .posts }
+                            FilteredEmpty(text: store.jamSegment == .articles ? "No articles match" : store.jamSegment == .podcasts ? "No podcasts match" : "No posts match") { store.jamFilter = JamFilter(); store.jamSegment = .all }
                         }
                     }
                     ForEach(list, id: \.postId) { post in

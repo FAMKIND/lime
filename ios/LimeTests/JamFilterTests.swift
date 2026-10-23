@@ -1,28 +1,38 @@
 import XCTest
 @testable import Lime
 
-/// LIME-188t: what Posts, Articles and the filters let through.
+/// LIME-188x: what the segments (All, Posts, Articles, Podcasts) and the filters let through.
 final class JamFilterTests: XCTestCase {
-    private func ok(_ kind: String, _ files: [String] = [], coauthored: Bool = false, articles: Bool = false, _ filter: JamFilter = JamFilter()) -> Bool {
-        JamFilter.matches(kind: kind, files: files, coauthored: coauthored, articles: articles, filter: filter)
+    private func ok(_ kind: String, _ files: [String] = [], coauthored: Bool = false, asJam: Bool = false, subscribed: Bool = true, saved: Bool = false,
+                    seg segment: JamSegment = .all, filter: JamFilter = JamFilter()) -> Bool {
+        JamFilter.matches(kind: kind, files: files, coauthored: coauthored, asJam: asJam, subscribed: subscribed, saved: saved, segment: segment, filter: filter)
     }
 
-    func testPostsAreEverythingThatIsNotAnArticle() {
-        XCTAssertTrue(ok("quick"))
-        XCTAssertTrue(ok("record", ["audio"]))
-        XCTAssertFalse(ok("article"))
-        XCTAssertTrue(ok("article", articles: true))
-        XCTAssertFalse(ok("quick", articles: true))
+    func testTheSegmentsSplitByKind() {
+        for kind in ["quick", "article", "record"] { XCTAssertTrue(ok(kind), "All has \(kind)") }
+        XCTAssertTrue(ok("quick", seg: .posts)); XCTAssertFalse(ok("article", seg: .posts)); XCTAssertFalse(ok("record", seg: .posts))
+        XCTAssertTrue(ok("article", seg: .articles)); XCTAssertFalse(ok("quick", seg: .articles))
+        XCTAssertTrue(ok("record", ["audio"], seg: .podcasts)); XCTAssertFalse(ok("quick", seg: .podcasts))
+        XCTAssertEqual(JamSegment.allCases.map(\.title), ["All", "Posts", "Articles", "Podcasts"])
     }
 
-    func testMediaNarrowsPostsAndCoauthoredNarrowsBoth() {
-        XCTAssertTrue(ok("record", ["audio"], JamFilter(media: .audio)))
-        XCTAssertFalse(ok("record", ["video"], JamFilter(media: .audio)))
-        XCTAssertTrue(ok("quick", ["image", "image"], JamFilter(media: .photos)))
-        XCTAssertTrue(ok("record", ["video"], JamFilter(media: .video)))
-        XCTAssertFalse(ok("quick", [], coauthored: false, JamFilter(coauthored: true)))
-        XCTAssertTrue(ok("article", coauthored: true, articles: true, JamFilter(coauthored: true)))
-        XCTAssertTrue(ok("article", articles: true, JamFilter(media: .audio)), "the media kinds are for Posts; an article ignores them")
-        XCTAssertEqual(JamFilter(media: .audio, coauthored: true).activeCount, 2)
+    func testMediaNarrowsAndAnArticleIgnoresIt() {
+        XCTAssertTrue(ok("record", ["audio"], seg: .all, filter: JamFilter(media: .audio)))
+        XCTAssertFalse(ok("record", ["video"], seg: .all, filter: JamFilter(media: .audio)))
+        XCTAssertTrue(ok("quick", ["image", "image"], seg: .all, filter: JamFilter(media: .photos)))
+        XCTAssertTrue(ok("record", ["video"], seg: .podcasts, filter: JamFilter(media: .video)))
+        XCTAssertTrue(ok("article", seg: .all, filter: JamFilter(media: .audio)))
+    }
+
+    func testCoauthoredSubscribedOrgsAndSaved() {
+        XCTAssertFalse(ok("quick", coauthored: false, seg: .all, filter: JamFilter(coauthored: true)))
+        XCTAssertTrue(ok("article", coauthored: true, seg: .all, filter: JamFilter(coauthored: true)))
+        XCTAssertFalse(ok("quick", subscribed: false, seg: .all, filter: JamFilter(subscribed: true)), "my own jam is not a subscription")
+        XCTAssertTrue(ok("quick", subscribed: true, seg: .all, filter: JamFilter(subscribed: true)))
+        XCTAssertTrue(ok("quick", asJam: true, seg: .all, filter: JamFilter(orgs: true)))
+        XCTAssertFalse(ok("quick", asJam: false, seg: .all, filter: JamFilter(orgs: true)))
+        XCTAssertTrue(ok("article", saved: true, seg: .all, filter: JamFilter(saved: true)))
+        XCTAssertFalse(ok("article", saved: false, seg: .all, filter: JamFilter(saved: true)))
+        XCTAssertEqual(JamFilter(media: .audio, coauthored: true, subscribed: true, orgs: true, saved: true).activeCount, 5)
     }
 }

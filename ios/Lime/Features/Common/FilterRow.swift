@@ -33,8 +33,8 @@ struct FilterRow<MenuContent: View>: View {
                 ForEach(Array(titles.enumerated()), id: \.offset) { index, title in Text(title).tag(index) }
             }
             .pickerStyle(.segmented)
-            // Three segments still leave room for the filter button on a 320 pt phone.
-            .frame(maxWidth: titles.count > 2 ? 228 : 220)
+            // More segments take what the row has left beside the filter button (a 320 pt phone has about 232 pt).
+            .frame(maxWidth: titles.count > 2 ? 300 : 220)
             .accessibilityIdentifier("\(idPrefix)-segments")
             Menu { menu() } label: {
                 Image(systemName: "line.3.horizontal.decrease")

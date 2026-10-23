@@ -1,6 +1,6 @@
 import XCTest
 
-/// LIME-188c: jam as home: the featured row above the feed; an unread dot on articles; "more" on long quick posts.
+/// LIME-188c: an unread dot on articles; "more" on long quick posts (the featured row went with LIME-188x).
 @MainActor
 final class Jam188cUITests: LimeUITestCase {
     private func launch(_ screen: String) -> XCUIApplication {
@@ -11,23 +11,6 @@ final class Jam188cUITests: LimeUITestCase {
     }
 
     private func any(_ app: XCUIApplication, _ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
-
-    func testTheFeaturedRowShowsTenOfTwelveAboveTheFilterRowInBothSegments() {
-        let app = launch("jam-featured")
-        let row = any(app, "jam-featured")
-        XCTAssertTrue(row.waitForExistence(timeout: 10))
-        XCTAssertEqual(row.label, "Featured")
-        XCTAssertTrue((row.value as? String ?? "").hasPrefix("1 of 10"), "ten at most: \(row.value as? String ?? "")")
-        XCTAssertLessThan(row.frame.minY, app.segmentedControls["jam-filter-segments"].frame.minY, "above Posts | Articles | Saved")
-        app.segmentedControls["jam-filter-segments"].buttons["Articles"].tap()
-        XCTAssertTrue(row.waitForExistence(timeout: 5), "and in Articles too")
-    }
-
-    func testTheFeaturedRowIsGoneWhenThereIsNothingToFeature() {
-        let app = launch("jam")
-        XCTAssertTrue(any(app, "jam-feed-empty").waitForExistence(timeout: 10))
-        XCTAssertFalse(any(app, "jam-featured").exists)
-    }
 
     func testAnUnreadArticleHasADotAndOpeningItClearsIt() {
         let app = launch("jam-following")
