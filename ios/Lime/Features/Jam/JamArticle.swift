@@ -110,11 +110,16 @@ struct JamArticleCover: View {
     @State private var image: UIImage?
     @State private var saved = false
     @AppStorage(JamSaved.key) private var savedList: String = ""
+    /// Opening a post marks it read: the dot goes.
+    @AppStorage(JamRead.key) private var readList: String = ""
 
     var body: some View {
         let writer = store.teacher(post.author)
         ZStack(alignment: .bottomLeading) {
             CoverArt(image: image, person: writer)
+            if JamRead.isUnread(post, me: store.meProvider().id) {
+                VStack { HStack { Circle().fill(.white).frame(width: 12, height: 12).overlay(Circle().stroke(.black.opacity(0.35), lineWidth: 1)).padding(14).accessibilityElement().accessibilityLabel("Unread").accessibilityIdentifier("jam-unread-\(post.postId)"); Spacer() }; Spacer() }
+            }
             LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .center, endPoint: .bottom)
             Text(post.title).font(Theme.font(.title3, weight: .bold)).foregroundStyle(.white).lineLimit(3).multilineTextAlignment(.leading)
                 .padding(.leading, 16).padding(.trailing, 64).padding(.bottom, 16)

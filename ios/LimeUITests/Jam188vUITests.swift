@@ -34,11 +34,13 @@ final class Jam188vUITests: LimeUITestCase {
         control.buttons["Articles"].tap()
         let save = app.buttons["jam-article-save-demo-post-1"]
         XCTAssertTrue(save.waitForExistence(timeout: 8))
+        for _ in 0..<4 where !save.isHittable || save.frame.maxY > app.windows.firstMatch.frame.height - 150 { app.swipeUp() }   // the featured row pushed the card down
         save.tap()
         control.buttons["Saved"].tap()
         XCTAssertTrue(app.buttons["jam-post-demo-post-1"].waitForExistence(timeout: 5), "the saved article")
         XCTAssertFalse(any(app, "jam-saved-empty").exists)
         // Put it back so the next run starts clean.
+        for _ in 0..<4 where !app.buttons["jam-article-save-demo-post-1"].isHittable { app.swipeDown() }
         app.buttons["jam-article-save-demo-post-1"].tap()
         XCTAssertTrue(any(app, "jam-saved-empty").waitForExistence(timeout: 5))
     }

@@ -98,6 +98,8 @@ struct JamPage: View {
                         .padding(.horizontal, 40).padding(.top, 120)
                         .accessibilityIdentifier("jam-feed-empty")
                 } else {
+                    let featured = JamFeatured.pick(posts) { post in store.jamAttachments(post.postId).contains { ["image", "video", "audio"].contains($0.kind) && !JamCover.isCover($0) } }
+                    if !featured.isEmpty { JamFeaturedRow(posts: featured) }
                     JamFilterRow(segment: $store.jamSegment, filter: $store.jamFilter).padding(.top, 4).padding(.horizontal, 16)
                     if list.isEmpty {
                         if store.jamSegment == .saved && !store.jamFilter.isOn {
@@ -129,6 +131,9 @@ struct JamPostCard: View {
     /// Where tapping the post goes; the jam tab pushes the reader, a profile presents it.
     var open: ((String) -> Void)? = nil
     @Environment(ConversationStore.self) private var store
+    /// A long quick post is cut at 8 lines; "more" opens it here.
+    @State private var expanded = false
+    @State private var cut = false
 
     var body: some View {
         let writer = store.teacher(post.author)
@@ -166,6 +171,10 @@ struct JamPostCard: View {
                 .accessibilityHint("Opens the post")
                 .accessibilityIdentifier("jam-post-\(post.postId)")
             }
+            if post.kind == "quick", cut, !expanded {
+                Button { withAnimation { expanded = true } } label: { Text("more").font(Theme.secondary).foregroundStyle(Theme.textSecondary).frame(minHeight: 44, alignment: .leading) }
+                    .buttonStyle(.plain).accessibilityLabel("more").accessibilityHint("Shows the whole post").accessibilityIdentifier("jam-more-\(post.postId)")
+            }
             if post.state == "ready", post.kind != "article" { JamAttachmentsView(postID: post.postId, compact: true) }
             actions
         }
@@ -193,7 +202,16 @@ struct JamPostCard: View {
                 } else {
                     if !post.title.isEmpty { Text(post.title).font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text).multilineTextAlignment(.leading) }
                     if post.kind == "record", !post.subtitle.isEmpty { Text(post.subtitle).font(Theme.body).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.leading) }
-                    if !post.plain.isEmpty { Text(post.plain).font(Theme.body).foregroundStyle(Theme.text).lineLimit(8).multilineTextAlignment(.leading) }
+                    if !post.plain.isEmpty {
+                        Text(post.plain).font(Theme.body).foregroundStyle(Theme.text).lineLimit(post.kind == "quick" && expanded ? nil : 8).multilineTextAlignment(.leading)
+                            .background {
+                                // Is there more than 8 lines? The same text, uncut and unseen, is measured against the shown one.
+                                GeometryReader { shown in
+                                    Text(post.plain).font(Theme.body).fixedSize(horizontal: false, vertical: true).frame(width: shown.size.width).hidden()
+                                        .background(GeometryReader { full in Color.clear.onAppear { cut = full.size.height > shown.size.height + 1 }.onChange(of: shown.size.height) { _, h in cut = full.size.height > h + 1 } })
+                                }
+                            }
+                    }
                 }
             }
         }

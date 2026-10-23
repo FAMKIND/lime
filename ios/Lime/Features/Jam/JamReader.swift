@@ -14,11 +14,14 @@ struct JamPostView: View {
 
     var body: some View {
         let post = store.jamPost(postID)
-        if post?.kind == "article" {
-            JamArticlePage(postID: postID)
-        } else {
-            quickReader(post)
+        Group {
+            if post?.kind == "article" {
+                JamArticlePage(postID: postID)
+            } else {
+                quickReader(post)
+            }
         }
+        .onAppear { JamRead.mark(postID) }
     }
 
     /// A quick post or a recording, read in the reader's chosen face too.

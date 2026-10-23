@@ -45,6 +45,7 @@ final class Jam188pUITests: LimeUITestCase {
         app.showJamArticles()
         let save = app.buttons["jam-article-save-demo-post-1"]
         XCTAssertTrue(save.waitForExistence(timeout: 10))
+        for _ in 0..<4 where !save.isHittable || save.frame.maxY > app.windows.firstMatch.frame.height - 150 { app.swipeUp() }   // the featured row pushed the card down
         let before = save.label
         save.tap()
         XCTAssertNotEqual(save.label, before)

@@ -1062,16 +1062,22 @@ final class ConversationStore {
             ])]
             path.append("dm:fmt")
         case "notif-banner": demoNotification = "banner"
-        case "jam", "jam-following", "jam-mine", "jam-mine-profile", "jam-mine-asjam", "jam-request":
+        case "jam", "jam-following", "jam-mine", "jam-mine-profile", "jam-mine-asjam", "jam-featured", "jam-request":
             // The jam tab, with nothing yet, with a jam I follow (Sam's, two posts), or with a jam of my own (one post, two subscribers).
             section = .jam
+            UserDefaults.standard.removeObject(forKey: JamRead.key)   // every demo run starts with everything unread
             if screen == "jam-following", let page = demoJamPages["sam"] { demoSubscribe(page) }
             if screen == "jam-mine" || screen == "jam-mine-profile" || screen == "jam-mine-asjam" { demoMineWithPost() }
             if screen == "jam-mine-asjam" {
                 let long = (1...30).map { "Paragraph \($0): we read aloud together and talked about what we noticed." }.joined(separator: "\n\n")
                 demoPublish("demo-my-jam", kind: "article", title: "How we read together", subtitle: "A term of circles", markdown: long, items: [], coauthors: ["sam", "lee"], displayAs: "jam")
                 demoPublish("demo-my-jam", kind: "article", title: "Notes from the circle", subtitle: "", markdown: long, items: [])
+                demoPublish("demo-my-jam", kind: "quick", title: "", subtitle: "", markdown: (1...14).map { "Line \($0) of a long note" }.joined(separator: "\n\n"), items: [])
                 demoPublish("demo-my-jam", kind: "quick", title: "", subtitle: "", markdown: "Welcome from the circle", items: [], displayAs: "jam")
+            }
+            if screen == "jam-featured" {
+                demoMineWithPost()
+                for n in 1...12 { demoPublish("demo-my-jam", kind: "article", title: "Featured \(n)", subtitle: "", markdown: "Words for article \(n).", items: []) }
             }
             if screen == "jam-request" { demoRequest() }
             if screen == "jam-mine-profile" { jamPath.append(ProfileRoute(userID: meProvider().id, name: meProvider().name, isMe: true)) }
