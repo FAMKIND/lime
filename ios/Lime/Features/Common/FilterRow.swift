@@ -36,28 +36,39 @@ struct FilterRow<MenuContent: View>: View {
             // More segments take what the row has left beside the filter button (a 320 pt phone has about 232 pt).
             .frame(maxWidth: titles.count > 2 ? 300 : 220)
             .accessibilityIdentifier("\(idPrefix)-segments")
-            Menu { menu() } label: {
-                Image(systemName: "line.3.horizontal.decrease")
-                    .font(.system(size: 17, weight: .regular)).foregroundStyle(Theme.text)
-                    .frame(width: 40, height: 40)
-                    .limeGlass(in: Circle())
-                    .overlay(alignment: .topTrailing) {
-                        if activeCount > 0 {
-                            CountBadge(count: activeCount, size: 16, font: .caption2.weight(.semibold))
-                                .offset(x: 4, y: -4)
-                                .accessibilityHidden(true)
-                                .accessibilityIdentifier("\(idPrefix)-badge")
-                        }
-                    }
-                    // Room around the button so the badge, which hangs off its corner, is inside the menu's and the row's bounds on the first frame.
-                    .padding(.top, 6).padding(.trailing, 6)
-            }
-            .accessibilityLabel(activeCount == 0 ? "Filter" : "Filter, \(activeCount) active")
-            .accessibilityValue(activeCount == 0 ? "" : "\(activeCount)")
-            .accessibilityIdentifier("\(idPrefix)-button")
+            FilterMenuButton(activeCount: activeCount, idPrefix: idPrefix, menu: menu)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 0).padding(.bottom, 2)
+    }
+}
+
+/// The round glass filter button with its lime badge and its menu (LIME-124); the segmented row and jam's pills both use it.
+struct FilterMenuButton<MenuContent: View>: View {
+    let activeCount: Int
+    var idPrefix = "filter"
+    @ViewBuilder let menu: () -> MenuContent
+
+    var body: some View {
+    Menu { menu() } label: {
+        Image(systemName: "line.3.horizontal.decrease")
+            .font(.system(size: 17, weight: .regular)).foregroundStyle(Theme.text)
+            .frame(width: 40, height: 40)
+            .limeGlass(in: Circle())
+            .overlay(alignment: .topTrailing) {
+                if activeCount > 0 {
+                    CountBadge(count: activeCount, size: 16, font: .caption2.weight(.semibold))
+                        .offset(x: 4, y: -4)
+                        .accessibilityHidden(true)
+                        .accessibilityIdentifier("\(idPrefix)-badge")
+                }
+            }
+            // Room around the button so the badge, which hangs off its corner, is inside the menu's and the row's bounds on the first frame.
+            .padding(.top, 6).padding(.trailing, 6)
+    }
+    .accessibilityLabel(activeCount == 0 ? "Filter" : "Filter, \(activeCount) active")
+    .accessibilityValue(activeCount == 0 ? "" : "\(activeCount)")
+    .accessibilityIdentifier("\(idPrefix)-button")
     }
 }
 

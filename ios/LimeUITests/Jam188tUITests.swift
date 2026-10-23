@@ -37,9 +37,12 @@ final class Jam188tUITests: LimeUITestCase {
 
     func testTheJamTabTogglesAllPostsArticlesAndPodcastsAndFiltersByMediaAndCoauthored() {
         let app = launch("jam-following")
-        let control = app.segmentedControls["jam-filter-segments"]
+        let control = app.descendants(matching: .any).matching(identifier: "jam-filter-segments").firstMatch
         XCTAssertTrue(control.waitForExistence(timeout: 10))
         XCTAssertEqual(control.buttons.count, 4)
+        let order = ["All", "Posts", "Articles", "Podcasts"].map { control.buttons[$0].frame.minX }
+        XCTAssertEqual(order, order.sorted(), "pills in order")
+        XCTAssertGreaterThan(app.buttons["jam-filter-button"].frame.minX, control.buttons["Podcasts"].frame.maxX - 1, "the filter button is at the far right, outside the pills")
         XCTAssertTrue(control.buttons["All"].isSelected, "All first, the default")
         XCTAssertTrue(app.buttons["jam-post-demo-post-1"].exists && app.buttons["jam-post-demo-post-2"].exists, "everything under All")
         control.buttons["Posts"].tap()
@@ -74,8 +77,8 @@ final class Jam188tUITests: LimeUITestCase {
 
     func testAnEmptyFilterSaysNoPostsMatchAndClears() {
         let app = launch("jam-following")
-        XCTAssertTrue(app.segmentedControls["jam-filter-segments"].waitForExistence(timeout: 10))
-        app.segmentedControls["jam-filter-segments"].buttons["Posts"].tap()
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "jam-filter-segments").firstMatch.waitForExistence(timeout: 10))
+        app.descendants(matching: .any).matching(identifier: "jam-filter-segments").firstMatch.buttons["Posts"].tap()
         app.buttons["jam-filter-button"].tap()
         app.buttons["Co-authored"].tap()   // nothing in Posts is co-authored
         XCTAssertTrue(app.staticTexts["No posts match"].waitForExistence(timeout: 5))

@@ -96,7 +96,7 @@ struct JamPage: View {
                         .padding(.horizontal, 40).padding(.top, 120)
                         .accessibilityIdentifier("jam-feed-empty")
                 } else {
-                    JamFilterRow(segment: $store.jamSegment, filter: $store.jamFilter).padding(.top, 4).padding(.horizontal, 16)
+                    JamFilterRow(segment: $store.jamSegment, filter: $store.jamFilter).padding(.top, 4)
                     if list.isEmpty {
                         if store.jamSegment == .all && store.jamFilter == JamFilter(saved: true) {
                             Text("Nothing saved yet.").font(Theme.body).foregroundStyle(Theme.textSecondary).padding(.top, 60)

@@ -3,7 +3,7 @@ import XCTest
 extension XCUIApplication {
     /// The jam feed's Posts | Articles control (LIME-188t): an article is under Articles.
     func showJamArticles() {
-        let control = segmentedControls["jam-filter-segments"]
+        let control = descendants(matching: .any).matching(identifier: "jam-filter-segments").firstMatch
         if control.waitForExistence(timeout: 8) { control.buttons["Articles"].tap() }
     }
 

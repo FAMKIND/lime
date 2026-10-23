@@ -21,7 +21,7 @@ final class Jam188cUITests: LimeUITestCase {
         app.buttons["jam-post-demo-post-1"].tap()
         XCTAssertTrue(any(app, "jam-article-page").waitForExistence(timeout: 8))
         app.buttons["jam-article-back"].tap()
-        XCTAssertTrue(app.segmentedControls["jam-filter-segments"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "jam-filter-segments").firstMatch.waitForExistence(timeout: 8))
         XCTAssertTrue(dot.waitForNonExistence(timeout: 5), "read: the dot is gone")
     }
 

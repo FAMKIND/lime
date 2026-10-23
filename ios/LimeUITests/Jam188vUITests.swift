@@ -23,12 +23,12 @@ final class Jam188vUITests: LimeUITestCase {
         XCTAssertTrue(feed.waitForExistence(timeout: 10))
         XCTAssertLessThan(feed.frame.minY, 5, "the scroll view starts at the top edge: the header floats over it, with nothing behind its icons")
         XCTAssertTrue(app.buttons["jam-search-button"].exists && app.buttons["settings-button"].exists)
-        XCTAssertTrue(app.segmentedControls["jam-filter-segments"].exists, "the filter row is inside it")
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "jam-filter-segments").firstMatch.exists, "the filter row is inside it")
     }
 
     func testSavedIsAFilterAndListsASavedPostOrSaysNothingYet() {
         let app = launch("jam-following")
-        let control = app.segmentedControls["jam-filter-segments"]
+        let control = app.descendants(matching: .any).matching(identifier: "jam-filter-segments").firstMatch
         XCTAssertTrue(control.waitForExistence(timeout: 10))
         XCTAssertFalse(control.buttons["Saved"].exists, "Saved is in the filter menu now")
         XCTAssertFalse(app.buttons["jam-saved-row"].exists, "the Saved (n) row is gone")
@@ -56,7 +56,7 @@ final class Jam188vUITests: LimeUITestCase {
 
     func testTheOrgsFilterShowsOnlyPostsShownAsTheJam() {
         let app = launch("jam-mine-asjam")
-        let control = app.segmentedControls["jam-filter-segments"]
+        let control = app.descendants(matching: .any).matching(identifier: "jam-filter-segments").firstMatch
         XCTAssertTrue(control.waitForExistence(timeout: 10))
         app.buttons["jam-filter-button"].tap()
         let toggle = app.buttons["Orgs"]

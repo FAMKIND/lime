@@ -495,7 +495,7 @@ struct JamActionPill: View {
                 .accessibilityLabel(label).accessibilityHint(live ? "Sends the post to a chat" : "Coming soon").accessibilityIdentifier("jam-pill-\(label)")
             }
         }
-        .padding(.horizontal, 8).background(dark ? Color.white.opacity(0.14) : Theme.surface, in: Capsule())
+        .padding(.horizontal, 8).limeGlass(in: Capsule())
     }
 }
 

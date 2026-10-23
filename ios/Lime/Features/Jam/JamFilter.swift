@@ -50,29 +50,63 @@ extension ConversationStore {
     }
 }
 
-/// The glass segmented control and the filter button with its menu: the same row as link and call.
+/// jam's row under the header (LIME-198): pills **All · Posts · Articles · Podcasts**, one chosen (a glass capsule, like a profile's tabs), that scroll
+/// sideways with a soft fade at the left and right edges, and the filter button fixed at the far right, outside the scrolling part.
 struct JamFilterRow: View {
     @Binding var segment: JamSegment
     @Binding var filter: JamFilter
     var idPrefix = "jam-filter"
+    private let fade: CGFloat = 16
 
     var body: some View {
-        FilterRow(titles: JamSegment.allCases.map(\.title), selection: Binding(get: { segment.rawValue }, set: { segment = JamSegment(rawValue: $0) ?? .all }),
-                  activeCount: filter.activeCount, idPrefix: idPrefix) {
-            Section("Media") {
-                ForEach(JamFilter.Media.allCases, id: \.self) { media in
-                    Toggle(media.rawValue, isOn: Binding(get: { filter.media == media }, set: { filter.media = $0 ? media : nil }))
+        HStack(spacing: 0) {
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 4) {
+                        ForEach(JamSegment.allCases, id: \.self) { item in
+                            let on = segment == item
+                            Button { segment = item } label: {
+                                Text(item.title).font(Theme.font(.subheadline, weight: on ? .semibold : .regular)).foregroundStyle(on ? Theme.text : Theme.textSecondary)
+                                    .padding(.horizontal, 14).frame(minHeight: 44)
+                                    .background { if on { Capsule().fill(.clear).limeGlass(in: Capsule()) } }
+                            }
+                            .buttonStyle(.plain).id(item)
+                            .accessibilityLabel(item.title).accessibilityAddTraits(on ? [.isSelected] : [])
+                            .accessibilityIdentifier("jam-segment-\(item.title)")
+                        }
+                    }
+                    // Room inside the fades, so at rest the first pill and the last are fully clear.
+                    .padding(.horizontal, fade)
+                }
+                .onChange(of: segment) { _, now in withAnimation { proxy.scrollTo(now, anchor: .center) } }
+            }
+            .mask {
+                HStack(spacing: 0) {
+                    LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing).frame(width: fade)
+                    Rectangle().fill(.black)
+                    LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: fade)
                 }
             }
-            Section("Show") {
-                Toggle("Co-authored", isOn: $filter.coauthored)
-                Toggle("Subscribed", isOn: $filter.subscribed)
-                Toggle("Orgs", isOn: $filter.orgs)
-                Toggle("Saved", isOn: $filter.saved).accessibilityIdentifier("\(idPrefix)-saved")
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("\(idPrefix)-segments")
+            FilterMenuButton(activeCount: filter.activeCount, idPrefix: idPrefix) {
+                Section("Media") {
+                    ForEach(JamFilter.Media.allCases, id: \.self) { media in
+                        Toggle(media.rawValue, isOn: Binding(get: { filter.media == media }, set: { filter.media = $0 ? media : nil }))
+                    }
+                }
+                Section("Show") {
+                    Toggle("Co-authored", isOn: $filter.coauthored)
+                    Toggle("Subscribed", isOn: $filter.subscribed)
+                    Toggle("Orgs", isOn: $filter.orgs)
+                    Toggle("Saved", isOn: $filter.saved).accessibilityIdentifier("\(idPrefix)-saved")
+                }
+                if filter.isOn {
+                    Button("Clear filters", role: .destructive) { filter = JamFilter() }
+                }
             }
-            if filter.isOn {
-                Button("Clear filters", role: .destructive) { filter = JamFilter() }
-            }
+            .padding(.trailing, 10)
         }
+        .frame(maxWidth: .infinity)
     }
 }
