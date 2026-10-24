@@ -45,6 +45,8 @@ struct ProfileView: View {
     @State private var confirmingSignOut = false
     @State private var showStatus = false
     @State private var confirmingUnsubscribe = false
+    @State private var links: [ProfileLink] = []
+    @State private var openOrg: JamPageInfo?
     /// Settings as a sheet, opened on the root or straight on a screen (Edit profile).
     @State private var settingsLaunch: SettingsLaunch?
     @State private var verifying = false
@@ -68,7 +70,7 @@ struct ProfileView: View {
     /// Their public profile; for me, what my own account says.
     private var profile: PublicProfile? {
         if route.isMe, let mine = session.profile {
-            return PublicProfile(userId: route.userID, displayName: mine.displayName, username: mine.username, school: mine.school, aboutEmoji: mine.aboutEmoji, aboutText: mine.aboutText)
+            return PublicProfile(userId: route.userID, displayName: mine.displayName, username: mine.username, school: mine.school, aboutEmoji: mine.aboutEmoji, aboutText: mine.aboutText, since: store.publicProfiles[route.userID]?.since)
         }
         return store.publicProfiles[route.userID]
     }
@@ -142,6 +144,8 @@ struct ProfileView: View {
         }
         .sheet(isPresented: $showStatus) { StatusSheet(openSettings: { showStatus = false; settingsLaunch = SettingsLaunch(start: nil) }) }
         .sheet(item: $settingsLaunch) { SettingsView(startAt: $0.start) }
+        .sheet(item: $openOrg) { JamOrgPage(page: $0, isMe: route.isMe) }
+        .task(id: "\(route.userID)-\(store.extrasVersion)") { links = ProfileLinks.decode(await store.peerExtra(route.userID, .links)) }
         .confirmSheet("Unsubscribe from \(jamPage?.title ?? "this jam")?", isPresented: $confirmingUnsubscribe) {
             Button("Unsubscribe", role: .destructive) { if let jamPage { Task { await store.unsubscribe(jamPage.jamId) } } }.accessibilityIdentifier("profile-jam-subscribe-confirm")
             Button("Cancel", role: .cancel) {}
@@ -385,6 +389,32 @@ struct ProfileView: View {
                 if conversation?.verified == true { row("Verified", value: "Verified in person", id: "profile-verified") }
                 if profile == nil && !accepted { Text("Nothing more to show.").font(Theme.secondary).foregroundStyle(Theme.textSecondary).padding(18) }
             }
+        }
+        if !links.isEmpty { ProfileLinksCard(links: links) }
+        if !orgs.isEmpty {
+            titledCard("Orgs") {
+                VStack(spacing: 0) {
+                    ForEach(Array(orgs.enumerated()), id: \.element.jamId) { index, org in
+                        Button { openOrg = org } label: {
+                            HStack(spacing: 12) {
+                                JamInitialTile(title: org.title, size: 36).accessibilityHidden(true)
+                                Text(org.title).font(Theme.body).foregroundStyle(Theme.text).lineLimit(1)
+                                Spacer(minLength: 8)
+                                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.textSecondary).accessibilityHidden(true)
+                            }
+                            .padding(.horizontal, 18).frame(minHeight: 56).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain).accessibilityLabel(org.title).accessibilityHint("Opens its page")
+                        .accessibilityIdentifier("profile-info-org-\(org.jamId)")
+                        if index < orgs.count - 1 { Divider().overlay(Theme.hairline).padding(.leading, 66) }
+                    }
+                }
+            }
+        }
+        if let since = profile?.since {
+            Text("On lime since \(Date(timeIntervalSince1970: Double(since) / 1000).formatted(.dateTime.month(.wide).year()))")
+                .font(Theme.secondary).foregroundStyle(Theme.textSecondary).frame(maxWidth: .infinity, alignment: .center).padding(.top, 4)
+                .accessibilityIdentifier("profile-since")
         }
     }
 

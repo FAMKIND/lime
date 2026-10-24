@@ -110,6 +110,8 @@ pub(crate) fn store_contact_key(conn: &Connection, user: &str, key: &[u8], now_m
         // A new key: whatever was cached from an encrypted copy, and the "checked recently" mark, are stale.
         conn.execute("DELETE FROM photos WHERE user_id = ?1 AND source = 'encrypted'", params![user]).map_err(db_err)?;
         conn.execute("UPDATE photos SET checked_at = 0 WHERE user_id = ?1", params![user]).map_err(db_err)?;
+        conn.execute("DELETE FROM extras WHERE user_id = ?1 AND source = 'encrypted'", params![user]).map_err(db_err)?;
+        conn.execute("UPDATE extras SET checked_at = 0 WHERE user_id = ?1", params![user]).map_err(db_err)?;
     }
     Ok(())
 }
@@ -207,6 +209,7 @@ pub(crate) fn dequeue_notice(conn: &Connection, peer: &str) -> Result<(), StoreE
 /// Someone told us their photo changed: it is due for a check at once.
 pub(crate) fn mark_stale(conn: &Connection, user: &str) -> Result<(), StoreError> {
     conn.execute("UPDATE photos SET checked_at = 0 WHERE user_id = ?1", params![user]).map_err(db_err)?;
+    conn.execute("UPDATE extras SET checked_at = 0 WHERE user_id = ?1", params![user]).map_err(db_err)?;
     Ok(())
 }
 

@@ -203,11 +203,19 @@ impl LimeStore {
         if stale == Ok(true) {
             let _ = self.sync_my_photo(transport, token);
         }
+        self.refresh_my_extras_if_stale(transport, token);
     }
 
     /// One person's photo: public first, then the contacts-only copy if they gave us their photo key.
     /// `true` when what we hold changed.
     fn refresh_one(&self, transport: &Arc<dyn Transport>, token: &str, user: &str) -> Result<bool, StoreError> {
+        let photo = self.refresh_photo_one(transport, token, user);
+        // Their links and background ride along with the photo's check (LIME-214, LIME-217); what they cannot show does not fail the photo.
+        let extras = self.refresh_extras_of_one(transport, token, user).unwrap_or(false);
+        photo.map(|changed| changed || extras)
+    }
+
+    fn refresh_photo_one(&self, transport: &Arc<dyn Transport>, token: &str, user: &str) -> Result<bool, StoreError> {
         let now = now_ms();
         let held = self.with_conn(|conn| photos::cached(conn, user))?;
         let had = held.as_ref().is_some_and(|c| !c.bytes.is_empty());

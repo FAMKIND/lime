@@ -33,6 +33,10 @@ struct ProfileSettingsScreen: View {
             }
             SettingsFootnote(text: "Teachers can find you with your optional username, so you don't have to give out your email.")
             SettingsCard {
+                SettingsRow(symbol: "link", title: "Links", route: .links, id: "profile-links-row", showsDivider: false)
+            }
+            SettingsFootnote(text: "Up to five links on your profile. You choose who can see them.")
+            SettingsCard {
                 SettingsRow(symbol: "qrcode", title: "My QR Code", route: .myQR, id: "profile-my-qr", showsDivider: false)
             }
             SettingsFootnote(text: "Show it to a teacher you're with. When they scan it, they know it's really you.")

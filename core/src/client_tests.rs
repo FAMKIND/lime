@@ -1479,7 +1479,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
              DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP INDEX olm_sessions_by_peer; DROP TABLE received_ciphertexts; DROP TABLE emergency_messages; DROP TABLE emergency_settings; DROP TABLE mesh_outbox; DROP TABLE mesh_packets; DROP TABLE mesh_seen; DROP TABLE mesh_uploaded; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
-             DROP TRIGGER jam_posts_fts_insert; DROP TRIGGER jam_posts_fts_update; DROP TRIGGER jam_posts_fts_delete; DROP TABLE jam_fts; DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_credits; DROP TABLE jam_credit_requests; DROP TABLE jam_credit_wires; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_blob_deletes; DROP TABLE jam_reactions; DROP TABLE jam_my_reactions; DROP TABLE jam_comments; DROP TABLE jam_counts; DROP TABLE jam_counts_out; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; PRAGMA user_version = 9;",
+             DROP TABLE my_extra; DROP TABLE extras; DROP TRIGGER jam_posts_fts_insert; DROP TRIGGER jam_posts_fts_update; DROP TRIGGER jam_posts_fts_delete; DROP TABLE jam_fts; DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_credits; DROP TABLE jam_credit_requests; DROP TABLE jam_credit_wires; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_blob_deletes; DROP TABLE jam_reactions; DROP TABLE jam_my_reactions; DROP TABLE jam_comments; DROP TABLE jam_counts; DROP TABLE jam_counts_out; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; PRAGMA user_version = 9;",
         )
         .unwrap();
     }
@@ -5997,4 +5997,80 @@ fn the_writer_sees_who_was_asked_and_has_not_answered() {
         catch_up(&alice, &[&carol, &bob], &transport);
     }
     assert!(alice.store.list_pending_coauthors(post).unwrap().is_empty(), "answered");
+}
+
+fn links_json() -> Vec<u8> {
+    br#"[{"title":"My class site","url":"https://example.com/class"}]"#.to_vec()
+}
+
+#[test]
+fn contacts_only_links_are_ciphertext_on_the_server_and_only_a_contact_reads_them() {
+    use crate::store::extras::{self, LINKS};
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    befriend(&alice, &bob, &transport);
+    say(&alice, &carol, &transport, "hello stranger");
+    sync(&carol, &transport);
+
+    // The default is contacts only.
+    assert_eq!(alice.store.my_extra(LINKS.into()).unwrap().visibility, "contacts");
+    alice.store.set_my_extra(transport.clone(), alice.token.clone(), LINKS.into(), links_json()).unwrap();
+    {
+        let state = server.state.lock().unwrap();
+        assert!(!state.objects.keys().any(|k| k.starts_with("public-avatars/")), "nothing public");
+        let blobs: Vec<_> = state.objects.iter().filter(|(k, _)| k.starts_with("blobs/")).collect();
+        assert_eq!(blobs.len(), 1);
+        assert!(!blobs[0].1.windows(16).any(|w| w == &links_json()[..16]), "the stored bytes are not the links");
+    }
+    assert_eq!(refresh(&bob, &transport), vec!["alice".to_string()]);
+    assert_eq!(bob.store.peer_extra("alice".into(), LINKS.into()).unwrap(), Some(links_json()));
+    refresh(&carol, &transport);
+    assert_eq!(carol.store.peer_extra("alice".into(), LINKS.into()).unwrap(), None, "a non-contact sees none");
+    assert_eq!(bob.store.peer_extra("alice".into(), extras::BACKGROUND.into()).unwrap(), None, "and a slot nobody set stays empty");
+
+    // Everyone: public, a stranger sees it, the encrypted copy is gone.
+    alice.store.set_extra_visibility(transport.clone(), alice.token.clone(), LINKS.into(), "everyone".into()).unwrap();
+    assert_eq!(server.state.lock().unwrap().objects.get("public-avatars/alice-links.json"), Some(&links_json()));
+    assert!(!server.state.lock().unwrap().objects.keys().any(|k| k.starts_with("blobs/")));
+    refresh(&carol, &transport);
+    assert_eq!(carol.store.peer_extra("alice".into(), LINKS.into()).unwrap(), Some(links_json()));
+
+    // Removing clears it everywhere.
+    alice.store.remove_my_extra(transport.clone(), alice.token.clone(), LINKS.into()).unwrap();
+    assert!(server.state.lock().unwrap().objects.is_empty());
+    refresh(&carol, &transport);
+    assert_eq!(carol.store.peer_extra("alice".into(), LINKS.into()).unwrap(), None);
+}
+
+#[test]
+fn a_background_is_its_own_slot_and_a_block_re_uploads_it_under_the_new_key() {
+    use crate::store::extras::{self, BACKGROUND, LINKS};
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    befriend(&alice, &bob, &transport);
+    befriend(&alice, &carol, &transport);
+    alice.store.set_my_extra(transport.clone(), alice.token.clone(), BACKGROUND.into(), photo_bytes()).unwrap();
+    alice.store.set_my_extra(transport.clone(), alice.token.clone(), LINKS.into(), links_json()).unwrap();
+    assert_eq!(server.state.lock().unwrap().objects.keys().filter(|k| k.starts_with("blobs/")).count(), 2, "one blob per slot");
+    refresh(&carol, &transport);
+    assert_eq!(carol.store.peer_extra("alice".into(), BACKGROUND.into()).unwrap(), Some(photo_bytes()));
+
+    // Too big or unknown slots are refused.
+    assert!(alice.store.set_my_extra(transport.clone(), alice.token.clone(), LINKS.into(), vec![1; 9 * 1024]).is_err());
+    assert!(alice.store.set_my_extra(transport.clone(), alice.token.clone(), "other".into(), vec![1]).is_err());
+
+    // Blocking Carol rotates the key: both copies move to the new one, and Carol is left with her cached copy only.
+    let first = profile_key_of(&alice);
+    alice.store.block_sender(format!("dm:{}", carol.user)).unwrap();
+    let second = profile_key_of(&alice);
+    assert_ne!(first, second);
+    alice.store.refresh_my_extras_if_stale_for_tests(&transport, &alice.token);
+    let state = server.state.lock().unwrap();
+    assert!(state.objects.contains_key(&format!("blobs/{}", extras::blob_id(BACKGROUND, &second))));
+    assert!(state.objects.contains_key(&format!("blobs/{}", extras::blob_id(LINKS, &second))));
+    assert!(!state.objects.contains_key(&format!("blobs/{}", extras::blob_id(LINKS, &first))), "the old copy is deleted");
 }

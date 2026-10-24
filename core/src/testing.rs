@@ -391,36 +391,40 @@ impl Transport for FakeServer {
             "avatar" => {
                 state.clock += 1;
                 let version = state.clock;
+                // The photo (no slot) and the links and background (LIME-214, LIME-217) each have their own object, version and visibility.
+                let slot = body.get("slot").and_then(Value::as_str).unwrap_or_default().to_owned();
+                let suffix = match slot.as_str() { "" => ".jpg".to_owned(), "links" => "-links.json".to_owned(), other => format!("-{other}.jpg") };
+                let tag = |who: &str| if slot.is_empty() { who.to_owned() } else { format!("{who}:{slot}") };
                 match body.get("action").and_then(Value::as_str).unwrap_or_default() {
-                    "put" => respond(200, json!({ "url": format!("/storage/v1/object/upload/sign/public-avatars/{user}.jpg?token=t") })),
+                    "put" => respond(200, json!({ "url": format!("/storage/v1/object/upload/sign/public-avatars/{user}{suffix}?token=t") })),
                     "commit" => {
-                        if !state.objects.contains_key(&format!("public-avatars/{user}.jpg")) {
+                        if !state.objects.contains_key(&format!("public-avatars/{user}{suffix}")) {
                             return respond(409, json!({ "error": "not_uploaded" }));
                         }
-                        state.avatar_versions.insert(user.clone(), version);
-                        state.avatar_visibility.insert(user.clone(), "everyone".into());
+                        state.avatar_versions.insert(tag(&user), version);
+                        state.avatar_visibility.insert(tag(&user), "everyone".into());
                         respond(200, json!({ "version": version }))
                     }
                     "get" => {
                         let who = text("user_id");
-                        let visible = state.avatar_visibility.get(&who).is_none_or(|v| v == "everyone");
-                        match state.avatar_versions.get(&who) {
-                            Some(version) if visible => respond(200, json!({ "url": format!("/storage/v1/object/sign/public-avatars/{who}.jpg?token=t"), "version": version })),
+                        let visible = state.avatar_visibility.get(&tag(&who)).is_none_or(|v| v == "everyone");
+                        match state.avatar_versions.get(&tag(&who)) {
+                            Some(version) if visible => respond(200, json!({ "url": format!("/storage/v1/object/sign/public-avatars/{who}{suffix}?token=t"), "version": version })),
                             _ => respond(404, json!({ "error": "not_found" })),
                         }
                     }
                     "visibility" => {
                         let visibility = text("visibility");
                         if visibility == "contacts" {
-                            state.objects.remove(&format!("public-avatars/{user}.jpg"));
-                            state.avatar_versions.remove(&user);
+                            state.objects.remove(&format!("public-avatars/{user}{suffix}"));
+                            state.avatar_versions.remove(&tag(&user));
                         }
-                        state.avatar_visibility.insert(user.clone(), visibility);
+                        state.avatar_visibility.insert(tag(&user), visibility);
                         respond(200, json!({ "ok": true }))
                     }
                     "remove" => {
-                        state.objects.remove(&format!("public-avatars/{user}.jpg"));
-                        state.avatar_versions.remove(&user);
+                        state.objects.remove(&format!("public-avatars/{user}{suffix}"));
+                        state.avatar_versions.remove(&tag(&user));
                         respond(200, json!({ "ok": true }))
                     }
                     _ => respond(400, json!({ "error": "bad_request" })),

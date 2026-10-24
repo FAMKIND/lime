@@ -14,16 +14,16 @@ Deno.serve(handler(async (req) => {
   const wanted = body.user_id;
   if (wanted === undefined || wanted === me) {
     const { data, error } = await admin().from("profiles")
-      .select("user_id, display_name, username, school, about_emoji, about_text, hide_from_search, photo_visibility, avatar_version").eq("user_id", me).maybeSingle();
+      .select("user_id, display_name, username, school, about_emoji, about_text, hide_from_search, photo_visibility, avatar_version, created_at").eq("user_id", me).maybeSingle();
     if (error) throw new HttpError(500, "internal");
     // Your own address, masked, for the Account screen (never anyone else's).
     const { data: owner } = await admin().auth.admin.getUserById(me);
-    return json({ profile: data ?? null, masked_email: owner?.user?.email ? maskEmail(owner.user.email) : null });
+    return json({ profile: data ? { ...data, since: Date.parse(data.created_at as string) } : null, masked_email: owner?.user?.email ? maskEmail(owner.user.email) : null });
   }
   if (typeof wanted !== "string" || !isUuid(wanted)) throw new HttpError(400, "bad_request", "user_id must be a UUID.");
   await rateLimit(`profile:${me}`, 1, config.profilePerMinute(), 60);
   const { data, error } = await admin().from("profiles")
-    .select("user_id, display_name, username, school, about_emoji, about_text, hide_from_search").eq("user_id", wanted).maybeSingle();
+    .select("user_id, display_name, username, school, about_emoji, about_text, hide_from_search, created_at").eq("user_id", wanted).maybeSingle();
   if (error) throw new HttpError(500, "internal");
   if (!data) throw new HttpError(404, "not_found", "No such profile.");
   return json({
@@ -34,6 +34,8 @@ Deno.serve(handler(async (req) => {
       school: data.hide_from_search ? null : data.school,
       about_emoji: data.hide_from_search ? null : data.about_emoji,
       about_text: data.hide_from_search ? null : data.about_text,
+      // "On lime since <month year>" (LIME-214): the month the account was made, for people who are findable.
+      since: data.hide_from_search ? null : Date.parse(data.created_at as string),
     },
   });
 }));

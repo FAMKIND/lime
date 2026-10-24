@@ -38,6 +38,7 @@ pub(crate) mod profile;
 pub(crate) mod groups;
 pub(crate) mod jam;
 pub(crate) mod message_ops;
+pub(crate) mod extras;
 pub(crate) mod photos;
 
 /// The control op that gives a contact my delivery key (`api-v2.md` section 4).

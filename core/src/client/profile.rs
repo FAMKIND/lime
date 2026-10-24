@@ -11,6 +11,8 @@ pub struct PublicProfile {
     pub school: Option<String>,
     pub about_emoji: Option<String>,
     pub about_text: Option<String>,
+    /// When the account was made (milliseconds since the Unix epoch); none for someone who hid from search (LIME-214: "On lime since").
+    pub since: Option<i64>,
 }
 
 #[uniffi::export]
@@ -31,6 +33,7 @@ impl LimeStore {
             school: text("school"),
             about_emoji: text("about_emoji"),
             about_text: text("about_text"),
+            since: profile.get("since").and_then(Value::as_i64).filter(|n| *n > 0),
         }))
     }
 }

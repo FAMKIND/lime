@@ -762,6 +762,25 @@ const MIGRATIONS: &[&str] = &[
      CREATE TRIGGER jam_posts_fts_delete AFTER DELETE ON jam_posts BEGIN
          DELETE FROM jam_fts WHERE post_id = old.post_id;
      END;",
+    // 49 (LIME-214, LIME-217): more of a profile that can be Everyone's or contacts-only like the photo: the links (a small JSON list) and a background
+    // image. `my_extra` holds mine by slot (`links`, `background`) with who may see it and the profile key the contacts-only copy was made with;
+    // `extras` caches other people's. The default is contacts-only.
+    "CREATE TABLE my_extra (
+         slot         TEXT PRIMARY KEY NOT NULL,
+         data         BLOB,
+         visibility   TEXT NOT NULL DEFAULT 'contacts',
+         uploaded_key TEXT,
+         updated_at   INTEGER NOT NULL
+     );
+     CREATE TABLE extras (
+         user_id    TEXT NOT NULL,
+         slot       TEXT NOT NULL,
+         bytes      BLOB NOT NULL,
+         source     TEXT NOT NULL,
+         version    INTEGER NOT NULL,
+         checked_at INTEGER NOT NULL,
+         PRIMARY KEY (user_id, slot)
+     );",
 ];
 
 /// The schema version this build writes.

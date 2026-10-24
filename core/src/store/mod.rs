@@ -17,6 +17,7 @@ pub(crate) mod labels;
 pub(crate) mod message_ops;
 mod migrations;
 pub(crate) mod order;
+pub(crate) mod extras;
 pub(crate) mod photos;
 pub(crate) mod pending;
 pub(crate) mod search;
