@@ -17,18 +17,18 @@ final class Jam212UITests: LimeUITestCase {
         let more = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'card-more-'")).firstMatch
         XCTAssertTrue(more.waitForExistence(timeout: 10)); more.tap()
         app.buttons["Edit"].tap()
-        XCTAssertTrue(app.textFields["podcast-edit-title"].waitForExistence(timeout: 8), "the podcast page")
+        XCTAssertTrue(app.descendants(matching: .any)["podcast-edit-title"].waitForExistence(timeout: 8), "the podcast page")
     }
 
     func testEditOnARecordingIsAPodcastPageNotTheArticleEditor() {
         let app = launch()
         openEditor(app)
-        XCTAssertEqual(app.textFields["podcast-edit-title"].value as? String, "Songs for the circle")
-        XCTAssertEqual(app.textFields["podcast-edit-subtitle"].value as? String, "Korean children's songs")
+        XCTAssertEqual(app.descendants(matching: .any)["podcast-edit-title"].value as? String, "Songs for the circle")
+        XCTAssertEqual(app.descendants(matching: .any)["podcast-edit-subtitle"].value as? String, "Korean children's songs")
         XCTAssertTrue(app.buttons["podcast-edit-recording"].exists, "the recording row")
         XCTAssertTrue(app.buttons["podcast-edit-change-cover"].exists, "the cover with Change cover")
         XCTAssertTrue(app.buttons["jam-post-as"].exists, "who it is from")
-        XCTAssertFalse(app.buttons["jam-heading"].exists || app.buttons["jam-format"].exists || app.buttons["jam-add"].exists, "no article bar")
+        XCTAssertTrue(app.buttons["jam-heading"].exists && app.buttons["jam-format"].exists && app.buttons["jam-add"].exists, "the article editor's bar (LIME-220)")
         app.buttons["podcast-edit-change-cover"].tap()
         XCTAssertTrue(app.buttons["podcast-edit-remove-cover"].waitForExistence(timeout: 5), "a new cover is chosen")
     }
@@ -44,7 +44,7 @@ final class Jam212UITests: LimeUITestCase {
         app.buttons["jam-video-more"].tap()
         XCTAssertTrue(app.buttons["Edit"].waitForExistence(timeout: 5))
         app.buttons["Edit"].tap()
-        let title = app.textFields["podcast-edit-title"]
+        let title = app.descendants(matching: .any)["podcast-edit-title"]
         XCTAssertTrue(title.waitForExistence(timeout: 8))
         title.tap(); title.typeText(" again")
         app.buttons["podcast-edit-update"].tap()

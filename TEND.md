@@ -7713,3 +7713,19 @@ Both white outlines are deleted from `CoverArt`'s default cover in `JamAudio.swi
 - Tests: new `Profile213UITests` (2); updated ProfileUITests, LimeUITests status test. Ran ProfileUITests, Jam188t, ConfirmSheet, CallsTab, Emergency, Jam188b: all pass except `Jam188bUITests.testAQuickPostWithTheFirstPost…` (line 53 expects an exact "like" label; the action row's label has since changed; not touched by this brief, left failing).
 - Installed: 13mini: yes · iPad: yes · Jean: no (devicectl lists Jean Chung's iPhone as "unavailable", so asleep/off/out of reach; tried twice)
 - For plot: no server change, no new metadata. Mute/Pin now live in ⋯ on someone else's profile.
+
+## LIME-218 — Delete last in menus; a cleaner article Options sheet — DONE
+
+- Card ⋯: Edit · Share in lime… | playback | Save · Hide post | **Delete** (red, alone, last, same confirm). The player's ⋯ and the post page's ⋯ end with Delete too.
+- Article Options sheet like Substack's: grabber; "Options" bold with the post's title under it (up to 2 lines) and a round 44 pt × ("Close"); dividers; plain 56 pt rows (icon + label, 20 pt sides, › on Display settings and View jam/org): Search · Display settings · Listen · View jam/org · Save · Print or save as PDF · Share in lime · Reply privately (others'); then Edit (yours) or Hide post; last in red Delete post (yours) or Report (others', inert, says "coming soon" until 191). Medium then large.
+- Tests: new `Jam218UITests`; Jam188p updated (Report row and the title now asserted). Jam195/199/201 re-run, pass.
+- Installed: 13mini: yes · iPad: yes · Jean: no (devicectl: "unavailable", tried again)
+- For plot: Report is inert (191).
+
+## LIME-220 — the podcast edit page like the article editor — DONE
+
+- Layout: Post as chip + co-host icon, the cover at 107 pt with Change cover / Remove beside it (tap: full-size viewer), the recording row, big bold Title, "Add a subtitle…", then the description in the article editor's rich body ("Description…"), with its + Aa H undo redo bar (+ offers Divider and Photo; pictures go in numbered after the post's files).
+- No raw markup: the cover's own picture block is dropped from the body; other pictures show as the article editor shows them.
+- Tests: new `Jam220UITests`; Jam212 updated (bar present, title found as any element). Jam212b re-run, pass.
+- Installed: 13mini: yes · iPad: yes · Jean: no (unavailable)
+- For plot: pictures inside a description appear as the editor's picture placeholders, same as articles. Not tested on device with a real inline picture.
