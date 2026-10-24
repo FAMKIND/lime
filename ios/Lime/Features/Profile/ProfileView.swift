@@ -44,6 +44,8 @@ struct ProfileView: View {
     @State private var confirmingDelete = false
     @State private var confirmingSignOut = false
     @State private var showStatus = false
+    @State private var openOrg: JamPageInfo?
+    @State private var confirmingUnsubscribe = false
     /// Settings as a sheet, opened on the root or straight on a screen (Edit profile).
     @State private var settingsLaunch: SettingsLaunch?
     @State private var verifying = false
@@ -111,7 +113,7 @@ struct ProfileView: View {
         ScrollView {
             VStack(spacing: 18) {
                 top
-                if route.isMe { myActions } else if accepted { actions }
+                if !route.isMe, accepted { actions }
                 ProfileTabs(sections: available, selection: $section, badged: route.isMe && store.jamHasUnseen() ? [.activity] : [])
                 switch section {
                 case .info: info
@@ -122,16 +124,6 @@ struct ProfileView: View {
                 case .activity: JamActivityList(userID: route.userID, isMe: route.isMe)
                 case .shared: shared
                 case .calls: callsList
-                }
-                if route.isMe {
-                    SettingsCard {
-                        Button { confirmingSignOut = true } label: {
-                            SettingsRowLabel(symbol: "rectangle.portrait.and.arrow.right", title: "Sign out", showsDivider: false, destructive: true)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("profile-sign-out")
-                    }
-                    .padding(.top, 12)
                 }
             }
             .padding(.horizontal, 16).padding(.bottom, 40)
@@ -152,6 +144,11 @@ struct ProfileView: View {
         }
         .sheet(isPresented: $showStatus) { StatusSheet(openSettings: { showStatus = false; settingsLaunch = SettingsLaunch(start: nil) }) }
         .sheet(item: $settingsLaunch) { SettingsView(startAt: $0.start) }
+        .sheet(item: $openOrg) { JamOrgPage(page: $0, isMe: route.isMe) }
+        .confirmSheet("Unsubscribe from \(jamPage?.title ?? "this jam")?", isPresented: $confirmingUnsubscribe) {
+            Button("Unsubscribe", role: .destructive) { if let jamPage { Task { await store.unsubscribe(jamPage.jamId) } } }.accessibilityIdentifier("profile-jam-subscribe-confirm")
+            Button("Cancel", role: .cancel) {}
+        } message: { Text("What you have stays on this phone.") }
         .sheet(isPresented: $verifying) { NavigationStack { ScanQRScreen(closeSheet: { verifying = false }) }.presentationDetents([.large]) }
         .sheet(isPresented: $showStorage) { NavigationStack { ChatMediaScreen(conversationID: "dm:\(route.userID)") }.presentationDetents([.large]) }
         .confirmSheet("Mute \(displayName)", isPresented: $confirmingMute) {
@@ -214,7 +211,7 @@ struct ProfileView: View {
 
     private var top: some View {
         VStack(spacing: 6) {
-            AvatarView(person: person, size: 96, showsStatus: true).padding(.top, 12)
+            avatar.padding(.top, 12)
             HStack(spacing: 6) {
                 Text(displayName).font(Theme.font(.title2, weight: .semibold)).foregroundStyle(Theme.text)
                     .accessibilityIdentifier("profile-name")
@@ -222,20 +219,59 @@ struct ProfileView: View {
                     Image(systemName: "checkmark.seal.fill").foregroundStyle(Theme.text).font(Theme.font(.callout)).accessibilityLabel("Verified in person")
                 }
             }
-            let line = [profile?.username.map { "@\($0)" }, profile?.school, orgs.first?.title].compactMap { $0 }.joined(separator: " \u{00B7} ")
-            // `@handle · org · Subscribe` (LIME-188x): Subscribe is a green link at the end of the line.
-            HStack(spacing: 6) {
-                if !line.isEmpty {
-                    Text(line).font(Theme.secondary).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("profile-handle")
-                }
-                if let jamPage, !route.isMe {
-                    if !line.isEmpty { Text("\u{00B7}").font(Theme.secondary).foregroundStyle(Theme.textSecondary).accessibilityHidden(true) }
-                    SubscribeLink(page: jamPage)
-                }
+            // Under the name (LIME-213): @handle, then the school, then the orgs as chips.
+            if let username = profile?.username {
+                Text("@\(username)").font(Theme.secondary).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("profile-handle")
             }
+            if let school = profile?.school, !school.isEmpty {
+                Text("\u{1F3EB} \(school)").font(Theme.secondary).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("profile-school-line")
+            }
+            if !orgs.isEmpty { orgChips }
             if let statusLine {
                 Text(statusLine).font(Theme.secondary).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("profile-status")
             }
+        }
+    }
+
+    /// The avatar with the status dot at its bottom right; on your own profile it is the button for the status picker.
+    @ViewBuilder
+    private var avatar: some View {
+        if route.isMe {
+            let state = store.status(of: route.userID)?.state ?? .available
+            AvatarView(person: person, size: 96)
+                .overlay(alignment: .bottomTrailing) {
+                    Button { showStatus = true } label: {
+                        StatusBadge(state: state, size: 24).frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .offset(x: 10, y: 10)
+                    .accessibilityLabel("Status: \(state.title)").accessibilityHint("Changes your status")
+                    .accessibilityIdentifier("profile-change-status")
+                }
+        } else {
+            AvatarView(person: person, size: 96, showsStatus: true)
+        }
+    }
+
+    /// The orgs as small chips (tile + name) that scroll sideways; a tap opens the org's page.
+    private var orgChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(orgs, id: \.jamId) { org in
+                    Button { openOrg = org } label: {
+                        HStack(spacing: 6) {
+                            JamInitialTile(title: org.title, size: 22).accessibilityHidden(true)
+                            Text(org.title).font(Theme.font(.footnote, weight: .medium)).foregroundStyle(Theme.text).lineLimit(1)
+                        }
+                        .padding(.leading, 6).padding(.trailing, 10).frame(minHeight: 44)
+                        .background(Theme.surface, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(org.title).accessibilityHint("Opens its page")
+                    .accessibilityIdentifier("profile-org-chip-\(org.jamId)")
+                }
+            }
+            .padding(.horizontal, 2)
         }
     }
 
@@ -247,15 +283,6 @@ struct ProfileView: View {
                 card("phone", "Voice", id: "profile-voice") { Task { _ = await store.calls.start(peerID: route.userID, name: displayName, video: false) } }
                 card("video", "Video", id: "profile-video") { Task { _ = await store.calls.start(peerID: route.userID, name: displayName, video: true) } }
             }
-        }
-    }
-
-    /// Your own profile: Change status, Edit profile, Settings.
-    private var myActions: some View {
-        HStack(spacing: 12) {
-            card("dot.radiowaves.left.and.right", "Status", id: "profile-change-status") { showStatus = true }
-            card("pencil", "Edit profile", id: "profile-edit") { settingsLaunch = SettingsLaunch(start: .profile) }
-            card("gearshape", "Settings", id: "profile-settings") { settingsLaunch = SettingsLaunch(start: nil) }
         }
     }
 
@@ -273,23 +300,32 @@ struct ProfileView: View {
         .accessibilityIdentifier(id)
     }
 
-    /// Top right: someone's profile has Mute (the bell), Pin and ⋯; your own has ⋯ only.
+    /// Top right (LIME-213). Your own: Edit, Settings, ⋯. Someone else's: Subscribe (when they have a jam), ⋯.
     @ToolbarContentBuilder
     private var toolbarItems: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarTrailing) {
-            if !route.isMe, let conversation, accepted {
-                let muted = notifications.settings.isMuted(conversation.id)
-                Button {
-                    if muted { notifications.settings.unmute(conversation.id) } else { confirmingMute = true }
-                } label: { Image(systemName: muted ? "bell.slash" : "bell") }
-                .accessibilityLabel(muted ? "Unmute" : "Mute").accessibilityIdentifier("profile-mute")
-                Button { Task { await store.setPinned(conversation.id, !conversation.isPinned) } } label: {
-                    Image(systemName: conversation.isPinned ? "pin.slash" : "pin")
-                }
-                .accessibilityLabel(conversation.isPinned ? "Unpin" : "Pin").accessibilityIdentifier("profile-pin")
+            if route.isMe {
+                Button { settingsLaunch = SettingsLaunch(start: .profile) } label: { Image(systemName: "pencil") }
+                    .accessibilityLabel("Edit profile").accessibilityIdentifier("profile-edit")
+                Button { settingsLaunch = SettingsLaunch(start: nil) } label: { Image(systemName: "gearshape") }
+                    .accessibilityLabel("Settings").accessibilityIdentifier("profile-settings")
+            } else if let jamPage {
+                subscribePill(jamPage)
             }
             moreMenu
         }
+    }
+
+    private func subscribePill(_ page: JamPageInfo) -> some View {
+        let following = store.isFollowing(page.jamId)
+        return Button { if following { confirmingUnsubscribe = true } else { Task { await store.subscribe(to: page) } } } label: {
+            Text(following ? "Subscribed \u{2713}" : "Subscribe").font(Theme.font(.subheadline, weight: .semibold))
+                .foregroundStyle(following ? Theme.textSecondary : Theme.accentInk)
+                .padding(.horizontal, 12).frame(minHeight: 44)
+                .background { if !following { Capsule().fill(Theme.accent).frame(height: 32) } }
+        }
+        .accessibilityLabel(following ? "Subscribed to \(page.title). Tap to unsubscribe." : "Subscribe to \(page.title)")
+        .accessibilityIdentifier("profile-jam-subscribe")
     }
 
     @ViewBuilder
@@ -300,9 +336,20 @@ struct ProfileView: View {
                     .accessibilityIdentifier("profile-share")
             }
             if route.isMe {
-                Button { settingsLaunch = SettingsLaunch(start: .profile) } label: { Label("Edit profile", systemImage: "pencil") }
-                Button { settingsLaunch = SettingsLaunch(start: nil) } label: { Label("Settings", systemImage: "gearshape") }
-            } else if accepted {
+                Button { settingsLaunch = SettingsLaunch(start: .myQR) } label: { Label("My QR code", systemImage: "qrcode") }
+                    .accessibilityIdentifier("profile-my-qr")
+                Button(role: .destructive) { confirmingSignOut = true } label: { Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right") }
+                    .accessibilityIdentifier("profile-sign-out")
+            } else if accepted, let conversation {
+                let muted = notifications.settings.isMuted(conversation.id)
+                Button {
+                    if muted { notifications.settings.unmute(conversation.id) } else { confirmingMute = true }
+                } label: { Label(muted ? "Unmute" : "Mute", systemImage: muted ? "bell.slash" : "bell") }
+                    .accessibilityIdentifier("profile-mute")
+                Button { Task { await store.setPinned(conversation.id, !conversation.isPinned) } } label: {
+                    Label(conversation.isPinned ? "Unpin" : "Pin", systemImage: conversation.isPinned ? "pin.slash" : "pin")
+                }
+                .accessibilityIdentifier("profile-pin")
                 Button { verifying = true } label: { Label("Verify in person", systemImage: "qrcode.viewfinder") }
                     .accessibilityIdentifier("profile-verify")
                 Button { showStorage = true } label: { Label("Storage", systemImage: "internaldrive") }

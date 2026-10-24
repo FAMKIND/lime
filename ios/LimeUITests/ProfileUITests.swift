@@ -19,7 +19,8 @@ final class ProfileUITests: XCTestCase {
         any(app, "chat-title").tap()
         XCTAssertTrue(any(app, "profile-screen").waitForExistence(timeout: 8))
         XCTAssertEqual(app.staticTexts["profile-name"].label, "Sam Park")
-        XCTAssertEqual(app.staticTexts["profile-handle"].label, "@sam.park · Lincoln Elementary")
+        XCTAssertEqual(app.staticTexts["profile-handle"].label, "@sam.park")
+        XCTAssertEqual(app.staticTexts["profile-school-line"].label, "\u{1F3EB} Lincoln Elementary", "the school on its own line")
         XCTAssertTrue(app.staticTexts["profile-status"].exists, "the status they shared")
         XCTAssertTrue(app.buttons["profile-message"].exists && app.buttons["profile-voice"].exists && app.buttons["profile-video"].exists)
         XCTAssertTrue(app.staticTexts["profile-about"].label.contains("fractions"), "About")
@@ -68,10 +69,11 @@ final class ProfileUITests: XCTestCase {
         XCTAssertTrue(any(app, "profile-screen").waitForExistence(timeout: 8))
         XCTAssertTrue(app.buttons["profile-change-status"].exists && app.buttons["profile-edit"].exists && app.buttons["profile-settings"].exists)
         XCTAssertFalse(app.buttons["profile-message"].exists, "no Message / Voice / Video on your own profile")
-        XCTAssertFalse(app.buttons["profile-mute"].exists && app.buttons["profile-pin"].exists, "the bell and pin are for someone else's profile")
-        XCTAssertEqual(app.buttons["profile-change-status"].label, "Status", "one short word, on one line")
-        for _ in 0..<4 where !app.buttons["profile-sign-out"].isHittable { app.swipeUp() }
-        XCTAssertTrue(app.buttons["profile-sign-out"].waitForExistence(timeout: 5), "Sign out is at the bottom of the profile")
+        XCTAssertTrue(app.buttons["profile-change-status"].label.hasPrefix("Status: "), "the status dot on the avatar")
+        XCTAssertLessThan(app.buttons["profile-edit"].frame.minY, 150, "Edit and Settings are in the header")
+        XCTAssertFalse(app.buttons["profile-sign-out"].exists, "Sign out is not at the bottom any more")
+        app.buttons["profile-more"].tap()
+        XCTAssertTrue(app.buttons["profile-sign-out"].waitForExistence(timeout: 5), "Sign out is last in the ⋯ menu")
         app.buttons["profile-sign-out"].tap()
         XCTAssertTrue(app.buttons["profile-sign-out-confirm"].firstMatch.waitForExistence(timeout: 5), "the same confirmation as Settings")
         app.buttons["Cancel"].firstMatch.tap()
@@ -83,26 +85,26 @@ final class ProfileUITests: XCTestCase {
         app.buttons["conversation-row-dm:sam"].tap()
         any(app, "chat-title").tap()
         XCTAssertTrue(any(app, "profile-screen").waitForExistence(timeout: 8))
-        if app.buttons["profile-mute"].label == "Unmute" { // left over from an earlier run on this simulator
-            app.buttons["profile-mute"].tap()
-            XCTAssertTrue(app.buttons["profile-mute"].waitForExistence(timeout: 3))
+        app.buttons["profile-more"].tap()
+        if app.buttons["Unmute"].waitForExistence(timeout: 2) { // left over from an earlier run on this simulator
+            app.buttons["Unmute"].tap()
+            app.buttons["profile-more"].tap()
         }
-        XCTAssertEqual(app.buttons["profile-mute"].label, "Mute")
-        app.buttons["profile-mute"].tap()
+        XCTAssertTrue(app.buttons["Mute"].waitForExistence(timeout: 3))
+        app.buttons["Mute"].tap()
         XCTAssertTrue(app.buttons["mute-hour"].firstMatch.waitForExistence(timeout: 5), "the mute durations, in the confirmation sheet")
         app.buttons["mute-hour"].firstMatch.tap()
-        let muted = NSPredicate { _, _ in app.buttons["profile-mute"].label == "Unmute" }
-        expectation(for: muted, evaluatedWith: nil)
-        waitForExpectations(timeout: 5)
-        if app.buttons["profile-pin"].label == "Unpin" { // left over from an earlier run
-            app.buttons["profile-pin"].tap()
-            XCTAssertTrue(app.buttons["profile-pin"].waitForExistence(timeout: 3))
+        app.buttons["profile-more"].tap()
+        XCTAssertTrue(app.buttons["Unmute"].waitForExistence(timeout: 5), "muted")
+        if app.buttons["Unpin"].exists { // left over from an earlier run
+            app.buttons["Unpin"].tap()
+            app.buttons["profile-more"].tap()
         }
-        XCTAssertEqual(app.buttons["profile-pin"].label, "Pin")
-        app.buttons["profile-pin"].tap()
-        let pinned = NSPredicate { _, _ in app.buttons["profile-pin"].label == "Unpin" }
-        expectation(for: pinned, evaluatedWith: nil)
-        waitForExpectations(timeout: 5)
+        XCTAssertTrue(app.buttons["Pin"].waitForExistence(timeout: 3))
+        app.buttons["Pin"].tap()
+        app.buttons["profile-more"].tap()
+        XCTAssertTrue(app.buttons["Unpin"].waitForExistence(timeout: 5), "pinned")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.9)).tap()   // closes the menu
         // Back to Messages: the chat is pinned.
         for _ in 0..<3 where !any(app, "pinned-dm:sam").exists {
             let back = app.buttons["back-button"].exists ? app.buttons["back-button"] : app.navigationBars.buttons.element(boundBy: 0)
@@ -180,5 +182,36 @@ final class ProfileUITests: XCTestCase {
         app.buttons["profile-edit"].tap()
         XCTAssertTrue(app.buttons["profile-about"].waitForExistence(timeout: 8), "the Edit Profile screen, not the Settings root")
         XCTAssertFalse(app.buttons["settings-profile"].exists)
+    }
+}
+
+/// LIME-213: the profile's header: Subscribe before ⋯ on someone else's, the status dot on your avatar.
+@MainActor
+final class Profile213UITests: LimeUITestCase {
+    func testSomeoneElsesHeaderHasSubscribeBeforeMoreAndItToggles() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat"]
+        app.launch()
+        app.buttons["conversation-row-dm:sam"].tap()
+        app.descendants(matching: .any).matching(identifier: "chat-title").firstMatch.tap()
+        let subscribe = app.buttons["profile-jam-subscribe"]
+        XCTAssertTrue(subscribe.waitForExistence(timeout: 10))
+        XCTAssertLessThan(subscribe.frame.maxX, app.buttons["profile-more"].frame.minX + 1, "before the ⋯")
+        XCTAssertLessThan(subscribe.frame.midY, 120, "in the header")
+        subscribe.tap()
+        expectation(for: NSPredicate(format: "label BEGINSWITH 'Subscribed'"), evaluatedWith: subscribe)
+        waitForExpectations(timeout: 8)
+    }
+
+    func testTheStatusDotOnYourAvatarOpensThePicker() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat"]
+        app.launch()
+        app.buttons["settings-button"].tap()
+        let dot = app.buttons["profile-change-status"]
+        XCTAssertTrue(dot.waitForExistence(timeout: 10))
+        XCTAssertTrue(dot.label.hasPrefix("Status: "))
+        dot.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["status-sheet"].waitForExistence(timeout: 5))
     }
 }

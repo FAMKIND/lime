@@ -7702,3 +7702,14 @@ Both white outlines are deleted from `CoverArt`'s default cover in `JamAudio.swi
 - Tests: new `Jam215bUITests` (2), plus Jam188q/Jam201 re-run: 7 pass. No new unit tests.
 - Installed: 13mini: yes · iPad: yes · Jean: yes
 - For plot: nothing server-side; no new metadata.
+
+## LIME-213 — the profile header: Edit, Settings, Subscribe and Sign out at the top; status on the avatar — DONE
+
+- **Item 0 (white ring on the default podcast cover) was done first, in its own commit `e39d931`.**
+- Own profile: ✎ Edit profile, ⚙ Settings, ⋯ (Share profile · My QR code · Sign out in red, last, same confirm). The bottom Sign out row and the Status · Edit · Settings cards are gone.
+- Someone else's: a lime "Subscribe" pill (only when they have a jam; "Subscribed ✓" neutral after, tap asks before unsubscribing) before ⋯ (Share · Mute · Pin · Verify · Storage · Block · Delete chat). Mute and Pin moved from the header into ⋯.
+- Status: the dot sits at the avatar's bottom right; on your own profile it is a 44 pt button "Status: Available" that opens today's picker (always shown, green when Available).
+- Under the name: @handle, "🏫 School", then org chips (tile + name, scroll sideways, tap opens the org page). No background image (217).
+- Tests: new `Profile213UITests` (2); updated ProfileUITests, LimeUITests status test. Ran ProfileUITests, Jam188t, ConfirmSheet, CallsTab, Emergency, Jam188b: all pass except `Jam188bUITests.testAQuickPostWithTheFirstPost…` (line 53 expects an exact "like" label; the action row's label has since changed; not touched by this brief, left failing).
+- Installed: 13mini: yes · iPad: yes · Jean: no (devicectl lists Jean Chung's iPhone as "unavailable", so asleep/off/out of reach; tried twice)
+- For plot: no server change, no new metadata. Mute/Pin now live in ⋯ on someone else's profile.

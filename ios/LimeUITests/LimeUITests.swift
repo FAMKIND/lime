@@ -1175,18 +1175,18 @@ final class LimeUITestsStatusAndGroupRows: LimeUITestCase {
         XCTAssertTrue(app.buttons["status-quiet-1h"].exists && app.buttons["status-quiet-tomorrow"].exists)
         XCTAssertTrue(app.buttons["status-work-hours"].exists && app.buttons["status-open-settings"].exists)
         app.buttons["status-dnd"].tap()
-        let badge = app.descendants(matching: .any)["status-badge-test-user"]
+        let badge = app.buttons["profile-change-status"]
         XCTAssertTrue(badge.waitForExistence(timeout: 5), "my own avatar shows it")
-        XCTAssertEqual(badge.label, "Do not disturb")
+        XCTAssertEqual(badge.label, "Status: Do not disturb")
         // Quiet for an hour, then back to automatic (the status sheet opens from my profile's Change status).
         app.buttons["profile-change-status"].tap()
         app.buttons["status-quiet-1h"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["status-badge-test-user"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["profile-change-status"].waitForExistence(timeout: 5))
         app.buttons["profile-change-status"].tap()
         app.buttons["status-automatic"].tap()
         app.buttons["status-available"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["status-badge-test-user"].waitForExistence(timeout: 5), "Available shows the green dot")
-        XCTAssertEqual(app.descendants(matching: .any)["status-badge-test-user"].label, "Available")
+        XCTAssertTrue(app.buttons["profile-change-status"].waitForExistence(timeout: 5), "Available shows the green dot")
+        XCTAssertEqual(app.buttons["profile-change-status"].label, "Status: Available")
     }
 
     func testWorkHoursCanBeTurnedOnWithDaysAndTimes() {
