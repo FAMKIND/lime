@@ -5594,11 +5594,11 @@ fn an_edited_post_replaces_the_subscribers_copy_in_place_and_only_the_writer_may
     assert!(old_blob >= 1);
 
     // Only the writer edits: a subscriber has no such post of their own.
-    assert!(bob.store.edit_jam_post(post.clone(), "Mine".into(), String::new(), "Words".into(), vec![], "person".into(), false).is_err());
+    assert!(bob.store.edit_jam_post(post.clone(), "Mine".into(), String::new(), "Words".into(), vec![], "person".into(), false, None).is_err());
     // A bad edit changes nothing (an article needs a title).
-    assert!(alice.store.edit_jam_post(post.clone(), String::new(), String::new(), "Words".into(), vec![], "person".into(), false).is_err());
+    assert!(alice.store.edit_jam_post(post.clone(), String::new(), String::new(), "Words".into(), vec![], "person".into(), false, None).is_err());
 
-    alice.store.edit_jam_post(post.clone(), "New title".into(), "New sub".into(), "New **words**".into(), vec![], "person".into(), false).unwrap();
+    alice.store.edit_jam_post(post.clone(), "New title".into(), "New sub".into(), "New **words**".into(), vec![], "person".into(), false, None).unwrap();
     assert_eq!(alice.store.read_jam_post(post.clone()).unwrap().unwrap().title, "New title", "the writer sees it at once");
     for _ in 0..4 {
         catch_up(&alice, &[&bob], &transport);
@@ -5611,7 +5611,7 @@ fn an_edited_post_replaces_the_subscribers_copy_in_place_and_only_the_writer_may
     // The old blob is released on the server: one blob stands where there was one.
     assert_eq!(server.state.lock().unwrap().objects.keys().filter(|k| k.starts_with("blobs/")).count(), old_blob);
     // A second edit counts on.
-    alice.store.edit_jam_post(post.clone(), "Third".into(), String::new(), "Third words".into(), vec![], "person".into(), false).unwrap();
+    alice.store.edit_jam_post(post.clone(), "Third".into(), String::new(), "Third words".into(), vec![], "person".into(), false, None).unwrap();
     for _ in 0..4 {
         catch_up(&alice, &[&bob], &transport);
     }
@@ -5665,11 +5665,11 @@ fn an_edit_can_add_and_remove_pictures_and_the_removed_file_is_released() {
     let before = blobs(&server);
 
     // A block must name a file that exists: refused, nothing changes.
-    assert!(alice.store.edit_jam_post(post.clone(), "Pictures".into(), String::new(), "![x](attachment:9)".into(), vec![], "person".into(), false).is_err());
+    assert!(alice.store.edit_jam_post(post.clone(), "Pictures".into(), String::new(), "![x](attachment:9)".into(), vec![], "person".into(), false, None).is_err());
     // Drop the first picture's block, keep the second, add a new one the text uses and one it does not.
     alice
         .store
-        .edit_jam_post(post.clone(), "Pictures".into(), String::new(), "A\n\nB\n\n![two](attachment:1)\n\n![three](attachment:2)".into(), vec![pic(3, 400), pic(4, 400)], "person".into(), false)
+        .edit_jam_post(post.clone(), "Pictures".into(), String::new(), "A\n\nB\n\n![two](attachment:1)\n\n![three](attachment:2)".into(), vec![pic(3, 400), pic(4, 400)], "person".into(), false, None)
         .unwrap();
     for _ in 0..5 {
         catch_up(&alice, &[&bob], &transport);
@@ -5699,7 +5699,7 @@ fn an_edit_and_a_delete_reach_a_co_author_who_accepted() {
     let mine = carol.store.list_coauthored_posts().unwrap();
     assert_eq!((mine.len(), mine[0].markdown.as_str()), (1, "First words"));
 
-    alice.store.edit_jam_post(post.clone(), "Together, again".into(), String::new(), "Second words".into(), vec![], "person".into(), false).unwrap();
+    alice.store.edit_jam_post(post.clone(), "Together, again".into(), String::new(), "Second words".into(), vec![], "person".into(), false, None).unwrap();
     for _ in 0..5 {
         catch_up(&alice, &[&carol], &transport);
     }
@@ -5727,7 +5727,7 @@ fn changing_who_a_post_is_shown_as_in_an_edit_reaches_subscribers_and_back() {
     }
     let shown = |p: &Party| p.store.read_jam_post(post.clone()).unwrap().unwrap().display_as;
     assert_eq!(shown(&bob), "person");
-    let edit = |as_: &str| alice.store.edit_jam_post(post.clone(), "Whose words".into(), String::new(), "The words of **Whose words**".into(), vec![], as_.into(), false).unwrap();
+    let edit = |as_: &str| alice.store.edit_jam_post(post.clone(), "Whose words".into(), String::new(), "The words of **Whose words**".into(), vec![], as_.into(), false, None).unwrap();
     edit("jam");
     for _ in 0..5 {
         catch_up(&alice, &[&bob], &transport);
@@ -5942,7 +5942,7 @@ fn an_edit_can_replace_or_remove_a_recordings_cover() {
     let blobs = |s: &FakeServer| s.state.lock().unwrap().objects.keys().filter(|k| k.starts_with("blobs/")).count();
     let before = blobs(&server);
     // A new cover replaces the old one: still one cover, and the old blob is released.
-    alice.store.edit_jam_post(post.clone(), "Songs".into(), "For children".into(), "About it".into(), vec![cover(2)], "person".into(), false).unwrap();
+    alice.store.edit_jam_post(post.clone(), "Songs".into(), "For children".into(), "About it".into(), vec![cover(2)], "person".into(), false, None).unwrap();
     for _ in 0..5 {
         catch_up(&alice, &[&bob], &transport);
     }
@@ -5951,10 +5951,28 @@ fn an_edit_can_replace_or_remove_a_recordings_cover() {
     assert_eq!(blobs(&server), before, "one cover out, one in; the post blob likewise");
     let _ = old_cover;
     // Remove cover: only the recording is left, and its blob count falls by one.
-    alice.store.edit_jam_post(post.clone(), "Songs".into(), "For children".into(), "About it".into(), vec![], "person".into(), true).unwrap();
+    alice.store.edit_jam_post(post.clone(), "Songs".into(), "For children".into(), "About it".into(), vec![], "person".into(), true, None).unwrap();
     for _ in 0..5 {
         catch_up(&alice, &[&bob], &transport);
     }
     assert_eq!(files(&bob).iter().map(|f| f.0.as_str()).collect::<Vec<_>>(), vec!["Recording.m4a"]);
     assert_eq!(blobs(&server), before - 1);
+}
+
+#[test]
+fn an_edit_can_add_a_co_host_who_is_then_asked() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (carol, _) = party(&server, "carol", 3);
+    let jam = new_jam(&alice);
+    let post = publish(&alice, &jam, "Alone at first", "free");
+    for _ in 0..3 {
+        catch_up(&alice, &[&carol], &transport);
+    }
+    assert!(carol.store.list_coauthor_requests().unwrap().is_empty());
+    alice.store.edit_jam_post(post.clone(), "Alone at first".into(), String::new(), "The words of **Alone at first**".into(), vec![], "person".into(), false, Some(vec![carol.user.clone(), alice.user.clone()])).unwrap();
+    for _ in 0..5 {
+        catch_up(&alice, &[&carol], &transport);
+    }
+    assert_eq!(carol.store.list_coauthor_requests().unwrap().len(), 1, "the added co-host is asked (never the writer)");
 }

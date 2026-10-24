@@ -527,7 +527,7 @@ impl LimeStore {
     /// `added` are new files for an article's text: they take the numbers after the existing files, and only the ones the new text uses are kept.
     /// A picture whose block the new text no longer has is dropped from the post's files (its blob released, the later numbers closed up, its captions
     /// with it). Who it is shown as and its co-authors stay. The old blob is released on the server.
-    pub fn edit_jam_post(&self, post_id: String, title: String, subtitle: String, markdown: String, added: Vec<OutgoingAttachment>, display_as: String, remove_cover: bool) -> Result<(), StoreError> {
+    pub fn edit_jam_post(&self, post_id: String, title: String, subtitle: String, markdown: String, added: Vec<OutgoingAttachment>, display_as: String, remove_cover: bool, coauthors: Option<Vec<String>>) -> Result<(), StoreError> {
         // Who it is shown as written by can change too (LIME-201): `jam` or `person`, anything else is `person` (as when publishing).
         let display_as = if display_as == "jam" { "jam" } else { "person" };
         let state = self.load_or_create_account()?;
@@ -662,6 +662,25 @@ impl LimeStore {
                 }
                 if let Some(old_blob) = old_blob {
                     jam_store::queue_blob_delete(conn, &old_blob)?;
+                }
+                // Co-hosts (LIME-212b): with a list, new people are asked (at most four) and people taken off lose the credit (they keep what they have).
+                if let Some(wanted) = &coauthors {
+                    let me = jam.writer.clone();
+                    let mut keep: Vec<&String> = Vec::new();
+                    for user in wanted {
+                        if user != &me && !user.is_empty() && !keep.contains(&user) && keep.len() < 4 {
+                            keep.push(user);
+                            if jam_store::credit_state(conn, &post_id, user)?.is_none() {
+                                jam_store::add_credit(conn, &post_id, user)?;
+                            }
+                        }
+                    }
+                    let mut statement = conn.prepare("SELECT user_id FROM jam_credits WHERE post_id = ?1").map_err(db_err)?;
+                    let existing = statement.query_map(params![post_id], |r| r.get::<_, String>(0)).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+                    drop(statement);
+                    for user in existing.into_iter().filter(|u| !keep.contains(&u)) {
+                        conn.execute("DELETE FROM jam_credits WHERE post_id = ?1 AND user_id = ?2", params![post_id, user]).map_err(db_err)?;
+                    }
                 }
                 jam_store::mark_page_dirty(conn, &row.jam_id)?;
                 Ok(())

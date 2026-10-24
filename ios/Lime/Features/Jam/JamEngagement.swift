@@ -230,3 +230,25 @@ struct JamActivityList: View {
         .sheet(item: $reading) { route in NavigationStack { JamPostView(postID: route.postID).toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { reading = nil } } } } }
     }
 }
+
+
+/// The row at the foot of every card (LIME-212b): ♥ · 💬 · remix · share in four equal columns, the same on posts, articles and podcasts. Remix and
+/// share are **disabled** buttons (dimmed; "Coming soon" for VoiceOver) until they exist.
+struct JamActionRow: View {
+    let postID: String
+    let comment: () -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            JamHeartButton(postID: postID)
+            JamCommentCount(postID: postID, action: comment)
+            ForEach([("arrow.2.squarepath", "remix"), ("square.and.arrow.up", "share")], id: \.1) { icon, label in
+                Button {} label: {
+                    Image(systemName: icon).font(.system(size: 18)).frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).disabled(true).foregroundStyle(Theme.textSecondary.opacity(0.5))
+                .accessibilityLabel(label).accessibilityHint("Coming soon").accessibilityIdentifier("jam-action-\(label)-\(postID)")
+            }
+        }
+    }
+}

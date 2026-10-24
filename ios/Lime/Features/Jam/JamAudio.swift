@@ -198,9 +198,24 @@ struct CoverArt: View {
                 if let image {
                     Image(uiImage: image).resizable().scaledToFill()
                 } else {
-                    Theme.surface
-                    LinearGradient(colors: [Theme.accent.opacity(0.35), Theme.surface], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    if let org { JamInitialTile(title: org, size: 72) } else { AvatarView(person: person, size: 96) }
+                    // No cover added (LIME-212b): a blurred, slightly dimmed copy of the profile photo (the org's tile when posted as the org) with the
+                    // profile circle at about two thirds of the square's width on it, a thin white ring around it.
+                    GeometryReader { geo in
+                        let side = max(min(geo.size.width, geo.size.height), 1)
+                        ZStack {
+                            Group {
+                                if let org { JamInitialTile(title: org, size: side * 1.5) } else { AvatarView(person: person, size: side * 1.6) }
+                            }
+                            .frame(width: geo.size.width, height: geo.size.height).blur(radius: side * 0.14).overlay(Color.black.opacity(0.14)).clipped()
+                            if let org {
+                                JamInitialTile(title: org, size: side * 0.66)
+                                    .overlay(RoundedRectangle(cornerRadius: side * 0.66 * 0.28, style: .continuous).stroke(.white, lineWidth: max(1, side * 0.015)))
+                            } else {
+                                AvatarView(person: person, size: side * 0.66).overlay(Circle().stroke(.white, lineWidth: max(1, side * 0.015)))
+                            }
+                        }
+                        .frame(width: geo.size.width, height: geo.size.height)
+                    }
                 }
             }
         }

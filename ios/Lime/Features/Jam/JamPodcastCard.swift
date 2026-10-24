@@ -16,6 +16,7 @@ struct JamPodcastCard: View {
         let org = post.displayAs == "jam" ? store.jamTitle(post.jamId) : writer.name
         let now = NowPlaying.shared
         let mine = now.item.flatMap { $0.postID == post.postId ? $0 : nil }
+        VStack(alignment: .leading, spacing: 4) {
         HStack(alignment: .top, spacing: 14) {
             Button { open(file) } label: {
                 PostCover(postID: post.postId).frame(width: 96, height: 96).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -31,20 +32,16 @@ struct JamPodcastCard: View {
                 }
                 .buttonStyle(.plain).accessibilityHint("Opens the player").accessibilityIdentifier("jam-podcast-title")
                 if let file { pill(file, mine?.controller) }
-                // A quiet ♥ and 💬 line (LIME-204): 💬 opens the player with the comments.
-                HStack(spacing: 0) {
-                    JamHeartButton(postID: post.postId, size: 14).frame(width: 70)
-                    JamCommentCount(postID: post.postId, size: 14) { openWithComments() }.frame(width: 70)
-                    Spacer(minLength: 0)
-                }
-                .frame(height: 32)
             }
             .padding(.trailing, 36)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, 20).padding(.vertical, 14)
+        .padding(.horizontal, 20).padding(.top, 14)
         .contentShape(Rectangle())
         .onTapGesture { if let file { play(file, mine?.controller) } }
+        // The same action row as every other card (LIME-212b).
+        JamActionRow(postID: post.postId) { openWithComments() }.padding(.horizontal, 20).padding(.bottom, 6)
+        }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(file.map { "jam-audio-card-\($0.attachmentId)" } ?? "jam-podcast-card")
         .task(id: post.postId) { await loadCover(files, file) }

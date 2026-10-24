@@ -21,6 +21,8 @@ struct JamPodcastEditSheet: View {
     @State private var removeCover = false
     @State private var postAsJam: String?
     @State private var postingAs = false
+    @State private var coauthors: [Person] = []
+    @State private var choosingCoauthors = false
     @State private var picking = false
     @State private var saving = false
     @State private var problem: String?
@@ -31,7 +33,11 @@ struct JamPodcastEditSheet: View {
         _subtitle = State(initialValue: post.subtitle)
         _details = State(initialValue: post.markdown)
         _postAsJam = State(initialValue: post.displayAs == "jam" ? post.jamId : nil)
+        _initialHosts = State(initialValue: post.coauthors)
     }
+
+    /// The accepted co-hosts the post had; the list is only sent when it changed.
+    @State private var initialHosts: [String]
 
     private var files: [JamAttachmentInfo] { store.jamAttachments(post.postId) }
     private var recording: JamAttachmentInfo? { files.first { $0.kind == "audio" } ?? files.first { $0.kind == "video" } }
@@ -41,7 +47,11 @@ struct JamPodcastEditSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    postAsChip
+                    HStack(spacing: 4) {
+                        postAsChip
+                        hosts
+                        Spacer(minLength: 0)
+                    }
                     cover
                     recordingRow
                     field("Title", text: $title, limit: 120, id: "podcast-edit-title")
@@ -64,6 +74,8 @@ struct JamPodcastEditSheet: View {
                 ToolbarItem(placement: .confirmationAction) { Button("Update") { update() }.fontWeight(.semibold).disabled(saving || title.trimmingCharacters(in: .whitespaces).isEmpty).accessibilityIdentifier("podcast-edit-update") }
             }
             .sheet(isPresented: $postingAs) { PostAsSheet(selection: $postAsJam) }
+            .sheet(isPresented: $choosingCoauthors) { JamCoauthorPicker(selected: $coauthors, title: "Add co-hosts") }
+            .onAppear { if coauthors.isEmpty { coauthors = initialHosts.map { store.teacher($0) } } }
             .fullScreenCover(isPresented: $picking) {
                 MediaLibraryPicker(limit: 1, onPick: { images, _ in
                     picking = false
@@ -85,6 +97,21 @@ struct JamPodcastEditSheet: View {
             .frame(minHeight: 44)
         }
         .buttonStyle(.plain).accessibilityLabel("Posting as \(name)").accessibilityIdentifier("jam-post-as")
+    }
+
+    /// The co-hosts as small overlapping avatars and the person-plus to change them (as on the article page).
+    private var hosts: some View {
+        HStack(spacing: 2) {
+            if !coauthors.isEmpty {
+                Button { choosingCoauthors = true } label: {
+                    HStack(spacing: -8) { ForEach(Array(coauthors.prefix(3).enumerated()), id: \.offset) { _, person in AvatarView(person: person, size: 28).overlay(Circle().stroke(Theme.canvas, lineWidth: 2)) } }
+                        .frame(minHeight: 44)
+                }
+                .buttonStyle(.plain).accessibilityLabel("With \(coauthors.map(\.name).joined(separator: ", "))").accessibilityIdentifier("podcast-edit-hosts")
+            }
+            Button { choosingCoauthors = true } label: { Image(systemName: "person.badge.plus").font(.system(size: 17)).foregroundStyle(Theme.text).frame(width: 44, height: 44) }
+                .accessibilityLabel("Add co-host").accessibilityIdentifier("podcast-edit-add-host")
+        }
     }
 
     /// The cover at about 160 pt with Change cover and Remove (for a video, its poster until a cover is chosen).
@@ -157,7 +184,8 @@ struct JamPodcastEditSheet: View {
         saving = true; problem = nil
         Task {
             let ok = await store.editJamPost(post, title: title, subtitle: subtitle, markdown: details, added: newCover.map { [$0] } ?? [],
-                                             displayAs: postAsJam == nil ? "person" : "jam", removeCover: removeCover && newCover == nil)
+                                             displayAs: postAsJam == nil ? "person" : "jam", removeCover: removeCover && newCover == nil,
+                                             coauthors: Set(coauthors.map(\.id)) == Set(initialHosts) ? nil : coauthors.map(\.id))
             saving = false
             if ok { dismiss() } else { problem = "Could not update the podcast." }
         }

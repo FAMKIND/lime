@@ -155,7 +155,7 @@ extension ConversationStore {
     }
 }
 
-/// A post's cover (LIME-212): its `cover.jpg`, else a video's poster, else its first picture; when it has none, the org's tile or the writer's face. Read from
+/// A post's cover (LIME-212, 212b): the `cover.jpg` the writer added, else a video's poster; with neither, the default: the blurred profile photo with the profile circle (the org's tile when posted as the org). Read from
 /// the post when drawn, so a new cover shows at once everywhere.
 struct PostCover: View {
     let postID: String
@@ -168,7 +168,6 @@ struct PostCover: View {
         let files = store.jamAttachments(postID).filter { $0.mime != "text/vtt" }
         if let cover = files.first(where: JamCover.isCover) { return .file(cover.attachmentId) }
         if let video = files.first(where: { $0.kind == "video" && !$0.poster.isEmpty }) { return .poster(video.poster, video.attachmentId) }
-        if let picture = files.first(where: { $0.kind == "image" && $0.mime != JamLink.mime }) { return .file(picture.attachmentId) }
         return .none
     }
 

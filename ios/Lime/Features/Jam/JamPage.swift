@@ -143,27 +143,7 @@ struct JamPostCard: View {
             JamPodcastCard(post: post).overlay(alignment: .topTrailing) { JamPostMenu(post: post).padding(.trailing, 8).padding(.top, 8) }
         } else {
         VStack(alignment: .leading, spacing: 10) {
-            if showsWriter {
-                let asJam = post.displayAs == "jam"
-                Button { store.openProfile(ProfileRoute(userID: writer.id, name: writer.name, isMe: writer.id == store.meProvider().id)) } label: {
-                    HStack(spacing: 10) {
-                        BylineAvatar(people: store.bylinePeople(post), jam: asJam ? store.jamTitle(post.jamId) : nil, size: 40)
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text(asJam ? store.jamTitle(post.jamId) : writer.name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
-                            Text([asJam ? "by \(writer.name)" : nil, store.byline(post), JamDates.text(post.created), post.editedAt > 0 ? "Edited" : nil].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary)
-                                .accessibilityIdentifier("jam-card-byline-\(post.postId)")
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("\(asJam ? store.jamTitle(post.jamId) + ", by " + writer.name : writer.name), \(JamDates.text(post.created))").accessibilityHint("Opens their profile")
-                .accessibilityIdentifier("jam-card-writer-\(post.postId)")
-            } else {
-                Text([store.byline(post), JamDates.text(post.created), post.editedAt > 0 ? "Edited" : nil].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary)
-                    .accessibilityIdentifier("jam-card-byline-\(post.postId)")
-            }
+            writerRow(writer)
             if post.kind == "article", post.state == "ready" {
                 Button { openPost() } label: { JamArticleCover(post: post).contentShape(Rectangle()) }
                     .buttonStyle(.plain)
@@ -197,18 +177,48 @@ struct JamPostCard: View {
         }
     }
 
+    /// The row every card starts with (a post, an article, a video podcast): the byline avatar, the name or org with "by …", the date.
+    @ViewBuilder
+    private func writerRow(_ writer: Person) -> some View {
+    if showsWriter {
+        let asJam = post.displayAs == "jam"
+        Button { store.openProfile(ProfileRoute(userID: writer.id, name: writer.name, isMe: writer.id == store.meProvider().id)) } label: {
+            HStack(spacing: 10) {
+                BylineAvatar(people: store.bylinePeople(post), jam: asJam ? store.jamTitle(post.jamId) : nil, size: 40)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(asJam ? store.jamTitle(post.jamId) : writer.name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
+                    Text([asJam ? "by \(writer.name)" : nil, store.byline(post), JamDates.text(post.created), post.editedAt > 0 ? "Edited" : nil].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                        .accessibilityIdentifier("jam-card-byline-\(post.postId)")
+                }
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(asJam ? store.jamTitle(post.jamId) + ", by " + writer.name : writer.name), \(JamDates.text(post.created))").accessibilityHint("Opens their profile")
+        .accessibilityIdentifier("jam-card-writer-\(post.postId)")
+    } else {
+        Text([store.byline(post), JamDates.text(post.created), post.editedAt > 0 ? "Edited" : nil].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary)
+            .accessibilityIdentifier("jam-card-byline-\(post.postId)")
+    }
+    }
+
     /// Which card this post gets here (LIME-203): one decision, in `JamCardChoice`.
     private var style: JamCardStyle {
         let files = store.jamAttachments(post.postId)
         return JamCardChoice.style(isRecording: post.kind == "record", ready: post.state == "ready", hasAudio: files.contains { $0.kind == "audio" }, hasVideo: files.contains { $0.kind == "video" }, place: place)
     }
 
-    /// A video podcast in the main feed (LIME-203): the video card, the org or writer and the date and the title under it, ⋯ at the right, the actions.
+    /// A video podcast in the main feed (LIME-203, 212b): it starts like the other cards (the writer row), then the title, the video, and the same
+    /// action row; ⋯ is at the top right as on every card.
     private func videoPodcast(_ writer: Person) -> some View {
         let files = store.jamAttachments(post.postId)
         let org = store.authorName(post)
         let video = files.first { $0.kind == "video" }
-        return VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: 10) {
+            writerRow(writer)
+            Text(post.title.isEmpty ? "Recording" : post.title).font(Theme.font(.title3, weight: .semibold)).foregroundStyle(Theme.text).multilineTextAlignment(.leading)
+                .accessibilityAddTraits(.isHeader).accessibilityIdentifier("jam-podcast-title")
             if let video {
                 JamVideoCard(postID: post.postId, file: video, captionFile: JamCaptions.file(for: files.firstIndex(of: video) ?? 0, in: files),
                              label: "Video podcast, \(post.title.isEmpty ? "recording" : post.title), \(org), \(VoiceFormat.clock(Double(video.durationMs ?? 0) / 1000))",
@@ -219,22 +229,12 @@ struct JamPostCard: View {
                                  Task { await item.controller.play(data: { await store.jamAttachmentData(item.postID, item.file.attachmentId) }) }
                              })
             }
-            HStack(alignment: .top, spacing: 8) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text([org.uppercased(), JamDates.text(post.created)].joined(separator: " \u{00B7} ")).font(Theme.font(.caption2, weight: .semibold)).foregroundStyle(Theme.textSecondary).lineLimit(1)
-                        .accessibilityIdentifier("jam-card-byline-\(post.postId)")
-                    Text(post.title.isEmpty ? "Recording" : post.title).font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(2).multilineTextAlignment(.leading)
-                        .accessibilityIdentifier("jam-podcast-title")
-                }
-                Spacer(minLength: 0)
-                JamPostMenu(post: post).offset(x: 8, y: -6)
-            }
             actions
         }
         .padding(.horizontal, 20).padding(.vertical, 14)
+        .overlay(alignment: .topTrailing) { JamPostMenu(post: post).padding(.trailing, 8).padding(.top, 8) }
     }
 
-    /// An audio recording's card carries its own title and subtitle (LIME-188u).
     private var isAudioRecord: Bool { post.kind == "record" && post.state == "ready" && store.jamAttachments(post.postId).contains { $0.kind == "audio" } }
 
     /// A podcast's 💬 opens the black player with its comments (LIME-204).
@@ -279,18 +279,7 @@ struct JamPostCard: View {
     }
 
     private var actions: some View {
-        // Four equal columns across the card (LIME-188y).
-        HStack(spacing: 0) {
-            JamHeartButton(postID: post.postId)
-            JamCommentCount(postID: post.postId) { if style == .videoPodcast { openPlayerWithComments() } else { openPost(toComments: true) } }
-            // Remix and Share wait (LIME-189b); they are drawn dimmed and do nothing yet.
-            ForEach([("arrow.2.squarepath", "remix"), ("square.and.arrow.up", "share")], id: \.1) { icon, label in
-                Image(systemName: icon).font(.system(size: 18)).frame(maxWidth: .infinity, minHeight: 44)
-                    .foregroundStyle(Theme.textSecondary.opacity(0.5)).allowsHitTesting(false)
-                    .accessibilityLabel(label).accessibilityAddTraits(.isButton).accessibilityHint("Coming soon")
-                    .accessibilityIdentifier("jam-action-\(label)-\(post.postId)")
-            }
-        }
+        JamActionRow(postID: post.postId) { if style == .videoPodcast { openPlayerWithComments() } else { openPost(toComments: true) } }
     }
 }
 
