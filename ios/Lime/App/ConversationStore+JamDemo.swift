@@ -82,12 +82,12 @@ extension ConversationStore {
         }
     }
 
-    func demoEdit(_ postID: String, title: String, subtitle: String, markdown: String) {
+    func demoEdit(_ postID: String, title: String, subtitle: String, markdown: String, displayAs: String = "person") {
         for (jam, posts) in jamPosts {
             guard let i = posts.firstIndex(where: { $0.postId == postID }) else { continue }
             var post = posts[i]
             post.title = title; post.subtitle = subtitle; post.markdown = markdown; post.plain = messagePlainText(text: markdown)
-            post.editedAt = Int64(Date().timeIntervalSince1970 * 1000)
+            post.editedAt = Int64(Date().timeIntervalSince1970 * 1000); post.displayAs = displayAs == "jam" ? "jam" : "person"
             jamPosts[jam]?[i] = post
         }
     }

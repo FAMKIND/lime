@@ -37,6 +37,16 @@ extension ConversationStore {
     }
 
     /// The name this phone shows for a teacher: a chat member, a profile it has seen, else a plain word.
+    /// Who a post is shown as written by (LIME-201): the jam's title when it was posted as the jam, else its writer. One rule for every card, player,
+    /// the lock screen and the share text.
+    func authorName(_ post: JamPostInfo?) -> String {
+        guard let post else { return "" }
+        return post.displayAs == "jam" ? jamTitle(post.jamId) : teacherName(post.author)
+    }
+
+    /// The jam's title when the post is shown as the jam (for the tile in place of a face), else nil.
+    func orgName(_ post: JamPostInfo?) -> String? { post?.displayAs == "jam" ? jamTitle(post?.jamId ?? "") : nil }
+
     func teacherName(_ userID: String) -> String {
         if userID == meProvider().id { return meProvider().name }
         for conversation in conversations { if let member = conversation.members.first(where: { $0.id == userID }) { return member.name } }
@@ -191,12 +201,13 @@ extension ConversationStore {
     }
 
     /// Edits a post of mine in place (LIME-195): its words, title and subtitle; the subscribers get the new text and see "Edited".
-    func editJamPost(_ post: JamPostInfo, title: String, subtitle: String, markdown: String, added: [OutgoingAttachment] = []) async -> Bool {
+    func editJamPost(_ post: JamPostInfo, title: String, subtitle: String, markdown: String, added: [OutgoingAttachment] = [], displayAs: String? = nil) async -> Bool {
+        let displayAs = displayAs ?? post.displayAs
         #if DEBUG
-        if isDemo { demoEdit(post.postId, title: title, subtitle: subtitle, markdown: markdown); return true }
+        if isDemo { demoEdit(post.postId, title: title, subtitle: subtitle, markdown: markdown, displayAs: displayAs); return true }
         #endif
         guard let core else { return false }
-        do { try await Task.detached(priority: .userInitiated) { try core.editJamPost(postId: post.postId, title: title, subtitle: subtitle, markdown: markdown, added: added) }.value }
+        do { try await Task.detached(priority: .userInitiated) { try core.editJamPost(postId: post.postId, title: title, subtitle: subtitle, markdown: markdown, added: added, displayAs: displayAs) }.value }
         catch { CallDiagnostics.shared.log("jam edit failed: \(error)"); return false }
         refreshJams()
         await deliverNow()

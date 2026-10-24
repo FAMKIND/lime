@@ -497,7 +497,9 @@ impl LimeStore {
     /// `added` are new files for an article's text: they take the numbers after the existing files, and only the ones the new text uses are kept.
     /// A picture whose block the new text no longer has is dropped from the post's files (its blob released, the later numbers closed up, its captions
     /// with it). Who it is shown as and its co-authors stay. The old blob is released on the server.
-    pub fn edit_jam_post(&self, post_id: String, title: String, subtitle: String, markdown: String, added: Vec<OutgoingAttachment>) -> Result<(), StoreError> {
+    pub fn edit_jam_post(&self, post_id: String, title: String, subtitle: String, markdown: String, added: Vec<OutgoingAttachment>, display_as: String) -> Result<(), StoreError> {
+        // Who it is shown as written by can change too (LIME-201): `jam` or `person`, anything else is `person` (as when publishing).
+        let display_as = if display_as == "jam" { "jam" } else { "person" };
         let state = self.load_or_create_account()?;
         self.registered_user(&state)?;
         let markdown = crate::format::normalise_post(&markdown);
@@ -601,13 +603,13 @@ impl LimeStore {
                 let now = now_ms();
                 let blob_id = new_id();
                 let key = crate::store::attachments::new_key();
-                let sealed = crate::store::attachments::seal(&key, &blob_id, &post_plaintext(&post_id, &row.jam_id, &row.tier, &row.kind, &title, &subtitle, &markdown, &attachments, row.created, &row.display_as));
+                let sealed = crate::store::attachments::seal(&key, &blob_id, &post_plaintext(&post_id, &row.jam_id, &row.tier, &row.kind, &title, &subtitle, &markdown, &attachments, row.created, display_as));
                 let [ciphertext] = <[Vec<u8>; 1]>::try_from(sealed).map_err(|_| StoreError::Rejected)?;
                 let old_blob: Option<String> = conn.query_row("SELECT blob_id FROM jam_posts WHERE post_id = ?1", params![post_id], |r| r.get(0)).map_err(db_err)?;
                 conn.execute(
-                    "UPDATE jam_posts SET title = ?2, subtitle = ?3, markdown = ?4, plain = ?5, attachments = ?12, blob_id = ?6, blob_key = ?7, blob_sha = ?8, blob_size = ?9, uploaded = 0, edit_pending = 1, version = ?10, edited_at = ?11
+                    "UPDATE jam_posts SET title = ?2, subtitle = ?3, markdown = ?4, plain = ?5, attachments = ?12, display_as = ?13, blob_id = ?6, blob_key = ?7, blob_sha = ?8, blob_size = ?9, uploaded = 0, edit_pending = 1, version = ?10, edited_at = ?11
                      WHERE post_id = ?1",
-                    params![post_id, title, subtitle, markdown, crate::format::plain_text_post(&markdown), blob_id, vodozemac::base64_encode(&key), crate::store::attachments::digest_hex(&ciphertext), ciphertext.len() as i64, version, now, attachments.to_string()],
+                    params![post_id, title, subtitle, markdown, crate::format::plain_text_post(&markdown), blob_id, vodozemac::base64_encode(&key), crate::store::attachments::digest_hex(&ciphertext), ciphertext.len() as i64, version, now, attachments.to_string(), display_as],
                 )
                 .map_err(db_err)?;
                 for i in &dropped {

@@ -136,6 +136,7 @@ struct JamComposeSheet: View {
                 if let editing {
                     // The post's own words, in its own layout (a recording shows its title, subtitle and description on the article page).
                     article = editing.kind != "quick"; title = editing.title; subtitle = editing.subtitle
+                    postAsJam = editing.displayAs == "jam" ? editing.jamId : nil   // the chip starts on the post's current author (LIME-201)
                     // The post's own files keep their numbers; new pictures are numbered after them (LIME-195b).
                     articleFiles = store.jamAttachments(editing.postId).map { _ in OutgoingAttachment(bytes: Data(), name: "", mime: "image/jpeg", width: nil, height: nil, durationMs: nil, thumb: Data(), poster: Data()) }
                     try? await Task.sleep(for: .milliseconds(300))
@@ -676,7 +677,7 @@ struct JamComposeSheet: View {
         problem = nil
         posting = true
         Task {
-            let result = await store.editJamPost(editing, title: title, subtitle: subtitle, markdown: markdown, added: added)
+            let result = await store.editJamPost(editing, title: title, subtitle: subtitle, markdown: markdown, added: added, displayAs: postAsJam == nil ? "person" : "jam")
             posting = false
             if result { dismiss() } else { problem = "Could not update the post." }
         }

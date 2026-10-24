@@ -41,12 +41,12 @@ final class NowPlaying {
         let files = store.jamAttachments(post.postId)
         guard let file = files.first(where: { $0.kind == "audio" }) ?? files.first(where: { $0.kind == "video" }) else { return nil }
         if let now = item, now.postID == post.postId, now.file.attachmentId == file.attachmentId { return now }
-        let controller = PodcastController(duration: Double(file.durationMs ?? 0) / 1000, title: post.title, artist: store.teacherName(post.author), isVideo: file.kind == "video")
+        let controller = PodcastController(duration: Double(file.durationMs ?? 0) / 1000, title: post.title, artist: store.authorName(post), isVideo: file.kind == "video")
         #if DEBUG
         controller.simulated = store.isDemo
         #endif
         return Item(postID: post.postId, file: file, controller: controller, title: post.title.isEmpty ? "Recording" : post.title,
-                    subtitle: post.subtitle.isEmpty ? store.teacherName(post.author) : post.subtitle)
+                    subtitle: post.subtitle.isEmpty ? store.authorName(post) : post.subtitle)
     }
 
     func playNext(_ item: Item) { queue.removeAll { $0.postID == item.postID }; queue.insert(item, at: 0); if self.item == nil { advance() } }
@@ -108,7 +108,7 @@ struct JamAudioCard: View {
 
     private func coverButton(_ controller: PodcastController, writer: Person) -> some View {
         Button { open(controller) } label: {
-            CoverArt(image: cover, person: writer).frame(width: coverSize, height: coverSize).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            CoverArt(image: cover, person: writer, org: store.orgName(store.jamPost(postID))).frame(width: coverSize, height: coverSize).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(.plain).accessibilityLabel("Open player").accessibilityIdentifier("jam-audio-expand")
     }
@@ -157,7 +157,7 @@ struct JamAudioCard: View {
         // The same recording keeps one controller while it is the one playing, so the card and the mini player agree.
         if let now = NowPlaying.shared.item, now.postID == postID, now.file.attachmentId == file.attachmentId { return now.controller }
         let post = store.jamPost(postID)
-        let controller = PodcastController(duration: Double(file.durationMs ?? 0) / 1000, title: post?.title ?? "", artist: store.teacherName(post?.author ?? ""))
+        let controller = PodcastController(duration: Double(file.durationMs ?? 0) / 1000, title: post?.title ?? "", artist: store.authorName(post))
         #if DEBUG
         controller.simulated = store.isDemo
         #endif
@@ -167,7 +167,7 @@ struct JamAudioCard: View {
     private func item(_ controller: PodcastController) -> NowPlaying.Item {
         let post = store.jamPost(postID)
         return NowPlaying.Item(postID: postID, file: file, controller: controller, title: post?.title.isEmpty == false ? post?.title ?? "" : "Recording",
-                               subtitle: post?.subtitle.isEmpty == false ? post?.subtitle ?? "" : store.teacherName(post?.author ?? ""), cover: cover, cues: cues)
+                               subtitle: post?.subtitle.isEmpty == false ? post?.subtitle ?? "" : store.authorName(post), cover: cover, cues: cues)
     }
 
     private func play(_ controller: PodcastController) {
@@ -185,6 +185,8 @@ struct JamAudioCard: View {
 struct CoverArt: View {
     let image: UIImage?
     let person: Person
+    /// A post shown as a jam has the jam's tile in place of the writer's face (LIME-201).
+    var org: String? = nil
 
     var body: some View {
         // The art fills what it is given and never asks for more (a picture that fills is bigger than its frame): it is an overlay on a clear
@@ -196,7 +198,7 @@ struct CoverArt: View {
                 } else {
                     Theme.surface
                     LinearGradient(colors: [Theme.accent.opacity(0.35), Theme.surface], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    AvatarView(person: person, size: 96)
+                    if let org { JamInitialTile(title: org, size: 72) } else { AvatarView(person: person, size: 96) }
                 }
             }
         }
@@ -239,7 +241,7 @@ struct AudioMiniPlayer: View {
                     HStack(spacing: 10) {
                         // A video podcast's thumbnail plays the video (LIME-200); VoiceOver gets the controls, not the picture.
                         ZStack {
-                            CoverArt(image: item.cover, person: writer)
+                            CoverArt(image: item.cover, person: writer, org: store.orgName(store.jamPost(item.postID)))
                             if item.file.kind == "video", item.controller.player != nil, !item.controller.simulated { PlayerLayerView(player: item.controller.player, fill: true).accessibilityIdentifier("mini-video-layer") }
                         }
                         .frame(width: 40, height: 40).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous)).accessibilityHidden(true)

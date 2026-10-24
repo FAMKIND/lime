@@ -116,7 +116,7 @@ struct JamArticleCover: View {
     var body: some View {
         let writer = store.teacher(post.author)
         ZStack(alignment: .bottomLeading) {
-            CoverArt(image: image, person: writer)
+            CoverArt(image: image, person: writer, org: store.orgName(post))
             if JamRead.isUnread(post, me: store.meProvider().id) {
                 VStack { HStack { Circle().fill(.white).frame(width: 12, height: 12).overlay(Circle().stroke(.black.opacity(0.35), lineWidth: 1)).padding(14).accessibilityElement().accessibilityLabel("Unread").accessibilityIdentifier("jam-unread-\(post.postId)"); Spacer() }; Spacer() }
             }
@@ -280,7 +280,7 @@ struct JamArticlePage: View {
             }
             .buttonStyle(.plain)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(post.title), by \(writer.name), \(JamDates.text(post.created)), \(minutes) minute read").accessibilityHint("Opens their profile")
+            .accessibilityLabel("\(post.title), by \(post.displayAs == "jam" ? store.authorName(post) + ", by " + writer.name : writer.name), \(JamDates.text(post.created)), \(minutes) minute read").accessibilityHint("Opens their profile")
             GeometryReader { geo in Color.clear.preference(key: ArticleHeadEndKey.self, value: geo.frame(in: .named("jam-article-scroll")).minY) }.frame(height: 0)
                 .modifier(HeadEndReporter(report: { headEnd = $0 }))
             Rectangle().fill(Theme.hairline).frame(height: 1).accessibilityHidden(true)
@@ -709,7 +709,7 @@ enum ArticlePrint {
         for (index, file) in files.enumerated() where file.kind == "image" {
             if let data = await store.jamAttachmentData(post.postId, file.attachmentId) { images[index] = data.base64EncodedString() }
         }
-        let html = Self.html(post: post, writer: store.teacherName(post.author), face: face, images: images)
+        let html = Self.html(post: post, writer: store.authorName(post), face: face, images: images)
         let formatter = UIMarkupTextPrintFormatter(markupText: html)
         formatter.perPageContentInsets = UIEdgeInsets(top: 54, left: 54, bottom: 54, right: 54)
         let info = UIPrintInfo(dictionary: nil)

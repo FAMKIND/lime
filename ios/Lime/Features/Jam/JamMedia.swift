@@ -177,7 +177,7 @@ struct JamVideoCard: View {
 
     private func makeController() -> PodcastController {
         let post = store.jamPost(postID)
-        let controller = PodcastController(duration: Double(file.durationMs ?? 0) / 1000, title: post?.title ?? "", artist: store.teacherName(post?.author ?? ""), isVideo: true)
+        let controller = PodcastController(duration: Double(file.durationMs ?? 0) / 1000, title: post?.title ?? "", artist: store.authorName(post), isVideo: true)
         controller.muted = true
         #if DEBUG
         controller.simulated = store.isDemo
@@ -354,9 +354,9 @@ struct JamVideoScreen: View {
         let writer = store.teacher(post.author)
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
-                AvatarView(person: writer, size: 36).accessibilityHidden(true)
+                if let org = store.orgName(post) { JamInitialTile(title: org, size: 36).accessibilityHidden(true) } else { AvatarView(person: writer, size: 36).accessibilityHidden(true) }
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(writer.name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(.white)
+                    Text(store.authorName(post)).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(.white)
                     Text(JamDates.text(post.created)).font(Theme.caption).foregroundStyle(.white.opacity(0.7))
                 }
                 Spacer(minLength: 0)
@@ -379,7 +379,7 @@ struct JamVideoScreen: View {
 
     /// The cover in the video's place.
     private func audioArt(_ post: JamPostInfo?) -> some View {
-        CoverArt(image: cover, person: store.teacher(post?.author ?? ""))
+        CoverArt(image: cover, person: store.teacher(post?.author ?? ""), org: store.orgName(post))
             .aspectRatio(1, contentMode: .fit).jamMediaClip().padding(.horizontal, 40).padding(.bottom, isAudio ? 110 : 0)
             .accessibilityLabel("Cover").accessibilityHidden(false).accessibilityIdentifier("jam-audio-cover")
     }
@@ -445,7 +445,7 @@ struct JamVideoScreen: View {
         guard let at = feed.firstIndex(where: { $0.postId == active.postID }) else { return }
         for post in feed[(at + 1)...] {
             guard let next = store.jamAttachments(post.postId).first(where: { $0.kind == "video" }) else { continue }
-            let c = PodcastController(duration: Double(next.durationMs ?? 0) / 1000, title: post.title, artist: store.teacherName(post.author), isVideo: true)
+            let c = PodcastController(duration: Double(next.durationMs ?? 0) / 1000, title: post.title, artist: store.authorName(post), isVideo: true)
             #if DEBUG
             c.simulated = store.isDemo
             #endif
@@ -464,6 +464,7 @@ struct JamVideoScreen: View {
 
 /// The post's words over the video, on a dark veil; a tap or a swipe down folds them back.
 private struct TextOver: View {
+    @Environment(ConversationStore.self) private var store
     let post: JamPostInfo
     let writer: Person
     let close: () -> Void
@@ -476,7 +477,7 @@ private struct TextOver: View {
                 VStack(alignment: .leading, spacing: 12) {
                     if !post.title.isEmpty { Text(post.title).font(Theme.font(.title3, weight: .bold)).foregroundStyle(.white) }
                     if !post.plain.isEmpty { Text(post.plain).font(Theme.body).foregroundStyle(.white) }
-                    Text("\(writer.name) \u{00B7} \(JamDates.text(post.created))").font(Theme.caption).foregroundStyle(.white.opacity(0.7))
+                    Text("\(store.authorName(post)) \u{00B7} \(JamDates.text(post.created))").font(Theme.caption).foregroundStyle(.white.opacity(0.7))
                 }
                 .padding(24).frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -557,7 +558,7 @@ struct JamShareSheet: View {
     }
 
     private func send(to conversation: Conversation) {
-        let writer = store.teacherName(post.author)
+        let writer = store.authorName(post)
         let words = [post.title, String(post.plain.prefix(200))].filter { !$0.isEmpty }.joined(separator: "\n")
         let text = "\(writer)\u{2019}s post on jam: \(words)"
         Task {

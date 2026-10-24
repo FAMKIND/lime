@@ -346,7 +346,7 @@ struct JamAudio: View {
 
     private func makeController() -> PodcastController {
         let post = store.jamPost(postID)
-        let controller = PodcastController(duration: Double(file.durationMs ?? 0) / 1000, title: post?.title ?? "", artist: store.teacherName(post?.author ?? ""))
+        let controller = PodcastController(duration: Double(file.durationMs ?? 0) / 1000, title: post?.title ?? "", artist: store.authorName(post))
         #if DEBUG
         controller.simulated = store.isDemo
         #endif
