@@ -99,7 +99,7 @@ struct JamPostView: View {
                 }
             }
         }
-        .fullScreenCover(item: $editingPost) { JamComposeSheet(editing: $0) }
+        .fullScreenCover(item: $editingPost) { JamEditSheet(post: $0) }
         .confirmationDialog("Delete this post?", isPresented: $confirmingDelete, titleVisibility: .visible) {
             Button("Delete post", role: .destructive) { if let post { Task { _ = await store.deleteJamPost(post.postId); dismiss() } } }.accessibilityIdentifier("options-delete-confirm")
             Button("Cancel", role: .cancel) {}

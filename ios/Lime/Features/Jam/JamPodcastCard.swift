@@ -18,7 +18,7 @@ struct JamPodcastCard: View {
         let mine = now.item.flatMap { $0.postID == post.postId ? $0 : nil }
         HStack(alignment: .top, spacing: 14) {
             Button { open(file) } label: {
-                CoverArt(image: cover, person: writer, org: store.orgName(post)).frame(width: 96, height: 96).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                PostCover(postID: post.postId).frame(width: 96, height: 96).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
             .buttonStyle(.plain).accessibilityLabel("Open player").accessibilityIdentifier("jam-audio-expand")
             VStack(alignment: .leading, spacing: 6) {

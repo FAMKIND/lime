@@ -90,7 +90,11 @@ extension ConversationStore {
         }
     }
 
-    func demoEdit(_ postID: String, title: String, subtitle: String, markdown: String, displayAs: String = "person") {
+    func demoEdit(_ postID: String, title: String, subtitle: String, markdown: String, displayAs: String = "person", added: [OutgoingAttachment] = [], removeCover: Bool = false) {
+        if removeCover || added.contains(where: { $0.name == "cover.jpg" }) { demoJamAttachments[postID]?.removeAll { $0.name == "cover.jpg" } }
+        for file in added where file.name == "cover.jpg" {
+            demoJamAttachments[postID, default: []].append(JamAttachmentInfo(attachmentId: UUID().uuidString.lowercased(), name: "cover.jpg", mime: "image/jpeg", kind: "image", size: UInt64(file.bytes.count), width: file.width, height: file.height, durationMs: nil, thumb: file.thumb, poster: Data(), available: true))
+        }
         for (jam, posts) in jamPosts {
             guard let i = posts.firstIndex(where: { $0.postId == postID }) else { continue }
             var post = posts[i]

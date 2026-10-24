@@ -29,8 +29,8 @@ final class PodcastController {
         }
     }
 
-    private let title: String
-    private let artist: String
+    private(set) var title: String
+    private(set) var artist: String
     private let isVideo: Bool
     private var ticker: Task<Void, Never>?
     @ObservationIgnored nonisolated(unsafe) private var fileURL: URL?
@@ -155,6 +155,13 @@ final class PodcastController {
     }
 
     // MARK: Lock screen and Control Center
+
+    /// The post was edited (a new title, subtitle or author): the lock screen follows (LIME-212).
+    func updateInfo(title: String, artist: String) {
+        guard title != self.title || artist != self.artist else { return }
+        self.title = title; self.artist = artist
+        publishNowPlaying()
+    }
 
     private func publishNowPlaying() {
         guard !simulated else { return }

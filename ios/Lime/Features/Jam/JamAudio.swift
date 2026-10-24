@@ -110,7 +110,7 @@ struct JamAudioCard: View {
 
     private func coverButton(_ controller: PodcastController, writer: Person) -> some View {
         Button { open(controller) } label: {
-            CoverArt(image: cover, person: writer, org: store.orgName(store.jamPost(postID))).frame(width: coverSize, height: coverSize).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            PostCover(postID: postID).frame(width: coverSize, height: coverSize).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(.plain).accessibilityLabel("Open player").accessibilityIdentifier("jam-audio-expand")
     }
@@ -243,19 +243,19 @@ struct AudioMiniPlayer: View {
                     HStack(spacing: 10) {
                         // A video podcast's thumbnail plays the video (LIME-200); VoiceOver gets the controls, not the picture.
                         ZStack {
-                            CoverArt(image: item.cover, person: writer, org: store.orgName(store.jamPost(item.postID)))
+                            PostCover(postID: item.postID)
                             if item.file.kind == "video", item.controller.player != nil, !item.controller.simulated { PlayerLayerView(player: item.controller.player, fill: true).accessibilityIdentifier("mini-video-layer") }
                         }
                         .frame(width: 40, height: 40).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous)).accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 0) {
-                            Text(item.title).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
-                            Text(item.subtitle).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                            Text(store.playerTitle(item.postID)).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
+                            Text(store.playerSubtitle(item.postID)).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
                         }
                         Spacer(minLength: 0)
                     }
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain).accessibilityLabel("Now playing: \(item.title)").accessibilityHint("Opens the player").accessibilityIdentifier("audio-mini-open")
+                .buttonStyle(.plain).accessibilityLabel("Now playing: \(store.playerTitle(item.postID))").accessibilityHint("Opens the player").accessibilityIdentifier("audio-mini-open")
                 Button { Task { await item.controller.toggle(data: { await store.jamAttachmentData(item.postID, item.file.attachmentId) }) } } label: {
                     Image(systemName: item.controller.isPlaying ? "pause.fill" : "play.fill").font(.system(size: 18)).foregroundStyle(Theme.text).frame(width: 44, height: 44)
                 }
@@ -268,6 +268,10 @@ struct AudioMiniPlayer: View {
             .padding(.leading, 12).padding(.trailing, 4).frame(minHeight: 56)
             .limeGlass(in: Capsule())
             .padding(.horizontal, 16).padding(.bottom, 4)
+            // An edit shows at once on the lock screen too (LIME-212).
+            .onChange(of: store.playerTitle(item.postID) + "|" + store.authorName(store.jamPost(item.postID))) { _, _ in
+                item.controller.updateInfo(title: store.jamPost(item.postID)?.title ?? "", artist: store.authorName(store.jamPost(item.postID)))
+            }
             .onChange(of: item.controller.atEnd) { _, ended in
                 // What was playing ended: the next in the queue starts.
                 if ended, let next = now.queue.first { now.advance(); Task { await next.controller.toggle(data: { await store.jamAttachmentData(next.postID, next.file.attachmentId) }) } }

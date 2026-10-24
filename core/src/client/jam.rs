@@ -527,7 +527,7 @@ impl LimeStore {
     /// `added` are new files for an article's text: they take the numbers after the existing files, and only the ones the new text uses are kept.
     /// A picture whose block the new text no longer has is dropped from the post's files (its blob released, the later numbers closed up, its captions
     /// with it). Who it is shown as and its co-authors stay. The old blob is released on the server.
-    pub fn edit_jam_post(&self, post_id: String, title: String, subtitle: String, markdown: String, added: Vec<OutgoingAttachment>, display_as: String) -> Result<(), StoreError> {
+    pub fn edit_jam_post(&self, post_id: String, title: String, subtitle: String, markdown: String, added: Vec<OutgoingAttachment>, display_as: String, remove_cover: bool) -> Result<(), StoreError> {
         // Who it is shown as written by can change too (LIME-201): `jam` or `person`, anything else is `person` (as when publishing).
         let display_as = if display_as == "jam" { "jam" } else { "person" };
         let state = self.load_or_create_account()?;
@@ -559,6 +559,15 @@ impl LimeStore {
                 }
                 // Which old files go: the pictures this text had and no longer has (an article only), and the captions of those.
                 let mut dropped: std::collections::BTreeSet<usize> = if row.kind == "article" { was.difference(&now_used).map(|n| *n as usize).filter(|n| *n < old_count).collect() } else { Default::default() };
+                // A recording's cover (LIME-212): "Remove cover", or a new `cover.jpg` among the added files, drops the old one (its blob is released).
+                let new_cover = added.iter().any(|a| a.name == "cover.jpg");
+                if remove_cover || new_cover {
+                    for (i, value) in old.iter().enumerate() {
+                        if value.get("name").and_then(Value::as_str) == Some("cover.jpg") && value.get("mime").and_then(Value::as_str).is_some_and(|m| m.starts_with("image/")) {
+                            dropped.insert(i);
+                        }
+                    }
+                }
                 for (i, value) in old.iter().enumerate() {
                     if let Some(n) = value.get("name").and_then(Value::as_str).and_then(crate::captions::caption_target) {
                         if dropped.contains(&(n as usize)) {
@@ -586,7 +595,7 @@ impl LimeStore {
                 let mut new_files: Vec<(String, Vec<u8>, String, i64)> = Vec::new();
                 for (j, file) in added.iter().enumerate() {
                     let number = (old_count + j) as u32;
-                    if !now_used.contains(&number) {
+                    if !now_used.contains(&number) && file.name != "cover.jpg" {
                         continue;
                     }
                     let id = new_id();

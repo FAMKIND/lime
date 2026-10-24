@@ -1065,18 +1065,24 @@ final class ConversationStore {
             ])]
             path.append("dm:fmt")
         case "notif-banner": demoNotification = "banner"
-        case "jam", "jam-following", "jam-mine", "jam-mine-profile", "jam-mine-asjam", "jam-request":
+        case "jam", "jam-following", "jam-mine", "jam-mine-profile", "jam-mine-asjam", "jam-mine-podcast", "jam-request":
             // The jam tab, with nothing yet, with a jam I follow (Sam's, two posts), or with a jam of my own (one post, two subscribers).
             section = .jam
             UserDefaults.standard.removeObject(forKey: JamRead.key)   // every demo run starts with everything unread
             if screen == "jam-following", let page = demoJamPages["sam"] { demoSubscribe(page) }
-            if screen == "jam-mine" || screen == "jam-mine-profile" || screen == "jam-mine-asjam" { demoMineWithPost() }
+            if screen == "jam-mine" || screen == "jam-mine-profile" || screen == "jam-mine-asjam" || screen == "jam-mine-podcast" { demoMineWithPost() }
             if screen == "jam-mine-asjam" {
                 let long = (1...30).map { "Paragraph \($0): we read aloud together and talked about what we noticed." }.joined(separator: "\n\n")
                 demoPublish("demo-my-jam", kind: "article", title: "How we read together", subtitle: "A term of circles", markdown: long, items: [], coauthors: ["sam", "lee"], displayAs: "jam")
                 demoPublish("demo-my-jam", kind: "article", title: "Notes from the circle", subtitle: "", markdown: long, items: [])
                 demoPublish("demo-my-jam", kind: "quick", title: "", subtitle: "", markdown: (1...14).map { "Line \($0) of a long note" }.joined(separator: "\n\n"), items: [])
                 demoPublish("demo-my-jam", kind: "quick", title: "", subtitle: "", markdown: "Welcome from the circle", items: [], displayAs: "jam")
+            }
+            if screen == "jam-mine-podcast" {
+                // A recording of mine, with a cover (LIME-212).
+                let audio = OutgoingAttachment(bytes: Data("demo audio".utf8), name: "Recording.m4a", mime: "audio/mp4", width: nil, height: nil, durationMs: 43_000, thumb: Data(), poster: Data())
+                let cover = OutgoingAttachment(bytes: Data("demo cover".utf8), name: "cover.jpg", mime: "image/jpeg", width: 600, height: 600, durationMs: nil, thumb: Data(), poster: Data())
+                demoPublish("demo-my-jam", kind: "record", title: "Songs for the circle", subtitle: "Korean children's songs", markdown: "Three songs we sing.", items: [audio, cover])
             }
             if screen == "jam-request" { demoRequest() }
             if screen == "jam-mine-profile" { jamPath.append(ProfileRoute(userID: meProvider().id, name: meProvider().name, isMe: true)) }

@@ -60,7 +60,7 @@ struct JamPostMenu: View {
             Image(systemName: "ellipsis").font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.textSecondary).frame(width: 44, height: 44).contentShape(Rectangle())
         }
         .accessibilityLabel("More").accessibilityIdentifier("card-more-\(post.postId)")
-        .fullScreenCover(item: $editing) { JamComposeSheet(editing: $0) }
+        .fullScreenCover(item: $editing) { JamEditSheet(post: $0) }
         .sheet(isPresented: $sharing) { JamShareSheet(post: post) }
         .confirmationDialog("Delete this post for everyone?", isPresented: $confirmingDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive) { Task { _ = await store.deleteJamPost(post.postId) } }.accessibilityIdentifier("card-delete-confirm")

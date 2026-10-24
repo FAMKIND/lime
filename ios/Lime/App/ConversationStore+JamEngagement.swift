@@ -1,4 +1,4 @@
-import Foundation
+import SwiftUI
 
 /// What the demo (and the UI tests) keep in place of the core for hearts and comments (LIME-189c).
 struct DemoEngagement {
@@ -135,4 +135,55 @@ struct JamActivityItem: Identifiable {
     let kind: Kind
     let text: String
     let date: Int64
+}
+
+
+extension ConversationStore {
+    /// What the players show for a post, **read from the post when drawn** (LIME-212): an edit (yours, a co-author's, or one that arrives from the writer)
+    /// shows at once in the mini player, the black player, the queue and the lock screen.
+    func playerTitle(_ postID: String) -> String {
+        _ = jamEngagement
+        let t = jamPost(postID)?.title ?? ""
+        return t.isEmpty ? "Recording" : t
+    }
+
+    /// The subtitle, or the author (the org when posted as one) when there is none.
+    func playerSubtitle(_ postID: String) -> String {
+        _ = jamEngagement
+        guard let post = jamPost(postID) else { return "" }
+        return post.subtitle.isEmpty ? authorName(post) : post.subtitle
+    }
+}
+
+/// A post's cover (LIME-212): its `cover.jpg`, else a video's poster, else its first picture; when it has none, the org's tile or the writer's face. Read from
+/// the post when drawn, so a new cover shows at once everywhere.
+struct PostCover: View {
+    let postID: String
+    @Environment(ConversationStore.self) private var store
+    @State private var image: UIImage?
+
+    private enum Source: Equatable { case none, poster(Data, String), file(String) }
+
+    private func source() -> Source {
+        let files = store.jamAttachments(postID).filter { $0.mime != "text/vtt" }
+        if let cover = files.first(where: JamCover.isCover) { return .file(cover.attachmentId) }
+        if let video = files.first(where: { $0.kind == "video" && !$0.poster.isEmpty }) { return .poster(video.poster, video.attachmentId) }
+        if let picture = files.first(where: { $0.kind == "image" && $0.mime != JamLink.mime }) { return .file(picture.attachmentId) }
+        return .none
+    }
+
+    var body: some View {
+        let post = store.jamPost(postID)
+        let src = source()
+        CoverArt(image: image, person: store.teacher(post?.author ?? ""), org: store.orgName(post))
+            .task(id: key(src)) {
+                switch src {
+                case .none: image = nil
+                case .poster(let data, _): image = UIImage(data: data)
+                case .file(let id): image = await store.jamAttachmentData(postID, id).flatMap(UIImage.init(data:))
+                }
+            }
+    }
+
+    private func key(_ s: Source) -> String { switch s { case .none: "none"; case .poster(_, let id), .file(let id): id } }
 }

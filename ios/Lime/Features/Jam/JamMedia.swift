@@ -235,6 +235,8 @@ struct JamVideoScreen: View {
     @State private var textOpen = false
     /// The comments under the player (LIME-189d), on black.
     @State private var commenting = false
+    @State private var editingPost: JamPostInfo?
+    @State private var confirmingDelete = false
     @State private var sharing = false
     @State private var transcript = false
     @State private var current: (postID: String, file: JamAttachmentInfo, controller: PodcastController)?
@@ -293,6 +295,11 @@ struct JamVideoScreen: View {
         }
         .preferredColorScheme(.dark)
         .gesture(DragGesture(minimumDistance: 30).onEnded { if $0.translation.height > 120, abs($0.translation.width) < 80, !textOpen { close() } })
+        .fullScreenCover(item: $editingPost) { JamEditSheet(post: $0) }
+        .confirmationDialog("Delete this post for everyone?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("Delete post", role: .destructive) { Task { _ = await store.deleteJamPost(active.postID); NowPlaying.shared.close(); dismiss() } }.accessibilityIdentifier("jam-video-delete-confirm")
+            Button("Cancel", role: .cancel) {}
+        } message: { Text("Subscribers' copies are removed.") }
         .sheet(isPresented: $commenting) {
             if let post {
                 ScrollView { JamEngagementSection(post: post, dark: true).padding(20) }
@@ -326,6 +333,12 @@ struct JamVideoScreen: View {
             Spacer()
             AirPlayButton().frame(width: 44, height: 44).accessibilityLabel("AirPlay").accessibilityIdentifier("jam-video-airplay")
             Menu {
+                if let post, post.author == store.meProvider().id {
+                    Section {
+                        Button { editingPost = post } label: { Label("Edit", systemImage: "pencil") }.accessibilityIdentifier("jam-video-edit")
+                        Button(role: .destructive) { confirmingDelete = true } label: { Label("Delete post", systemImage: "trash") }.accessibilityIdentifier("jam-video-delete")
+                    }
+                }
                 Section {
                     Button { sharing = true } label: { Label("Share in lime\u{2026}", systemImage: "square.and.arrow.up") }.accessibilityIdentifier("jam-video-share")
                     // The post's own page (description, captions, files, comments) is reached from here (LIME-204).
@@ -402,7 +415,7 @@ struct JamVideoScreen: View {
                     .accessibilityIdentifier("jam-video-subscribe")
                 }
             }
-            let words = [post.title, isAudio ? subtitle : "", post.plain].filter { !$0.isEmpty }.joined(separator: "\n")
+            let words = [post.title, isAudio ? store.playerSubtitle(post.postId) : "", post.plain].filter { !$0.isEmpty }.joined(separator: "\n")
             if !words.isEmpty {
                 Button { withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) { textOpen = true } } label: {
                     Text(words).font(Theme.body).foregroundStyle(.white).lineLimit(2).multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading)
@@ -414,7 +427,7 @@ struct JamVideoScreen: View {
 
     /// The cover in the video's place.
     private func audioArt(_ post: JamPostInfo?) -> some View {
-        CoverArt(image: cover, person: store.teacher(post?.author ?? ""), org: store.orgName(post))
+        PostCover(postID: post?.postId ?? active.postID)
             .aspectRatio(1, contentMode: .fit).jamMediaClip().padding(.horizontal, 40).padding(.bottom, isAudio ? 110 : 0)
             .accessibilityLabel("Cover").accessibilityHidden(false).accessibilityIdentifier("jam-audio-cover")
     }
