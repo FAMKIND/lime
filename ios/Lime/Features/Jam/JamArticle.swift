@@ -148,10 +148,14 @@ struct JamArticleCover: View {
                height: JamMedia.size(ratio: JamMedia.coverRatio, column: JamMedia.column, screenHeight: UIScreen.main.bounds.height).height)
         .jamMediaClip()
         .accessibilityElement(children: .contain)
-        .task {
+        .task(id: store.jamAttachments(post.postId).map(\.attachmentId)) {
             saved = JamSaved.contains(post.postId)
+            // The cover: one you chose (cover.jpg), else the first photo, else the first video's poster, else none (LIME-219).
             let files = store.jamAttachments(post.postId)
-            if let first = files.first(where: { $0.kind == "image" && !JamCover.isCover($0) }), let data = await store.jamAttachmentData(post.postId, first.attachmentId) { image = UIImage(data: data) }
+            if let chosen = files.first(where: JamCover.isCover), let data = await store.jamAttachmentData(post.postId, chosen.attachmentId) { image = UIImage(data: data) }
+            else if let first = files.first(where: { $0.kind == "image" }), let data = await store.jamAttachmentData(post.postId, first.attachmentId) { image = UIImage(data: data) }
+            else if let video = files.first(where: { $0.kind == "video" && !$0.poster.isEmpty }) { image = UIImage(data: video.poster) }
+            else { image = nil }
         }
     }
 }

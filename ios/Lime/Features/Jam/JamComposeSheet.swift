@@ -34,6 +34,13 @@ struct JamComposeSheet: View {
     @State private var recordSubtitle = ""
     @State private var recordDetails = ""
     @State private var recordCover: OutgoingAttachment?
+    // An article's cover (LIME-219): one you add or pick from its photos, else the first photo or video poster.
+    @State private var articleCover: OutgoingAttachment?
+    @State private var coverImage: UIImage?
+    @State private var coverRemoved = false
+    @State private var pickingCover = false
+    @State private var choosingArticlePhoto = false
+    @State private var viewingCover = false
     @State private var headingOpen = false
     @State private var recordMode: Int?
     @State private var chooser: Chooser?
@@ -97,6 +104,19 @@ struct JamComposeSheet: View {
             .onChange(of: composer.plainText) { refreshLink() }
             .onChange(of: previewsOn) { refreshLink() }
             .sheet(isPresented: $choosingCoauthors) { JamCoauthorPicker(selected: $coauthors) }
+            .sheet(isPresented: $choosingArticlePhoto) { ArticlePhotoPicker(load: articlePhotos) { setCover($0); choosingArticlePhoto = false } }
+            .fullScreenCover(isPresented: $pickingCover) {
+                MediaLibraryPicker(limit: 1, onPick: { images, _ in pickingCover = false; if let image = images.first { setCover(image) } }, onCancel: { pickingCover = false }).ignoresSafeArea()
+            }
+            .fullScreenCover(isPresented: $viewingCover) {
+                ZStack(alignment: .topTrailing) {
+                    Color.black.ignoresSafeArea().accessibilityIdentifier("jam-cover-viewer")
+                    if let coverImage { Image(uiImage: coverImage).resizable().scaledToFit().ignoresSafeArea().accessibilityLabel("Cover, full size") }
+                    Button { viewingCover = false } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 30)).foregroundStyle(.white).frame(width: 44, height: 44) }
+                        .padding().accessibilityLabel("Close").accessibilityIdentifier("jam-cover-close")
+                }
+                .onTapGesture { viewingCover = false }
+            }
             .sheet(item: $editingCaptions) { key in
                 CaptionsEditor(draft: Binding(get: { captions[key] ?? CaptionDraft(making: false) }, set: { captions[key] = $0 }))
             }
@@ -140,6 +160,7 @@ struct JamComposeSheet: View {
                     article = editing.kind != "quick"; title = editing.title; subtitle = editing.subtitle
                     postAsJam = editing.displayAs == "jam" ? editing.jamId : nil   // the chip starts on the post's current author (LIME-201)
                     coauthors = Array(store.bylinePeople(editing).dropFirst()); pendingHosts = store.pendingCoauthors(editing)
+                    if let stored = store.jamAttachments(editing.postId).first(where: JamCover.isCover), let data = await store.jamAttachmentData(editing.postId, stored.attachmentId) { coverImage = UIImage(data: data) }
                     // The post's own files keep their numbers; new pictures are numbered after them (LIME-195b).
                     articleFiles = store.jamAttachments(editing.postId).map { _ in OutgoingAttachment(bytes: Data(), name: "", mime: "image/jpeg", width: nil, height: nil, durationMs: nil, thumb: Data(), poster: Data()) }
                     try? await Task.sleep(for: .milliseconds(300))
@@ -286,6 +307,7 @@ struct JamComposeSheet: View {
     private var articleHead: some View {
         VStack(alignment: .leading, spacing: 4) {
             postLine.padding(.bottom, 6)
+            coverRow.padding(.bottom, 8)
             TextField("Title", text: $title, prompt: Text("Title").foregroundColor(Theme.placeholderLarge), axis: .vertical).font(Theme.font(.title2, weight: .bold)).lineLimit(1...3)
                 .focused($focus, equals: .title).submitLabel(.next).onSubmit { focus = .subtitle }
                 .onChange(of: title) { _, now in
@@ -303,6 +325,62 @@ struct JamComposeSheet: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20).padding(.top, 12)
+    }
+
+    // MARK: The cover
+
+    private var hasStoredCover: Bool { editing.map { store.jamAttachments($0.postId).contains(where: JamCover.isCover) } ?? false }
+
+    /// The cover thumbnail with Add / Change / Remove, under the Post as line (LIME-219). Without one the card uses the first photo or video.
+    private var coverRow: some View {
+        HStack(spacing: 12) {
+            if let coverImage {
+                Button { viewingCover = true } label: {
+                    Image(uiImage: coverImage).resizable().scaledToFill().frame(width: 72, height: 72).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .buttonStyle(.plain).accessibilityLabel("Cover").accessibilityHint("Opens full size").accessibilityIdentifier("jam-article-cover")
+            }
+            Menu {
+                Button { addCoverFromLibrary() } label: { Label("Choose a photo", systemImage: "photo.on.rectangle") }.accessibilityIdentifier("jam-cover-library")
+                Button { choosingArticlePhoto = true } label: { Label("Use a photo from this article", systemImage: "doc.richtext") }.accessibilityIdentifier("jam-cover-from-article")
+            } label: {
+                Text(coverImage == nil ? "Add cover" : "Change cover").font(Theme.secondary).foregroundStyle(Theme.text).padding(.horizontal, 14).frame(minHeight: 44).background(Theme.surface, in: Capsule())
+            }
+            .accessibilityLabel(coverImage == nil ? "Add cover" : "Change cover").accessibilityIdentifier("jam-cover-change")
+            if coverImage != nil {
+                Button(role: .destructive) { articleCover = nil; coverImage = nil; coverRemoved = hasStoredCover } label: { Text("Remove").font(Theme.secondary).padding(.horizontal, 10).frame(minHeight: 44) }
+                    .accessibilityIdentifier("jam-cover-remove")
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func setCover(_ image: UIImage) {
+        guard let made = AttachmentProcessing.photo(image, name: JamCover.name) else { return }
+        articleCover = made; coverImage = image; coverRemoved = false
+    }
+
+    private func addCoverFromLibrary() {
+        #if DEBUG
+        if store.isDemo, let data = store.demoJamImage("p"), let image = UIImage(data: data) { setCover(image); return }
+        #endif
+        pickingCover = true
+    }
+
+    /// The article's own photos and the posters of its videos, as pictures to choose a cover from.
+    private func articlePhotos() async -> [UIImage] {
+        var found: [UIImage] = []
+        let stored = editing.map { store.jamAttachments($0.postId) } ?? []
+        for (index, file) in articleFiles.enumerated() {
+            if !file.bytes.isEmpty {
+                if file.mime.hasPrefix("image/"), let image = UIImage(data: file.bytes) { found.append(image) }
+                else if file.mime.hasPrefix("video/"), let image = UIImage(data: file.poster) { found.append(image) }
+            } else if stored.indices.contains(index), !JamCover.isCover(stored[index]) {
+                if stored[index].kind == "image", let data = await store.jamAttachmentData(editing?.postId ?? "", stored[index].attachmentId), let image = UIImage(data: data) { found.append(image) }
+                else if stored[index].kind == "video", let image = UIImage(data: stored[index].poster) { found.append(image) }
+            }
+        }
+        return found
     }
 
     /// Return in the subtitle: the caret goes to the article itself.
@@ -680,7 +758,8 @@ struct JamComposeSheet: View {
         problem = nil
         posting = true
         Task {
-            let result = await store.editJamPost(editing, title: title, subtitle: subtitle, markdown: markdown, added: added, displayAs: postAsJam == nil ? "person" : "jam")
+            let result = await store.editJamPost(editing, title: title, subtitle: subtitle, markdown: markdown, added: added + (article ? articleCover.map { [$0] } ?? [] : []),
+                                                 displayAs: postAsJam == nil ? "person" : "jam", removeCover: article && coverRemoved && articleCover == nil)
             posting = false
             if result { dismiss() } else { problem = "Could not update the post." }
         }
@@ -728,6 +807,7 @@ struct JamComposeSheet: View {
             files.append(OutgoingAttachment(bytes: vtt, name: captionFileName(index: UInt32(target.index)), mime: "text/vtt", width: nil, height: nil, durationMs: nil, thumb: Data(), poster: Data()))
         }
         if hasClip, let recordCover, files.count < 10 { files.append(recordCover) }
+        if article, !hasClip, let articleCover, files.count < 10 { files.append(articleCover) }
         let kind = hasClip ? "record" : article ? "article" : "quick"
         let headline = article ? title : recordTitle
         // A recording's description is its words when no words were written.
@@ -847,5 +927,43 @@ struct JamCoauthorPicker: View {
             }
         }
         .presentationDetents([.large])
+    }
+}
+
+
+/// "Use a photo from this article": the article's own photos and video posters to pick a cover from (LIME-219).
+struct ArticlePhotoPicker: View {
+    let load: () async -> [UIImage]
+    let pick: (UIImage) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var photos: [UIImage]?
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                if let photos {
+                    if photos.isEmpty {
+                        Text("This article has no photos yet.").font(Theme.body).foregroundStyle(Theme.textSecondary).padding(40).accessibilityIdentifier("jam-cover-none")
+                    } else {
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
+                            ForEach(Array(photos.enumerated()), id: \.offset) { index, image in
+                                Button { pick(image) } label: {
+                                    Color.clear.aspectRatio(1, contentMode: .fit).overlay { Image(uiImage: image).resizable().scaledToFill() }.clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                }
+                                .buttonStyle(.plain).accessibilityLabel("Photo \(index + 1)").accessibilityIdentifier("jam-cover-photo-\(index)")
+                            }
+                        }
+                        .padding(16)
+                    }
+                } else {
+                    ProgressView().padding(40)
+                }
+            }
+            .background(Theme.canvas)
+            .navigationTitle("Choose a cover").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .task { photos = await load() }
+        }
+        .presentationDetents([.medium, .large])
     }
 }
