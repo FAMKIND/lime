@@ -179,7 +179,16 @@ struct JamPostCard: View {
             actions
         }
         .padding(.horizontal, 20).padding(.vertical, 14)
-        .overlay(alignment: .topTrailing) { JamPostMenu(post: post).padding(.trailing, 8).padding(.top, 8) }
+        .overlay(alignment: .topTrailing) {
+            HStack(spacing: 0) {
+                // New comments on my own post (LIME-189c): a quiet dot.
+                if store.isMyJamPost(post), store.jamCounts(post.postId).unseen {
+                    Circle().fill(Theme.accent).frame(width: 9, height: 9).accessibilityLabel("New comments").accessibilityIdentifier("jam-unseen-\(post.postId)")
+                }
+                JamPostMenu(post: post)
+            }
+            .padding(.trailing, 8).padding(.top, 8)
+        }
         }
     }
 
@@ -225,14 +234,16 @@ struct JamPostCard: View {
     private var actions: some View {
         // Four equal columns across the card (LIME-188y).
         HStack(spacing: 0) {
-            ForEach([("heart", "like"), ("bubble.left", "comment"), ("arrow.2.squarepath", "remix"), ("square.and.arrow.up", "share")], id: \.1) { icon, label in
-                Image(systemName: icon).font(.system(size: 18)).frame(maxWidth: .infinity, minHeight: 28)
+            JamHeartButton(postID: post.postId)
+            JamCommentCount(postID: post.postId) { openPost() }
+            // Remix and Share wait (LIME-189b); they are drawn dimmed and do nothing yet.
+            ForEach([("arrow.2.squarepath", "remix"), ("square.and.arrow.up", "share")], id: \.1) { icon, label in
+                Image(systemName: icon).font(.system(size: 18)).frame(maxWidth: .infinity, minHeight: 44)
+                    .foregroundStyle(Theme.textSecondary.opacity(0.5)).allowsHitTesting(false)
                     .accessibilityLabel(label).accessibilityAddTraits(.isButton).accessibilityHint("Coming soon")
                     .accessibilityIdentifier("jam-action-\(label)-\(post.postId)")
             }
         }
-        .foregroundStyle(Theme.textSecondary.opacity(0.5))
-        .allowsHitTesting(false)
     }
 }
 

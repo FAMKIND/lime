@@ -233,7 +233,7 @@ struct JamArticlePage: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             // The actions slide down with the bar as you read, and come back as you scroll up (LIME-188z); they stay in the accessibility tree.
             if let post {
-                JamActionPill(share: { sharing = true }).padding(.horizontal, 48).padding(.bottom, 6).accessibilityIdentifier("jam-article-pill-\(post.postId)")
+                JamActionPill(share: { sharing = true }, postID: post.postId, comment: { scrollTarget = "comments" }).padding(.horizontal, 48).padding(.bottom, 6).accessibilityIdentifier("jam-article-pill-\(post.postId)")
                     .offset(y: barHidden && !reduceMotion ? 120 : 0)
                     .opacity(barHidden ? 0 : 1)
                     .allowsHitTesting(!barHidden)
@@ -342,6 +342,8 @@ struct JamArticlePage: View {
             }
             .padding(16).background(Theme.surface.opacity(0.6), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             .accessibilityElement(children: .contain).accessibilityIdentifier("jam-article-jam-card")
+            // Likes, comments and the place to write one (LIME-189c).
+            JamEngagementSection(post: post).id("comments")
         }
         .padding(.top, 24)
     }
@@ -600,6 +602,9 @@ struct ReaderOptionsSheet: View {
                 row(saved ? "bookmark.fill" : "bookmark", saved ? "Saved \u{2713}" : "Save", id: "options-save") { JamSaved.toggle(post.postId); saved = JamSaved.contains(post.postId) }
                 row("printer", "Print or save as PDF", id: "options-print") { Task { await ArticlePrint.present(post, store: store) } }
                 row("square.and.arrow.up", "Share in lime\u{2026}", id: "options-share") { sharing = true }
+                if post.author != store.meProvider().id {
+                    row("paperplane", "Reply privately", id: "options-private") { dismiss(); Task { await store.messageWriter(post.author) } }
+                }
                 row("eye.slash", "Hide post", id: "options-hide") { dismiss(); hide() }
                 if post.author == store.meProvider().id {
                     row("trash", "Delete post", id: "options-delete") { confirmingDelete = true }

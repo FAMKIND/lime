@@ -80,6 +80,9 @@ final class ConversationStore {
     var jamFilter = JamFilter()
     /// Bumped when the posts hidden on this phone change, so the feed redraws.
     var jamHiddenChanged = 0
+    /// Bumped when hearts, comments or counts change (LIME-189c): what shows them redraws.
+    var jamEngagement = 0
+    var demoEngagement = DemoEngagement()
     var jamSubscribers: [String: [JamSubscriberInfo]] = [:]
     var jamLastKick = Date.distantPast
     /// Credits I am asked to accept, and the posts I am credited on (LIME-188f).

@@ -112,14 +112,14 @@ struct ProfileView: View {
             VStack(spacing: 18) {
                 top
                 if route.isMe { myActions } else if accepted { actions }
-                ProfileTabs(sections: available, selection: $section)
+                ProfileTabs(sections: available, selection: $section, badged: route.isMe && store.jamHasUnseen() ? [.activity] : [])
                 switch section {
                 case .info: info
                 case .posts: JamProfilePosts(posts: ownPosts.filter { $0.kind == "quick" }, locked: postsLocked)
                 case .articles: JamProfilePosts(posts: ownPosts.filter { $0.kind == "article" }, locked: false)
                 case .podcasts: JamProfilePosts(posts: ownPosts.filter { $0.kind == "record" }, locked: false)
                 case .orgs: JamOrgsSection(orgs: orgs, isMe: route.isMe)
-                case .activity: emptySection("Nothing here yet.", id: "activity")
+                case .activity: if route.isMe && !store.jamActivity().isEmpty { JamActivityList() } else { emptySection("Nothing here yet.", id: "activity") }
                 case .shared: shared
                 case .calls: callsList
                 }
@@ -572,6 +572,8 @@ struct SharedListView: View {
 struct ProfileTabs: View {
     let sections: [ProfileView.Section]
     @Binding var selection: ProfileView.Section
+    /// Tabs with something new (a quiet dot), LIME-189c.
+    var badged: Set<ProfileView.Section> = []
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
@@ -582,9 +584,10 @@ struct ProfileTabs: View {
                             Text(section.rawValue).font(Theme.font(.subheadline, weight: on ? .semibold : .regular)).foregroundStyle(on ? Theme.text : Theme.textSecondary)
                                 .padding(.horizontal, 14).frame(minHeight: 44)
                                 .background { if on { Capsule().fill(.clear).limeGlass(in: Capsule()) } }
+                                .overlay(alignment: .topTrailing) { if badged.contains(section) { Circle().fill(Theme.accent).frame(width: 8, height: 8).padding(.top, 8).padding(.trailing, 6).accessibilityIdentifier("profile-tab-dot-\(section.rawValue)") } }
                         }
                         .buttonStyle(.plain).id(section)
-                        .accessibilityLabel("\(section.rawValue), tab, \(index + 1) of \(sections.count)")
+                        .accessibilityLabel("\(section.rawValue)\(badged.contains(section) ? ", new" : ""), tab, \(index + 1) of \(sections.count)")
                         .accessibilityAddTraits(on ? [.isSelected] : [])
                         .accessibilityIdentifier("profile-tab-\(section.rawValue)")
                     }

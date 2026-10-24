@@ -59,6 +59,9 @@ extension ConversationStore {
         demoJamAttachments["demo-post-4"] = [JamAttachmentInfo(attachmentId: "demo-audio-1", name: "Recording.m4a", mime: "audio/mp4", kind: "audio", size: 90_000, width: nil, height: nil,
                                                                durationMs: 1_080_000, thumb: Data((0..<64).map { UInt8(40 + (($0 * 37) % 200)) }), poster: Data(), available: true)]
         jamPosts[page.jamId] = [first, second, third, fourth]
+        // Hearts and a comment from people I know (LIME-189c).
+        demoEngagement.likers["demo-post-2"] = ["lee", "sam"]
+        demoEngagement.comments["demo-post-2"] = [JamCommentInfo(commentId: "demo-comment-1", postId: "demo-post-2", parentId: nil, author: "lee", text: "Love this", created: now - 300_000, state: "published", mine: false)]
         demoJamAttachments["demo-post-3"] = [JamAttachmentInfo(attachmentId: "demo-video-1", name: "wall.mp4", mime: "video/mp4", kind: "video", size: 90_000, width: 480, height: 270,
                                                                durationMs: 10_000, thumb: Data(), poster: Data(), available: true),
                                                  JamAttachmentInfo(attachmentId: "demo-captions-1", name: "captions-0.vtt", mime: "text/vtt", kind: "file", size: 200, width: nil, height: nil,
@@ -71,6 +74,11 @@ extension ConversationStore {
     func demoMineWithPost() {
         demoStartJam(title: "Reading circles", about: "What worked in my room", topics: ["Reading", "Grade 2"])
         demoPublish("demo-my-jam", kind: "article", title: "Our first circle", subtitle: "", markdown: "We read **aloud** together.", items: [])
+        if let mine = jamPosts["demo-my-jam"]?.last {
+            demoEngagement.likers[mine.postId] = ["sam"]
+            demoEngagement.comments[mine.postId] = [JamCommentInfo(commentId: "demo-comment-2", postId: mine.postId, parentId: nil, author: "sam", text: "Great circle", created: Int64(Date().timeIntervalSince1970 * 1000) - 60_000, state: "published", mine: false)]
+            demoEngagement.unseen.insert(mine.postId)
+        }
         jamSubscribers["demo-my-jam"] = [
             JamSubscriberInfo(userId: "sam", name: "Sam Park", since: 1, tier: "free", status: "active"),
             JamSubscriberInfo(userId: "lee", name: "Lee Wong", since: 2, tier: "free", status: "active"),

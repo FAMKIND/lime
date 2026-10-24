@@ -28,6 +28,7 @@ extension ConversationStore {
         if mine != jamsMine { jamsMine = mine }
         if followed != jamSubscriptions { jamSubscriptions = followed }
         if posts != jamPosts { jamPosts = posts }
+        jamEngagement += 1
         if progress != jamProgress { jamProgress = progress }
         let waiting = posts.values.joined().contains { $0.state == "fetching" } || credited.contains { $0.state == "fetching" } || !progress.isEmpty
         if waiting, link != nil, Date().timeIntervalSince(jamLastKick) > 15 {

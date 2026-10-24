@@ -70,6 +70,7 @@ struct JamPostView: View {
                         // Anything the text does not place (a quick post's photos, a recording) comes after it.
                         JamAttachmentsView(postID: post.postId, skipping: JamInline.placed(in: post.markdown))
                     }
+                    if post.state == "ready" { JamEngagementSection(post: post) }
                 }
                 .padding(20)
                 .frame(maxWidth: .infinity, alignment: .leading)

@@ -266,7 +266,7 @@ struct JamVideoScreen: View {
                     }
                     if let post { writerAndText(post) }
                     timeline(item.controller)
-                    JamActionPill(dark: true, share: { sharing = true })
+                    JamActionPill(dark: true, share: { sharing = true }, postID: item.postID)
                 }
                 .padding(.horizontal, 20).padding(.bottom, 10)
             }
@@ -492,10 +492,17 @@ private struct TextOver: View {
 struct JamActionPill: View {
     var dark = false
     var share: (() -> Void)? = nil
+    /// With a post, the heart and the comment count are live (LIME-189c).
+    var postID: String? = nil
+    var comment: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 0) {
-            ForEach([("heart", "like"), ("bubble.left", "comment"), ("arrow.2.squarepath", "remix"), ("square.and.arrow.up", "share")], id: \.1) { icon, label in
+            if let postID {
+                JamHeartButton(postID: postID, size: 20, dark: dark)
+                JamCommentCount(postID: postID, size: 20, dark: dark) { comment?() }
+            }
+            ForEach(postID == nil ? [("heart", "like"), ("bubble.left", "comment"), ("arrow.2.squarepath", "remix"), ("square.and.arrow.up", "share")] : [("arrow.2.squarepath", "remix"), ("square.and.arrow.up", "share")], id: \.1) { icon, label in
                 let live = label == "share" && share != nil
                 Button { if live { share?() } } label: {
                     Image(systemName: icon).font(.system(size: 20)).frame(maxWidth: .infinity, minHeight: 44)
@@ -516,7 +523,7 @@ struct JamViewerBar: View {
     @State private var sharing = false
 
     var body: some View {
-        JamActionPill(dark: true, share: { sharing = true })
+        JamActionPill(dark: true, share: { sharing = true }, postID: postID)
             .padding(.horizontal, 24).padding(.bottom, 8)
             .sheet(isPresented: $sharing) { if let post = store.jamPost(postID) { JamShareSheet(post: post) } }
     }
