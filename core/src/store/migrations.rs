@@ -721,6 +721,27 @@ const MIGRATIONS: &[&str] = &[
      ALTER TABLE jam_posts ADD COLUMN edited_at INTEGER;
      ALTER TABLE jam_posts ADD COLUMN edit_pending INTEGER NOT NULL DEFAULT 0;
      CREATE TABLE jam_blob_deletes (blob_id TEXT PRIMARY KEY NOT NULL);",
+    // 47 (LIME-189): likes, comments and counts. The writer's phone is the authority: `jam_reactions` (who liked what; only there), `jam_comments`
+    // (published ones, each with the author's own signed op so a subscriber can check whose words they are); a subscriber keeps `jam_counts` (the latest
+    // tally the writer sent, by version, with the likers), `jam_my_reactions` (what I liked, to show it at once) and its own pending comments in
+    // `jam_comments`. `jam_counts_out` paces the writer's tally (at most one a minute for a post).
+    "CREATE TABLE jam_reactions (post_id TEXT NOT NULL, user_id TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (post_id, user_id));
+     CREATE TABLE jam_my_reactions (post_id TEXT PRIMARY KEY NOT NULL, at INTEGER NOT NULL);
+     CREATE TABLE jam_comments (
+         comment_id TEXT PRIMARY KEY NOT NULL,
+         post_id    TEXT NOT NULL,
+         jam_id     TEXT NOT NULL,
+         parent_id  TEXT,
+         author     TEXT NOT NULL,
+         text       TEXT NOT NULL,
+         created    INTEGER NOT NULL,
+         state      TEXT NOT NULL DEFAULT 'published',
+         signed     TEXT
+     );
+     CREATE INDEX jam_comments_by_post ON jam_comments (post_id, created);
+     CREATE TABLE jam_counts (post_id TEXT PRIMARY KEY NOT NULL, version INTEGER NOT NULL, likes INTEGER NOT NULL, comments INTEGER NOT NULL, remixes INTEGER NOT NULL, likers TEXT NOT NULL);
+     CREATE TABLE jam_counts_out (post_id TEXT PRIMARY KEY NOT NULL, version INTEGER NOT NULL DEFAULT 0, dirty INTEGER NOT NULL DEFAULT 0, sent_at INTEGER NOT NULL DEFAULT 0);
+     ALTER TABLE jam_posts ADD COLUMN unseen INTEGER NOT NULL DEFAULT 0;",
 ];
 
 /// The schema version this build writes.

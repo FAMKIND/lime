@@ -1479,7 +1479,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
              DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP INDEX olm_sessions_by_peer; DROP TABLE received_ciphertexts; DROP TABLE emergency_messages; DROP TABLE emergency_settings; DROP TABLE mesh_outbox; DROP TABLE mesh_packets; DROP TABLE mesh_seen; DROP TABLE mesh_uploaded; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
-             DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_credits; DROP TABLE jam_credit_requests; DROP TABLE jam_credit_wires; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_blob_deletes; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; PRAGMA user_version = 9;",
+             DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_credits; DROP TABLE jam_credit_requests; DROP TABLE jam_credit_wires; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_blob_deletes; DROP TABLE jam_reactions; DROP TABLE jam_my_reactions; DROP TABLE jam_comments; DROP TABLE jam_counts; DROP TABLE jam_counts_out; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; PRAGMA user_version = 9;",
         )
         .unwrap();
     }
@@ -5743,4 +5743,182 @@ fn changing_who_a_post_is_shown_as_in_an_edit_reaches_subscribers_and_back() {
         catch_up(&alice, &[&bob], &transport);
     }
     assert_eq!(shown(&bob), "person", "a bad value is a person");
+}
+
+// ---------------------------------------------------------------- LIME-189: likes, comments and counts
+
+fn counts_of(p: &Party, post: &str) -> crate::client::jam::JamCountsInfo {
+    p.store.jam_post_counts(post.to_owned()).unwrap()
+}
+
+/// Everything waiting is sent and received, a few rounds, with the writer first (its tally goes out in its pass).
+fn rounds(writer: &Party, others: &[&Party], transport: &Arc<dyn Transport>) {
+    for _ in 0..4 {
+        for p in others {
+            deliver(p, transport);
+        }
+        sync(writer, transport);
+        deliver(writer, transport);
+        for p in others {
+            sync(p, transport);
+            deliver(p, transport);
+        }
+    }
+}
+
+fn jam_with_two_subscribers() -> (Arc<FakeServer>, Arc<dyn Transport>, Party, Party, Party, String, String) {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    let jam = new_jam(&alice);
+    join_jam(&alice, &bob, &jam, &transport);
+    join_jam(&alice, &carol, &jam, &transport);
+    let post = publish(&alice, &jam, "A post to talk about", "free");
+    for _ in 0..3 {
+        catch_up(&alice, &[&bob, &carol], &transport);
+    }
+    (server, transport, alice, bob, carol, jam, post)
+}
+
+#[test]
+fn a_subscribers_heart_reaches_the_writer_and_the_counts_reach_another_subscriber() {
+    let (_server, transport, alice, bob, carol, _jam, post) = jam_with_two_subscribers();
+    assert_eq!(counts_of(&carol, &post).likes, 0);
+    bob.store.react_to_jam_post(post.clone(), true).unwrap();
+    assert!(counts_of(&bob, &post).liked_by_me, "my heart shows at once");
+    rounds(&alice, &[&bob, &carol], &transport);
+    let on_alice = counts_of(&alice, &post);
+    assert_eq!((on_alice.likes, on_alice.likers.clone()), (1, vec![bob.user.clone()]), "the writer knows who");
+    let on_carol = counts_of(&carol, &post);
+    assert_eq!((on_carol.likes, on_carol.likers.clone(), on_carol.liked_by_me), (1, vec![bob.user.clone()], false), "another subscriber gets the count and the likers");
+    assert_eq!(counts_of(&bob, &post).likes, 1);
+    // Un-liking takes it away again (after the tally's minute: the next one waits, so look at the writer).
+    bob.store.react_to_jam_post(post.clone(), false).unwrap();
+    rounds(&alice, &[&bob, &carol], &transport);
+    assert_eq!(counts_of(&alice, &post).likes, 0);
+    assert!(!counts_of(&bob, &post).liked_by_me);
+    // The writer can like their own post.
+    alice.store.react_to_jam_post(post.clone(), true).unwrap();
+    assert!(counts_of(&alice, &post).liked_by_me);
+}
+
+#[test]
+fn a_heart_or_comment_from_someone_who_is_not_a_subscriber_is_ignored() {
+    let (server, transport, alice, bob, _carol, jam, post) = jam_with_two_subscribers();
+    let (mallory, _) = party(&server, "mallory", 9);
+    let state = mallory.store.load_or_create_account().unwrap();
+    {
+        let conn = mallory.store.lock();
+        let react = crate::client::jam::signed_op(&conn, &state, "jam.react", &jam, None, serde_json::json!({ "jam_id": jam, "post_id": post, "on": true }), crate::store::now_ms()).unwrap();
+        crate::store::jam::queue_op(&conn, &jam, &alice.user, &react.to_json().to_string()).unwrap();
+        let id = "c-forced".to_owned();
+        let comment = crate::client::jam::signed_op(&conn, &state, "jam.comment", &jam, Some(id.clone()), serde_json::json!({ "jam_id": jam, "post_id": post, "comment_id": id, "author": mallory.user, "text": "hi" }), crate::store::now_ms()).unwrap();
+        crate::store::jam::queue_op(&conn, &jam, &alice.user, &comment.to_json().to_string()).unwrap();
+    }
+    rounds(&alice, &[&mallory, &bob], &transport);
+    let pending: i64 = mallory.store.lock().query_row("SELECT COUNT(*) FROM jam_op_outbox", [], |r| r.get(0)).unwrap();
+    assert_eq!(pending, 0, "the messages were delivered");
+    assert_eq!(counts_of(&alice, &post).likes, 0);
+    assert!(alice.store.list_jam_comments(post).unwrap().is_empty());
+}
+
+#[test]
+fn a_comment_is_published_by_the_writer_with_the_authors_own_signature_and_a_forged_one_fails() {
+    let (_server, transport, alice, bob, carol, jam, post) = jam_with_two_subscribers();
+    let id = bob.store.comment_on_jam_post(post.clone(), "  I tried this today  ".into(), None).unwrap();
+    let mine = bob.store.list_jam_comments(post.clone()).unwrap();
+    assert_eq!((mine.len(), mine[0].state.as_str(), mine[0].text.as_str(), mine[0].mine), (1, "pending", "I tried this today", true), "pending until the writer's phone publishes it");
+    assert!(carol.store.list_jam_comments(post.clone()).unwrap().is_empty());
+    rounds(&alice, &[&bob, &carol], &transport);
+    assert_eq!(bob.store.list_jam_comments(post.clone()).unwrap()[0].state, "published");
+    let seen = carol.store.list_jam_comments(post.clone()).unwrap();
+    assert_eq!((seen.len(), seen[0].author.as_str(), seen[0].text.as_str(), seen[0].mine), (1, bob.user.as_str(), "I tried this today", false));
+    assert!(counts_of(&alice, &post).unseen, "the writer has something new");
+    alice.store.mark_jam_post_seen(post.clone()).unwrap();
+    assert!(!counts_of(&alice, &post).unseen);
+    assert_eq!(counts_of(&carol, &post).comments, 1, "the count goes out too");
+
+    // The author's signature: the genuine one checks out on Carol's phone; the same comment with other words, or from a device of someone else, does not.
+    let signed: String = carol.store.lock().query_row("SELECT signed FROM jam_comments WHERE comment_id = ?1", params![id], |r| r.get(0)).unwrap();
+    let genuine: serde_json::Value = serde_json::from_str(&signed).unwrap();
+    let check = |value: &serde_json::Value| carol.store.verify_published_comment(&jam, &post, value);
+    assert!(check(&genuine));
+    let mut tampered = genuine.clone();
+    tampered["op"]["payload"]["text"] = serde_json::json!("I never said this");
+    assert!(!check(&tampered), "other words under the same signature");
+    let mut other_device = genuine.clone();
+    other_device["cert"] = alice.store.lock().query_row("SELECT 1", [], |_| Ok(())).map(|_| serde_json::Value::Null).unwrap();
+    assert!(!check(&other_device), "no certificate");
+    let mut elsewhere = genuine.clone();
+    elsewhere["op"]["payload"]["post_id"] = serde_json::json!("another-post");
+    assert!(!check(&elsewhere), "a comment of another post");
+}
+
+#[test]
+fn a_reply_to_a_reply_attaches_to_the_top_level_comment_and_removals_propagate() {
+    let (_server, transport, alice, bob, carol, _jam, post) = jam_with_two_subscribers();
+    let top = bob.store.comment_on_jam_post(post.clone(), "Top comment".into(), None).unwrap();
+    rounds(&alice, &[&bob, &carol], &transport);
+    let reply = carol.store.comment_on_jam_post(post.clone(), "A reply".into(), Some(top.clone())).unwrap();
+    rounds(&alice, &[&bob, &carol], &transport);
+    let nested = bob.store.comment_on_jam_post(post.clone(), "A reply to the reply".into(), Some(reply.clone())).unwrap();
+    rounds(&alice, &[&bob, &carol], &transport);
+    for p in [&alice, &bob, &carol] {
+        let all = p.store.list_jam_comments(post.clone()).unwrap();
+        assert_eq!(all.len(), 3);
+        let parent_of = |id: &str| all.iter().find(|c| c.comment_id == id).unwrap().parent_id.clone();
+        assert_eq!((parent_of(&top), parent_of(&reply), parent_of(&nested)), (None, Some(top.clone()), Some(top.clone())), "one level of replies");
+    }
+    // A parent that is not in this post is refused.
+    assert!(bob.store.comment_on_jam_post(post.clone(), "x".into(), Some("nothing".into())).is_err());
+    // Too long, or empty: refused.
+    assert!(bob.store.comment_on_jam_post(post.clone(), "x".repeat(2001), None).is_err());
+    assert!(bob.store.comment_on_jam_post(post.clone(), "   ".into(), None).is_err());
+    // The author takes a reply back: it goes everywhere.
+    carol.store.delete_jam_comment(reply.clone()).unwrap();
+    rounds(&alice, &[&bob, &carol], &transport);
+    for p in [&alice, &bob, &carol] {
+        assert!(!p.store.list_jam_comments(post.clone()).unwrap().iter().any(|c| c.comment_id == reply), "the author's delete propagates");
+    }
+    // The writer removes any comment: a top-level one takes its replies.
+    alice.store.delete_jam_comment(top).unwrap();
+    rounds(&alice, &[&bob, &carol], &transport);
+    for p in [&alice, &bob, &carol] {
+        assert!(p.store.list_jam_comments(post.clone()).unwrap().is_empty(), "the writer's removal propagates, replies with it");
+    }
+    // Someone else's comment is not mine to delete.
+    let c = bob.store.comment_on_jam_post(post.clone(), "Mine".into(), None).unwrap();
+    rounds(&alice, &[&bob, &carol], &transport);
+    assert!(carol.store.delete_jam_comment(c).is_err());
+}
+
+#[test]
+fn counts_are_coalesced_to_one_a_minute_and_a_deleted_post_drops_everything() {
+    let (_server, transport, alice, bob, carol, _jam, post) = jam_with_two_subscribers();
+    let versions = |p: &Party| p.store.lock().query_row("SELECT COALESCE(MAX(version), 0) FROM jam_counts_out", [], |r| r.get::<_, i64>(0)).unwrap();
+    bob.store.react_to_jam_post(post.clone(), true).unwrap();
+    rounds(&alice, &[&bob, &carol], &transport);
+    assert_eq!(versions(&alice), 1);
+    carol.store.react_to_jam_post(post.clone(), true).unwrap();
+    bob.store.comment_on_jam_post(post.clone(), "More".into(), None).unwrap();
+    rounds(&alice, &[&bob, &carol], &transport);
+    assert_eq!(versions(&alice), 1, "within the minute nothing more goes out");
+    assert_eq!(counts_of(&alice, &post).likes, 2, "the writer's own view is live");
+    assert_eq!(counts_of(&carol, &post).likes, 1, "a subscriber's tally waits for the next one");
+    // Time passes: the held tally goes.
+    alice.store.lock().execute("UPDATE jam_counts_out SET sent_at = sent_at - 61000", []).unwrap();
+    rounds(&alice, &[&bob, &carol], &transport);
+    assert_eq!(versions(&alice), 2);
+    let on_carol = counts_of(&carol, &post);
+    assert_eq!((on_carol.likes, on_carol.comments), (2, 1));
+
+    // A deleted post takes its hearts, comments and counts with it, on every phone.
+    alice.store.delete_jam_post(post.clone()).unwrap();
+    rounds(&alice, &[&bob, &carol], &transport);
+    for p in [&alice, &bob, &carol] {
+        let left: i64 = p.store.lock().query_row("SELECT (SELECT COUNT(*) FROM jam_reactions) + (SELECT COUNT(*) FROM jam_comments) + (SELECT COUNT(*) FROM jam_counts) + (SELECT COUNT(*) FROM jam_counts_out) + (SELECT COUNT(*) FROM jam_my_reactions)", [], |r| r.get(0)).unwrap();
+        assert_eq!(left, 0);
+        assert!(p.store.jam_post_counts(post.clone()).is_err());
+    }
 }

@@ -68,6 +68,36 @@ pub struct JamPostInfo {
     pub state: String,
 }
 
+/// A post's numbers (LIME-189). Counts are public to everyone who can read the post; `likers` is who liked (the app shows only the faces of the
+/// reader's own contacts; the writer sees everyone).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct JamCountsInfo {
+    pub post_id: String,
+    pub likes: u32,
+    pub comments: u32,
+    /// Remixes come later; always 0 for now.
+    pub remixes: u32,
+    pub likers: Vec<String>,
+    pub liked_by_me: bool,
+    /// The writer's own posts: comments that arrived and have not been looked at.
+    pub unseen: bool,
+}
+
+/// One comment. `pending` is mine, sent to the writer and not yet published by their phone.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct JamCommentInfo {
+    pub comment_id: String,
+    pub post_id: String,
+    /// The top-level comment this replies to (there is one level of replies), or none.
+    pub parent_id: Option<String>,
+    pub author: String,
+    pub text: String,
+    pub created: i64,
+    /// `published` or `pending`.
+    pub state: String,
+    pub mine: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct JamSubscriberInfo {
     pub user_id: String,
@@ -666,6 +696,150 @@ impl LimeStore {
         })
     }
 
+    // ------------------------------------------------------------ likes, comments and counts (LIME-189)
+
+    /// ♥ or un-♥ on a post (mine or one I follow). On someone else's it is a signed message to the writer's phone, which keeps who liked and tells
+    /// everyone the tally; on my own post it is kept here. My heart shows at once.
+    pub fn react_to_jam_post(&self, post_id: String, on: bool) -> Result<(), StoreError> {
+        let state = self.load_or_create_account()?;
+        let me = self.registered_user(&state)?;
+        let now = now_ms();
+        self.with_conn(|conn| {
+            atomically(conn, || {
+                let row = jam_store::post(conn, &post_id)?.filter(|p| !p.deleted).ok_or(StoreError::NotFound)?;
+                let jam = jam_store::get(conn, &row.jam_id)?.ok_or(StoreError::NotFound)?;
+                if jam.mine {
+                    self.apply_reaction(conn, &post_id, &me, on, now)?;
+                    return Ok(());
+                }
+                if jam.status != "active" {
+                    return Err(StoreError::Rejected);
+                }
+                if on {
+                    conn.execute("INSERT OR REPLACE INTO jam_my_reactions (post_id, at) VALUES (?1, ?2)", params![post_id, now]).map_err(db_err)?;
+                } else {
+                    conn.execute("DELETE FROM jam_my_reactions WHERE post_id = ?1", params![post_id]).map_err(db_err)?;
+                }
+                let op = signed_op(conn, &state, "jam.react", &row.jam_id, None, json!({ "jam_id": row.jam_id, "post_id": post_id, "on": on }), now)?;
+                queue_op(conn, &row.jam_id, &jam.writer, &op)
+            })
+        })
+    }
+
+    /// Writes a comment (or a reply: to a reply it attaches to the top-level comment). On someone else's post it goes to the writer's phone and shows
+    /// as **pending** until that phone publishes it; on my own it is published at once. Returns the comment's id.
+    pub fn comment_on_jam_post(&self, post_id: String, text: String, parent_id: Option<String>) -> Result<String, StoreError> {
+        let state = self.load_or_create_account()?;
+        let me = self.registered_user(&state)?;
+        let text = text.trim().to_owned();
+        if text.is_empty() || text.chars().count() > jam_store::MAX_COMMENT_CHARS {
+            return Err(StoreError::Rejected);
+        }
+        let now = now_ms();
+        self.with_conn(|conn| {
+            atomically(conn, || {
+                let row = jam_store::post(conn, &post_id)?.filter(|p| !p.deleted).ok_or(StoreError::NotFound)?;
+                let jam = jam_store::get(conn, &row.jam_id)?.ok_or(StoreError::NotFound)?;
+                if !jam.mine && jam.status != "active" {
+                    return Err(StoreError::Rejected);
+                }
+                let parent = match parent_id.as_deref() {
+                    Some(parent) => Some(Self::top_level_parent(conn, &post_id, parent)?.ok_or(StoreError::Rejected)?),
+                    None => None,
+                };
+                let comment_id = new_id();
+                let payload = json!({ "jam_id": row.jam_id, "post_id": post_id, "comment_id": comment_id, "parent_id": parent, "author": me, "text": text });
+                let op = signed_op(conn, &state, "jam.comment", &row.jam_id, Some(comment_id.clone()), payload, now)?;
+                let signed = json!({ "op": op.to_json(), "cert": state.cert().to_json() }).to_string();
+                if jam.mine {
+                    conn.execute(
+                        "INSERT INTO jam_comments (comment_id, post_id, jam_id, parent_id, author, text, created, state, signed) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'published', ?8)",
+                        params![comment_id, post_id, row.jam_id, parent, me, text, now, signed],
+                    )
+                    .map_err(db_err)?;
+                    jam_store::mark_counts_dirty(conn, &post_id)?;
+                    self.announce_post_op(conn, &state, &me, &row.jam_id, &row.tier, "jam.comment.published", json!({ "jam_id": row.jam_id, "post_id": post_id, "comment": signed }), now)?;
+                } else {
+                    conn.execute(
+                        "INSERT INTO jam_comments (comment_id, post_id, jam_id, parent_id, author, text, created, state, signed) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'pending', ?8)",
+                        params![comment_id, post_id, row.jam_id, parent, me, text, now, signed],
+                    )
+                    .map_err(db_err)?;
+                    queue_op(conn, &row.jam_id, &jam.writer, &op)?;
+                }
+                Ok(comment_id)
+            })
+        })
+    }
+
+    /// Deletes a comment: my own anywhere, or any on my own posts. The writer's phone tells everyone; a top-level comment takes its replies.
+    pub fn delete_jam_comment(&self, comment_id: String) -> Result<(), StoreError> {
+        let state = self.load_or_create_account()?;
+        let me = self.registered_user(&state)?;
+        let now = now_ms();
+        self.with_conn(|conn| {
+            atomically(conn, || {
+                let (post_id, jam_id, _parent, author, _state) = jam_store::comment_row(conn, &comment_id)?.ok_or(StoreError::NotFound)?;
+                let jam = jam_store::get(conn, &jam_id)?.ok_or(StoreError::NotFound)?;
+                if jam.mine {
+                    self.remove_and_announce(conn, &state, &me, &jam_id, &post_id, &comment_id, now)
+                } else if author == me {
+                    jam_store::remove_comment(conn, &comment_id)?;
+                    let op = signed_op(conn, &state, "jam.comment.delete", &jam_id, None, json!({ "jam_id": jam_id, "comment_id": comment_id }), now)?;
+                    queue_op(conn, &jam_id, &jam.writer, &op)
+                } else {
+                    Err(StoreError::Rejected)
+                }
+            })
+        })
+    }
+
+    /// A post's comments, oldest first (replies follow the app's own grouping by `parent_id`).
+    pub fn list_jam_comments(&self, post_id: String) -> Result<Vec<JamCommentInfo>, StoreError> {
+        let me = self.load_or_create_account().ok().and_then(|s| self.registered_user(&s).ok()).unwrap_or_default();
+        self.with_conn(|conn| {
+            let mut statement = conn.prepare("SELECT comment_id, parent_id, author, text, created, state FROM jam_comments WHERE post_id = ?1 ORDER BY created, comment_id").map_err(db_err)?;
+            let rows = statement
+                .query_map(params![post_id], |r| {
+                    let author: String = r.get(2)?;
+                    Ok(JamCommentInfo { comment_id: r.get(0)?, post_id: post_id.clone(), parent_id: r.get(1)?, mine: author == me, author, text: r.get(3)?, created: r.get(4)?, state: r.get(5)? })
+                })
+                .map_err(db_err)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(db_err)?;
+            Ok(rows)
+        })
+    }
+
+    /// A post's numbers: mine are counted here, someone else's are the writer's latest tally (plus my own heart at once).
+    pub fn jam_post_counts(&self, post_id: String) -> Result<JamCountsInfo, StoreError> {
+        let me = self.load_or_create_account().ok().and_then(|s| self.registered_user(&s).ok()).unwrap_or_default();
+        self.with_conn(|conn| {
+            let row = jam_store::post(conn, &post_id)?.filter(|p| !p.deleted).ok_or(StoreError::NotFound)?;
+            let jam = jam_store::get(conn, &row.jam_id)?.ok_or(StoreError::NotFound)?;
+            if jam.mine {
+                let (likers, comments) = jam_store::tally(conn, &post_id)?;
+                let unseen: i64 = conn.query_row("SELECT unseen FROM jam_posts WHERE post_id = ?1", params![post_id], |r| r.get(0)).map_err(db_err)?;
+                return Ok(JamCountsInfo { post_id, likes: likers.len() as u32, comments: comments as u32, remixes: 0, liked_by_me: likers.contains(&me), likers, unseen: unseen > 0 });
+            }
+            let counts: Option<(i64, i64, String)> = conn
+                .query_row("SELECT likes, comments, likers FROM jam_counts WHERE post_id = ?1", params![post_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                .optional()
+                .map_err(db_err)?;
+            let mine: bool = conn.query_row("SELECT COUNT(*) FROM jam_my_reactions WHERE post_id = ?1", params![post_id], |r| r.get::<_, i64>(0)).map_err(db_err)? > 0;
+            let (likes, comments, likers) = counts.map_or((0, 0, Vec::new()), |(l, c, json)| (l, c, serde_json::from_str::<Vec<String>>(&json).unwrap_or_default()));
+            Ok(JamCountsInfo { post_id, likes: likes as u32, comments: comments as u32, remixes: 0, likers, liked_by_me: mine, unseen: false })
+        })
+    }
+
+    /// The writer has looked at the comments on a post.
+    pub fn mark_jam_post_seen(&self, post_id: String) -> Result<(), StoreError> {
+        self.with_conn(|conn| {
+            conn.execute("UPDATE jam_posts SET unseen = 0 WHERE post_id = ?1", params![post_id]).map_err(db_err)?;
+            Ok(())
+        })
+    }
+
     /// Removes a subscriber: they are told, they get nothing more, and the next post is under a new session they are not given.
     pub fn remove_jam_subscriber(&self, jam_id: String, user_id: String) -> Result<(), StoreError> {
         let state = self.load_or_create_account()?;
@@ -1002,6 +1176,68 @@ impl LimeStore {
                 .map_err(db_err)?;
                 Ok(())
             }
+            // A subscriber's heart or comment, for me as the writer (LIME-189): only from a current subscriber, for a post of mine they may read.
+            "jam.react" | "jam.comment" | "jam.comment.delete" => {
+                let Some(jam) = jam.filter(|j| j.mine && j.writer == me) else { return Ok(()) };
+                if sender == me || !jam_store::subscriber(conn, jam_id, sender)?.is_some_and(|(status, _)| status == "active") {
+                    return Ok(());
+                }
+                let tier_of = |conn: &Connection| -> Result<String, StoreError> { Ok(jam_store::subscriber(conn, jam_id, sender)?.map(|(_, t)| t).unwrap_or_default()) };
+                let text = |k: &str| op.payload.get(k).and_then(Value::as_str);
+                let visible = |conn: &Connection, post_id: &str| -> Result<Option<jam_store::PostRow>, StoreError> {
+                    let tier = tier_of(conn)?;
+                    Ok(jam_store::post(conn, post_id)?.filter(|p| !p.deleted && p.jam_id == jam_id && jam_store::tiers_for(&tier).contains(&p.tier.as_str())))
+                };
+                match op.op_type.as_str() {
+                    "jam.react" => {
+                        let (Some(post_id), Some(on)) = (text("post_id"), op.payload.get("on").and_then(Value::as_bool)) else { return Ok(()) };
+                        if visible(conn, post_id)?.is_some() {
+                            self.apply_reaction(conn, post_id, sender, on, now)?;
+                        }
+                        Ok(())
+                    }
+                    "jam.comment" => {
+                        let (Some(post_id), Some(comment_id), Some(words)) = (text("post_id"), text("comment_id").filter(|c| !c.is_empty() && c.len() <= 64), text("text")) else { return Ok(()) };
+                        let words = words.trim();
+                        if words.is_empty() || words.chars().count() > jam_store::MAX_COMMENT_CHARS || text("author") != Some(sender) || op.op_id != comment_id {
+                            return Ok(());
+                        }
+                        let Some(post) = visible(conn, post_id)? else { return Ok(()) };
+                        if jam_store::comment_row(conn, comment_id)?.is_some() || jam_store::comments_by_author_since(conn, sender, now - 60_000)? >= jam_store::COMMENTS_PER_MINUTE {
+                            return Ok(());
+                        }
+                        // One level: a reply to a reply goes under the top-level comment; a parent that is not in this post is no comment at all.
+                        let parent = match text("parent_id").filter(|p| !p.is_empty()) {
+                            Some(parent) => match Self::top_level_parent(conn, post_id, parent)? {
+                                Some(top) => Some(top),
+                                None => return Ok(()),
+                            },
+                            None => None,
+                        };
+                        // The author's own signed op travels with the comment, so a subscriber can check whose words these are.
+                        let signed = json!({ "op": op.to_json(), "cert": cert.to_json() }).to_string();
+                        conn.execute(
+                            "INSERT INTO jam_comments (comment_id, post_id, jam_id, parent_id, author, text, created, state, signed) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'published', ?8)",
+                            params![comment_id, post_id, jam_id, parent, sender, words, now, signed],
+                        )
+                        .map_err(db_err)?;
+                        conn.execute("UPDATE jam_posts SET unseen = 1 WHERE post_id = ?1", params![post_id]).map_err(db_err)?;
+                        jam_store::mark_counts_dirty(conn, post_id)?;
+                        self.announce_post_op(conn, state, me, jam_id, &post.tier, "jam.comment.published", json!({ "jam_id": jam_id, "post_id": post_id, "comment": signed }), now)?;
+                        let _ = jam;
+                        Ok(())
+                    }
+                    _ => {
+                        // The author takes a comment back.
+                        let Some(comment_id) = text("comment_id") else { return Ok(()) };
+                        let Some((post_id, _, _, author, _)) = jam_store::comment_row(conn, comment_id)? else { return Ok(()) };
+                        if author == sender {
+                            self.remove_and_announce(conn, state, me, jam_id, &post_id, comment_id, now)?;
+                        }
+                        Ok(())
+                    }
+                }
+            }
             // The writer edited or deleted a post I am credited on (195b): only from the writer who asked me, for a credit I accepted.
             "jam.coauthor.edit" | "jam.coauthor.delete" => {
                 let Some(post_id) = op.payload.get("post_id").and_then(Value::as_str).filter(|p| !p.is_empty() && p.len() <= 64) else { return Ok(()) };
@@ -1148,6 +1384,51 @@ impl LimeStore {
         jam_store::queue_wire(conn, jam_id, &wire_id, &jam_store::audience(conn, jam_id, &post.tier)?)
     }
 
+    /// A comment's top-level parent in this post: itself when it is top level, else its own parent; none if there is no such comment here.
+    fn top_level_parent(conn: &Connection, post_id: &str, comment_id: &str) -> Result<Option<String>, StoreError> {
+        Ok(match jam_store::comment_row(conn, comment_id)? {
+            Some((post, _, parent, _, _)) if post == post_id => Some(parent.unwrap_or_else(|| comment_id.to_owned())),
+            _ => None,
+        })
+    }
+
+    /// The writer's phone takes a heart (or its removal): kept by who, and the tally goes out soon.
+    fn apply_reaction(&self, conn: &Connection, post_id: &str, user: &str, on: bool, now: i64) -> Result<(), StoreError> {
+        if on {
+            conn.execute("INSERT OR REPLACE INTO jam_reactions (post_id, user_id, at) VALUES (?1, ?2, ?3)", params![post_id, user, now]).map_err(db_err)?;
+        } else {
+            conn.execute("DELETE FROM jam_reactions WHERE post_id = ?1 AND user_id = ?2", params![post_id, user]).map_err(db_err)?;
+        }
+        jam_store::mark_counts_dirty(conn, post_id)
+    }
+
+    /// The writer's phone removes a comment and tells the subscribers.
+    #[allow(clippy::too_many_arguments)]
+    fn remove_and_announce(&self, conn: &Connection, state: &AccountState, me: &str, jam_id: &str, post_id: &str, comment_id: &str, now: i64) -> Result<(), StoreError> {
+        let tier: String = conn.query_row("SELECT tier FROM jam_posts WHERE post_id = ?1", params![post_id], |r| r.get(0)).map_err(db_err)?;
+        jam_store::remove_comment(conn, comment_id)?;
+        jam_store::mark_counts_dirty(conn, post_id)?;
+        self.announce_post_op(conn, state, me, jam_id, &tier, "jam.comment.removed", json!({ "jam_id": jam_id, "post_id": post_id, "comment_id": comment_id }), now)
+    }
+
+    /// Sends each post's tally to the subscribers, coalesced: at most one a minute for a post (the writer's phone sends nothing else about hearts).
+    fn announce_counts(&self, state: &AccountState) {
+        let now = now_ms();
+        let Ok(me) = self.registered_user(state) else { return };
+        let Ok(due) = self.with_conn(|conn| jam_store::counts_due(conn, now)) else { return };
+        for (post_id, jam_id, tier, version) in due {
+            let _ = self.with_conn(|conn| {
+                atomically(conn, || {
+                    let (likers, comments) = jam_store::tally(conn, &post_id)?;
+                    let likers: Vec<String> = likers.into_iter().take(jam_store::MAX_LIKERS).collect();
+                    let payload = json!({ "jam_id": jam_id, "post_id": post_id, "version": version, "likes": likers.len(), "comments": comments, "remixes": 0, "likers": likers });
+                    self.announce_post_op(conn, state, &me, &jam_id, &tier, "jam.counts", payload, now)?;
+                    jam_store::counts_sent(conn, &post_id, version, now)
+                })
+            });
+        }
+    }
+
     /// Tells my subscribers, in the post's own session, something about it (an edit or a deletion, LIME-195): a small signed op through the same queue.
     #[allow(clippy::too_many_arguments)] // the context of one announcement
     fn announce_post_op(&self, conn: &Connection, state: &AccountState, me: &str, jam_id: &str, tier: &str, op_type: &str, payload: Value, now: i64) -> Result<(), StoreError> {
@@ -1226,6 +1507,59 @@ impl LimeStore {
         }
     }
 
+    /// A comment the writer published: the author's own signed op must check out (the device is vouched for by its master key, which must be the one
+    /// pinned for that person when I know them; the op is signed by that device and is a comment of this very post), so the writer cannot put words in
+    /// someone's mouth. Mine, pending, becomes published.
+    fn store_published_comment(conn: &Connection, jam_id: &str, post_id: &str, signed: &Value) -> Result<(), StoreError> {
+        let Some(verified) = Self::verify_comment(conn, jam_id, post_id, signed)? else { return Ok(()) };
+        let (comment_id, parent, author, words, created) = verified;
+        let raw = signed.to_string();
+        let n = conn
+            .execute("UPDATE jam_comments SET state = 'published', signed = ?2 WHERE comment_id = ?1", params![comment_id, raw])
+            .map_err(db_err)?;
+        if n == 0 {
+            conn.execute(
+                "INSERT INTO jam_comments (comment_id, post_id, jam_id, parent_id, author, text, created, state, signed) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'published', ?8)",
+                params![comment_id, post_id, jam_id, parent, author, words, created, raw],
+            )
+            .map_err(db_err)?;
+        }
+        Ok(())
+    }
+
+    /// Whether a published comment is genuine (for tests and the app's checks).
+    pub(crate) fn verify_published_comment(&self, jam_id: &str, post_id: &str, signed: &Value) -> bool {
+        self.with_conn(|conn| Self::verify_comment(conn, jam_id, post_id, signed)).ok().flatten().is_some()
+    }
+
+    /// Checks a published comment's author signature; gives (comment id, parent, author, text, created) when it is genuine.
+    pub(crate) fn verify_comment(conn: &Connection, jam_id: &str, post_id: &str, signed: &Value) -> Result<Option<(String, Option<String>, String, String, i64)>, StoreError> {
+        let (Some(op), Some(cert)) = (signed.get("op").and_then(Op::from_json), signed.get("cert").and_then(SenderCert::from_json)) else { return Ok(None) };
+        let text = |k: &str| op.payload.get(k).and_then(Value::as_str);
+        let (Some(author), Some(comment_id), Some(words)) = (text("author").filter(|a| !a.is_empty() && a.len() <= 64), text("comment_id"), text("text")) else { return Ok(None) };
+        let words = words.trim();
+        if op.op_type != "jam.comment"
+            || op.op_id != comment_id
+            || op.conversation_id != jam_store::conversation_id(jam_id)
+            || text("post_id") != Some(post_id)
+            || text("jam_id") != Some(jam_id)
+            || words.is_empty()
+            || words.chars().count() > jam_store::MAX_COMMENT_CHARS
+            || !cert.verify()
+            || !op.verify(&cert.signing_key)
+        {
+            return Ok(None);
+        }
+        // If I know this person, their master key is the one pinned; if not, the writer vouches for who they are.
+        let pinned: Option<String> = conn.query_row("SELECT master_key FROM peers WHERE user_id = ?1", params![author], |r| r.get(0)).optional().map_err(db_err)?;
+        if pinned.is_some_and(|key| key != cert.master_key) {
+            return Ok(None);
+        }
+        let parent = text("parent_id").filter(|p| !p.is_empty()).map(str::to_owned);
+        let created = Hlc::parse(&op.hlc).map_or(0, |h| h.wall);
+        Ok(Some((comment_id.to_owned(), parent, author.to_owned(), words.to_owned(), created)))
+    }
+
     /// The archive's index from the writer: each post's title and where its content is. Entries are checked for shape; the content is fetched later.
     fn store_jam_index(&self, conn: &Connection, jam_id: &str, writer: &str, payload: &Value) -> Result<(), StoreError> {
         let Some(posts) = payload.get("posts").and_then(Value::as_array) else { return Ok(()) };
@@ -1262,7 +1596,7 @@ impl LimeStore {
             && inner.sender_user != me
             && cert.verify()
             && op.verify(&cert.signing_key)
-            && (op.op_type == "jam.post" || op.op_type == "jam.credit" || op.op_type == "jam.edit" || op.op_type == "jam.delete")
+            && (op.op_type == "jam.post" || op.op_type == "jam.credit" || op.op_type == "jam.edit" || op.op_type == "jam.delete" || op.op_type.starts_with("jam.comment.") || op.op_type == "jam.counts")
             && op.conversation_id == conversation;
         let payload = &op.payload;
         let text = |k: &str| payload.get(k).and_then(Value::as_str);
@@ -1280,6 +1614,49 @@ impl LimeStore {
                 }
                 jam_store::save_inbound(conn, &self.pickle_key, session_id, &inbound)?;
                 jam_store::set_credit(conn, post_id, user, "accepted")?;
+                Ok(Outcome::Duplicate)
+            })?;
+            if matches!(outcome, Outcome::Duplicate) {
+                self.with_conn(|conn| observe_hlc(conn, remote_hlc, now).map(|_| ()))?;
+            }
+            return Ok(outcome);
+        }
+        // The writer's comments and counts (LIME-189).
+        if valid && (op.op_type.starts_with("jam.comment.") || op.op_type == "jam.counts") {
+            let Some(remote_hlc) = Hlc::parse(&op.hlc) else { return Ok(Outcome::Keep(pending::INVALID)) };
+            let author = inner.sender_user.clone();
+            let outcome = self.with_conn(|conn| {
+                let pinned: Option<String> = conn.query_row("SELECT master_key FROM peers WHERE user_id = ?1", params![author], |r| r.get(0)).optional().map_err(db_err)?;
+                let jam = jam_store::get(conn, &inbound.jam_id)?;
+                if pinned.as_deref() != Some(cert.master_key.as_str()) || jam.is_none_or(|j| j.mine || j.writer != author || matches!(j.status.as_str(), "removed" | "left")) {
+                    return Ok(Outcome::Keep(pending::INVALID));
+                }
+                jam_store::save_inbound(conn, &self.pickle_key, session_id, &inbound)?;
+                let Some(post_id) = text("post_id").filter(|p| !p.is_empty() && p.len() <= 64) else { return Ok(Outcome::Duplicate) };
+                // Only about a post of this jam that is here.
+                if jam_store::post(conn, post_id)?.is_none_or(|p| p.jam_id != inbound.jam_id || p.deleted) {
+                    return Ok(Outcome::Duplicate);
+                }
+                match op.op_type.as_str() {
+                    "jam.counts" => {
+                        let num = |k: &str| payload.get(k).and_then(Value::as_i64).filter(|n| (0..=10_000_000).contains(n));
+                        let likers: Vec<String> = payload.get("likers").and_then(Value::as_array).map(|a| a.iter().filter_map(|v| v.as_str().filter(|u| !u.is_empty() && u.len() <= 64).map(str::to_owned)).take(jam_store::MAX_LIKERS).collect()).unwrap_or_default();
+                        if let (Some(version), Some(likes), Some(comments)) = (num("version"), num("likes"), num("comments")) {
+                            jam_store::apply_counts(conn, post_id, version, likes, comments, num("remixes").unwrap_or(0), &likers)?;
+                        }
+                    }
+                    "jam.comment.removed" => {
+                        if let Some(comment_id) = text("comment_id") {
+                            jam_store::remove_comment(conn, comment_id)?;
+                        }
+                    }
+                    "jam.comment.published" => {
+                        if let Some(signed) = text("comment").and_then(|c| serde_json::from_str::<Value>(c).ok()) {
+                            Self::store_published_comment(conn, &inbound.jam_id, post_id, &signed)?;
+                        }
+                    }
+                    _ => {}
+                }
                 Ok(Outcome::Duplicate)
             })?;
             if matches!(outcome, Outcome::Duplicate) {
@@ -1372,6 +1749,7 @@ impl LimeStore {
         self.deliver_jam_ops(transport, token, state, me);
         self.upload_jam_posts(transport, token);
         self.announce_post_changes(state);
+        self.announce_counts(state);
         self.delete_jam_blobs(transport, token);
         self.publish_jam_pages(transport, token);
         self.deliver_jam_wires(transport, token);

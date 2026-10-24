@@ -751,6 +751,7 @@ pub(crate) fn apply_delete(conn: &Connection, post_id: &str, jam_id: &str, autho
         .map_err(db_err)?;
     if n > 0 {
         conn.execute("DELETE FROM jam_attachments WHERE post_id = ?1", params![post_id]).map_err(db_err)?;
+        drop_engagement(conn, post_id)?;
     }
     Ok(n > 0)
 }
@@ -777,4 +778,81 @@ pub(crate) fn edits_to_announce(conn: &Connection) -> Result<Vec<(String, String
     let mut statement = conn.prepare("SELECT post_id, jam_id, tier FROM jam_posts WHERE edit_pending = 1 AND uploaded = 1 AND deleted_at IS NULL").map_err(db_err)?;
     let rows = statement.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
     Ok(rows)
+}
+
+// ---------------------------------------------------------------- likes, comments and counts (LIME-189)
+
+pub(crate) const MAX_COMMENT_CHARS: usize = 2000;
+/// A writer takes at most this many comments a minute from one author.
+pub(crate) const COMMENTS_PER_MINUTE: i64 = 20;
+/// A post's tally goes out at most this often.
+pub(crate) const COUNTS_EVERY_MS: i64 = 60_000;
+pub(crate) const MAX_LIKERS: usize = 1000;
+
+/// A deleted post takes its reactions, comments and counts with it.
+pub(crate) fn drop_engagement(conn: &Connection, post_id: &str) -> Result<(), StoreError> {
+    for table in ["jam_reactions", "jam_my_reactions", "jam_comments", "jam_counts", "jam_counts_out"] {
+        conn.execute(&format!("DELETE FROM {table} WHERE post_id = ?1"), params![post_id]).map_err(db_err)?;
+    }
+    Ok(())
+}
+
+/// The writer's tally of a post changed: it goes out with the next pass that is due.
+pub(crate) fn mark_counts_dirty(conn: &Connection, post_id: &str) -> Result<(), StoreError> {
+    conn.execute("INSERT INTO jam_counts_out (post_id, dirty) VALUES (?1, 1) ON CONFLICT(post_id) DO UPDATE SET dirty = 1", params![post_id]).map_err(db_err)?;
+    Ok(())
+}
+
+/// Posts whose tally is waiting and due (never sent, or last sent a minute ago): (post id, jam id, tier, next version).
+pub(crate) fn counts_due(conn: &Connection, now: i64) -> Result<Vec<(String, String, String, i64)>, StoreError> {
+    let mut statement = conn
+        .prepare(
+            "SELECT o.post_id, p.jam_id, p.tier, o.version + 1 FROM jam_counts_out o JOIN jam_posts p ON p.post_id = o.post_id
+             WHERE o.dirty = 1 AND p.deleted_at IS NULL AND (o.sent_at = 0 OR ?1 - o.sent_at >= ?2)",
+        )
+        .map_err(db_err)?;
+    let rows = statement.query_map(params![now, COUNTS_EVERY_MS], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+    Ok(rows)
+}
+
+pub(crate) fn counts_sent(conn: &Connection, post_id: &str, version: i64, now: i64) -> Result<(), StoreError> {
+    conn.execute("UPDATE jam_counts_out SET dirty = 0, version = ?2, sent_at = ?3 WHERE post_id = ?1", params![post_id, version, now]).map_err(db_err)?;
+    Ok(())
+}
+
+/// The writer's own numbers for a post: likers (newest first) and published comments.
+pub(crate) fn tally(conn: &Connection, post_id: &str) -> Result<(Vec<String>, i64), StoreError> {
+    let mut statement = conn.prepare("SELECT user_id FROM jam_reactions WHERE post_id = ?1 ORDER BY at DESC, user_id").map_err(db_err)?;
+    let likers = statement.query_map(params![post_id], |r| r.get::<_, String>(0)).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+    let comments: i64 = conn.query_row("SELECT COUNT(*) FROM jam_comments WHERE post_id = ?1 AND state = 'published'", params![post_id], |r| r.get(0)).map_err(db_err)?;
+    Ok((likers, comments))
+}
+
+/// A subscriber keeps the newest tally the writer sent (by version).
+pub(crate) fn apply_counts(conn: &Connection, post_id: &str, version: i64, likes: i64, comments: i64, remixes: i64, likers: &[String]) -> Result<bool, StoreError> {
+    let n = conn
+        .execute(
+            "INSERT INTO jam_counts (post_id, version, likes, comments, remixes, likers) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(post_id) DO UPDATE SET version = ?2, likes = ?3, comments = ?4, remixes = ?5, likers = ?6 WHERE version < ?2",
+            params![post_id, version, likes, comments, remixes, serde_json::to_string(likers).unwrap_or_else(|_| "[]".into())],
+        )
+        .map_err(db_err)?;
+    Ok(n > 0)
+}
+
+pub(crate) fn comment_row(conn: &Connection, comment_id: &str) -> Result<Option<(String, String, Option<String>, String, String)>, StoreError> {
+    // (post id, jam id, parent id, author, state)
+    conn.query_row("SELECT post_id, jam_id, parent_id, author, state FROM jam_comments WHERE comment_id = ?1", params![comment_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))
+        .optional()
+        .map_err(db_err)
+}
+
+/// Removes a comment and, for a top-level one, its replies.
+pub(crate) fn remove_comment(conn: &Connection, comment_id: &str) -> Result<(), StoreError> {
+    conn.execute("DELETE FROM jam_comments WHERE comment_id = ?1 OR parent_id = ?1", params![comment_id]).map_err(db_err)?;
+    Ok(())
+}
+
+pub(crate) fn comments_by_author_since(conn: &Connection, author: &str, since: i64) -> Result<i64, StoreError> {
+    conn.query_row("SELECT COUNT(*) FROM jam_comments WHERE author = ?1 AND created >= ?2", params![author, since], |r| r.get(0)).map_err(db_err)
 }

@@ -37,7 +37,7 @@ pub use store::shared::SharedKind;
 pub use client::emergency::{emergency_alert_policy, emergency_number};
 pub use store::emergency::{EmergencyAlert, EmergencyDraft, EmergencyInfo, EmergencyRollup, EmergencySettings, RollupEntry};
 pub use client::profile::PublicProfile;
-pub use client::jam::{JamAttachmentInfo, JamInfo, JamPageInfo, JamPostInfo, JamSendProgress, JamSubscriberInfo};
+pub use client::jam::{JamAttachmentInfo, JamCommentInfo, JamCountsInfo, JamInfo, JamPageInfo, JamPostInfo, JamSendProgress, JamSubscriberInfo};
 pub use client::calls::TurnServers;
 pub use store::status::{ContactStatus, StatusInfo};
 pub use store::storage::{ChatUsage, MediaEntry, MediaRef, StorageUsage};
