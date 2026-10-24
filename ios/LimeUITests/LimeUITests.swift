@@ -2354,6 +2354,33 @@ final class LimeUITestsGroupsAndSignIn: LimeUITestCase {
         XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'conversation-row-grp:'")).firstMatch.exists)
     }
 
+    /// LIME-202: the eye on a password field shows what was typed and hides it again; the keyboard stays.
+    func testThePasswordEyeShowsAndHidesWhatWasTyped() {
+        let app = onboardingApp()
+        app.launch()
+        XCTAssertTrue(app.buttons["welcome-continue"].waitForExistence(timeout: 10))
+        app.buttons["welcome-continue"].tap()
+        type("new.teacher@example.com", into: "identifier-field", in: app)
+        app.buttons["next-button"].tap()
+        XCTAssertTrue(app.buttons["confirm-yes"].waitForExistence(timeout: 10))
+        app.buttons["confirm-yes"].tap()
+        type("123456", into: "code-field", in: app)
+        app.buttons["next-button"].tap()
+        type("a long enough password", into: "password-field", in: app, secure: true)
+        let eye = app.buttons["password-field-eye"]
+        XCTAssertEqual(eye.label, "Show password")
+        eye.tap()
+        let shown = app.textFields["password-field"]
+        XCTAssertTrue(shown.waitForExistence(timeout: 5), "now a plain field")
+        XCTAssertEqual(shown.value as? String, "a long enough password")
+        XCTAssertEqual(eye.label, "Hide password")
+        XCTAssertTrue(app.keyboards.firstMatch.exists, "the keyboard stays up")
+        eye.tap()
+        XCTAssertTrue(app.secureTextFields["password-field"].waitForExistence(timeout: 5), "secure again")
+        XCTAssertFalse(app.textFields["password-field"].exists)
+        XCTAssertTrue(app.secureTextFields["confirm-password-field"].exists && app.buttons["confirm-password-field-eye"].exists, "each field has its own eye")
+    }
+
     func testSignUpEndToEndThenSignOutAndSignInByUsername() {
         let app = onboardingApp()
         app.launch()

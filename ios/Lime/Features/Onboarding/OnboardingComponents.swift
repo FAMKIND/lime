@@ -88,28 +88,81 @@ struct OnboardingField: View {
             Text(label)
                 .font(Theme.font(.caption, weight: .medium))
                 .foregroundStyle(Theme.textSecondary)
+            if isSecure {
+                // Hidden by default, with an eye to see what you typed (LIME-202).
+                RevealablePassword(prompt: prompt, text: $text, identifier: identifier, contentType: contentType, submit: submit, onSubmit: onSubmit)
+            } else {
+                TextField(prompt, text: $text)
+                    .keyboardType(keyboard)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .textContentType(contentType)
+                    .selectionTint()
+                    .submitLabel(submit)
+                    .onSubmit(onSubmit)
+                    .font(Theme.body)
+                    .foregroundStyle(Theme.text)
+                    .padding(.horizontal, 16)
+                    .frame(minHeight: 52)
+                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 0.5))
+                    .accessibilityIdentifier(identifier)
+            }
+        }
+    }
+}
+
+/// A password field with an **eye** at its right end (LIME-202): dots by default; the eye shows what was typed, the slashed eye hides it again. The
+/// text, the caret and the keyboard stay when it switches (the two kinds of field are swapped, and focus is handed on), the content type stays so
+/// iCloud Keychain's strong-password suggestion works, and shown text never autocorrects or capitalises. The field is `identifier`; the eye is
+/// `<identifier>-eye`.
+struct RevealablePassword: View {
+    let prompt: String
+    @Binding var text: String
+    let identifier: String
+    var contentType: UITextContentType?
+    var submit: SubmitLabel = .done
+    var onSubmit: () -> Void = {}
+    var minHeight: CGFloat = 52
+    @State private var shown = false
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 0) {
             Group {
-                if isSecure {
-                    SecureField(prompt, text: $text)
-                } else {
+                if shown {
                     TextField(prompt, text: $text)
-                        .keyboardType(keyboard)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                } else {
+                    SecureField(prompt, text: $text)
                 }
             }
+            .focused($focused)
             .textContentType(contentType)
             .selectionTint()
             .submitLabel(submit)
             .onSubmit(onSubmit)
             .font(Theme.body)
             .foregroundStyle(Theme.text)
-            .padding(.horizontal, 16)
-            .frame(minHeight: 52)
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 0.5))
             .accessibilityIdentifier(identifier)
+            Button {
+                let had = focused
+                shown.toggle()
+                // Swapping the fields drops focus: hand it back on the next turn so the keyboard stays up.
+                if had { DispatchQueue.main.async { focused = true } }
+                UIAccessibility.post(notification: .announcement, argument: shown ? "Password shown" : "Password hidden")
+            } label: {
+                Image(systemName: shown ? "eye.slash" : "eye").font(.system(size: 17)).foregroundStyle(Theme.textSecondary).frame(width: 44, height: 44).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(shown ? "Hide password" : "Show password")
+            .accessibilityIdentifier("\(identifier)-eye")
         }
+        .padding(.leading, 16).padding(.trailing, 4)
+        .frame(minHeight: minHeight)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 0.5))
     }
 }
 

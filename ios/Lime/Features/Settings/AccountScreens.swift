@@ -105,11 +105,7 @@ struct ChangePasswordScreen: View {
     }
 
     private func secure(_ label: String, _ text: Binding<String>, id: String, type: UITextContentType) -> some View {
-        SecureField(label, text: text)
-            .textContentType(type)
-            .padding(.horizontal, 18).frame(minHeight: 56)
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .accessibilityIdentifier(id)
+        RevealablePassword(prompt: label, text: text, identifier: id, contentType: type, submit: .done, minHeight: 56)
     }
 
     private func error(_ message: String) -> some View {
