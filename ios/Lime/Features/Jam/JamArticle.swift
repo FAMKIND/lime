@@ -143,7 +143,9 @@ struct JamArticleCover: View {
                 }
             }
         }
-        .aspectRatio(JamMedia.landscape, contentMode: .fit)
+        // Taller since the subtitle joined the title (LIME-215b): two thirds of a portrait (4:5) photo's height at the same width, about width x 0.83.
+        .frame(width: JamMedia.size(ratio: JamMedia.coverRatio, column: JamMedia.column, screenHeight: UIScreen.main.bounds.height).width,
+               height: JamMedia.size(ratio: JamMedia.coverRatio, column: JamMedia.column, screenHeight: UIScreen.main.bounds.height).height)
         .jamMediaClip()
         .accessibilityElement(children: .contain)
         .task {

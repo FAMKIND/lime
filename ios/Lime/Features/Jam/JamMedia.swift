@@ -8,6 +8,8 @@ enum JamMedia {
     static let gap: CGFloat = 12
     static let portrait: CGFloat = 4.0 / 5
     static let landscape: CGFloat = 16.0 / 9
+    /// An article cover card: 2/3 of the height of a portrait (4:5) photo of the same width (LIME-215b), so width ÷ height = 1.2.
+    static let coverRatio: CGFloat = 1.2
     /// A frame never gets wider than this (LIME-188y): on a phone held sideways the column is capped and centred on the text margin.
     static let maxColumn: CGFloat = 600
     /// ...nor taller than this share of the screen's height, so a 4:5 photo always fits in sight.

@@ -7694,3 +7694,11 @@ Decided (b). **One place decides the card:** `JamCardChoice.style(isRecording:re
 ## LIME-213 item 0 (no white ring on the default podcast cover) — DONE, own commit
 
 Both white outlines are deleted from `CoverArt`'s default cover in `JamAudio.swift` (the org's rounded tile and the profile circle), and the comment no longer mentions a ring. `grep -rn 'stroke(.white' ios/Lime/Features/Jam/JamAudio.swift` returns nothing. Nothing else draws a ring on the default cover: the mini player's thumbnail and the black player use the same `CoverArt` (so they lose it too), and there is no lock-screen artwork. (The remaining white strokes in `PodcastRecorder` are the record button.) Visual only: no test. The rest of 213 is recorded below when done.
+
+## LIME-215b — taller article cards; the org's writers in the editor and Post as — DONE
+
+- Article cover cards: aspect ratio 1.2 (`JamMedia.coverRatio`), i.e. height ≈ width × 0.83, two thirds of a 4:5 photo; feed, profiles and org pages share `JamArticleCover`.
+- Post as sheet: each org shows its tile with writers' circles (you + accepted co-authors across its posts, `ConversationStore.jamAuthors`), "You · Jean Chung" under the name, label "<org>, with you and …, selected". The editor chip (article, post, podcast) shows the same tile with you + co-authors, pending dimmed.
+- Tests: new `Jam215bUITests` (2), plus Jam188q/Jam201 re-run: 7 pass. No new unit tests.
+- Installed: 13mini: yes · iPad: yes · Jean: yes
+- For plot: nothing server-side; no new metadata.

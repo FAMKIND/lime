@@ -38,6 +38,8 @@ struct JamComposeSheet: View {
     @State private var recordMode: Int?
     @State private var chooser: Chooser?
     @State private var coauthors: [Person] = []
+    /// People asked who have not answered (shown dimmed on the org tile, LIME-215b).
+    @State private var pendingHosts: [Person] = []
     @State private var choosingCoauthors = false
     @State private var editingButton: Int?
     @State private var postingAs = false
@@ -137,6 +139,7 @@ struct JamComposeSheet: View {
                     // The post's own words, in its own layout (a recording shows its title, subtitle and description on the article page).
                     article = editing.kind != "quick"; title = editing.title; subtitle = editing.subtitle
                     postAsJam = editing.displayAs == "jam" ? editing.jamId : nil   // the chip starts on the post's current author (LIME-201)
+                    coauthors = Array(store.bylinePeople(editing).dropFirst()); pendingHosts = store.pendingCoauthors(editing)
                     // The post's own files keep their numbers; new pictures are numbered after them (LIME-195b).
                     articleFiles = store.jamAttachments(editing.postId).map { _ in OutgoingAttachment(bytes: Data(), name: "", mime: "image/jpeg", width: nil, height: nil, durationMs: nil, thumb: Data(), poster: Data()) }
                     try? await Task.sleep(for: .milliseconds(300))
@@ -242,7 +245,7 @@ struct JamComposeSheet: View {
         let name = jam?.title ?? store.meProvider().name
         return Button { postingAs = true } label: {
             HStack(spacing: 8) {
-                if let jam { JamInitialTile(title: jam.title, size: 32).accessibilityHidden(true) } else { AvatarView(person: store.meProvider(), size: 32).accessibilityHidden(true) }
+                if let jam { BylineAvatar(people: [store.meProvider()] + coauthors, jam: jam.title, size: 34, pending: pendingHosts).frame(width: 44, height: 34, alignment: .leading) } else { AvatarView(person: store.meProvider(), size: 32).accessibilityHidden(true) }
                 Text(name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
                 Image(systemName: "chevron.down").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.textSecondary)
             }
@@ -765,17 +768,18 @@ struct PostAsSheet: View {
                 ForEach(store.jamsMine, id: \.jamId) { jam in
                     Button { selection = jam.jamId; dismiss() } label: {
                         HStack(spacing: 12) {
-                            JamInitialTile(title: jam.title, size: 40).accessibilityHidden(true)
+                            // Its tile with its writers' circles at the bottom right, you included (LIME-215b).
+                            BylineAvatar(people: store.jamAuthors(jam.jamId), jam: jam.title, size: 44).frame(width: 52, height: 44, alignment: .leading)
                             VStack(alignment: .leading, spacing: 0) {
                                 Text(jam.title).font(Theme.body).foregroundStyle(Theme.text)
-                                Text("Your jam").font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                                Text((["You"] + store.jamAuthors(jam.jamId).dropFirst().map(\.name)).joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
                             }
                             Spacer()
                             if selection == jam.jamId { Image(systemName: "checkmark").foregroundStyle(Theme.text) }
                         }
                         .frame(minHeight: 48)
                     }
-                    .accessibilityLabel("\(jam.title), your jam\(selection == jam.jamId ? ", selected" : "")").accessibilityIdentifier("jam-post-as-jam-\(jam.jamId)")
+                    .accessibilityLabel("\(jam.title), with you\(store.jamAuthors(jam.jamId).count > 1 ? " and " + store.jamAuthors(jam.jamId).dropFirst().map(\.name).joined(separator: ", ") : "")\(selection == jam.jamId ? ", selected" : "")").accessibilityIdentifier("jam-post-as-jam-\(jam.jamId)")
                 }
                 Text("Posting as a school or a subject group comes later.").font(Theme.caption).foregroundStyle(Theme.textSecondary)
             }

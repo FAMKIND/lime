@@ -22,6 +22,7 @@ struct JamPodcastEditSheet: View {
     @State private var postAsJam: String?
     @State private var postingAs = false
     @State private var coauthors: [Person] = []
+    @State private var pendingHosts: [Person] = []
     @State private var choosingCoauthors = false
     @State private var picking = false
     @State private var saving = false
@@ -75,7 +76,7 @@ struct JamPodcastEditSheet: View {
             }
             .sheet(isPresented: $postingAs) { PostAsSheet(selection: $postAsJam) }
             .sheet(isPresented: $choosingCoauthors) { JamCoauthorPicker(selected: $coauthors, title: "Add co-hosts") }
-            .onAppear { if coauthors.isEmpty { coauthors = initialHosts.map { store.teacher($0) } } }
+            .onAppear { if coauthors.isEmpty { coauthors = initialHosts.map { store.teacher($0) } }; pendingHosts = store.pendingCoauthors(post) }
             .fullScreenCover(isPresented: $picking) {
                 MediaLibraryPicker(limit: 1, onPick: { images, _ in
                     picking = false
@@ -90,7 +91,7 @@ struct JamPodcastEditSheet: View {
         let name = jam?.title ?? store.meProvider().name
         return Button { postingAs = true } label: {
             HStack(spacing: 8) {
-                if let jam { JamInitialTile(title: jam.title, size: 32).accessibilityHidden(true) } else { AvatarView(person: store.meProvider(), size: 32).accessibilityHidden(true) }
+                if let jam { BylineAvatar(people: [store.meProvider()] + coauthors, jam: jam.title, size: 34, pending: pendingHosts).frame(width: 44, height: 34, alignment: .leading) } else { AvatarView(person: store.meProvider(), size: 32).accessibilityHidden(true) }
                 Text(name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
                 Image(systemName: "chevron.down").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.textSecondary)
             }

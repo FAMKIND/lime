@@ -206,3 +206,13 @@ extension ConversationStore {
         return await jamPage(of: post.author)
     }
 }
+
+
+extension ConversationStore {
+    /// The people who write a jam of mine: me (who made it) and anyone credited, accepted, on its posts (LIME-215b); for the Post as sheet's tile.
+    func jamAuthors(_ jamID: String) -> [Person] {
+        var ids: [String] = []
+        for post in posts(of: jamID) { for id in post.coauthors where !ids.contains(id) && id != meProvider().id { ids.append(id) } }
+        return [meProvider()] + ids.map { teacher($0) }
+    }
+}
