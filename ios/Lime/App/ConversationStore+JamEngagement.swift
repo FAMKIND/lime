@@ -100,15 +100,39 @@ extension ConversationStore {
         return counts.likers.compactMap { contacts[$0] }
     }
 
-    /// New comments on my posts, newest first (the Activity list).
-    func jamActivity() -> [(post: JamPostInfo, comment: JamCommentInfo)] {
-        let mine = jamsMine.flatMap { posts(of: $0.jamId) }
-        var out: [(JamPostInfo, JamCommentInfo)] = []
-        for post in mine {
-            for comment in jamComments(post.postId) where !comment.mine && comment.state == "published" { out.append((post, comment)) }
+    /// Activity of a person, from what this phone already has (LIME-189d): on **my own** profile all of mine (comments others made on my posts, and my
+    /// own likes, comments and replies); on **someone else's**, only what my own access lets me see: their comments and replies and their likes (from
+    /// the likers lists) on posts I can read (my own and the jams I follow). Newest first; computed here, nothing fetched.
+    func jamActivity(of userID: String? = nil) -> [JamActivityItem] {
+        let me = meProvider().id
+        let who = userID ?? me
+        let known = Dictionary(((jamsMine + jamSubscriptions).flatMap { posts(of: $0.jamId) } + coauthoredPosts).map { ($0.postId, $0) }, uniquingKeysWith: { a, _ in a })
+        var out: [JamActivityItem] = []
+        for post in known.values {
+            let counts = jamCounts(post.postId)
+            for comment in jamComments(post.postId) {
+                if comment.author == who {
+                    out.append(JamActivityItem(id: "c-" + comment.commentId, post: post, who: who, kind: comment.parentId == nil ? .commented : .replied, text: comment.text, date: comment.created))
+                } else if who == me && comment.state == "published" && isMyJamPost(post) {
+                    out.append(JamActivityItem(id: "n-" + comment.commentId, post: post, who: comment.author, kind: .commentedOnMine, text: comment.text, date: comment.created))
+                }
+            }
+            let liked = who == me ? counts.likedByMe : counts.likers.contains(who)
+            if liked { out.append(JamActivityItem(id: "l-" + post.postId, post: post, who: who, kind: .liked, text: "", date: post.created)) }
         }
-        return out.sorted { $0.1.created > $1.1.created }.prefix(30).map { (post: $0.0, comment: $0.1) }
+        return Array(out.sorted { $0.date > $1.date }.prefix(60))
     }
 
     func jamHasUnseen() -> Bool { jamsMine.flatMap { posts(of: $0.jamId) }.contains { jamCounts($0.postId).unseen } }
+}
+
+/// One line of Activity.
+struct JamActivityItem: Identifiable {
+    enum Kind { case commentedOnMine, commented, replied, liked }
+    let id: String
+    let post: JamPostInfo
+    let who: String
+    let kind: Kind
+    let text: String
+    let date: Int64
 }

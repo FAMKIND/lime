@@ -119,7 +119,7 @@ struct ProfileView: View {
                 case .articles: JamProfilePosts(posts: ownPosts.filter { $0.kind == "article" }, locked: false)
                 case .podcasts: JamProfilePosts(posts: ownPosts.filter { $0.kind == "record" }, locked: false)
                 case .orgs: JamOrgsSection(orgs: orgs, isMe: route.isMe)
-                case .activity: if route.isMe && !store.jamActivity().isEmpty { JamActivityList() } else { emptySection("Nothing here yet.", id: "activity") }
+                case .activity: JamActivityList(userID: route.userID, isMe: route.isMe)
                 case .shared: shared
                 case .calls: callsList
                 }

@@ -6,6 +6,8 @@ import SwiftUI
 /// (Replying to the writer comes with LIME-189.)
 struct JamPostView: View {
     let postID: String
+    /// Open scrolled to the comments (LIME-189d).
+    var toComments = false
     @Environment(ConversationStore.self) private var store
 
     @AppStorage(ReaderPrefs.fontKey) private var fontRaw = ReaderFont.newYork.rawValue
@@ -19,7 +21,7 @@ struct JamPostView: View {
         let post = store.jamPost(postID)
         Group {
             if post?.kind == "article" {
-                JamArticlePage(postID: postID)
+                JamArticlePage(postID: postID, toComments: toComments)
             } else {
                 quickReader(post)
             }
@@ -31,7 +33,7 @@ struct JamPostView: View {
     private func quickReader(_ post: JamPostInfo?) -> some View {
         let face = ReaderFont(rawValue: fontRaw) ?? .newYork
         let size = ReaderPrefs.points(forStep: sizeStep)
-        return ScrollView {
+        return ScrollViewReader { proxy in ScrollView {
             if let post {
                 let writer = store.teacher(post.author)
                 VStack(alignment: .leading, spacing: 14) {
@@ -70,11 +72,13 @@ struct JamPostView: View {
                         // Anything the text does not place (a quick post's photos, a recording) comes after it.
                         JamAttachmentsView(postID: post.postId, skipping: JamInline.placed(in: post.markdown))
                     }
-                    if post.state == "ready" { JamEngagementSection(post: post) }
+                    if post.state == "ready" { JamEngagementSection(post: post).id("comments") }
                 }
                 .padding(20)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+        }
+        .task { if toComments { try? await Task.sleep(for: .milliseconds(400)); withAnimation { proxy.scrollTo("comments", anchor: .top) } } }
         }
         .background(Theme.canvas)
         .environment(\.postContext, PostContext(post: post))

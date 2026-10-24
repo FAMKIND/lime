@@ -230,6 +230,8 @@ struct JamVideoScreen: View {
     @State private var showsControls = true
     @State private var hideTask: Task<Void, Never>?
     @State private var textOpen = false
+    /// The comments under the player (LIME-189d), on black.
+    @State private var commenting = false
     @State private var sharing = false
     @State private var transcript = false
     @State private var current: (postID: String, file: JamAttachmentInfo, controller: PodcastController)?
@@ -266,7 +268,18 @@ struct JamVideoScreen: View {
                     }
                     if let post { writerAndText(post) }
                     timeline(item.controller)
-                    JamActionPill(dark: true, share: { sharing = true }, postID: item.postID)
+                    Button { commenting = true } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "bubble.left").accessibilityHidden(true)
+                            let n = store.jamCounts(item.postID).comments
+                            Text(n > 0 ? "Comments \u{00B7} \(n)" : "Comments").font(Theme.font(.subheadline, weight: .semibold))
+                            Spacer()
+                            Image(systemName: "chevron.up").font(.system(size: 12, weight: .bold)).accessibilityHidden(true)
+                        }
+                        .foregroundStyle(.white.opacity(0.85)).frame(minHeight: 44).contentShape(Rectangle())
+                    }
+                    .accessibilityLabel(store.jamCounts(item.postID).comments > 0 ? "Comments, \(store.jamCounts(item.postID).comments)" : "Comments").accessibilityIdentifier("jam-player-comments")
+                    JamActionPill(dark: true, share: { sharing = true }, postID: item.postID, comment: { commenting = true })
                 }
                 .padding(.horizontal, 20).padding(.bottom, 10)
             }
@@ -277,6 +290,13 @@ struct JamVideoScreen: View {
         }
         .preferredColorScheme(.dark)
         .gesture(DragGesture(minimumDistance: 30).onEnded { if $0.translation.height > 120, abs($0.translation.width) < 80, !textOpen { close() } })
+        .sheet(isPresented: $commenting) {
+            if let post {
+                ScrollView { JamEngagementSection(post: post, dark: true).padding(20) }
+                    .background(Color.black.ignoresSafeArea()).preferredColorScheme(.dark).presentationDetents([.medium, .large])
+                    .accessibilityIdentifier("jam-player-comments-sheet")
+            }
+        }
         .onAppear { item.controller.muted = false; if !isAudio { scheduleHide() } }
         .onChange(of: active.controller.atEnd) { _, ended in if ended, !isAudio { advance() } }
         .sheet(isPresented: $sharing) { if let post { JamShareSheet(post: post) } }

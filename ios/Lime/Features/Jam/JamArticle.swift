@@ -183,6 +183,8 @@ enum ArticleSegments {
 /// The reading page of an article (LIME-188p).
 struct JamArticlePage: View {
     let postID: String
+    /// Open scrolled to the comments (LIME-189d).
+    var toComments = false
     @Environment(ConversationStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -202,6 +204,8 @@ struct JamArticlePage: View {
     @State private var query = ""
     @State private var matchIndex = 0
     @State private var scrollTarget: String?
+    /// The comment field has the keyboard: the action pill steps aside.
+    @State private var typing = false
     @State private var editingPost: JamPostInfo?
 
     private var font: ReaderFont { ReaderFont(rawValue: fontRaw) ?? .newYork }
@@ -223,7 +227,8 @@ struct JamArticlePage: View {
                     .onPreferenceChange(ArticleOffsetKey.self) { track($0, false) }
                     .onPreferenceChange(ArticleHeadEndKey.self) { headEnd = $0 }
                     .modifier(ArticleScrollTracking(track: track))
-                    .onChange(of: scrollTarget) { _, id in if let id { withAnimation { proxy.scrollTo(id, anchor: .center) } } }
+                    .onChange(of: scrollTarget) { _, id in if let id { withAnimation { proxy.scrollTo(id, anchor: id == "comments" ? .top : .center) } } }
+                    .task { if toComments { try? await Task.sleep(for: .milliseconds(500)); scrollTarget = "comments" } }
                 }
                 .padding(.top, 0)
                 topBar(post)
@@ -234,9 +239,9 @@ struct JamArticlePage: View {
             // The actions slide down with the bar as you read, and come back as you scroll up (LIME-188z); they stay in the accessibility tree.
             if let post {
                 JamActionPill(share: { sharing = true }, postID: post.postId, comment: { scrollTarget = "comments" }).padding(.horizontal, 48).padding(.bottom, 6).accessibilityIdentifier("jam-article-pill-\(post.postId)")
-                    .offset(y: barHidden && !reduceMotion ? 120 : 0)
-                    .opacity(barHidden ? 0 : 1)
-                    .allowsHitTesting(!barHidden)
+                    .offset(y: (barHidden || typing) && !reduceMotion ? 120 : 0)
+                    .opacity(barHidden || typing ? 0 : 1)
+                    .allowsHitTesting(!(barHidden || typing))
                     .animation(reduceMotion ? .linear(duration: 0.15) : .easeOut(duration: 0.2), value: barHidden)
             }
         }
@@ -343,7 +348,7 @@ struct JamArticlePage: View {
             .padding(16).background(Theme.surface.opacity(0.6), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             .accessibilityElement(children: .contain).accessibilityIdentifier("jam-article-jam-card")
             // Likes, comments and the place to write one (LIME-189c).
-            JamEngagementSection(post: post).id("comments")
+            JamEngagementSection(post: post, typing: $typing).id("comments")
         }
         .padding(.top, 24)
     }

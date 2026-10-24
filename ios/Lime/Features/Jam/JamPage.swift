@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// Where a jam post or the subscribers list is pushed on the jam tab.
-struct JamPostRoute: Hashable { let postID: String }
+/// `toComments`: open the post scrolled to its comments (LIME-189d), with nothing in focus.
+struct JamPostRoute: Hashable { let postID: String; var toComments = false }
 struct JamSubscribersRoute: Hashable { let jamID: String }
 
 /// The jam tab (LIME-188b): one feed of the posts of the teachers you follow and your own, newest first, as cards; a **+** (the same floating button
@@ -24,7 +25,7 @@ struct JamPage: View {
                 .overlay { FloatingPlus(label: "New post", id: "new-jam-post") { composing = true } }
                 .navigationDestination(for: ProfileRoute.self) { ProfileView(route: $0) }
                 .navigationDestination(for: SharedListRoute.self) { SharedListView(route: $0) }
-                .navigationDestination(for: JamPostRoute.self) { JamPostView(postID: $0.postID) }
+                .navigationDestination(for: JamPostRoute.self) { JamPostView(postID: $0.postID, toComments: $0.toComments) }
                 .navigationDestination(for: JamSubscribersRoute.self) { JamSubscribersView(jamID: $0.jamID) }
                 .navigationDestination(isPresented: Binding(get: { store.jamSearching }, set: { store.jamSearching = $0 })) {
                     Text("Nothing to search in jam yet.")
@@ -198,7 +199,7 @@ struct JamPostCard: View {
     /// An audio recording's card carries its own title and subtitle (LIME-188u).
     private var isAudioRecord: Bool { post.kind == "record" && post.state == "ready" && store.jamAttachments(post.postId).contains { $0.kind == "audio" } }
 
-    private func openPost() { if let open { open(post.postId) } else { store.jamPath.append(JamPostRoute(postID: post.postId)) } }
+    private func openPost(toComments: Bool = false) { if let open { open(post.postId) } else { store.jamPath.append(JamPostRoute(postID: post.postId, toComments: toComments)) } }
 
     @ViewBuilder
     private var content: some View {
@@ -235,7 +236,7 @@ struct JamPostCard: View {
         // Four equal columns across the card (LIME-188y).
         HStack(spacing: 0) {
             JamHeartButton(postID: post.postId)
-            JamCommentCount(postID: post.postId) { openPost() }
+            JamCommentCount(postID: post.postId) { openPost(toComments: true) }
             // Remix and Share wait (LIME-189b); they are drawn dimmed and do nothing yet.
             ForEach([("arrow.2.squarepath", "remix"), ("square.and.arrow.up", "share")], id: \.1) { icon, label in
                 Image(systemName: icon).font(.system(size: 18)).frame(maxWidth: .infinity, minHeight: 44)

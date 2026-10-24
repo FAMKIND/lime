@@ -46,6 +46,10 @@ enum Theme {
     static let primary = color(Name.primary)
     static let primaryInk = color(Name.primaryInk)
     static let accent = color(Name.accent)
+    /// A filled heart (LIME-189d): the buttons' Red (docs: `ButtonPalette.red`): #B3261E in light, #FFB4AB in dark; on a black screen always the light one.
+    static let heartHex: (light: UInt32, dark: UInt32) = (0xB3261E, 0xFFB4AB)
+    static let heart = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: heartHex.dark) : UIColor(hex: heartHex.light) })
+    static let heartOnBlack = Color(UIColor(hex: heartHex.dark))
     static let accentInk = color(Name.accentInk)
     static let ownBubble = primary
     static let ownBubbleInk = primaryInk
@@ -112,4 +116,10 @@ enum Theme {
 extension View {
     /// Text fields show the system's blue selection and caret, whatever tint the screen around them has.
     func selectionTint() -> some View { tint(Theme.selection) }
+}
+
+extension UIColor {
+    convenience init(hex: UInt32) {
+        self.init(red: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255, blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
+    }
 }
