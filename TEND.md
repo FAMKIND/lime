@@ -7528,3 +7528,13 @@ Following the ⚑ that supersedes items 1 and 3: **the header is as before the j
 - Tests: core `an_edit_can_add_and_remove_pictures…` (two pictures, one block removed, one added, one added but unused: the list is right on both phones, numbers closed up, a bad number refused, the server holds one file out and one in) and `an_edit_and_a_delete_reach_a_co_author_who_accepted` (a copy replaced and then removed); **core: 320 pass**; `Jam195UITests` (the demo edit flow) pass. Not tried: adding a picture inside the app's editor by hand (the picker is not driven in the demo test); a quick post's photo row is still not editable.
 **Installed (Debug build, first try, one install for 195b and 188z together; the tree holds both):** 13 mini yes, iPad yes, Jean's 12 mini yes.
 **For plot:** none.
+
+## LIME-188z (reading an article: the dock and actions hide on scroll, the org in the pill, the Options sheet) — committed with this record
+
+1. **Hide on scroll:** scrolling down in an article hides the top bar (as before), **the action pill** (slides down and fades, not touchable while hidden) and **the dock** (`toolbar(.hidden, for: .tabBar)`); scrolling up shows all three; **at the end of the article they show** (the scroll position is read from the scroll view). Reduce Motion: a fade only. They stay in the accessibility tree.
+2. The action pill as glass: done in 198.
+3. **The title pill for a post shown as an org:** the org's tile (the picture comes with 194; for now the initial tile with the writer's circle on its corner, from 188w) and its **name as the first line**, the article's title on the second line (my proposal: the byline is already in the pill's VoiceOver label "<title>, by <org · people>"); a person's article is as in 188w. "View jam" in Options reads "View org" for such a post.
+4. **Options sheet:** already tightened in 199 (44 pt rows, 16 pt sides, compact gaps, medium/large); Edit first for your own post; the order is Search, Display settings, Listen, View jam/org, Save, Print or save as PDF, Share in lime, Hide post, Delete post for your own. Nothing further changed here.
+- Tests (rule 12): `Jam188zUITests` (scroll down: the like button and the dock are not hittable; scroll up: the pill is back); `Jam188w/195` regression pass. The pill's org lines and the end-of-article show are not UI-tested (visual): the user's check. Not done: screenshots. (The action pill's buttons lose their ids under the page's own id; the test finds them by label.)
+**Installed:** the same build as 195b (one install of the tree with both): 13 mini yes, iPad yes, Jean's 12 mini yes.
+**For plot:** none.

@@ -220,7 +220,7 @@ struct JamArticlePage: View {
                         .frame(maxWidth: 680).frame(maxWidth: .infinity)
                     }
                     .coordinateSpace(name: "jam-article-scroll")
-                    .onPreferenceChange(ArticleOffsetKey.self) { track($0) }
+                    .onPreferenceChange(ArticleOffsetKey.self) { track($0, false) }
                     .onPreferenceChange(ArticleHeadEndKey.self) { headEnd = $0 }
                     .modifier(ArticleScrollTracking(track: track))
                     .onChange(of: scrollTarget) { _, id in if let id { withAnimation { proxy.scrollTo(id, anchor: .center) } } }
@@ -231,8 +231,18 @@ struct JamArticlePage: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if let post { JamActionPill(share: { sharing = true }).padding(.horizontal, 48).padding(.bottom, 6).accessibilityIdentifier("jam-article-pill-\(post.postId)") }
+            // The actions slide down with the bar as you read, and come back as you scroll up (LIME-188z); they stay in the accessibility tree.
+            if let post {
+                JamActionPill(share: { sharing = true }).padding(.horizontal, 48).padding(.bottom, 6).accessibilityIdentifier("jam-article-pill-\(post.postId)")
+                    .offset(y: barHidden && !reduceMotion ? 120 : 0)
+                    .opacity(barHidden ? 0 : 1)
+                    .allowsHitTesting(!barHidden)
+                    .animation(reduceMotion ? .linear(duration: 0.15) : .easeOut(duration: 0.2), value: barHidden)
+            }
         }
+        // ...and the dock goes with them.
+        .toolbar(barHidden ? .hidden : .automatic, for: .tabBar)
+        .animation(.easeOut(duration: 0.2), value: barHidden)
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .onAppear { store.refreshJams() }
@@ -371,8 +381,14 @@ struct JamArticlePage: View {
         let label = HStack(spacing: 8) {
             BylineAvatar(people: people, jam: asJam ? store.jamTitle(post.jamId) : nil, size: 32)
             VStack(alignment: .leading, spacing: 0) {
-                Text(post.title).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
-                Text(words).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                if asJam {
+                    // Posted as an org: its name first, like a group's header, then the article's title (LIME-188z).
+                    Text(store.jamTitle(post.jamId)).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
+                    Text(post.title).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                } else {
+                    Text(post.title).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
+                    Text(words).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                }
             }
             Spacer(minLength: 0)
         }
@@ -407,10 +423,11 @@ struct JamArticlePage: View {
     }
 
     /// Down hides the bar, up brings it back (only visually: it stays in the accessibility tree).
-    private func track(_ now: CGFloat) {
+    private func track(_ now: CGFloat, _ atEnd: Bool) {
         offset = now
         let delta = now - lastOffset
-        if now > 80, delta > 8 { barHidden = true; lastOffset = now }
+        if atEnd { barHidden = false; lastOffset = now }   // at the end of the article everything shows
+        else if now > 80, delta > 8 { barHidden = true; lastOffset = now }
         else if delta < -8 || now <= 80 { barHidden = false; lastOffset = now }
         else if abs(delta) > 30 { lastOffset = now }
     }
@@ -450,10 +467,13 @@ struct JamArticlePage: View {
 
 /// Scroll position from the scroll view itself (iOS 18 and later; the preference below is what older systems use): the bar hides as you read down.
 private struct ArticleScrollTracking: ViewModifier {
-    let track: (CGFloat) -> Void
+    let track: (CGFloat, Bool) -> Void
+    private struct Snap: Equatable { var y: CGFloat; var atEnd: Bool }
     func body(content: Content) -> some View {
         if #available(iOS 18, *) {
-            content.onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y + $0.contentInsets.top } action: { _, y in track(y) }
+            content.onScrollGeometryChange(for: Snap.self) { g in
+                Snap(y: g.contentOffset.y + g.contentInsets.top, atEnd: g.contentOffset.y + g.containerSize.height >= g.contentSize.height - 40)
+            } action: { _, snap in track(snap.y, snap.atEnd) }
         } else { content }
     }
 }
@@ -572,7 +592,7 @@ struct ReaderOptionsSheet: View {
                 row("magnifyingglass", "Search in post", id: "options-search") { find() }
                 row("textformat.size", "Display settings", chevron: true, id: "options-display") { openDisplay() }
                 row(ArticleSpeaker.shared.active ? "speaker.slash" : "headphones", ArticleSpeaker.shared.active ? "Stop listening" : "Listen", id: "options-listen") { listen() }
-                row("person.crop.circle", "View jam", chevron: true, id: "options-viewjam") {
+                row("person.crop.circle", post.displayAs == "jam" ? "View org" : "View jam", chevron: true, id: "options-viewjam") {
                     let writer = store.teacher(post.author)
                     dismiss()
                     store.openProfile(ProfileRoute(userID: writer.id, name: writer.name, isMe: writer.id == store.meProvider().id))
