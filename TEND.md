@@ -7690,3 +7690,7 @@ Decided (b). **One place decides the card:** `JamCardChoice.style(isRecording:re
 - Tests (rule 12): core `the_writer_sees_who_was_asked_and_has_not_answered`; `Jam215UITests` (tapping the empty space of a row and the line under the name open the post, the name opens the profile; a profile's Articles card shows the writer row with "with Lee Wong", the authors' picture, and the cover's subtitle; an org post's name opens the org's page); the earlier card, tab and pill suites (`Jam188b/i/q/t/w/d`, `Jam189c`, `Jam199`, `Jam212b`) re-run: pass. Not asserted: three circles on an org tile with two accepted co-authors (visual; the demo post has them): your check.
 **Installed (Debug build, first try):** 13 mini yes, iPad yes, Jean's 12 mini yes.
 **For plot:** none.
+
+## LIME-213 item 0 (no white ring on the default podcast cover) — DONE, own commit
+
+Both white outlines are deleted from `CoverArt`'s default cover in `JamAudio.swift` (the org's rounded tile and the profile circle), and the comment no longer mentions a ring. `grep -rn 'stroke(.white' ios/Lime/Features/Jam/JamAudio.swift` returns nothing. Nothing else draws a ring on the default cover: the mini player's thumbnail and the black player use the same `CoverArt` (so they lose it too), and there is no lock-screen artwork. (The remaining white strokes in `PodcastRecorder` are the record button.) Visual only: no test. The rest of 213 is recorded below when done.
