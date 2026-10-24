@@ -339,7 +339,6 @@ struct JamVideoScreen: View {
                 if let post, post.author == store.meProvider().id {
                     Section {
                         Button { editingPost = post } label: { Label("Edit", systemImage: "pencil") }.accessibilityIdentifier("jam-video-edit")
-                        Button(role: .destructive) { confirmingDelete = true } label: { Label("Delete post", systemImage: "trash") }.accessibilityIdentifier("jam-video-delete")
                     }
                 }
                 Section {
@@ -354,6 +353,11 @@ struct JamVideoScreen: View {
                 }
                 Section {
                     Button { hide(post) } label: { Label("Hide post", systemImage: "eye.slash") }.accessibilityIdentifier("jam-video-hide")
+                }
+                if let post, post.author == store.meProvider().id {
+                    Section {
+                        Button(role: .destructive) { confirmingDelete = true } label: { Label("Delete post", systemImage: "trash") }.accessibilityIdentifier("jam-video-delete")
+                    }
                 }
             } label: {
                 Image(systemName: "ellipsis").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white).frame(width: 44, height: 44).background(.white.opacity(0.16), in: Circle())

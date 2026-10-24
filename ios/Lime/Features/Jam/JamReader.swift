@@ -92,8 +92,8 @@ struct JamPostView: View {
             if let post, post.author == store.meProvider().id {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
-                        Button { editingPost = post } label: { Label("Edit", systemImage: "pencil") }.accessibilityIdentifier("options-edit")
-                        Button(role: .destructive) { confirmingDelete = true } label: { Label("Delete post", systemImage: "trash") }.accessibilityIdentifier("options-delete")
+                        Section { Button { editingPost = post } label: { Label("Edit", systemImage: "pencil") }.accessibilityIdentifier("options-edit") }
+                        Section { Button(role: .destructive) { confirmingDelete = true } label: { Label("Delete post", systemImage: "trash") }.accessibilityIdentifier("options-delete") }
                     } label: { Image(systemName: "ellipsis") }
                         .accessibilityLabel("More").accessibilityIdentifier("jam-post-more")
                 }

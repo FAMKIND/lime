@@ -11,8 +11,8 @@ enum JamPlayed {
     }
 }
 
-/// The ⋯ at the top right of every card (LIME-199): a compact system menu, groups separated: **yours** (Edit, Delete), **share**, **playback** for a
-/// recording (Play now, Play next, Add to queue, Mark as played), **keep** (Save), and for someone else's post **Hide post**. No Copy link (posts are
+/// The ⋯ at the top right of every card (LIME-199): a compact system menu, groups separated: **share** (with Edit when it is yours), **playback** for a
+/// recording (Play now, Play next, Add to queue, Mark as played), **keep** (Save), for someone else's post **Hide post**, and last, alone, **Delete** (yours). No Copy link (posts are
 /// end-to-end encrypted: there is no public link until LIME-190), no Like until LIME-189.
 struct JamPostMenu: View {
     let post: JamPostInfo
@@ -29,13 +29,8 @@ struct JamPostMenu: View {
         let played = JamPlayed.contains(post.postId)
         let playable = post.kind == "record" && post.state == "ready" && NowPlaying.shared.makeItem(for: post, store: store) != nil
         Menu {
-            if mine {
-                Section {
-                    Button { editing = post } label: { Label("Edit", systemImage: "pencil") }.accessibilityIdentifier("card-edit")
-                    Button(role: .destructive) { confirmingDelete = true } label: { Label("Delete", systemImage: "trash") }.accessibilityIdentifier("card-delete")
-                }
-            }
             Section {
+                if mine { Button { editing = post } label: { Label("Edit", systemImage: "pencil") }.accessibilityIdentifier("card-edit") }
                 Button { sharing = true } label: { Label("Share in lime\u{2026}", systemImage: "square.and.arrow.up") }.accessibilityIdentifier("card-share")
             }
             if playable {
@@ -54,6 +49,12 @@ struct JamPostMenu: View {
             if !mine {
                 Section {
                     Button { store.hideJamPost(post.postId) } label: { Label("Hide post", systemImage: "eye.slash") }.accessibilityIdentifier("card-hide")
+                }
+            }
+            // Delete is last, alone in its group (LIME-218).
+            if mine {
+                Section {
+                    Button(role: .destructive) { confirmingDelete = true } label: { Label("Delete", systemImage: "trash") }.accessibilityIdentifier("card-delete")
                 }
             }
         } label: {

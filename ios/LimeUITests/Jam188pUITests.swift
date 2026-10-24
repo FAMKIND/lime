@@ -19,7 +19,8 @@ final class Jam188pUITests: LimeUITestCase {
         for id in ["options-search", "options-display", "options-listen", "options-viewjam", "options-save", "options-print", "options-share", "options-hide"] {
             XCTAssertTrue(any(app, id).waitForExistence(timeout: 3), id)
         }
-        XCTAssertFalse(app.buttons["Report"].exists, "Report waits for LIME-191")
+        XCTAssertTrue(any(app, "options-report").exists, "Report is last, inert until LIME-191")
+        XCTAssertEqual(any(app, "options-title").label, "Equivalent fractions in ten minutes", "the title under Options (LIME-218)")
         any(app, "options-display").tap()
         let lexend = any(app, "reader-font-lexend")
         XCTAssertTrue(lexend.waitForExistence(timeout: 5))

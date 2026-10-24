@@ -599,63 +599,84 @@ struct ReaderOptionsSheet: View {
     @State private var saved = false
     @State private var confirmingDelete = false
 
+    @State private var reportSoon = false
+
     var body: some View {
-        NavigationStack {
-            List {
-                if post.author == store.meProvider().id {
-                    row("pencil", "Edit", id: "options-edit") { dismiss(); Task { try? await Task.sleep(for: .milliseconds(500)); edit() } }   // after the sheet has gone
+        let mine = post.author == store.meProvider().id
+        VStack(spacing: 0) {
+            // Like Substack's: "Options" in bold with the post's title under it and a round close at the right (LIME-218).
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Options").font(Theme.font(.title3, weight: .bold)).foregroundStyle(Theme.text).accessibilityAddTraits(.isHeader)
+                    Text(post.title).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(2)
+                        .accessibilityIdentifier("options-title")
                 }
-                row("magnifyingglass", "Search in post", id: "options-search") { find() }
-                row("textformat.size", "Display settings", chevron: true, id: "options-display") { openDisplay() }
-                row(ArticleSpeaker.shared.active ? "speaker.slash" : "headphones", ArticleSpeaker.shared.active ? "Stop listening" : "Listen", id: "options-listen") { listen() }
-                row("person.crop.circle", post.displayAs == "jam" ? "View org" : "View jam", chevron: true, id: "options-viewjam") {
-                    let writer = store.teacher(post.author)
-                    dismiss()
-                    store.openProfile(ProfileRoute(userID: writer.id, name: writer.name, isMe: writer.id == store.meProvider().id))
+                Spacer(minLength: 0)
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark").font(.system(size: 14, weight: .bold)).foregroundStyle(Theme.text)
+                        .frame(width: 44, height: 44).background(Theme.surface, in: Circle())
                 }
-                row(saved ? "bookmark.fill" : "bookmark", saved ? "Saved \u{2713}" : "Save", id: "options-save") { JamSaved.toggle(post.postId); saved = JamSaved.contains(post.postId) }
-                row("printer", "Print or save as PDF", id: "options-print") { Task { await ArticlePrint.present(post, store: store) } }
-                row("square.and.arrow.up", "Share in lime\u{2026}", id: "options-share") { sharing = true }
-                if post.author != store.meProvider().id {
-                    row("paperplane", "Reply privately", id: "options-private") { dismiss(); Task { await store.messageWriter(post.author) } }
-                }
-                row("eye.slash", "Hide post", id: "options-hide") { dismiss(); hide() }
-                if post.author == store.meProvider().id {
-                    row("trash", "Delete post", id: "options-delete") { confirmingDelete = true }
-                }
-                // Report: hidden until LIME-191. No "Download" (posts are already on the phone, encrypted), no "Scan for AI text" (it would send the
-                // text to a model), no "Copy link" (there is no public link until LIME-190).
+                .accessibilityLabel("Close").accessibilityIdentifier("options-close")
             }
-            .listStyle(.insetGrouped)
-            // Tighter (LIME-199): 44 pt rows, 16 pt sides, small gaps between groups.
-            .environment(\.defaultMinListRowHeight, 44)
-            .listSectionSpacing(.compact)
-            .navigationTitle("Options").navigationBarTitleDisplayMode(.inline)
-            .safeAreaInset(edge: .top) {
-                Text(post.title).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(1).padding(.horizontal, 20)
+            .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 8)
+            Divider()
+            ScrollView {
+                VStack(spacing: 0) {
+                    row("magnifyingglass", "Search in post", id: "options-search") { find() }
+                    row("textformat.size", "Display settings", chevron: true, id: "options-display") { openDisplay() }
+                    row(ArticleSpeaker.shared.active ? "speaker.slash" : "headphones", ArticleSpeaker.shared.active ? "Stop listening" : "Listen", id: "options-listen") { listen() }
+                    row("person.crop.circle", post.displayAs == "jam" ? "View org" : "View jam", chevron: true, id: "options-viewjam") {
+                        let writer = store.teacher(post.author)
+                        dismiss()
+                        store.openProfile(ProfileRoute(userID: writer.id, name: writer.name, isMe: writer.id == store.meProvider().id))
+                    }
+                    row(saved ? "bookmark.fill" : "bookmark", saved ? "Saved \u{2713}" : "Save", id: "options-save") { JamSaved.toggle(post.postId); saved = JamSaved.contains(post.postId) }
+                    row("printer", "Print or save as PDF", id: "options-print") { Task { await ArticlePrint.present(post, store: store) } }
+                    row("square.and.arrow.up", "Share in lime\u{2026}", id: "options-share") { sharing = true }
+                    if !mine {
+                        row("paperplane", "Reply privately", id: "options-private") { dismiss(); Task { await store.messageWriter(post.author) } }
+                    }
+                    Divider().padding(.vertical, 6)
+                    if mine {
+                        row("pencil", "Edit", id: "options-edit") { dismiss(); Task { try? await Task.sleep(for: .milliseconds(500)); edit() } }   // after the sheet has gone
+                    } else {
+                        row("eye.slash", "Hide post", id: "options-hide") { dismiss(); hide() }
+                    }
+                    if mine {
+                        row("trash", "Delete post", id: "options-delete", destructive: true) { confirmingDelete = true }
+                    } else {
+                        row("flag", reportSoon ? "Report \u{00B7} coming soon" : "Report", id: "options-report", destructive: true) { reportSoon = true }
+                    }
+                    // No "Download" (posts are already on the phone, encrypted), no "Scan for AI text" (it would send the text to a model),
+                    // no "Copy link" (there is no public link until LIME-190).
+                }
+                .padding(.bottom, 12)
             }
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { Image(systemName: "xmark") }.accessibilityLabel("Close") } }
-            .sheet(isPresented: $sharing) { JamShareSheet(post: post) }
-            .confirmationDialog("Delete this post?", isPresented: $confirmingDelete, titleVisibility: .visible) {
-                Button("Delete post", role: .destructive) { Task { _ = await store.deleteJamPost(post.postId); dismiss(); deleted() } }.accessibilityIdentifier("options-delete-confirm")
-                Button("Cancel", role: .cancel) {}
-            } message: { Text("It goes from your subscribers' phones too.") }
-            .onAppear { saved = JamSaved.contains(post.postId) }
         }
+        .background(Theme.canvas)
+        .sheet(isPresented: $sharing) { JamShareSheet(post: post) }
+        .confirmationDialog("Delete this post?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("Delete post", role: .destructive) { Task { _ = await store.deleteJamPost(post.postId); dismiss(); deleted() } }.accessibilityIdentifier("options-delete-confirm")
+            Button("Cancel", role: .cancel) {}
+        } message: { Text("It goes from your subscribers' phones too.") }
+        .onAppear { saved = JamSaved.contains(post.postId) }
         .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 
-    private func row(_ symbol: String, _ title: String, chevron: Bool = false, id: String, action: @escaping () -> Void) -> some View {
+    private func row(_ symbol: String, _ title: String, chevron: Bool = false, id: String, destructive: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 14) {
-                Image(systemName: symbol).font(.system(size: 18)).frame(width: 28).foregroundStyle(Theme.text)
-                Text(title).font(Theme.body).foregroundStyle(Theme.text)
+            HStack(spacing: 16) {
+                Image(systemName: symbol).font(.system(size: 20)).frame(width: 28).foregroundStyle(destructive ? Color.red : Theme.text)
+                Text(title).font(Theme.body).foregroundStyle(destructive ? Color.red : Theme.text).multilineTextAlignment(.leading)
                 Spacer()
                 if chevron { Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.textSecondary) }
             }
-            .frame(minHeight: 44)
+            .padding(.horizontal, 20).frame(minHeight: 56)
+            .contentShape(Rectangle())
         }
-        .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+        .buttonStyle(.plain)
+        .accessibilityHint(chevron ? "Opens" : "")
         .accessibilityIdentifier(id)
     }
 
