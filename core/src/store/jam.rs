@@ -733,11 +733,11 @@ pub(crate) fn version(conn: &Connection, post_id: &str) -> Result<i64, StoreErro
 /// A subscriber takes a newer version of a post: its words are fetched again from the new blob. Only the post's own writer, in its own jam and tier,
 /// and only a higher version than the one held. `false` if it was not applied.
 #[allow(clippy::too_many_arguments)] // one column each
-pub(crate) fn apply_edit(conn: &Connection, post_id: &str, jam_id: &str, author: &str, tier: &str, version: i64, title: &str, subtitle: &str, blob: &BlobRef, edited_at: i64) -> Result<bool, StoreError> {
+pub(crate) fn apply_edit(conn: &Connection, post_id: &str, jam_id: &str, author: &str, tier: Option<&str>, version: i64, title: &str, subtitle: &str, blob: &BlobRef, edited_at: i64) -> Result<bool, StoreError> {
     let n = conn
         .execute(
             "UPDATE jam_posts SET title = ?6, subtitle = ?7, blob_id = ?8, blob_key = ?9, blob_sha = ?10, blob_size = ?11, fetched = 0, version = ?5, edited_at = ?12
-             WHERE post_id = ?1 AND jam_id = ?2 AND author = ?3 AND tier = ?4 AND version < ?5 AND deleted_at IS NULL",
+             WHERE post_id = ?1 AND jam_id = ?2 AND author = ?3 AND (?4 IS NULL OR tier = ?4) AND version < ?5 AND deleted_at IS NULL",
             params![post_id, jam_id, author, tier, version, title, subtitle, blob.blob_id, blob.key, blob.sha256, blob.size, edited_at],
         )
         .map_err(db_err)?;

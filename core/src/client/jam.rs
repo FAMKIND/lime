@@ -492,14 +492,16 @@ impl LimeStore {
         Ok(post_id)
     }
 
-    /// Edits a post I published (LIME-195): its words are sealed into a **new blob** under the same post id (version + 1), uploaded by the next pass,
-    /// then announced to the subscribers in the post's session, who download it and replace the post in place; its date stays. The post's files do not
-    /// change (an image block still names the same files); who it is shown as and its co-authors stay. The old blob is released on the server.
-    pub fn edit_jam_post(&self, post_id: String, title: String, subtitle: String, markdown: String) -> Result<(), StoreError> {
+    /// Edits a post I published (LIME-195, 195b): its words are sealed into a **new blob** under the same post id (version + 1), uploaded by the next
+    /// pass, then announced to the subscribers (and sent to the people credited on it), who download it and replace the post in place; its date stays.
+    /// `added` are new files for an article's text: they take the numbers after the existing files, and only the ones the new text uses are kept.
+    /// A picture whose block the new text no longer has is dropped from the post's files (its blob released, the later numbers closed up, its captions
+    /// with it). Who it is shown as and its co-authors stay. The old blob is released on the server.
+    pub fn edit_jam_post(&self, post_id: String, title: String, subtitle: String, markdown: String, added: Vec<OutgoingAttachment>) -> Result<(), StoreError> {
         let state = self.load_or_create_account()?;
         self.registered_user(&state)?;
         let markdown = crate::format::normalise_post(&markdown);
-        if markdown.len() > jam_store::MAX_POST_BYTES {
+        if markdown.len() > jam_store::MAX_POST_BYTES || added.iter().any(|a| a.bytes.is_empty() || a.bytes.len() > MAX_ATTACHMENT_BYTES || !a.mime.contains('/')) {
             return Err(StoreError::Rejected);
         }
         self.with_conn(|conn| {
@@ -514,28 +516,111 @@ impl LimeStore {
                 if row.kind == "article" && title.is_empty() {
                     return Err(StoreError::Rejected);
                 }
-                let attachments: Value = serde_json::from_str(&row.attachments).unwrap_or(Value::Array(vec![]));
-                let file_count = attachments.as_array().map_or(0, Vec::len);
-                if (markdown.is_empty() && file_count == 0)
-                    || crate::format::parse_post(&markdown).iter().any(|b| matches!(b, crate::format::Block::Image { attachment, .. } if *attachment as usize >= file_count))
-                {
+                let old: Vec<Value> = serde_json::from_str::<Value>(&row.attachments).ok().and_then(|v| v.as_array().cloned()).unwrap_or_default();
+                let old_count = old.len();
+                let used = |text: &str| -> std::collections::BTreeSet<u32> {
+                    crate::format::parse_post(text).iter().filter_map(|b| if let crate::format::Block::Image { attachment, .. } = b { Some(*attachment) } else { None }).collect()
+                };
+                let (was, now_used) = (used(&row.markdown), used(&markdown));
+                if now_used.iter().any(|n| *n as usize >= old_count + added.len()) {
                     return Err(StoreError::Rejected);
                 }
+                // Which old files go: the pictures this text had and no longer has (an article only), and the captions of those.
+                let mut dropped: std::collections::BTreeSet<usize> = if row.kind == "article" { was.difference(&now_used).map(|n| *n as usize).filter(|n| *n < old_count).collect() } else { Default::default() };
+                for (i, value) in old.iter().enumerate() {
+                    if let Some(n) = value.get("name").and_then(Value::as_str).and_then(crate::captions::caption_target) {
+                        if dropped.contains(&(n as usize)) {
+                            dropped.insert(i);
+                        }
+                    }
+                }
+                // The new list: the old files that stay, then the added ones that the text uses; image numbers are rewritten to match.
+                let mut map: std::collections::BTreeMap<u32, u32> = Default::default();
+                let mut kept: Vec<Value> = Vec::new();
+                for (i, value) in old.iter().enumerate() {
+                    if !dropped.contains(&i) {
+                        map.insert(i as u32, kept.len() as u32);
+                        kept.push(value.clone());
+                    }
+                }
+                // Captions follow their media to its new number.
+                for value in kept.iter_mut() {
+                    if let Some(n) = value.get("name").and_then(Value::as_str).and_then(crate::captions::caption_target) {
+                        if let Some(new) = map.get(&n) {
+                            value["name"] = json!(crate::captions::caption_name(*new));
+                        }
+                    }
+                }
+                let mut new_files: Vec<(String, Vec<u8>, String, i64)> = Vec::new();
+                for (j, file) in added.iter().enumerate() {
+                    let number = (old_count + j) as u32;
+                    if !now_used.contains(&number) {
+                        continue;
+                    }
+                    let id = new_id();
+                    let key = crate::store::attachments::new_key();
+                    let sealed = crate::store::attachments::seal(&key, &id, &file.bytes).concat();
+                    let (hash, size) = (crate::store::attachments::digest_hex(&sealed), sealed.len() as i64);
+                    let descriptor = crate::store::attachments::Descriptor {
+                        id: id.clone(),
+                        key,
+                        digest: crate::store::attachments::digest_hex(&file.bytes),
+                        size: file.bytes.len() as u64,
+                        mime: file.mime.clone(),
+                        name: file.name.clone(),
+                        width: file.width,
+                        height: file.height,
+                        duration_ms: file.duration_ms,
+                        thumb: file.thumb.clone(),
+                        poster: file.poster.clone(),
+                    };
+                    let mut value = descriptor.to_json();
+                    value["blob_sha"] = json!(hash);
+                    value["blob_size"] = json!(size);
+                    crate::store::attachments::Descriptor::parse(&value).ok_or(StoreError::Rejected)?;
+                    map.insert(number, kept.len() as u32);
+                    kept.push(value);
+                    new_files.push((id, file.bytes.clone(), hash, size));
+                }
+                if kept.len() > crate::store::attachments::MAX_PER_MESSAGE {
+                    return Err(StoreError::Rejected);
+                }
+                let blocks: Vec<crate::format::Block> = crate::format::parse_post(&markdown)
+                    .into_iter()
+                    .map(|b| match b {
+                        crate::format::Block::Image { caption, attachment } => crate::format::Block::Image { caption, attachment: map.get(&attachment).copied().unwrap_or(attachment) },
+                        other => other,
+                    })
+                    .collect();
+                let markdown = if now_used.is_empty() { markdown } else { crate::format::normalise_post(&crate::format::serialize_post(&blocks)) };
+                if markdown.is_empty() && kept.is_empty() {
+                    return Err(StoreError::Rejected);
+                }
+                let attachments = Value::Array(kept);
                 let version = jam_store::version(conn, &post_id)? + 1;
                 let now = now_ms();
                 let blob_id = new_id();
                 let key = crate::store::attachments::new_key();
                 let sealed = crate::store::attachments::seal(&key, &blob_id, &post_plaintext(&post_id, &row.jam_id, &row.tier, &row.kind, &title, &subtitle, &markdown, &attachments, row.created, &row.display_as));
                 let [ciphertext] = <[Vec<u8>; 1]>::try_from(sealed).map_err(|_| StoreError::Rejected)?;
-                let old: Option<String> = conn.query_row("SELECT blob_id FROM jam_posts WHERE post_id = ?1", params![post_id], |r| r.get(0)).map_err(db_err)?;
+                let old_blob: Option<String> = conn.query_row("SELECT blob_id FROM jam_posts WHERE post_id = ?1", params![post_id], |r| r.get(0)).map_err(db_err)?;
                 conn.execute(
-                    "UPDATE jam_posts SET title = ?2, subtitle = ?3, markdown = ?4, plain = ?5, blob_id = ?6, blob_key = ?7, blob_sha = ?8, blob_size = ?9, uploaded = 0, edit_pending = 1, version = ?10, edited_at = ?11
+                    "UPDATE jam_posts SET title = ?2, subtitle = ?3, markdown = ?4, plain = ?5, attachments = ?12, blob_id = ?6, blob_key = ?7, blob_sha = ?8, blob_size = ?9, uploaded = 0, edit_pending = 1, version = ?10, edited_at = ?11
                      WHERE post_id = ?1",
-                    params![post_id, title, subtitle, markdown, crate::format::plain_text_post(&markdown), blob_id, vodozemac::base64_encode(&key), crate::store::attachments::digest_hex(&ciphertext), ciphertext.len() as i64, version, now],
+                    params![post_id, title, subtitle, markdown, crate::format::plain_text_post(&markdown), blob_id, vodozemac::base64_encode(&key), crate::store::attachments::digest_hex(&ciphertext), ciphertext.len() as i64, version, now, attachments.to_string()],
                 )
                 .map_err(db_err)?;
-                if let Some(old) = old {
-                    jam_store::queue_blob_delete(conn, &old)?;
+                for i in &dropped {
+                    if let Some(id) = old.get(*i).and_then(|v| v.get("id")).and_then(Value::as_str) {
+                        jam_store::queue_blob_delete(conn, id)?;
+                        conn.execute("DELETE FROM jam_attachments WHERE post_id = ?1 AND att_id = ?2", params![post_id, id]).map_err(db_err)?;
+                    }
+                }
+                for (id, plain, hash, size) in &new_files {
+                    jam_store::insert_attachment(conn, &post_id, id, &row.jam_id, hash, *size, plain)?;
+                }
+                if let Some(old_blob) = old_blob {
+                    jam_store::queue_blob_delete(conn, &old_blob)?;
                 }
                 jam_store::mark_page_dirty(conn, &row.jam_id)?;
                 Ok(())
@@ -570,6 +655,10 @@ impl LimeStore {
                 jam_store::apply_delete(conn, &post_id, &row.jam_id, &row.author, now)?;
                 conn.execute("UPDATE jam_posts SET edit_pending = 0 WHERE post_id = ?1", params![post_id]).map_err(db_err)?;
                 jam_store::mark_page_dirty(conn, &row.jam_id)?;
+                for user in jam_store::credits_in_state(conn, &post_id, "accepted")? {
+                    let op = signed_op(conn, &state, "jam.coauthor.delete", &row.jam_id, None, json!({ "jam_id": row.jam_id, "post_id": post_id }), now)?;
+                    queue_op(conn, &row.jam_id, &user, &op)?;
+                }
                 self.announce_post_op(conn, &state, &me, &row.jam_id, &row.tier, "jam.delete", json!({ "post_id": post_id }), now)
             })
         })
@@ -911,6 +1000,34 @@ impl LimeStore {
                 .map_err(db_err)?;
                 Ok(())
             }
+            // The writer edited or deleted a post I am credited on (195b): only from the writer who asked me, for a credit I accepted.
+            "jam.coauthor.edit" | "jam.coauthor.delete" => {
+                let Some(post_id) = op.payload.get("post_id").and_then(Value::as_str).filter(|p| !p.is_empty() && p.len() <= 64) else { return Ok(()) };
+                let writer: Option<String> = conn
+                    .query_row("SELECT writer FROM jam_credit_requests WHERE post_id = ?1 AND jam_id = ?2 AND state = 'accepted'", params![post_id, jam_id], |r| r.get(0))
+                    .optional()
+                    .map_err(db_err)?;
+                if writer.as_deref() != Some(sender) || sender == me {
+                    return Ok(());
+                }
+                if op.op_type == "jam.coauthor.delete" {
+                    jam_store::apply_delete(conn, post_id, jam_id, sender, now)?;
+                    return Ok(());
+                }
+                let text = |k: &str| op.payload.get(k).and_then(Value::as_str);
+                let version = op.payload.get("version").and_then(Value::as_i64).filter(|v| *v >= 2);
+                let (Some(version), Some(title), Some(subtitle), Some(blob)) = (
+                    version,
+                    jam_store::clean_optional_line(text("title").unwrap_or_default(), jam_store::MAX_POST_TITLE_CHARS),
+                    jam_store::clean_optional_line(text("subtitle").unwrap_or_default(), jam_store::MAX_SUBTITLE_CHARS),
+                    blob_text_to_ref(&op.payload),
+                ) else {
+                    return Ok(());
+                };
+                let edited = op.payload.get("edited_at").and_then(Value::as_i64).unwrap_or(now).min(now);
+                jam_store::apply_edit(conn, post_id, jam_id, sender, None, version, &title, &subtitle, &blob, edited)?;
+                Ok(())
+            }
             // The person I asked answers: an accepted credit is announced to my subscribers.
             "jam.coauthor.reply" => {
                 let Some(_jam) = jam.filter(|j| j.mine) else { return Ok(()) };
@@ -1057,7 +1174,14 @@ impl LimeStore {
                         .query_row("SELECT blob_id, blob_key, blob_sha, blob_size, version, title, subtitle, COALESCE(edited_at, 0) FROM jam_posts WHERE post_id = ?1", params![post_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?)))
                         .map_err(db_err)?;
                     let payload = json!({ "post_id": post_id, "version": version, "title": title, "subtitle": subtitle, "edited_at": edited_at, "blob_id": blob_id, "key": key, "sha256": sha, "size": size });
-                    self.announce_post_op(conn, state, &me, &jam_id, &tier, "jam.edit", payload, now)?;
+                    self.announce_post_op(conn, state, &me, &jam_id, &tier, "jam.edit", payload.clone(), now)?;
+                    // The people credited on it keep a copy: it is sent to them directly too (195b).
+                    let mut with_jam = payload;
+                    with_jam["jam_id"] = json!(jam_id);
+                    for user in jam_store::credits_in_state(conn, &post_id, "accepted")? {
+                        let op = signed_op(conn, state, "jam.coauthor.edit", &jam_id, None, with_jam.clone(), now)?;
+                        queue_op(conn, &jam_id, &user, &op)?;
+                    }
                     conn.execute("UPDATE jam_posts SET edit_pending = 0 WHERE post_id = ?1", params![post_id]).map_err(db_err)?;
                     Ok(())
                 })
@@ -1185,7 +1309,7 @@ impl LimeStore {
                 jam_store::save_inbound(conn, &self.pickle_key, session_id, &inbound)?;
                 match &edit {
                     Some((version, title, subtitle, blob, edited_at)) => {
-                        jam_store::apply_edit(conn, post_id, &inbound.jam_id, &author, &inbound.tier, *version, title, subtitle, blob, *edited_at)?;
+                        jam_store::apply_edit(conn, post_id, &inbound.jam_id, &author, Some(&inbound.tier), *version, title, subtitle, blob, *edited_at)?;
                     }
                     None => {
                         jam_store::apply_delete(conn, post_id, &inbound.jam_id, &author, now)?;

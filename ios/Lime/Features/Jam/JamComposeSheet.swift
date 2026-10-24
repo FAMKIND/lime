@@ -136,6 +136,8 @@ struct JamComposeSheet: View {
                 if let editing {
                     // The post's own words, in its own layout (a recording shows its title, subtitle and description on the article page).
                     article = editing.kind != "quick"; title = editing.title; subtitle = editing.subtitle
+                    // The post's own files keep their numbers; new pictures are numbered after them (LIME-195b).
+                    articleFiles = store.jamAttachments(editing.postId).map { _ in OutgoingAttachment(bytes: Data(), name: "", mime: "image/jpeg", width: nil, height: nil, durationMs: nil, thumb: Data(), poster: Data()) }
                     try? await Task.sleep(for: .milliseconds(300))
                     composer.textView?.attributedText = ComposerDocument.attributed(fromMarkdown: editing.markdown, post: true); composer.didEdit()
                     return
@@ -667,11 +669,14 @@ struct JamComposeSheet: View {
     /// Update: the words go to the post in place (its pictures keep the numbers the text already has).
     private func update() {
         guard let editing, !posting else { return }
-        let markdown = composer.markdown()
+        let existing = store.jamAttachments(editing.postId).count
+        // An article keeps its pictures' numbers as they stand (the core closes up the gaps); the new files are the ones after the old.
+        let markdown = article ? (composer.textView.map { ComposerDocument.markdown(from: $0.textStorage, post: true) } ?? composer.markdown()) : composer.markdown()
+        let added = article && articleFiles.count > existing ? Array(articleFiles[existing...]) : []
         problem = nil
         posting = true
         Task {
-            let result = await store.editJamPost(editing, title: title, subtitle: subtitle, markdown: markdown)
+            let result = await store.editJamPost(editing, title: title, subtitle: subtitle, markdown: markdown, added: added)
             posting = false
             if result { dismiss() } else { problem = "Could not update the post." }
         }
