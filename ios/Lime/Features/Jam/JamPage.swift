@@ -27,6 +27,11 @@ struct JamPage: View {
                 .navigationDestination(for: SharedListRoute.self) { SharedListView(route: $0) }
                 .navigationDestination(for: JamPostRoute.self) { JamPostView(postID: $0.postID, toComments: $0.toComments) }
                 .navigationDestination(for: JamSubscribersRoute.self) { JamSubscribersView(jamID: $0.jamID) }
+                .navigationDestination(for: Conversation.ID.self) { id in ChatView(conversationID: id).toolbar(.hidden, for: .tabBar) }
+                .navigationDestination(for: ChatTarget.self) { target in
+                    ChatView(conversationID: target.conversationID, focusMessageID: target.messageID, focusWords: target.words).toolbar(.hidden, for: .tabBar)
+                }
+                .navigationDestination(for: ThreadTarget.self) { target in ThreadView(target: target).toolbar(.hidden, for: .tabBar) }
                 .navigationDestination(isPresented: Binding(get: { store.jamSearching }, set: { store.jamSearching = $0 })) {
                     MessageSearchScreen(jamFirst: true)
                 }

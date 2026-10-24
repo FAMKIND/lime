@@ -254,6 +254,12 @@ struct ProfileView: View {
     /// Top right (LIME-213, 221). Your own: Edit, Settings, ⋯. Someone else's: Message, Voice, Video, ⋯.
     @ToolbarContentBuilder
     private var toolbarItems: some ToolbarContent {
+        if #available(iOS 26, *) { modernItems } else { legacyItems }
+    }
+
+    /// Before iOS 26: the same buttons in one group (no separate glass bubbles).
+    @ToolbarContentBuilder
+    private var legacyItems: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarTrailing) {
             if route.isMe {
                 Button { settingsLaunch = SettingsLaunch(start: .profile) } label: { Image(systemName: "pencil") }
@@ -263,12 +269,41 @@ struct ProfileView: View {
             } else if accepted {
                 Button { store.openFromNotification("dm:\(route.userID)", thread: nil) } label: { Image(systemName: "message") }
                     .accessibilityLabel("Message \(displayName)").accessibilityIdentifier("profile-message")
-                Button { Task { _ = await store.calls.start(peerID: route.userID, name: displayName, video: false) } } label: { Image(systemName: "phone") }
-                    .accessibilityLabel("Voice call").accessibilityIdentifier("profile-voice")
-                Button { Task { _ = await store.calls.start(peerID: route.userID, name: displayName, video: true) } } label: { Image(systemName: "video") }
-                    .accessibilityLabel("Video call").accessibilityIdentifier("profile-video")
+                CallMenuButton(name: displayName, id: "profile-call", style: .toolbar,
+                               voice: { Task { _ = await store.calls.start(peerID: route.userID, name: displayName, video: false) } },
+                               video: { Task { _ = await store.calls.start(peerID: route.userID, name: displayName, video: true) } })
             }
             moreMenu
+        }
+    }
+
+    @available(iOS 26, *)
+    @ToolbarContentBuilder
+    private var modernItems: some ToolbarContent {
+        if route.isMe {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button { settingsLaunch = SettingsLaunch(start: .profile) } label: { Image(systemName: "pencil") }
+                    .accessibilityLabel("Edit profile").accessibilityIdentifier("profile-edit")
+                Button { settingsLaunch = SettingsLaunch(start: nil) } label: { Image(systemName: "gearshape") }
+                    .accessibilityLabel("Settings").accessibilityIdentifier("profile-settings")
+                moreMenu
+            }
+        } else if accepted {
+            // Three separate bubbles (LIME-224): Message · Call (Voice or Video) · More.
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { store.openFromNotification("dm:\(route.userID)", thread: nil) } label: { Image(systemName: "message") }
+                    .accessibilityLabel("Message \(displayName)").accessibilityIdentifier("profile-message")
+            }
+            ToolbarSpacer(.fixed, placement: .topBarTrailing)
+            ToolbarItem(placement: .topBarTrailing) {
+                CallMenuButton(name: displayName, id: "profile-call", style: .toolbar,
+                               voice: { Task { _ = await store.calls.start(peerID: route.userID, name: displayName, video: false) } },
+                               video: { Task { _ = await store.calls.start(peerID: route.userID, name: displayName, video: true) } })
+            }
+            ToolbarSpacer(.fixed, placement: .topBarTrailing)
+            ToolbarItem(placement: .topBarTrailing) { moreMenu }
+        } else {
+            ToolbarItem(placement: .topBarTrailing) { moreMenu }
         }
     }
 

@@ -7765,3 +7765,13 @@ Both white outlines are deleted from `CoverArt`'s default cover in `JamAudio.swi
 - What each party learns: nothing new; the index is on the phone, inside the encrypted database.
 - Tests: new `Search223UITests` (2), Search205, TabBar re-run (jam no longer shows "nothing to search"): pass.
 - Installed: 13mini: yes · iPad: yes · Jean: yes
+
+## LIME-224 — one call button everywhere (Voice or Video), and separate profile bubbles — DONE
+
+- One shared control, `CallMenuButton` (the `video` icon; a tap offers Voice call · Video call via the existing `CallChoiceRows`; "Call <name>", 44 pt). Used by the chat header (was `phone`), the profile header, New call's people and groups, and the Search screen's Calls section. In-call controls, history rows' type icons, the call tab's dock icon and Settings are unchanged.
+- Someone else's profile (iOS 26): three separate glass bubbles, 💬 · 🎥 · ⋯, with fixed gaps between them; before iOS 26 they share one group. Your own keeps ✎ ⚙ ⋯ in one group.
+- The call tab's magnifier now opens the one Search (`MessageSearchScreen(callsFirst: true)`): **Calls** first (matching people, each with the call control, then matching recent calls), then People · Chats · Messages · jam. The old `CallSearchScreen` is removed; its test moved to the Calls section. The call and jam stacks gained the chat destinations so a chat or message result opens from there.
+- Ids changed: `profile-voice/-video` → `profile-call-button`; `new-call-voice/video-<id>` → `new-call-<id>-button`; `calls-search-voice/video-<id>` → `calls-search-<id>-button`; menu items `…-voice` / `…-video` stay.
+- Tests: new `Call224UITests` (4); CallsTab, Profile, Search223, TabBar re-run: pass (43, 1 skipped as before).
+- Installed: 13mini: yes · iPad: yes · Jean: yes
+- For plot: a person who matches under Calls is not repeated under People on the call tab's search.

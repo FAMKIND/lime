@@ -22,7 +22,7 @@ final class ProfileUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["profile-handle"].label, "@sam.park")
         XCTAssertEqual(app.staticTexts["profile-school-line"].label, "\u{1F3EB} Lincoln Elementary", "the school on its own line")
         XCTAssertTrue(app.staticTexts["profile-status"].exists, "the status they shared")
-        XCTAssertTrue(app.buttons["profile-message"].exists && app.buttons["profile-voice"].exists && app.buttons["profile-video"].exists)
+        XCTAssertTrue(app.buttons["profile-message"].exists && app.buttons["profile-call-button"].exists)
         XCTAssertTrue(app.staticTexts["profile-about"].label.contains("fractions"), "About")
         XCTAssertTrue(app.buttons["profile-handle"].exists && app.buttons["profile-label"].exists, "the details card")
     }
@@ -197,7 +197,7 @@ final class Profile213UITests: LimeUITestCase {
         let subscribe = app.buttons["profile-jam-subscribe"]
         XCTAssertTrue(subscribe.waitForExistence(timeout: 10))
         let more = app.buttons["profile-more"]
-        for id in ["profile-message", "profile-voice", "profile-video"] {
+        for id in ["profile-message", "profile-call-button"] {
             let b = app.buttons[id]
             XCTAssertTrue(b.exists, id)
             XCTAssertLessThan(b.frame.midY, 120, "\(id) is in the header")

@@ -251,85 +251,6 @@ struct CallHistoryView: View {
     }
 }
 
-/// The call tab's search (pushed, like Messages' search): people you can call, and matching calls.
-struct CallSearchScreen: View {
-    @Environment(ConversationStore.self) private var store
-    @Environment(\.dismiss) private var dismiss
-    @State private var query = ""
-    @FocusState private var focused: Bool
-    private let log = CallLog.shared
-
-    private var typed: String { query.trimmingCharacters(in: .whitespaces) }
-    private var people: [KnownTeacher] {
-        KnownTeachers.sections(KnownTeachers.from(store.conversations).filter { $0.id != store.selfChatID }, filter: typed).flatMap(\.teachers)
-    }
-    private var groups: [CallGroup] {
-        CallGrouping.groups(log.records.filter { $0.peerName.localizedCaseInsensitiveContains(typed) })
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            SearchHeader(placeholder: "Search people and calls", query: $query, focused: $focused) { dismiss() }
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    if typed.isEmpty {
-                        Text("Search for someone to call, or a call you made or missed.")
-                            .font(Theme.body).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
-                            .frame(maxWidth: .infinity).padding(.top, 60).padding(.horizontal, 24)
-                            .accessibilityIdentifier("calls-search-hint")
-                    } else if people.isEmpty && groups.isEmpty {
-                        Text("No results for “\(typed)”")
-                            .font(Theme.body).foregroundStyle(Theme.textSecondary)
-                            .frame(maxWidth: .infinity).padding(.top, 60)
-                            .accessibilityIdentifier("calls-search-none")
-                    } else {
-                        if !people.isEmpty {
-                            title("People")
-                            ForEach(people) { teacher in
-                                HStack(spacing: 8) {
-                                    TeacherRow(person: teacher.person, showsStatus: false)
-                                        .onTapGesture { store.callPath.append(ProfileRoute(userID: teacher.person.id, name: teacher.person.name)) }
-                                    circle("phone", "Voice call \(teacher.person.name)", id: "calls-search-voice-\(teacher.person.id)") { start(teacher, video: false) }
-                                    circle("video", "Video call \(teacher.person.name)", id: "calls-search-video-\(teacher.person.id)") { start(teacher, video: true) }
-                                }
-                                .padding(.trailing, 16)
-                            }
-                        }
-                        if !groups.isEmpty {
-                            title("Calls")
-                            ForEach(groups) { group in CallRowView(group: group) }
-                        }
-                    }
-                }
-                .padding(.bottom, 24)
-            }
-            .scrollDismissesKeyboard(.immediately)
-            .accessibilityIdentifier("calls-search-results")
-        }
-        .background(Theme.canvas.ignoresSafeArea())
-        .toolbar(.hidden, for: .navigationBar)
-        .toolbar(.hidden, for: .tabBar)
-        .swipeBackEnabled()
-        .onAppear { focused = true }
-    }
-
-    private func title(_ text: String) -> some View {
-        Text(text).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.textSecondary)
-            .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 4).accessibilityAddTraits(.isHeader)
-    }
-
-    private func circle(_ symbol: String, _ label: String, id: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 16)).foregroundStyle(Theme.text)
-                .frame(width: 40, height: 40).overlay(Circle().stroke(Theme.textSecondary.opacity(0.5), lineWidth: 1))
-        }
-        .buttonStyle(.plain).accessibilityLabel(label).accessibilityIdentifier(id)
-    }
-
-    private func start(_ teacher: KnownTeacher, video: Bool) {
-        Task { _ = await store.calls.start(peerID: teacher.person.id, name: teacher.person.name, video: video) }
-    }
-}
 
 /// New Call (modelled on Signal's): find someone by username, or pick an accepted contact, A to Z, and call by voice or video. The search
 /// field sits at the bottom.
@@ -389,8 +310,7 @@ struct NewCallSheet: View {
                                 ForEach(section.teachers) { teacher in
                                     HStack(spacing: 8) {
                                         TeacherRow(person: teacher.person)
-                                        circle("phone", "Voice call \(teacher.person.name)", id: "new-call-voice-\(teacher.person.id)") { call(teacher, video: false) }
-                                        circle("video", "Video call \(teacher.person.name)", id: "new-call-video-\(teacher.person.id)") { call(teacher, video: true) }
+                                        CallMenuButton(name: teacher.person.name, id: "new-call-\(teacher.person.id)", voice: { call(teacher, video: false) }, video: { call(teacher, video: true) })
                                     }
                                     .padding(.trailing, 28)
                                 }
@@ -404,8 +324,7 @@ struct NewCallSheet: View {
                                     HStack(spacing: 8) {
                                         Text(group.title).font(Theme.body).foregroundStyle(Theme.text).lineLimit(1)
                                             .frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 20)
-                                        circle("phone", "Voice call \(group.title)", id: "new-call-group-voice-\(group.id)") { callGroup(group, video: false) }
-                                        circle("video", "Video call \(group.title)", id: "new-call-group-video-\(group.id)") { callGroup(group, video: true) }
+                                        CallMenuButton(name: group.title, id: "new-call-group-\(group.id)", voice: { callGroup(group, video: false) }, video: { callGroup(group, video: true) })
                                     }
                                     .frame(minHeight: 56)
                                     .padding(.trailing, 28)

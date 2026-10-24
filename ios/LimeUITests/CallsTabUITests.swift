@@ -49,7 +49,7 @@ final class CallsTabUITests: XCTestCase {
         // The picture is the way to the details (LIME-170): the row itself calls back.
         app.buttons.matching(identifier: "call-row-avatar").firstMatch.tap()
         XCTAssertTrue(any(app, "profile-screen").waitForExistence(timeout: 5), "the avatar opens the profile")
-        XCTAssertTrue(app.buttons["profile-message"].exists && app.buttons["profile-voice"].exists && app.buttons["profile-video"].exists)
+        XCTAssertTrue(app.buttons["profile-message"].exists && app.buttons["profile-call-button"].exists)
         XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "profile-call-line").count, 2, "both missed calls are listed on the Calls section")
         XCTAssertFalse(app.tabBars.firstMatch.isHittable, "the tab bar hides in the profile, as in a chat")
     }
@@ -115,7 +115,7 @@ final class CallsTabUITests: XCTestCase {
         let field = app.textFields["new-call-field"]
         XCTAssertTrue(field.exists)
         XCTAssertGreaterThan(field.frame.midY, app.windows.firstMatch.frame.height * 0.6, "the search field is at the bottom")
-        XCTAssertTrue(app.buttons["new-call-voice-lee"].exists && app.buttons["new-call-video-lee"].exists, "voice and video for each contact")
+        XCTAssertTrue(app.buttons["new-call-lee-button"].exists && !app.buttons["new-call-voice-lee"].exists, "one call button for each contact")
     }
 
     func testThePlusOnLinkStillOpensNewMessageAndIs64PointsClearOfTheTabBar() {
@@ -173,7 +173,7 @@ final class CallsTabUITests: XCTestCase {
         XCTAssertFalse(any(app, "status-badge-sam").exists)
         // New Call is the one place they are back: someone you are about to call, with their status.
         app.buttons["new-call-button"].tap()
-        XCTAssertTrue(app.buttons["new-call-voice-lee"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["new-call-lee-button"].waitForExistence(timeout: 5))
         XCTAssertTrue(any(app, "status-badge-lee").waitForExistence(timeout: 5), "status badges are back in New Call")
     }
 
@@ -198,8 +198,7 @@ final class CallsTabUITests: XCTestCase {
         let field = app.textFields["search-field"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.typeText("lee")
-        XCTAssertTrue(app.buttons["calls-search-voice-lee"].waitForExistence(timeout: 5), "People: Lee, with call buttons")
-        XCTAssertTrue(app.buttons["calls-search-video-lee"].exists)
+        XCTAssertTrue(app.buttons["calls-search-lee-button"].waitForExistence(timeout: 5), "Calls: Lee, with the one call button")
         XCTAssertTrue(app.buttons.matching(identifier: "call-history-row").firstMatch.exists, "Calls: Lee's history rows")
         XCTAssertFalse(app.staticTexts["Sam Park"].exists, "only matches")
         app.buttons["search-back"].tap()

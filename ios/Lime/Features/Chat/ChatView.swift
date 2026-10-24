@@ -659,7 +659,7 @@ struct ChatView: View {
     private func callMenu(_ conversation: Conversation) -> some View {
         Menu {
             CallChoiceRows(voice: { startCall(conversation, video: false) }, video: { startCall(conversation, video: true) }, idPrefix: "chat-call")
-        } label: { ToolIconLabel(symbol: "phone") }
+        } label: { ToolIconLabel(symbol: "video") }
             .accessibilityLabel("Call")
             .accessibilityIdentifier("chat-call-button")
     }
@@ -1388,6 +1388,33 @@ struct CallChoiceRows: View {
             .accessibilityIdentifier("\(idPrefix)-voice")
         Button(action: video) { Label("Video call", systemImage: "video") }
             .accessibilityIdentifier("\(idPrefix)-video")
+    }
+}
+
+/// The one "start a call" control (LIME-224): the camera icon; a tap offers Voice call or Video call. The chat header's menu, profiles, New call
+/// and Search all use it.
+struct CallMenuButton: View {
+    enum Style { case toolbar, circle }
+    let name: String
+    let id: String
+    var style: Style = .circle
+    let voice: () -> Void
+    let video: () -> Void
+
+    var body: some View {
+        Menu {
+            CallChoiceRows(voice: voice, video: video, idPrefix: id)
+        } label: {
+            switch style {
+            case .toolbar: Image(systemName: "video")
+            case .circle:
+                Image(systemName: "video").font(.system(size: 16)).foregroundStyle(Theme.text)
+                    .frame(width: 40, height: 40).overlay(Circle().stroke(Theme.textSecondary.opacity(0.5), lineWidth: 1))
+                    .frame(width: 44, height: 44).contentShape(Rectangle())
+            }
+        }
+        .accessibilityLabel("Call \(name)")
+        .accessibilityIdentifier("\(id)-button")
     }
 }
 

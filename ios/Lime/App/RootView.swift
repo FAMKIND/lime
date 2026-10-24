@@ -133,7 +133,12 @@ private struct SignedInView: View {
     private func callTab(path: Binding<NavigationPath>) -> some View {
         NavigationStack(path: path) {
             CallHistoryView().callMiniPlayerInset()
-                .navigationDestination(for: CallSearchRoute.self) { _ in CallSearchScreen().callMiniPlayerInset() }
+                .navigationDestination(for: CallSearchRoute.self) { _ in MessageSearchScreen(callsFirst: true).callMiniPlayerInset() }
+                .navigationDestination(for: Conversation.ID.self) { id in ChatView(conversationID: id).toolbar(.hidden, for: .tabBar) }
+                .navigationDestination(for: ChatTarget.self) { target in
+                    ChatView(conversationID: target.conversationID, focusMessageID: target.messageID, focusWords: target.words).toolbar(.hidden, for: .tabBar)
+                }
+                .navigationDestination(for: ThreadTarget.self) { target in ThreadView(target: target).toolbar(.hidden, for: .tabBar) }
                 .navigationDestination(for: GroupTarget.self) { target in
                     GroupDetailsView(target: target).callMiniPlayerInset().toolbar(.hidden, for: .tabBar)
                 }

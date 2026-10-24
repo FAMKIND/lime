@@ -10,6 +10,8 @@ struct MessageSearchScreen: View {
     /// People (LIME-205): the exact lookup runs only when the person presses it, never on a keystroke.
     /// Opened from jam, its posts come first (LIME-223).
     var jamFirst = false
+    /// Opened from the call tab: a Calls section comes first (people to call, then matching recent calls) (LIME-224).
+    var callsFirst = false
     @State private var lookup = TeacherLookup()
     @State private var inviting = false
     @State private var query = ""
@@ -94,7 +96,7 @@ struct MessageSearchScreen: View {
         let typed = !query.trimmingCharacters(in: .whitespaces).isEmpty
         if typed {
             sectionTitle("People")
-            ForEach(people, id: \.id) { person in
+            ForEach(callsFirst ? [] : people, id: \.id) { person in
                 Button { store.openProfile(ProfileRoute(userID: person.id, name: person.name, isMe: false)) } label: {
                     HStack(spacing: 12) {
                         AvatarView(person: person, size: 44).accessibilityHidden(true)
@@ -157,13 +159,15 @@ struct MessageSearchScreen: View {
                     .accessibilityIdentifier("search-invite")
             }
             .frame(maxWidth: .infinity).padding(.top, 60).padding(.horizontal, 24)
-        } else if results.isEmpty && searched == query {
+        } else if results.isEmpty && searched == query && callPeople.isEmpty && callGroups.isEmpty {
+            callsSection
             peopleSection
             Text("No results for “\(query.trimmingCharacters(in: .whitespaces))”")
                 .font(Theme.body).foregroundStyle(Theme.textSecondary)
                 .frame(maxWidth: .infinity).padding(.top, 30)
                 .accessibilityIdentifier("search-none")
         } else {
+            callsSection
             if jamFirst { jamSection }
             peopleSection
             if !results.chats.isEmpty {
@@ -198,6 +202,41 @@ struct MessageSearchScreen: View {
                 }
             }
             if !jamFirst { jamSection }
+        }
+    }
+
+    // MARK: Calls (LIME-224)
+
+    private var callPeople: [Person] { callsFirst ? people : [] }
+    private var callGroups: [CallGroup] {
+        let typed = query.trimmingCharacters(in: .whitespaces)
+        guard callsFirst, !typed.isEmpty else { return [] }
+        return CallGrouping.groups(CallLog.shared.records.filter { $0.peerName.localizedCaseInsensitiveContains(typed) })
+    }
+
+    /// From the call tab: the people you can call, each with the one call control, then the calls that match.
+    @ViewBuilder
+    private var callsSection: some View {
+        if !callPeople.isEmpty || !callGroups.isEmpty {
+            sectionTitle("Calls")
+            ForEach(callPeople, id: \.id) { person in
+                HStack(spacing: 8) {
+                    Button { store.openProfile(ProfileRoute(userID: person.id, name: person.name, isMe: false)) } label: {
+                        HStack(spacing: 12) {
+                            AvatarView(person: person, size: 44).accessibilityHidden(true)
+                            Text(person.name).font(Theme.title).foregroundStyle(Theme.text).lineLimit(1)
+                            Spacer(minLength: 0)
+                        }
+                        .frame(minHeight: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain).accessibilityIdentifier("search-person-\(person.id)")
+                    CallMenuButton(name: person.name, id: "calls-search-\(person.id)",
+                                   voice: { Task { _ = await store.calls.start(peerID: person.id, name: person.name, video: false) } },
+                                   video: { Task { _ = await store.calls.start(peerID: person.id, name: person.name, video: true) } })
+                }
+                .padding(.horizontal, 8).padding(.vertical, 4)
+            }
+            ForEach(callGroups) { group in CallRowView(group: group) }
         }
     }
 
