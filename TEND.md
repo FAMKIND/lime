@@ -7620,3 +7620,19 @@ The photo page is now a **`UIScrollView`** (`ZoomablePhoto`), as in Photos: **pi
 **For plot:** none.
 
 **Installed (Debug build, tree holding both, first try):** 13 mini yes, iPad yes, Jean's 12 mini yes.
+
+## LIME-203 (video podcasts as video cards in the feed) — committed with this record
+
+Decided (b). **One place decides the card:** `JamCardChoice.style(isRecording:ready:hasAudio:hasVideo:place:)` (`JamCardChoice.swift`) from the post and where it is drawn (`JamCardPlace`: the feed, a profile's tab, an org's page, each with its segment); nothing else decides, so later discovery layouts reuse it. **Rules:** an audio recording is the small podcast card everywhere; a **video recording is a big video card in the main feed (All) and on an org's All**, and the small card under the **Podcasts** filter and a profile's **Podcasts** tab; anything else is the regular card.
+- **The big card:** the `JamVideoCard` frame (188j's rules for autoplay, mute and CC, 16:9 or 4:5), under it the org or writer · date and the title, ⋯ (199) at the right, and the ♥ 💬 row. **Tapping it opens the black full-screen player through the same `NowPlaying` item as the small card** (it hands over the card's own player, so the picture carries on), so the mini player, the pill and the queue stay one player. VoiceOver: one label "Video podcast, <title>, <org>, <length>".
+- Tests: `JamCardChoiceTests` (unit: the rules); `Jam203UITests` (the video recording is a big card in All and the small card under Podcasts; the audio one is small in both). Not done: the Play and More VoiceOver actions on the big card (the label is set; the actions are the card's own buttons); the autoplay look: your check.
+**For plot:** none.
+
+## LIME-204 (every podcast opens in the black full-screen player) — committed with this record
+
+1. **Tapping a podcast's cover, title, pill or the card's empty space opens the black player and plays it** (the title's hint is "Opens the player"). The big video card from 203 does the same. A podcast in an article stays the inline card; **chat shares of posts and search results do not link to a post today (a share is text), so there was nothing to change there**.
+2. **The post's page** is reached from the player's ⋯ → **View post** (it closes the player, a mini player stays, and opens the page with the description, captions and comments). **Deviation:** the brief says the 💬 button opens the post page; since 189d the 💬 (and the "Comments ·" handle) open the comments sheet over the player, which has the comments, so I left that and put **View post** in the ⋯.
+3. **💬 n and ♥ n under the small card's pill** (a quiet line; ♥ toggles, 💬 opens the player with its comments sheet open); the big card's action row does the same.
+- Tests: `Jam203UITests` (the title opens the player, not the post page, and View post reaches the page; a podcast card's 💬 opens the player with the comments sheet); the earlier suites that looked at podcast cards (`Jam188i/y/k`, `Jam200`, `Jam199`) updated and pass. One test takes about two minutes (the View post navigation); it passes.
+**Installed (Debug build, tree holding both, first try):** 13 mini yes, iPad yes, Jean's 12 mini yes.
+**For plot:** the 💬-opens-post-page deviation; a share/link to a podcast does not exist yet.

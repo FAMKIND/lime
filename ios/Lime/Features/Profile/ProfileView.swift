@@ -116,8 +116,8 @@ struct ProfileView: View {
                 switch section {
                 case .info: info
                 case .posts: JamProfilePosts(posts: ownPosts.filter { $0.kind == "quick" }, locked: postsLocked)
-                case .articles: JamProfilePosts(posts: ownPosts.filter { $0.kind == "article" }, locked: false)
-                case .podcasts: JamProfilePosts(posts: ownPosts.filter { $0.kind == "record" }, locked: false)
+                case .articles: JamProfilePosts(posts: ownPosts.filter { $0.kind == "article" }, segment: .articles, locked: false)
+                case .podcasts: JamProfilePosts(posts: ownPosts.filter { $0.kind == "record" }, segment: .podcasts, locked: false)
                 case .orgs: JamOrgsSection(orgs: orgs, isMe: route.isMe)
                 case .activity: JamActivityList(userID: route.userID, isMe: route.isMe)
                 case .shared: shared

@@ -6,8 +6,6 @@ import SwiftUI
 /// are views of one player (`NowPlaying`'s controller), so pausing on any of them pauses all.
 struct JamPodcastCard: View {
     let post: JamPostInfo
-    /// The title opens the post's own page (its description, captions and files).
-    var openPost: () -> Void = {}
     @Environment(ConversationStore.self) private var store
     @State private var cover: UIImage?
 
@@ -26,17 +24,27 @@ struct JamPodcastCard: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text([org.uppercased(), JamDates.text(post.created)].joined(separator: " \u{00B7} ")).font(Theme.font(.caption2, weight: .semibold)).foregroundStyle(Theme.textSecondary).lineLimit(1)
                     .accessibilityIdentifier("jam-card-byline-\(post.postId)")
-                Button(action: openPost) {
+                // Every part of the card opens the black player and plays (LIME-204); the post's page is reached from the player.
+                Button { if let file { play(file, mine?.controller) } } label: {
                     Text(post.title.isEmpty ? "Recording" : post.title).font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(2).multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                 }
-                .buttonStyle(.plain).accessibilityHint("Opens the post").accessibilityIdentifier("jam-podcast-title")
+                .buttonStyle(.plain).accessibilityHint("Opens the player").accessibilityIdentifier("jam-podcast-title")
                 if let file { pill(file, mine?.controller) }
+                // A quiet ♥ and 💬 line (LIME-204): 💬 opens the player with the comments.
+                HStack(spacing: 0) {
+                    JamHeartButton(postID: post.postId, size: 14).frame(width: 70)
+                    JamCommentCount(postID: post.postId, size: 14) { openWithComments() }.frame(width: 70)
+                    Spacer(minLength: 0)
+                }
+                .frame(height: 32)
             }
             .padding(.trailing, 36)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 20).padding(.vertical, 14)
+        .contentShape(Rectangle())
+        .onTapGesture { if let file { play(file, mine?.controller) } }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(file.map { "jam-audio-card-\($0.attachmentId)" } ?? "jam-podcast-card")
         .task(id: post.postId) { await loadCover(files, file) }
@@ -90,6 +98,14 @@ struct JamPodcastCard: View {
         now.item?.cover = cover
         now.showsScreen = true
         Task { await item.controller.toggle(data: { await store.jamAttachmentData(item.postID, item.file.attachmentId) }) }
+    }
+
+    private func openWithComments() {
+        guard let item = NowPlaying.shared.makeItem(for: post, store: store) else { return }
+        NowPlaying.shared.start(item)
+        NowPlaying.shared.item?.cover = cover
+        NowPlaying.shared.opensComments = true
+        NowPlaying.shared.showsScreen = true
     }
 
     private func open(_ file: JamAttachmentInfo?) {

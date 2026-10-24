@@ -107,7 +107,7 @@ struct JamPage: View {
                         }
                     }
                     ForEach(list, id: \.postId) { post in
-                        JamPostCard(post: post)
+                        JamPostCard(post: post, place: .feed(store.jamSegment))
                         Divider().overlay(Theme.hairline)
                     }
                 }
@@ -127,6 +127,8 @@ struct JamPostCard: View {
     var showsWriter = true
     /// Where tapping the post goes; the jam tab pushes the reader, a profile presents it.
     var open: ((String) -> Void)? = nil
+    /// Where the card is drawn: it decides whether a video recording is a big video card or the small podcast card (LIME-203).
+    var place: JamCardPlace = .feed(.all)
     @Environment(ConversationStore.self) private var store
     /// A long quick post is cut at 8 lines; "more" opens it here.
     @State private var expanded = false
@@ -134,9 +136,11 @@ struct JamPostCard: View {
 
     var body: some View {
         let writer = store.teacher(post.author)
-        if isPodcast {
+        if style == .videoPodcast {
+            videoPodcast(writer)
+        } else if style == .smallPodcast {
             // A recording is a podcast card of its own (LIME-200), not an article or a post.
-            JamPodcastCard(post: post, openPost: { openPost() }).overlay(alignment: .topTrailing) { JamPostMenu(post: post).padding(.trailing, 8).padding(.top, 8) }
+            JamPodcastCard(post: post).overlay(alignment: .topTrailing) { JamPostMenu(post: post).padding(.trailing, 8).padding(.top, 8) }
         } else {
         VStack(alignment: .leading, spacing: 10) {
             if showsWriter {
@@ -193,11 +197,53 @@ struct JamPostCard: View {
         }
     }
 
-    /// A recording that is ready and has something to play.
-    private var isPodcast: Bool { post.kind == "record" && post.state == "ready" && store.jamAttachments(post.postId).contains { $0.kind == "audio" || $0.kind == "video" } }
+    /// Which card this post gets here (LIME-203): one decision, in `JamCardChoice`.
+    private var style: JamCardStyle {
+        let files = store.jamAttachments(post.postId)
+        return JamCardChoice.style(isRecording: post.kind == "record", ready: post.state == "ready", hasAudio: files.contains { $0.kind == "audio" }, hasVideo: files.contains { $0.kind == "video" }, place: place)
+    }
+
+    /// A video podcast in the main feed (LIME-203): the video card, the org or writer and the date and the title under it, ⋯ at the right, the actions.
+    private func videoPodcast(_ writer: Person) -> some View {
+        let files = store.jamAttachments(post.postId)
+        let org = store.authorName(post)
+        let video = files.first { $0.kind == "video" }
+        return VStack(alignment: .leading, spacing: 8) {
+            if let video {
+                JamVideoCard(postID: post.postId, file: video, captionFile: JamCaptions.file(for: files.firstIndex(of: video) ?? 0, in: files),
+                             label: "Video podcast, \(post.title.isEmpty ? "recording" : post.title), \(org), \(VoiceFormat.clock(Double(video.durationMs ?? 0) / 1000))",
+                             onOpen: { controller in
+                                 guard let item = NowPlaying.shared.makeItem(for: post, store: store, controller: controller) else { return }
+                                 NowPlaying.shared.start(item)
+                                 NowPlaying.shared.showsScreen = true
+                                 Task { await item.controller.play(data: { await store.jamAttachmentData(item.postID, item.file.attachmentId) }) }
+                             })
+            }
+            HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text([org.uppercased(), JamDates.text(post.created)].joined(separator: " \u{00B7} ")).font(Theme.font(.caption2, weight: .semibold)).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                        .accessibilityIdentifier("jam-card-byline-\(post.postId)")
+                    Text(post.title.isEmpty ? "Recording" : post.title).font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(2).multilineTextAlignment(.leading)
+                        .accessibilityIdentifier("jam-podcast-title")
+                }
+                Spacer(minLength: 0)
+                JamPostMenu(post: post).offset(x: 8, y: -6)
+            }
+            actions
+        }
+        .padding(.horizontal, 20).padding(.vertical, 14)
+    }
 
     /// An audio recording's card carries its own title and subtitle (LIME-188u).
     private var isAudioRecord: Bool { post.kind == "record" && post.state == "ready" && store.jamAttachments(post.postId).contains { $0.kind == "audio" } }
+
+    /// A podcast's 💬 opens the black player with its comments (LIME-204).
+    private func openPlayerWithComments() {
+        guard let item = NowPlaying.shared.makeItem(for: post, store: store) else { return }
+        NowPlaying.shared.start(item)
+        NowPlaying.shared.opensComments = true
+        NowPlaying.shared.showsScreen = true
+    }
 
     private func openPost(toComments: Bool = false) { if let open { open(post.postId) } else { store.jamPath.append(JamPostRoute(postID: post.postId, toComments: toComments)) } }
 
@@ -236,7 +282,7 @@ struct JamPostCard: View {
         // Four equal columns across the card (LIME-188y).
         HStack(spacing: 0) {
             JamHeartButton(postID: post.postId)
-            JamCommentCount(postID: post.postId) { openPost(toComments: true) }
+            JamCommentCount(postID: post.postId) { if style == .videoPodcast { openPlayerWithComments() } else { openPost(toComments: true) } }
             // Remix and Share wait (LIME-189b); they are drawn dimmed and do nothing yet.
             ForEach([("arrow.2.squarepath", "remix"), ("square.and.arrow.up", "share")], id: \.1) { icon, label in
                 Image(systemName: icon).font(.system(size: 18)).frame(maxWidth: .infinity, minHeight: 44)

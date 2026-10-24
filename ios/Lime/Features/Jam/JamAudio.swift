@@ -21,6 +21,8 @@ final class NowPlaying {
     var item: Item?
     /// Up next (LIME-199): "Play next" puts one first, "Add to queue" last; when what plays ends, the first of these starts. On this phone only.
     var queue: [Item] = []
+    /// Open the comments sheet when the screen comes up (a podcast card's 💬, LIME-204).
+    var opensComments = false
     /// The now-playing screen is up (from the mini player or a card's expand button).
     var showsScreen = false
 
@@ -37,13 +39,13 @@ final class NowPlaying {
     }
 
     /// A recording (or video) post as something to play: its first audio or video file.
-    func makeItem(for post: JamPostInfo, store: ConversationStore) -> Item? {
+    func makeItem(for post: JamPostInfo, store: ConversationStore, controller shared: PodcastController? = nil) -> Item? {
         let files = store.jamAttachments(post.postId)
         guard let file = files.first(where: { $0.kind == "audio" }) ?? files.first(where: { $0.kind == "video" }) else { return nil }
         if let now = item, now.postID == post.postId, now.file.attachmentId == file.attachmentId { return now }
-        let controller = PodcastController(duration: Double(file.durationMs ?? 0) / 1000, title: post.title, artist: store.authorName(post), isVideo: file.kind == "video")
+        let controller = shared ?? PodcastController(duration: Double(file.durationMs ?? 0) / 1000, title: post.title, artist: store.authorName(post), isVideo: file.kind == "video")
         #if DEBUG
-        controller.simulated = store.isDemo
+        if shared == nil { controller.simulated = store.isDemo }
         #endif
         return Item(postID: post.postId, file: file, controller: controller, title: post.title.isEmpty ? "Recording" : post.title,
                     subtitle: post.subtitle.isEmpty ? store.authorName(post) : post.subtitle)

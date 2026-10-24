@@ -13,10 +13,9 @@ extension XCUIApplication {
         if tab.waitForExistence(timeout: 8) { tab.tap() }
     }
 
-    /// Opens the demo video recording's own page from its podcast card (LIME-200): the card's title.
+    /// Scrolls the demo video recording's big card into view in the main feed (LIME-203: a video podcast is a video card there).
     func openDemoVideoPost() {
-        let title = buttons.matching(NSPredicate(format: "identifier == 'jam-podcast-title' AND label CONTAINS 'fraction walls'")).firstMatch
-        for _ in 0..<5 where !title.exists || !title.isHittable { swipeUp() }
-        if title.waitForExistence(timeout: 8) { title.tap() }
+        let card = descendants(matching: .any)["jam-video"]
+        for _ in 0..<6 where !card.exists || !card.isHittable { swipeUp() }
     }
 }

@@ -466,6 +466,8 @@ extension ConversationStore {
 /// that the tab says so (the server's page holds no post text). The server learns that this account looked at the page, as it does for a profile.
 struct JamProfilePosts: View {
     let posts: [JamPostInfo]
+    /// Which tab: a profile's Podcasts tab is the compact list (LIME-203).
+    var segment: JamSegment = .posts
     let locked: Bool
     @Environment(ConversationStore.self) private var store
     @State private var reading: JamPostRoute?
@@ -478,7 +480,7 @@ struct JamProfilePosts: View {
                 Text("Nothing here yet.").font(Theme.body).foregroundStyle(Theme.textSecondary).padding(.top, 6)
             } else {
                 ForEach(posts, id: \.postId) { post in
-                    JamPostCard(post: post, showsWriter: false) { reading = JamPostRoute(postID: $0) }
+                    JamPostCard(post: post, showsWriter: false, open: { reading = JamPostRoute(postID: $0) }, place: .profileTab(segment))
                     Divider().overlay(Theme.hairline)
                 }
                 .padding(.horizontal, -20)
@@ -587,7 +589,7 @@ struct JamOrgPage: View {
                         if posts.isEmpty { Text("Nothing here yet.").font(Theme.body).foregroundStyle(Theme.textSecondary) }
                         VStack(spacing: 0) {
                             ForEach(posts, id: \.postId) { post in
-                                JamPostCard(post: post, showsWriter: false) { reading = JamPostRoute(postID: $0) }
+                                JamPostCard(post: post, showsWriter: false, open: { reading = JamPostRoute(postID: $0) }, place: .orgPage(segment))
                                 Divider().overlay(Theme.hairline)
                             }
                         }

@@ -72,6 +72,9 @@ struct JamVideoCard: View {
     let file: JamAttachmentInfo
     /// The captions file of this video in the post, if it has one (LIME-188o).
     var captionFile: JamAttachmentInfo? = nil
+    /// A video podcast's card (LIME-203): a different label, and a tap hands the player to the shared full screen instead of opening its own.
+    var label: String? = nil
+    var onOpen: ((PodcastController) -> Void)? = nil
     @Environment(ConversationStore.self) private var store
     @AppStorage(VideoPrefs.captionsKey) private var captionsOn = true
     @State private var cues: [CaptionCue] = []
@@ -143,9 +146,9 @@ struct JamVideoCard: View {
         .frame(width: frame.width, height: frame.height)
         .jamMediaClip()
         .contentShape(Rectangle())
-        .onTapGesture { opening = true }
+        .onTapGesture { if let onOpen { onOpen(controller) } else { opening = true } }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Video, \(VoiceFormat.clock(controller.duration))").accessibilityHint("Opens the video full screen")
+        .accessibilityLabel(label ?? "Video, \(VoiceFormat.clock(controller.duration))").accessibilityHint("Opens the video full screen")
         .accessibilityAddTraits(.isButton)
         .accessibilityIdentifier("jam-video")
         .onGeometryChange(for: Bool.self) { proxy in
@@ -294,10 +297,12 @@ struct JamVideoScreen: View {
             if let post {
                 ScrollView { JamEngagementSection(post: post, dark: true).padding(20) }
                     .background(Color.black.ignoresSafeArea()).preferredColorScheme(.dark).presentationDetents([.medium, .large])
-                    .accessibilityIdentifier("jam-player-comments-sheet")
             }
         }
-        .onAppear { item.controller.muted = false; if !isAudio { scheduleHide() } }
+        .onAppear {
+            item.controller.muted = false; if !isAudio { scheduleHide() }
+            if NowPlaying.shared.opensComments { NowPlaying.shared.opensComments = false; commenting = true }
+        }
         .onChange(of: active.controller.atEnd) { _, ended in if ended, !isAudio { advance() } }
         .sheet(isPresented: $sharing) { if let post { JamShareSheet(post: post) } }
         .sheet(isPresented: $transcript) { TranscriptSheet(cues: cues) }
@@ -307,6 +312,14 @@ struct JamVideoScreen: View {
 
     // MARK: Parts
 
+    /// Closes the player (a mini player stays) and opens the post's page.
+    private func viewPost() {
+        let id = active.postID
+        NowPlaying.shared.showsScreen = false
+        dismiss()
+        Task { try? await Task.sleep(for: .milliseconds(450)); store.jamPath.append(JamPostRoute(postID: id)) }
+    }
+
     private func topBar(_ post: JamPostInfo?) -> some View {
         HStack(spacing: 10) {
             circle("chevron.down", label: "Close", id: "jam-video-close") { close() }
@@ -315,6 +328,8 @@ struct JamVideoScreen: View {
             Menu {
                 Section {
                     Button { sharing = true } label: { Label("Share in lime\u{2026}", systemImage: "square.and.arrow.up") }.accessibilityIdentifier("jam-video-share")
+                    // The post's own page (description, captions, files, comments) is reached from here (LIME-204).
+                    Button { viewPost() } label: { Label("View post", systemImage: "doc.text") }.accessibilityIdentifier("jam-video-viewpost")
                 }
                 Section {
                     if !cues.isEmpty, !isAudio { Toggle(isOn: $captionsOn) { Label("Closed captions", systemImage: "captions.bubble") }.accessibilityIdentifier("jam-video-captions-toggle") }

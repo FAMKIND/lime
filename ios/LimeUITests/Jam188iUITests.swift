@@ -45,7 +45,6 @@ final class Jam188iUITests: LimeUITestCase {
         app.openDemoVideoPost()
         XCTAssertTrue(any(app, "jam-video").waitForExistence(timeout: 10), "the video is there")
         XCTAssertFalse(any(app, "podcast-demo-video-1").exists, "a video wears no podcast player")
-        app.navigationBars.buttons.element(boundBy: 0).tap()
         app.buttons["new-jam-post"].tap()
         XCTAssertTrue(app.buttons["jam-add-photo"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["jam-add-voice"].exists, "no waveform icon: the Record pill covers it (LIME-188q)")
