@@ -120,10 +120,17 @@ struct JamArticleCover: View {
             if JamRead.isUnread(post, me: store.meProvider().id) {
                 VStack { HStack { Circle().fill(.white).frame(width: 12, height: 12).overlay(Circle().stroke(.black.opacity(0.35), lineWidth: 1)).padding(14).accessibilityElement().accessibilityLabel("Unread").accessibilityIdentifier("jam-unread-\(post.postId)"); Spacer() }; Spacer() }
             }
-            LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .center, endPoint: .bottom)
-            Text(post.title).font(Theme.font(.title3, weight: .bold)).foregroundStyle(.white).lineLimit(3).multilineTextAlignment(.leading)
-                .padding(.leading, 16).padding(.trailing, 64).padding(.bottom, 16)
-                .accessibilityIdentifier("jam-article-card-title")
+            // A stronger scrim from the bottom (LIME-215) so the title and subtitle keep their contrast on a white sky.
+            LinearGradient(stops: [.init(color: .clear, location: 0.15), .init(color: .black.opacity(0.62), location: 0.5), .init(color: .black.opacity(0.9), location: 1)], startPoint: .top, endPoint: .bottom)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(post.title).font(Theme.font(.title3, weight: .bold)).foregroundStyle(.white).lineLimit(3).multilineTextAlignment(.leading)
+                    .accessibilityIdentifier("jam-article-card-title")
+                if !post.subtitle.isEmpty {
+                    Text(post.subtitle).font(Theme.font(.subheadline)).foregroundStyle(.white.opacity(0.95)).lineLimit(2).multilineTextAlignment(.leading)
+                        .accessibilityIdentifier("jam-article-card-subtitle")
+                }
+            }
+            .padding(.leading, 16).padding(.trailing, 64).padding(.bottom, 16)
             HStack {
                 Spacer()
                 VStack {

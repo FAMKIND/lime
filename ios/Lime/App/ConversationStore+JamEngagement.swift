@@ -186,3 +186,23 @@ struct PostCover: View {
 
     private func key(_ s: Source) -> String { switch s { case .none: "none"; case .poster(_, let id), .file(let id): id } }
 }
+
+
+extension ConversationStore {
+    /// People asked to be co-authors of **my** post who have not answered (dimmed, for the writer only).
+    func pendingCoauthors(_ post: JamPostInfo) -> [Person] {
+        guard isMyJamPost(post) else { return [] }
+        #if DEBUG
+        if isDemo { return [] }
+        #endif
+        return ((try? core?.listPendingCoauthors(postId: post.postId)) ?? []).map { teacher($0) }
+    }
+
+    /// The jam's page for a post shown as the jam (mine from my jam, someone's from their public page).
+    func jamPageInfo(for post: JamPostInfo) async -> JamPageInfo? {
+        if let mine = jamsMine.first(where: { $0.jamId == post.jamId }) {
+            return JamPageInfo(jamId: mine.jamId, writerId: mine.writer, title: mine.title, about: mine.about, topics: mine.topics, postCount: mine.postCount, subscriberCount: mine.subscriberCount)
+        }
+        return await jamPage(of: post.author)
+    }
+}

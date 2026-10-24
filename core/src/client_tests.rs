@@ -5976,3 +5976,25 @@ fn an_edit_can_add_a_co_host_who_is_then_asked() {
     }
     assert_eq!(carol.store.list_coauthor_requests().unwrap().len(), 1, "the added co-host is asked (never the writer)");
 }
+
+#[test]
+fn the_writer_sees_who_was_asked_and_has_not_answered() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (carol, _) = party(&server, "carol", 3);
+    let (bob, _) = party(&server, "bob", 2);
+    let jam = new_jam(&alice);
+    join_jam(&alice, &bob, &jam, &transport);
+    let post = alice.store.publish_jam_post(jam.clone(), "article".into(), "Together".into(), String::new(), "Words".into(), "free".into(), vec![], vec![carol.user.clone()]).unwrap();
+    for _ in 0..3 {
+        catch_up(&alice, &[&carol, &bob], &transport);
+    }
+    assert_eq!(alice.store.list_pending_coauthors(post.clone()).unwrap(), vec![carol.user.clone()], "asked, not answered");
+    assert!(bob.store.list_pending_coauthors(post.clone()).unwrap().is_empty(), "only the writer sees it");
+    carol.store.answer_coauthor_request(post.clone(), true).unwrap();
+    for _ in 0..3 {
+        catch_up(&carol, &[&alice], &transport);
+        catch_up(&alice, &[&carol, &bob], &transport);
+    }
+    assert!(alice.store.list_pending_coauthors(post).unwrap().is_empty(), "answered");
+}

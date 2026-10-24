@@ -32,34 +32,35 @@ struct BylineAvatar: View {
     /// The jam's name when the post is shown as the jam.
     var jam: String?
     var size: CGFloat = 40
+    /// For the writer only: people asked to be co-authors who have not answered, drawn dimmed (LIME-215).
+    var pending: [Person] = []
 
     var body: some View {
         Group {
             if let jam {
+                // The org's rounded-square tile with the writer and each co-author as small overlapping circles at its bottom right (up to 3, then "+n").
                 ZStack(alignment: .bottomTrailing) {
                     JamInitialTile(title: jam, size: size)
-                    if let first = people.first {
-                        AvatarView(person: first, size: size * 0.5)
-                            .overlay(Circle().stroke(Theme.canvas, lineWidth: 2))
-                            .offset(x: size * 0.12, y: size * 0.12)
+                    let crew = people.map { ($0, false) } + pending.map { ($0, true) }
+                    let shown = Array(crew.prefix(3))
+                    let small = size * (crew.count > 1 ? 0.42 : 0.5)
+                    HStack(spacing: -small * 0.4) {
+                        ForEach(Array(shown.enumerated()), id: \.offset) { index, entry in
+                            AvatarView(person: entry.0, size: small).opacity(entry.1 ? 0.45 : 1)
+                                .overlay(Circle().stroke(Theme.canvas, lineWidth: 1.5))
+                                .zIndex(Double(shown.count - index))
+                        }
+                        if crew.count > shown.count {
+                            Text("+\(crew.count - shown.count)").font(.system(size: small * 0.36, weight: .semibold)).foregroundStyle(Theme.text)
+                                .frame(width: small, height: small).background(Theme.surface, in: Circle()).overlay(Circle().stroke(Theme.canvas, lineWidth: 1.5))
+                        }
                     }
+                    .offset(x: size * 0.14, y: size * 0.12)
                 }
                 .frame(width: size, height: size)
-            } else if people.count > 1 {
-                let shown = Array(people.prefix(3))
-                let each = size * 0.7
-                HStack(spacing: -each * 0.4) {
-                    ForEach(Array(shown.enumerated()), id: \.offset) { index, person in
-                        AvatarView(person: person, size: each)
-                            .overlay(Circle().stroke(Theme.canvas, lineWidth: 2))
-                            .zIndex(Double(shown.count - index))
-                    }
-                    if people.count > shown.count {
-                        Text("+\(people.count - shown.count)").font(.system(size: each * 0.36, weight: .semibold)).foregroundStyle(Theme.text)
-                            .frame(width: each, height: each).background(Theme.surface, in: Circle()).overlay(Circle().stroke(Theme.canvas, lineWidth: 2))
-                    }
-                }
-                .frame(height: size)
+            } else if people.count > 1, let writer = people.first {
+                // Co-authors, drawn the way link draws a group's picture (LIME-215).
+                GroupCircles(plan: GroupAvatarPlan.make(others: Array(people.dropFirst()), me: writer), size: size)
             } else if let person = people.first {
                 AvatarView(person: person, size: size)
             } else {

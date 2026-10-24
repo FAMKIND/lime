@@ -133,6 +133,7 @@ struct JamPostCard: View {
     /// A long quick post is cut at 8 lines; "more" opens it here.
     @State private var expanded = false
     @State private var cut = false
+    @State private var orgPage: JamPageInfo?
 
     var body: some View {
         let writer = store.teacher(post.author)
@@ -177,31 +178,52 @@ struct JamPostCard: View {
         }
     }
 
-    /// The row every card starts with (a post, an article, a video podcast): the byline avatar, the name or org with "by …", the date.
+    /// The row every card starts with (a post, an article, a video podcast): the byline avatar, the name or org, one detail line. **Taps (LIME-215):**
+    /// the avatar and the name open a profile (the org's name its page, "by <writer>" and the avatar of an org post the writer); the rest of the row, the
+    /// card's title, cover and empty space open the post.
     @ViewBuilder
     private func writerRow(_ writer: Person) -> some View {
-    if showsWriter {
-        let asJam = post.displayAs == "jam"
-        Button { store.openProfile(ProfileRoute(userID: writer.id, name: writer.name, isMe: writer.id == store.meProvider().id)) } label: {
+        if showsWriter {
+            let asJam = post.displayAs == "jam"
+            let name = asJam ? store.jamTitle(post.jamId) : writer.name
+            let detail = [store.byline(post), JamDates.text(post.created), post.editedAt > 0 ? "Edited" : nil].compactMap { $0 }.joined(separator: " \u{00B7} ")
             HStack(spacing: 10) {
-                BylineAvatar(people: store.bylinePeople(post), jam: asJam ? store.jamTitle(post.jamId) : nil, size: 40)
+                Button { openWriter(writer) } label: {
+                    BylineAvatar(people: store.bylinePeople(post), jam: asJam ? name : nil, size: 40, pending: store.pendingCoauthors(post))
+                }
+                .buttonStyle(.plain).accessibilityLabel(asJam ? "\(name), by \(writer.name)" : name).accessibilityHint("Opens their profile").accessibilityIdentifier("jam-card-avatar-\(post.postId)")
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(asJam ? store.jamTitle(post.jamId) : writer.name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
-                    Text([asJam ? "by \(writer.name)" : nil, store.byline(post), JamDates.text(post.created), post.editedAt > 0 ? "Edited" : nil].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary)
-                        .accessibilityIdentifier("jam-card-byline-\(post.postId)")
+                    Button { if asJam { Task { orgPage = await store.jamPageInfo(for: post) } } else { openWriter(writer) } } label: {
+                        Text(name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(asJam ? name + ", by " + writer.name : name), \(JamDates.text(post.created))").accessibilityHint(asJam ? "Opens its page" : "Opens their profile")
+                    .accessibilityIdentifier("jam-card-writer-\(post.postId)")
+                    // One line: "by Shem Rajoon · with Jean Chung · Oct 21 · Edited", cut with … (the full details are on the post's page).
+                    HStack(spacing: 4) {
+                        if asJam {
+                            Button { openWriter(writer) } label: { Text("by \(writer.name)").font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1).fixedSize() }
+                                .buttonStyle(.plain).accessibilityIdentifier("jam-card-by-\(post.postId)")
+                            Text("\u{00B7}").font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                        }
+                        Button { openPost() } label: {
+                            Text(detail).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1).truncationMode(.tail).frame(minHeight: 20, alignment: .leading)
+                        }
+                        .buttonStyle(.plain).accessibilityLabel(detail).accessibilityHint("Opens the post").accessibilityIdentifier("jam-card-byline-\(post.postId)")
+                    }
                 }
                 Spacer(minLength: 0)
             }
             .contentShape(Rectangle())
+            .onTapGesture { openPost() }
+            .sheet(item: $orgPage) { JamOrgPage(page: $0, isMe: store.isMyJamPost(post)) }
+        } else {
+            Text([store.byline(post), JamDates.text(post.created), post.editedAt > 0 ? "Edited" : nil].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                .accessibilityIdentifier("jam-card-byline-\(post.postId)")
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(asJam ? store.jamTitle(post.jamId) + ", by " + writer.name : writer.name), \(JamDates.text(post.created))").accessibilityHint("Opens their profile")
-        .accessibilityIdentifier("jam-card-writer-\(post.postId)")
-    } else {
-        Text([store.byline(post), JamDates.text(post.created), post.editedAt > 0 ? "Edited" : nil].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary)
-            .accessibilityIdentifier("jam-card-byline-\(post.postId)")
     }
-    }
+
+    private func openWriter(_ writer: Person) { store.openProfile(ProfileRoute(userID: writer.id, name: writer.name, isMe: writer.id == store.meProvider().id)) }
 
     /// Which card this post gets here (LIME-203): one decision, in `JamCardChoice`.
     private var style: JamCardStyle {

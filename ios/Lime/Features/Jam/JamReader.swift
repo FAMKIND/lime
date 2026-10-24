@@ -480,7 +480,7 @@ struct JamProfilePosts: View {
                 Text("Nothing here yet.").font(Theme.body).foregroundStyle(Theme.textSecondary).padding(.top, 6)
             } else {
                 ForEach(posts, id: \.postId) { post in
-                    JamPostCard(post: post, showsWriter: false, open: { reading = JamPostRoute(postID: $0) }, place: .profileTab(segment))
+                    JamPostCard(post: post, open: { reading = JamPostRoute(postID: $0) }, place: .profileTab(segment))
                     Divider().overlay(Theme.hairline)
                 }
                 .padding(.horizontal, -20)
@@ -589,7 +589,7 @@ struct JamOrgPage: View {
                         if posts.isEmpty { Text("Nothing here yet.").font(Theme.body).foregroundStyle(Theme.textSecondary) }
                         VStack(spacing: 0) {
                             ForEach(posts, id: \.postId) { post in
-                                JamPostCard(post: post, showsWriter: false, open: { reading = JamPostRoute(postID: $0) }, place: .orgPage(segment))
+                                JamPostCard(post: post, open: { reading = JamPostRoute(postID: $0) }, place: .orgPage(segment))
                                 Divider().overlay(Theme.hairline)
                             }
                         }

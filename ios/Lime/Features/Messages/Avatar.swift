@@ -69,19 +69,25 @@ struct ConversationAvatar: View {
     @ViewBuilder
     private var plan: some View {
         let me = store?.meProvider() ?? SampleData.me
-        switch GroupAvatarPlan.make(others: conversation.members, me: me) {
-        case .single(let person):
-            AvatarView(person: person, size: size)
-        case .pair(let front, let back):
-            circles([.person(back), .person(front)])
-        case .triangle(let people):
-            circles(people.map { .person($0) })
-        case .ring(let shown, let extra):
-            circles(shown.map { .person($0) } + (extra > 0 ? [.more(extra)] : []))
-        }
+        GroupCircles(plan: GroupAvatarPlan.make(others: conversation.members, me: me), size: size)
     }
+}
+
+/// A group's circles (LIME-150, 152b), drawn from a `GroupAvatarPlan`: link's group pictures and, since LIME-215, a post's authors.
+struct GroupCircles: View {
+    let plan: GroupAvatarPlan
+    var size: CGFloat = 52
 
     private enum Item { case person(Person), more(Int) }
+
+    var body: some View {
+        switch plan {
+        case .single(let person): AvatarView(person: person, size: size)
+        case .pair(let front, let back): circles([.person(back), .person(front)])
+        case .triangle(let people): circles(people.map { .person($0) })
+        case .ring(let shown, let extra): circles(shown.map { .person($0) } + (extra > 0 ? [.more(extra)] : []))
+        }
+    }
 
     private func circles(_ items: [Item]) -> some View {
         let spots = GroupAvatarPlan.spots(circles: items.count)
@@ -101,5 +107,6 @@ struct ConversationAvatar: View {
                 .offset(x: size * at.x, y: size * at.y)
             }
         }
+        .frame(width: size, height: size)
     }
 }

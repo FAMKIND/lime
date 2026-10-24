@@ -860,6 +860,20 @@ impl LimeStore {
         })
     }
 
+    /// People asked to be credited on my post who have not answered (LIME-215: shown dimmed to the writer only).
+    pub fn list_pending_coauthors(&self, post_id: String) -> Result<Vec<String>, StoreError> {
+        self.with_conn(|conn| {
+            let jam_id: Option<String> = conn.query_row("SELECT jam_id FROM jam_posts WHERE post_id = ?1", params![post_id], |r| r.get(0)).optional().map_err(db_err)?;
+            let Some(jam_id) = jam_id else { return Ok(Vec::new()) };
+            if !jam_store::get(conn, &jam_id)?.is_some_and(|j| j.mine) {
+                return Ok(Vec::new());
+            }
+            let mut out = jam_store::credits_in_state(conn, &post_id, "pending")?;
+            out.extend(jam_store::credits_in_state(conn, &post_id, "requested")?);
+            Ok(out)
+        })
+    }
+
     /// The writer has looked at the comments on a post.
     pub fn mark_jam_post_seen(&self, post_id: String) -> Result<(), StoreError> {
         self.with_conn(|conn| {
