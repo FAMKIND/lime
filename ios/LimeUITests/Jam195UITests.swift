@@ -35,7 +35,7 @@ final class Jam195UITests: LimeUITestCase {
         app.buttons["jam-update"].tap()
         XCTAssertTrue(app.staticTexts["jam-reader-title"].waitForExistence(timeout: 8))
         XCTAssertTrue(app.staticTexts["jam-reader-title"].label.contains("again"), app.staticTexts["jam-reader-title"].label)
-        XCTAssertTrue((app.staticTexts["jam-reader-byline"].label).contains("Edited"), app.staticTexts["jam-reader-byline"].label)
+        XCTAssertTrue(app.buttons["jam-article-dates"].label.contains("edited"), app.buttons["jam-article-dates"].label)
     }
 
     func testDeleteAsksFirstAndTheArticleDisappears() {

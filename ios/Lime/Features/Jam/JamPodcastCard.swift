@@ -23,7 +23,7 @@ struct JamPodcastCard: View {
             }
             .buttonStyle(.plain).accessibilityLabel("Open player").accessibilityIdentifier("jam-audio-expand")
             VStack(alignment: .leading, spacing: 6) {
-                Text([org.uppercased(), JamDates.text(post.created)].joined(separator: " \u{00B7} ")).font(Theme.font(.caption2, weight: .semibold)).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                Text([org.uppercased(), JamDates.short(post.created)].joined(separator: " \u{00B7} ")).font(Theme.font(.caption2, weight: .semibold)).foregroundStyle(Theme.textSecondary).lineLimit(1)
                     .accessibilityIdentifier("jam-card-byline-\(post.postId)")
                 // Every part of the card opens the black player and plays (LIME-204); the post's page is reached from the player.
                 Button { if let file { play(file, mine?.controller) } } label: {

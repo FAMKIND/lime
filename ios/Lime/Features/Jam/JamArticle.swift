@@ -204,6 +204,8 @@ struct JamArticlePage: View {
     @State private var offset: CGFloat = 0
     @State private var lastOffset: CGFloat = 0
     @State private var barHidden = false
+    @State private var showingDates = false
+    @State private var confirmingUnsubscribe = false
     /// Where the head (title, byline) ends in the scroll view: the title pill comes in once it is above the bar.
     @State private var headEnd: CGFloat = 1000
     @State private var options = false
@@ -260,6 +262,10 @@ struct JamArticlePage: View {
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .onAppear { store.refreshJams() }
+        .confirmationDialog("Unsubscribe from \(post.map { store.jamTitle($0.jamId) } ?? "this jam")?", isPresented: $confirmingUnsubscribe, titleVisibility: .visible) {
+            Button("Unsubscribe", role: .destructive) { if let post { Task { await store.unsubscribe(post.jamId) } } }.accessibilityIdentifier("jam-article-unsubscribe-confirm")
+            Button("Cancel", role: .cancel) {}
+        } message: { Text("What you have stays on this phone.") }
         .sheet(isPresented: $options) { if let post { ReaderOptionsSheet(post: post, openDisplay: { options = false; display = true }, find: { options = false; finding = true }, hide: { store.hideJamPost(post.postId); dismiss() }, edit: { editingPost = post }, deleted: { dismiss() }) } }
         .fullScreenCover(item: $editingPost) { JamComposeSheet(editing: $0) }
         .sheet(isPresented: $display) { ReaderDisplaySheet() }
@@ -285,7 +291,8 @@ struct JamArticlePage: View {
                     BylineAvatar(people: store.bylinePeople(post), jam: post.displayAs == "jam" ? store.jamTitle(post.jamId) : nil, size: 40)
                     VStack(alignment: .leading, spacing: 0) {
                         Text(post.displayAs == "jam" ? store.jamTitle(post.jamId) : writer.name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
-                        Text([post.displayAs == "jam" ? "by \(writer.name)" : nil, store.byline(post), JamDates.text(post.created), "\(minutes) min read", post.editedAt > 0 ? "Edited \(JamDates.text(post.editedAt))" : nil].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                        // Who it is by, on its own line; the date is the line under (LIME-222).
+                        Text([post.displayAs == "jam" ? "by \(writer.name)" : nil, store.byline(post)].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.secondary).foregroundStyle(Theme.textSecondary)
                             .accessibilityIdentifier("jam-reader-byline")
                     }
                     Spacer(minLength: 0)
@@ -294,7 +301,23 @@ struct JamArticlePage: View {
             }
             .buttonStyle(.plain)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(post.title), by \(post.displayAs == "jam" ? store.authorName(post) + ", by " + writer.name : writer.name), \(JamDates.text(post.created)), \(minutes) minute read").accessibilityHint("Opens their profile")
+            .accessibilityLabel("\(post.title), by \(post.displayAs == "jam" ? store.authorName(post) + ", by " + writer.name : writer.name)").accessibilityHint("Opens their profile")
+            Button { showingDates = true } label: {
+                Text("\(JamDates.short(post.created)) \u{00B7} \(minutes) min read\(post.editedAt > 0 ? " \u{00B7} Edited" : "")")
+                    .font(Theme.secondary).foregroundStyle(Theme.textSecondary).frame(minHeight: 44, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Published \(JamDates.spoken(post.created)), \(minutes) minute read\(post.editedAt > 0 ? ", edited" : "")").accessibilityHint("Shows the full times")
+            .accessibilityIdentifier("jam-article-dates")
+            .popover(isPresented: $showingDates, arrowEdge: .top) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Published \(JamDates.text(post.created))").accessibilityIdentifier("jam-article-published")
+                    if post.editedAt > 0 { Text("Edited \(JamDates.text(post.editedAt))").accessibilityIdentifier("jam-article-edited") }
+                }
+                .font(Theme.secondary).foregroundStyle(Theme.text).padding(16)
+                .presentationCompactAdaptation(.popover)
+            }
+            .padding(.top, -10)
             GeometryReader { geo in Color.clear.preference(key: ArticleHeadEndKey.self, value: geo.frame(in: .named("jam-article-scroll")).minY) }.frame(height: 0)
                 .modifier(HeadEndReporter(report: { headEnd = $0 }))
             Rectangle().fill(Theme.hairline).frame(height: 1).accessibilityHidden(true)
@@ -370,10 +393,15 @@ struct JamArticlePage: View {
         return HStack(spacing: 10) {
             circle("chevron.left", label: "Back", id: "jam-article-back") { dismiss() }
             if showsPill { titlePill(post).transition(.opacity) } else { Spacer() }
-            if !store.isFollowing(post.jamId), post.author != store.meProvider().id {
-                Button { Task { if let page = await store.jamPage(of: post.author) { await store.subscribe(to: page) } } } label: {
-                    Text("Subscribe").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.accentInk).padding(.horizontal, 16).frame(minHeight: 44).background(Theme.accent, in: Capsule())
+            if post.author != store.meProvider().id {
+                // Subscribe (lime) before you follow, "Subscribed ✓" (neutral) after; a tap on that asks before it unsubscribes (LIME-222).
+                let following = store.isFollowing(post.jamId)
+                Button { if following { confirmingUnsubscribe = true } else { Task { if let page = await store.jamPage(of: post.author) { await store.subscribe(to: page) } } } } label: {
+                    Text(following ? "Subscribed \u{2713}" : "Subscribe").font(Theme.font(.subheadline, weight: .semibold))
+                        .foregroundStyle(following ? Theme.text : Theme.accentInk).padding(.horizontal, 16).frame(minHeight: 44)
+                        .background { if following { Capsule().fill(.clear).limeGlass(in: Capsule()) } else { Capsule().fill(Theme.accent) } }
                 }
+                .accessibilityLabel(following ? "Subscribed to \(store.jamTitle(post.jamId)). Tap to unsubscribe." : "Subscribe to \(store.jamTitle(post.jamId))")
                 .accessibilityIdentifier("jam-article-subscribe")
             }
             circle("ellipsis", label: "More", id: "jam-article-more") { options = true }

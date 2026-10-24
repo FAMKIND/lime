@@ -186,7 +186,7 @@ struct JamPostCard: View {
         if showsWriter {
             let asJam = post.displayAs == "jam"
             let name = asJam ? store.jamTitle(post.jamId) : writer.name
-            let detail = [store.byline(post), JamDates.text(post.created), post.editedAt > 0 ? "Edited" : nil].compactMap { $0 }.joined(separator: " \u{00B7} ")
+            let detail = [store.byline(post), JamDates.short(post.created), post.editedAt > 0 ? "Edited" : nil].compactMap { $0 }.joined(separator: " \u{00B7} ")
             HStack(spacing: 10) {
                 Button { openWriter(writer) } label: {
                     BylineAvatar(people: store.bylinePeople(post), jam: asJam ? name : nil, size: 40, pending: store.pendingCoauthors(post))
@@ -218,7 +218,7 @@ struct JamPostCard: View {
             .onTapGesture { openPost() }
             .sheet(item: $orgPage) { JamOrgPage(page: $0, isMe: store.isMyJamPost(post)) }
         } else {
-            Text([store.byline(post), JamDates.text(post.created), post.editedAt > 0 ? "Edited" : nil].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
+            Text([store.byline(post), JamDates.short(post.created), post.editedAt > 0 ? "Edited" : nil].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
                 .accessibilityIdentifier("jam-card-byline-\(post.postId)")
         }
     }
@@ -306,6 +306,20 @@ struct JamPostCard: View {
 }
 
 enum JamDates {
+    /// "Oct 22", with the year only when it is not this year; no clock time (LIME-222).
+    static func short(_ millis: Int64) -> String {
+        let date = Date(timeIntervalSince1970: Double(millis) / 1000)
+        let sameYear = Calendar.current.isDate(date, equalTo: Date(), toGranularity: .year)
+        return sameYear ? date.formatted(.dateTime.month(.abbreviated).day()) : date.formatted(.dateTime.month(.abbreviated).day().year())
+    }
+
+    /// For VoiceOver: "October 22".
+    static func spoken(_ millis: Int64) -> String {
+        let date = Date(timeIntervalSince1970: Double(millis) / 1000)
+        let sameYear = Calendar.current.isDate(date, equalTo: Date(), toGranularity: .year)
+        return sameYear ? date.formatted(.dateTime.month(.wide).day()) : date.formatted(.dateTime.month(.wide).day().year())
+    }
+
     static func text(_ millis: Int64) -> String {
         Date(timeIntervalSince1970: Double(millis) / 1000).formatted(date: .abbreviated, time: .shortened)
     }

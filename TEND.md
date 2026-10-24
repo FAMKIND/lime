@@ -7738,3 +7738,12 @@ Both white outlines are deleted from `CoverArt`'s default cover in `JamAudio.swi
 - Tests: `Profile213UITests` rewritten for the new header; ProfileUITests, Jam188t, a CallsTab test re-run: 18 pass.
 - Installed: 13mini: yes · iPad: yes · Jean: no (the phone is locked: "developer disk image could not be mounted… device is currently locked", error 12040/10003; unlock it and run the install)
 - For plot: nothing server-side.
+
+## LIME-222 — Subscribe on the article page; a simpler date line — DONE
+
+- Top bar: ‹ · title pill · **Subscribe** (lime) / **Subscribed ✓** (neutral, tap asks before unsubscribing) · ⋯, for another writer's article; none on your own. (Subscribe already existed but vanished once you followed.)
+- Date line: the author block keeps "by … · with …"; under it one line "Oct 22 · 1 min read · Edited" (year only if not this year, no clock time). Tapping it opens a popover with "Published Oct 22, 2026 at 1:39 AM" and "Edited …". VoiceOver: "Published October 22, 1 minute read, edited".
+- Cards' detail lines and podcast cards use the same short date (`JamDates.short`); comments keep full times.
+- Tests: new `Jam222UITests`; Jam195 updated; Jam201, Jam188p, Jam188z re-run: pass.
+- Installed: 13mini: yes · iPad: yes · Jean: no (locked, same error as LIME-221)
+- For plot: none.
