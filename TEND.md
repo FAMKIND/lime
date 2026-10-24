@@ -7747,3 +7747,21 @@ Both white outlines are deleted from `CoverArt`'s default cover in `JamAudio.swi
 - Tests: new `Jam222UITests`; Jam195 updated; Jam201, Jam188p, Jam188z re-run: pass.
 - Installed: 13mini: yes · iPad: yes · Jean: no (locked, same error as LIME-221)
 - For plot: none.
+
+## LIME-219 — article covers you can choose and change — DONE
+
+- Article editor (new and Edit): a 72 pt cover thumbnail under the Post as line, above the title, with **Add cover / Change cover** (a menu: "Choose a photo" or "Use a photo from this article", a small picker of the article's own photos and video posters) and **Remove**; tap the thumbnail for full size. Accessibility: "Cover. Opens full size"; the viewer has Close.
+- Saving: a new article appends `cover.jpg` like a podcast; Update replaces it or removes it (212's `edit_jam_post` path, `removeCover`). No core change was needed.
+- Cover order on the card: your `cover.jpg` → the first photo → the first video's poster → none (the tint card, as for text-only articles). The card reloads when the post's files change.
+- Tests: new `Jam219UITests` (add / view / remove; "no photos yet"). Jam195/188p re-run: pass.
+- Installed: 13mini: yes · iPad: yes · Jean: yes
+- For plot: none. Not checked on a phone with a real article that has photos.
+
+## LIME-223 — one Search everywhere, including jam posts — DONE
+
+- Core: migration 48 adds `jam_fts` (FTS5 over title, subtitle, text; unicode61, diacritics off), kept in step by triggers and back-filled; `search_jam_posts(query, limit)` finds posts best-match first, never a deleted one. Core tests: 331 pass (new: found by title/subtitle/text, follows an edit, gone after a delete, back-fill; the older migration tests now drop `jam_fts` too).
+- iOS: the Search screen has a **jam** section (posts, articles and podcasts you can read; matches on title, subtitle, text and the writer/org name; each opens its post in the jam tab). Placeholder "Search people, chats, messages and jam". Opened from jam, the jam section comes first; from link, last. "No results for “…”" now matches the old test.
+- **Not done:** the call tab's magnifier still opens its own screen (people with call buttons, and calls), which has no jam section. Replacing it would lose the call buttons and Calls list. Plot to decide.
+- What each party learns: nothing new; the index is on the phone, inside the encrypted database.
+- Tests: new `Search223UITests` (2), Search205, TabBar re-run (jam no longer shows "nothing to search"): pass.
+- Installed: 13mini: yes · iPad: yes · Jean: yes

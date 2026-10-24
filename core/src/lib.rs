@@ -29,7 +29,7 @@ pub use client::groups::{default_group_name, GroupDetails, GroupMemberInfo};
 pub use client::group_calls::{group_call_rings, GroupCallEmojiState, GroupCallEvent, GroupCallInfo, GroupCallJoin, GroupCallParticipant, GroupCallSendReport, LiveKitToken};
 pub use client::attachments::{OutgoingAttachment, TransferProgress};
 pub use client::{find_user, lookup_user_by_email, DeviceInfo, FoundUser, SyncReport, Verification};
-pub use store::search::{ConversationMatch, SearchHit};
+pub use store::search::{ConversationMatch, JamSearchHit, SearchHit};
 pub use store::threads::ThreadSummary;
 pub use store::link_preview::{LinkPreview, OutgoingPreview};
 pub use store::calls::{CallEvent, CallHistoryRecord};

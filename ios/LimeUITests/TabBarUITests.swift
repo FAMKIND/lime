@@ -109,7 +109,7 @@ final class TabBarUITests: XCTestCase {
         app.buttons["search-back"].tap()
         app.tabBars.buttons["jam"].tap()
         app.buttons["jam-search-button"].tap()
-        XCTAssertTrue(any(app, "jam-search-empty").waitForExistence(timeout: 5), "jam: nothing to search yet")
+        XCTAssertTrue(app.textFields["search-field"].waitForExistence(timeout: 5), "jam: the one search screen (LIME-223)")
     }
 
     func testThePlusDoesNotCoverTheTabBarOpensNewMessageAndHidesInAChat() {

@@ -8,6 +8,8 @@ struct MessageSearchScreen: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AccountSession.self) private var session
     /// People (LIME-205): the exact lookup runs only when the person presses it, never on a keystroke.
+    /// Opened from jam, its posts come first (LIME-223).
+    var jamFirst = false
     @State private var lookup = TeacherLookup()
     @State private var inviting = false
     @State private var query = ""
@@ -54,7 +56,7 @@ struct MessageSearchScreen: View {
     }
 
     private var header: some View {
-        SearchHeader(placeholder: "Search people, chats and messages", query: $query, focused: $focused, onSubmit: { findOnLime() }) { dismiss() }
+        SearchHeader(placeholder: "Search people, chats, messages and jam", query: $query, focused: $focused, onSubmit: { findOnLime() }) { dismiss() }
     }
 
     // MARK: People (LIME-205)
@@ -147,7 +149,7 @@ struct MessageSearchScreen: View {
         if query.trimmingCharacters(in: .whitespaces).isEmpty {
             VStack(spacing: 8) {
                 Image(systemName: "lock.shield").font(.system(size: 28)).foregroundStyle(Theme.textSecondary)
-                Text("Search your chats and messages.").font(Theme.body).foregroundStyle(Theme.text).accessibilityIdentifier("search-hint")
+                Text("Search your chats, messages and jam.").font(Theme.body).foregroundStyle(Theme.text).accessibilityIdentifier("search-hint")
                 Text("Search happens on this iPhone only. Nothing you type is sent anywhere.")
                     .font(Theme.secondary).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
                 Text("Find a teacher by their username or email.").font(Theme.secondary).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
@@ -157,11 +159,12 @@ struct MessageSearchScreen: View {
             .frame(maxWidth: .infinity).padding(.top, 60).padding(.horizontal, 24)
         } else if results.isEmpty && searched == query {
             peopleSection
-            Text("No chats or messages for “\(query.trimmingCharacters(in: .whitespaces))”")
+            Text("No results for “\(query.trimmingCharacters(in: .whitespaces))”")
                 .font(Theme.body).foregroundStyle(Theme.textSecondary)
                 .frame(maxWidth: .infinity).padding(.top, 30)
                 .accessibilityIdentifier("search-none")
         } else {
+            if jamFirst { jamSection }
             peopleSection
             if !results.chats.isEmpty {
                 sectionTitle("Chats")
@@ -194,7 +197,40 @@ struct MessageSearchScreen: View {
                     }
                 }
             }
+            if !jamFirst { jamSection }
         }
+    }
+
+    /// Jam posts, articles and podcasts you can read; each opens its post in the jam tab.
+    @ViewBuilder
+    private var jamSection: some View {
+        if !results.jam.isEmpty {
+            sectionTitle("jam")
+            ForEach(results.jam) { hit in
+                Button { open(hit) } label: {
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack {
+                            Text(hit.title).font(Theme.title).foregroundStyle(Theme.text).lineLimit(1)
+                            Spacer(minLength: 4)
+                            Text(JamDates.short(Int64(hit.date.timeIntervalSince1970 * 1000))).font(Theme.secondary).foregroundStyle(Theme.textSecondary)
+                        }
+                        Text(hit.from).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                        Text(SearchText.attributed(hit.marked)).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(2).multilineTextAlignment(.leading)
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 10).contentShape(Rectangle())
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(hit.title), \(hit.from)").accessibilityHint("Opens the post")
+                .accessibilityIdentifier("search-jam-\(hit.postID)")
+            }
+        }
+    }
+
+    private func open(_ hit: JamHit) {
+        store.section = .jam
+        dismiss()
+        Task { try? await Task.sleep(for: .milliseconds(350)); store.jamPath.append(JamPostRoute(postID: hit.postID)) }
     }
 
     private func messageRow(_ hit: MessageHit) -> some View {

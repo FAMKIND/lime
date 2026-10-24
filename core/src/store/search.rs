@@ -34,6 +34,14 @@ pub struct ConversationMatch {
     pub title: String,
 }
 
+/// One jam post that matches a search (LIME-223).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct JamSearchHit {
+    pub post_id: String,
+    /// A few words around the match; each matched word sits between `\u{E000}` and `\u{E001}`.
+    pub snippet: String,
+}
+
 /// The words of what was typed, as an FTS5 query: every word must match, and the last one as a
 /// prefix (so "plan" finds "planning"). Only letters and numbers are kept, so nothing typed can be
 /// read as FTS syntax.
@@ -58,6 +66,31 @@ pub(crate) fn fts_query(text: &str) -> Option<String> {
 
 #[uniffi::export]
 impl LimeStore {
+    /// The jam posts this phone holds whose title, subtitle or text match `query` (prefix-matched, case- and diacritic-insensitive), best match
+    /// first, then newest. A deleted post is never found.
+    pub fn search_jam_posts(&self, query: String, limit: u32) -> Result<Vec<JamSearchHit>, StoreError> {
+        let Some(fts) = fts_query(&query) else {
+            return Ok(Vec::new());
+        };
+        let conn = self.lock();
+        let sql = format!(
+            "SELECT jam_fts.post_id, snippet(jam_fts, -1, char({start}), char({end}), '…', 12)
+             FROM jam_fts
+             JOIN jam_posts p ON p.post_id = jam_fts.post_id
+             WHERE jam_fts MATCH ?1 AND p.deleted_at IS NULL
+             ORDER BY rank, p.created DESC, p.post_id DESC LIMIT ?2",
+            start = MATCH_START as u32,
+            end = MATCH_END as u32,
+        );
+        let mut statement = conn.prepare(&sql).map_err(db_err)?;
+        let hits = statement
+            .query_map(params![fts, limit.max(1)], |r| Ok(JamSearchHit { post_id: r.get(0)?, snippet: r.get(1)? }))
+            .map_err(db_err)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(db_err)?;
+        Ok(hits)
+    }
+
     /// The replies in a chat's threads that match `query`, oldest first (a hit names the thread it is in). With `root`, only that
     /// thread (its root message and its replies). Used by the chat's find and by the Replies screen's own find.
     pub fn search_replies(

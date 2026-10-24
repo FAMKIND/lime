@@ -13,7 +13,7 @@ final class Search205UITests: LimeUITestCase {
     func testTypingAContactsNameShowsThemUnderPeople() {
         let app = launch("search-name")   // "lee"
         XCTAssertTrue(app.textFields["search-field"].waitForExistence(timeout: 10))
-        XCTAssertEqual(app.textFields["search-field"].placeholderValue, "Search people, chats and messages")
+        XCTAssertEqual(app.textFields["search-field"].placeholderValue, "Search people, chats, messages and jam")
         XCTAssertTrue(app.buttons["search-person-lee"].waitForExistence(timeout: 5), "Lee Wong under People")
         XCTAssertTrue(app.buttons["search-invite"].exists, "Invite a teacher is the last row")
         XCTAssertTrue(app.buttons["search-find-on-lime"].exists, "\"lee\" is also a whole username, so the exact lookup is offered under People")

@@ -198,7 +198,7 @@ fn existing_messages_are_indexed_by_the_migration() {
         store
             .lock()
             .execute_batch(
-                "DROP TRIGGER messages_fts_insert; DROP TRIGGER messages_fts_delete; DROP TRIGGER messages_fts_update;
+                "DROP TRIGGER jam_posts_fts_insert; DROP TRIGGER jam_posts_fts_update; DROP TRIGGER jam_posts_fts_delete; DROP TABLE jam_fts; DROP TRIGGER messages_fts_insert; DROP TRIGGER messages_fts_delete; DROP TRIGGER messages_fts_update;
                  DROP TABLE message_fts; DROP INDEX messages_by_thread; DROP TABLE thread_state; DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP INDEX olm_sessions_by_peer; DROP TABLE received_ciphertexts; DROP TABLE emergency_messages; DROP TABLE emergency_settings; DROP TABLE mesh_outbox; DROP TABLE mesh_packets; DROP TABLE mesh_seen; DROP TABLE mesh_uploaded; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview; DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared; ALTER TABLE messages DROP COLUMN thread_root; ALTER TABLE messages DROP COLUMN plain; DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_credits; DROP TABLE jam_credit_requests; DROP TABLE jam_credit_wires; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_blob_deletes; DROP TABLE jam_reactions; DROP TABLE jam_my_reactions; DROP TABLE jam_comments; DROP TABLE jam_counts; DROP TABLE jam_counts_out; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; PRAGMA user_version = 6;",
             )
             .unwrap();
@@ -247,4 +247,53 @@ fn the_encrypted_file_holds_no_plaintext_of_an_indexed_word() {
     }
     let bytes = std::fs::read(&plain).unwrap();
     assert!(String::from_utf8_lossy(&bytes).to_lowercase().contains(word), "an unencrypted file would show it");
+}
+
+fn jam_post(store: &LimeStore, id: &str, title: &str, subtitle: &str, plain: &str, at: i64) {
+    store
+        .lock()
+        .execute(
+            "INSERT INTO jam_posts (post_id, jam_id, author, session_id, idx, tier, title, subtitle, markdown, plain, created)
+             VALUES (?1, 'j1', 'sam', 's', 0, 'free', ?2, ?3, ?4, ?4, ?5)",
+            params![id, title, subtitle, plain, at],
+        )
+        .unwrap();
+}
+
+fn jam_ids(store: &LimeStore, query: &str) -> Vec<String> {
+    store.search_jam_posts(query.into(), 50).unwrap().into_iter().map(|h| h.post_id).collect()
+}
+
+#[test]
+fn a_jam_post_is_found_by_its_title_subtitle_and_text_and_not_after_it_is_deleted() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(&dir);
+    jam_post(&store, "p1", "What is a lime?", "A small green fruit", "Limes grow on trees in warm places.", 10);
+    jam_post(&store, "p2", "Night sky awaken", "", "Look up tonight.", 20);
+    assert_eq!(jam_ids(&store, "lime"), vec!["p1"], "title, prefix");
+    assert_eq!(jam_ids(&store, "FRUIT"), vec!["p1"], "subtitle, any case");
+    assert_eq!(jam_ids(&store, "warm places"), vec!["p1"], "text");
+    assert_eq!(jam_ids(&store, "night"), vec!["p2"]);
+    assert!(jam_ids(&store, "").is_empty());
+    // An edit is followed.
+    store.lock().execute("UPDATE jam_posts SET title = 'Zesting', plain = 'Zest it.' WHERE post_id = 'p1'", []).unwrap();
+    assert!(jam_ids(&store, "warm").is_empty(), "the old words are gone");
+    assert_eq!(jam_ids(&store, "zest"), vec!["p1"]);
+    // A delete (the writer's, which blanks the text and marks the row) and a removal both leave it unfound.
+    store.lock().execute("UPDATE jam_posts SET deleted_at = 99, plain = '' WHERE post_id = 'p1'", []).unwrap();
+    assert!(jam_ids(&store, "zesting").is_empty(), "deleted: not found by its title either");
+    store.lock().execute("DELETE FROM jam_posts WHERE post_id = 'p2'", []).unwrap();
+    assert!(jam_ids(&store, "night").is_empty());
+}
+
+#[test]
+fn jam_posts_already_here_are_back_filled_by_the_migration() {
+    let dir = tempfile::tempdir().unwrap();
+    {
+        let store = open(&dir);
+        jam_post(&store, "old", "Reading circles", "", "We read.", 1);
+        store.lock().execute_batch("DROP TRIGGER jam_posts_fts_insert; DROP TRIGGER jam_posts_fts_update; DROP TRIGGER jam_posts_fts_delete; DROP TABLE jam_fts; PRAGMA user_version = 47;").unwrap();
+    }
+    let store = open(&dir);
+    assert_eq!(jam_ids(&store, "circles"), vec!["old"]);
 }

@@ -321,3 +321,29 @@ extension ConversationStore {
         return bytes
     }
 }
+
+extension ConversationStore {
+    /// The jam posts a search finds (LIME-223): what the phone's index found by title, subtitle and text (`core`: post and marked snippet), then the posts
+    /// whose writer or org name matches. Only posts I can read, none hidden.
+    func jamResults(_ query: String, core hits: [(String, String)]) -> [JamHit] {
+        let readable = Dictionary(jamFeed.map { ($0.postId, $0) }, uniquingKeysWith: { first, _ in first })
+        var out: [JamHit] = []
+        var seen = Set<String>()
+        func add(_ post: JamPostInfo, marked: String) {
+            guard seen.insert(post.postId).inserted else { return }
+            out.append(JamHit(postID: post.postId, title: post.title.isEmpty ? post.plain.prefix(60).description : post.title, from: authorName(post), marked: marked, date: Date(timeIntervalSince1970: Double(post.created) / 1000), kind: post.kind))
+        }
+        #if DEBUG
+        if isDemo {
+            for post in jamFeed where SearchText.matches([post.title, post.subtitle, post.plain].joined(separator: " "), query: query) {
+                add(post, marked: SearchText.mark(post.title.isEmpty ? post.plain : post.title, query: query))
+            }
+        }
+        #endif
+        for (id, snippet) in hits { if let post = readable[id] { add(post, marked: snippet) } }
+        for post in jamFeed where SearchText.matches(authorName(post) + " " + teacherName(post.author), query: query) {
+            add(post, marked: post.title.isEmpty ? String(post.plain.prefix(80)) : post.title)
+        }
+        return out
+    }
+}

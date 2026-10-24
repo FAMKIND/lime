@@ -28,11 +28,7 @@ struct JamPage: View {
                 .navigationDestination(for: JamPostRoute.self) { JamPostView(postID: $0.postID, toComments: $0.toComments) }
                 .navigationDestination(for: JamSubscribersRoute.self) { JamSubscribersView(jamID: $0.jamID) }
                 .navigationDestination(isPresented: Binding(get: { store.jamSearching }, set: { store.jamSearching = $0 })) {
-                    Text("Nothing to search in jam yet.")
-                        .font(Theme.body).foregroundStyle(Theme.textSecondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Theme.canvas)
-                        .accessibilityIdentifier("jam-search-empty")
+                    MessageSearchScreen(jamFirst: true)
                 }
                 .fullScreenCover(isPresented: $composing) { JamComposeSheet() }
                 .onAppear { store.refreshJams() }

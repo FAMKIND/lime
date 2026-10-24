@@ -742,6 +742,26 @@ const MIGRATIONS: &[&str] = &[
      CREATE TABLE jam_counts (post_id TEXT PRIMARY KEY NOT NULL, version INTEGER NOT NULL, likes INTEGER NOT NULL, comments INTEGER NOT NULL, remixes INTEGER NOT NULL, likers TEXT NOT NULL);
      CREATE TABLE jam_counts_out (post_id TEXT PRIMARY KEY NOT NULL, version INTEGER NOT NULL DEFAULT 0, dirty INTEGER NOT NULL DEFAULT 0, sent_at INTEGER NOT NULL DEFAULT 0);
      ALTER TABLE jam_posts ADD COLUMN unseen INTEGER NOT NULL DEFAULT 0;",
+    // 48 (LIME-223): search over the jam posts this phone holds, like the message index (LIME-99): an FTS5 table over a post's title, subtitle and plain
+    // text, inside this encrypted database, kept in step by triggers and filled from the posts already here. A deleted post is left out by the query
+    // (`deleted_at`), not by the index. Nothing leaves the phone.
+    "CREATE VIRTUAL TABLE jam_fts USING fts5(
+         title,
+         subtitle,
+         plain,
+         post_id UNINDEXED,
+         tokenize = 'unicode61 remove_diacritics 2'
+     );
+     INSERT INTO jam_fts (title, subtitle, plain, post_id) SELECT title, subtitle, plain, post_id FROM jam_posts;
+     CREATE TRIGGER jam_posts_fts_insert AFTER INSERT ON jam_posts BEGIN
+         INSERT INTO jam_fts (title, subtitle, plain, post_id) VALUES (new.title, new.subtitle, new.plain, new.post_id);
+     END;
+     CREATE TRIGGER jam_posts_fts_update AFTER UPDATE OF title, subtitle, plain ON jam_posts BEGIN
+         UPDATE jam_fts SET title = new.title, subtitle = new.subtitle, plain = new.plain WHERE post_id = old.post_id;
+     END;
+     CREATE TRIGGER jam_posts_fts_delete AFTER DELETE ON jam_posts BEGIN
+         DELETE FROM jam_fts WHERE post_id = old.post_id;
+     END;",
 ];
 
 /// The schema version this build writes.

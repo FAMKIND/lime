@@ -29,7 +29,21 @@ struct ChatTarget: Hashable {
 struct SearchResults: Equatable, Sendable {
     var chats: [Conversation] = []
     var messages: [MessageHit] = []
-    var isEmpty: Bool { chats.isEmpty && messages.isEmpty }
+    /// Jam posts, articles and podcasts you can read (LIME-223).
+    var jam: [JamHit] = []
+    var isEmpty: Bool { chats.isEmpty && messages.isEmpty && jam.isEmpty }
+}
+
+/// One jam post that matches a search: its title, who it is from, and the words around the match.
+struct JamHit: Identifiable, Equatable, Sendable {
+    var id: String { postID }
+    let postID: String
+    let title: String
+    /// The writer, or the org the post is shown as.
+    let from: String
+    let marked: String
+    let date: Date
+    let kind: String
 }
 
 /// The marker characters LimeCore puts around matched words, and what the app does with them. The
