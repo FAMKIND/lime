@@ -46,6 +46,7 @@ struct ProfileView: View {
     @State private var showStatus = false
     @State private var confirmingUnsubscribe = false
     @State private var links: [ProfileLink] = []
+    @State private var heroImage: UIImage?
     @State private var openOrg: JamPageInfo?
     /// Settings as a sheet, opened on the root or straight on a screen (Edit profile).
     @State private var settingsLaunch: SettingsLaunch?
@@ -127,6 +128,12 @@ struct ProfileView: View {
                 }
             }
             .padding(.horizontal, 16).padding(.bottom, 40)
+            // The background image (LIME-217), full width behind the top of the page, fading into the canvas.
+            .background(alignment: .top) {
+                if let heroImage {
+                    ProfileHeroBackground(image: heroImage, exposedForTests: store.isDemo).frame(height: 300).padding(.horizontal, -16).offset(y: -60)
+                }
+            }
         }
         .background(Theme.canvas.ignoresSafeArea().accessibilityIdentifier("profile-screen"))
         .navigationBarTitleDisplayMode(.inline)
@@ -145,7 +152,10 @@ struct ProfileView: View {
         .sheet(isPresented: $showStatus) { StatusSheet(openSettings: { showStatus = false; settingsLaunch = SettingsLaunch(start: nil) }) }
         .sheet(item: $settingsLaunch) { SettingsView(startAt: $0.start) }
         .sheet(item: $openOrg) { JamOrgPage(page: $0, isMe: route.isMe) }
-        .task(id: "\(route.userID)-\(store.extrasVersion)") { links = ProfileLinks.decode(await store.peerExtra(route.userID, .links)) }
+        .task(id: "\(route.userID)-\(store.extrasVersion)") {
+            links = ProfileLinks.decode(await store.peerExtra(route.userID, .links))
+            heroImage = await store.peerExtra(route.userID, .background).flatMap(UIImage.init(data:))
+        }
         .confirmSheet("Unsubscribe from \(jamPage?.title ?? "this jam")?", isPresented: $confirmingUnsubscribe) {
             Button("Unsubscribe", role: .destructive) { if let jamPage { Task { await store.unsubscribe(jamPage.jamId) } } }.accessibilityIdentifier("profile-jam-subscribe-confirm")
             Button("Cancel", role: .cancel) {}

@@ -7787,3 +7787,15 @@ Both white outlines are deleted from `CoverArt`'s default cover in `JamAudio.swi
 - What each party learns: Everyone: the server stores the list like About; Contacts only: ciphertext of a size, readable by contacts' phones; nothing new beyond the photo's.
 - Installed: 13mini: yes · iPad: yes · Jean: yes (the links work there only after the deploy)
 - For plot: **the user must say when to deploy** (migration `20261024100000` + functions `avatar`, `profile-get`) to staging/live. Not done here.
+
+## LIME-217 — a profile background image you choose who sees — DONE (**same server deploy as 214**)
+
+**Phase 1.** The photo goes: JPEG → public `avatar` object (Everyone) or sealed blob under a key from the profile key (contacts only) → `profile.changed` to contacts → contacts fetch with their photo check. The background is the second slot of the machinery built in 214 (`background`: `HKDF(profile key, "lime-background-enc-v1" / "-id-v1")`; public object `<user>-background.jpg`, columns `background_version`/`background_visibility`). No further server work beyond 214's migration and `avatar` slot.
+
+- **Edit profile → Background:** choose from Photos, move and scale into a wide frame (3:1), JPEG ≤ 1 MiB (re-encoded, so no metadata; a test checks), Remove, and **Everyone / Only my contacts (default)**.
+- **The hero:** the picture sits full width behind the top of the profile (avatar, name, lines), softly blurred under a scrim of the canvas colour (90 % where the text is) that fades to 0 at the bottom, so the tabs and glass pills sit on today's canvas. Hidden from VoiceOver; Reduce Transparency: no blur, 95 % scrim; Increase Contrast: 96 %.
+- **Contrast:** a unit test computes primary and secondary text over pure white and pure black pictures, light and dark, at all three scrims: all ≥ 4.5:1.
+- Tests: unit `ProfileHeroTests` (2); UI `Profile217UITests` (2); Profile, Profile213, Profile214 re-run: 18 pass. (A non-contact seeing none is covered by the core test from 214; the demo has no non-contact with a background.)
+- What each party learns: Everyone: the picture on the server, readable by it; Contacts only: ciphertext of a size.
+- Installed: 13mini: yes · iPad: yes · Jean: yes (a background reaches other phones only after the deploy)
+- For plot: **deploy needed (migration `20261024100000`, functions `avatar` and `profile-get`); waiting for the user's go.** Not seen on a real picture on a phone; the scrim strength (90 %) is the number to tune by eye.

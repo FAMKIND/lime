@@ -37,6 +37,10 @@ struct ProfileSettingsScreen: View {
             }
             SettingsFootnote(text: "Up to five links on your profile. You choose who can see them.")
             SettingsCard {
+                SettingsRow(symbol: "photo.artframe", title: "Background", route: .background, id: "profile-background-row", showsDivider: false)
+            }
+            SettingsFootnote(text: "A picture behind your name on your profile. You choose who can see it.")
+            SettingsCard {
                 SettingsRow(symbol: "qrcode", title: "My QR Code", route: .myQR, id: "profile-my-qr", showsDivider: false)
             }
             SettingsFootnote(text: "Show it to a teacher you're with. When they scan it, they know it's really you.")

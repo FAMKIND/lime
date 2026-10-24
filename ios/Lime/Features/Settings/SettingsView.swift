@@ -45,7 +45,7 @@ struct SettingsView: View {
                     case .myQR: MyQRScreen()
                     case .photo: ProfilePhotoScreen()
                     case .links: LinksScreen()
-                    case .background: Text("Background")
+                    case .background: BackgroundScreen()
                     case .storage: StorageScreen()
                     case .workHours: WorkHoursScreen()
                     case .emergency: EmergencySettingsScreen()

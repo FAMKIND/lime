@@ -67,7 +67,8 @@ extension ConversationStore {
     #if DEBUG
     /// Demo: Sam's links are contacts-only, so they show only while he is one of my contacts.
     private func demoPeerExtra(_ userID: String, _ slot: ExtraSlot) -> Data? {
-        guard slot == .links, userID == "sam", let chat = conversation("dm:sam"), !chat.isRequest else { return nil }
+        guard userID == "sam", let chat = conversation("dm:sam"), !chat.isRequest else { return nil }
+        if slot == .background { return ProfilePhotoScreen.demoPicture.jpegData(compressionQuality: 0.6) }
         return ProfileLinks.encode([ProfileLink(title: "Fractions that stick", url: "https://example.com/fractions"), ProfileLink(title: "My class blog", url: "https://example.org/blog")])
     }
     #endif
