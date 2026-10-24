@@ -9,6 +9,7 @@ struct MessagesView: View {
     @State private var sideInsets: (CGFloat, CGFloat) = (0, 0)
     @State private var showAbout = false
     @State private var showNewMessage = false
+    @State private var inviting = false
     @State private var startingEmergency = false
     @State private var showSettings = false
     @State private var showStatus = false
@@ -44,6 +45,7 @@ struct MessagesView: View {
         #endif
         .sheet(isPresented: $showAbout) { AboutView() }
         .sheet(isPresented: $showNewMessage) { NewMessageSheet() }
+        .inviteFlow(start: $inviting, username: session.profile?.username)
         .sheet(isPresented: $showSettings) { SettingsView() }
         .sheet(isPresented: $showStatus, onDismiss: { if settingsAfterStatus { settingsAfterStatus = false; showSettings = true } }) {
             StatusSheet(openSettings: { settingsAfterStatus = true })
@@ -181,7 +183,7 @@ struct MessagesView: View {
                 if store.showsRecoveryNotice { RecoveryNotice() }
                 if !store.requests.isEmpty { RequestsRow(count: store.requests.count) }
                 if store.isLoaded && store.chats.isEmpty && store.requests.isEmpty {
-                    EmptyChatsView(onNewMessage: { showNewMessage = true })
+                    EmptyChatsView(onNewMessage: { showNewMessage = true }, onFind: { store.path.append(MessagesRoute.search) }, onInvite: { inviting = true })
                 } else if !store.chats.isEmpty && shownChats.isEmpty {
                     FilteredEmpty(text: store.chatUnreadOnly && !store.chatFilter.isOn ? "No unread chats" : "No chats match") {
                         store.chatFilter = ChatFilter(); store.chatUnreadOnly = false
@@ -457,6 +459,8 @@ private struct RequestsRow: View {
 private struct EmptyChatsView: View {
     @Environment(ConversationStore.self) private var store
     let onNewMessage: () -> Void
+    let onFind: () -> Void
+    let onInvite: () -> Void
 
     var body: some View {
         VStack(spacing: 20) {
@@ -470,8 +474,9 @@ private struct EmptyChatsView: View {
                     .foregroundStyle(Theme.textSecondary)
             }
             VStack(spacing: 12) {
+                card("Find teachers", detail: "Search by username or email", symbol: "magnifyingglass", id: "card-find", action: onFind)
                 card("New message", detail: "Message a teacher you know", symbol: "square.and.pencil", id: "card-new-message", action: onNewMessage)
-                card("Invite a teacher", detail: "Bring a colleague to lime", symbol: "person.badge.plus", id: "card-invite") { store.comingNext("Invite a teacher") }
+                card("Invite a teacher", detail: "Bring a colleague to lime", symbol: "person.badge.plus", id: "card-invite", action: onInvite)
             }
         }
         .padding(.top, 48)

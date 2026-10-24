@@ -6,6 +6,10 @@ import SwiftUI
 struct MessageSearchScreen: View {
     @Environment(ConversationStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    @Environment(AccountSession.self) private var session
+    /// People (LIME-205): the exact lookup runs only when the person presses it, never on a keystroke.
+    @State private var lookup = TeacherLookup()
+    @State private var inviting = false
     @State private var query = ""
     @State private var results = SearchResults()
     @State private var searched = ""
@@ -26,6 +30,8 @@ struct MessageSearchScreen: View {
         .background(Theme.canvas.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .swipeBackEnabled()
+        .inviteFlow(start: $inviting, username: session.profile?.username)
+        .onChange(of: query) { _, _ in if lookup.state != .searching { lookup.reset() } }
         .onAppear {
             focused = true
             #if DEBUG
@@ -48,7 +54,92 @@ struct MessageSearchScreen: View {
     }
 
     private var header: some View {
-        SearchHeader(placeholder: "Search chats and messages", query: $query, focused: $focused) { dismiss() }
+        SearchHeader(placeholder: "Search people, chats and messages", query: $query, focused: $focused, onSubmit: { findOnLime() }) { dismiss() }
+    }
+
+    // MARK: People (LIME-205)
+
+    /// Contacts and the members of your groups whose name or username match: from what this phone already has.
+    private var people: [Person] {
+        let wanted = query.trimmingCharacters(in: .whitespaces)
+        guard !wanted.isEmpty else { return [] }
+        let me = store.meProvider().id
+        var seen = Set<String>(), out: [Person] = []
+        for conversation in store.conversations where !conversation.isRequest && conversation.id != store.selfChatID {
+            for person in conversation.members where person.id != me && !seen.contains(person.id) {
+                seen.insert(person.id)
+                if SearchText.matches(person.name + " " + (person.label ?? ""), query: wanted) { out.append(person) }
+            }
+        }
+        return out.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    /// The text as an exact lookup: one whole username (with or without @) or an email.
+    private var lookupKind: LookupKind? {
+        let text = query.trimmingCharacters(in: .whitespaces)
+        if LookupKind.email.accepts(text) { return .email }
+        if LookupKind.username.accepts(text) { return .username }
+        return nil
+    }
+
+    private func findOnLime() {
+        guard let kind = lookupKind, lookup.state != .searching else { return }
+        Task { await lookup.run(kind.query(query), store: store) }
+    }
+
+    @ViewBuilder
+    private var peopleSection: some View {
+        let typed = !query.trimmingCharacters(in: .whitespaces).isEmpty
+        if typed {
+            sectionTitle("People")
+            ForEach(people, id: \.id) { person in
+                Button { store.openProfile(ProfileRoute(userID: person.id, name: person.name, isMe: false)) } label: {
+                    HStack(spacing: 12) {
+                        AvatarView(person: person, size: 44).accessibilityHidden(true)
+                        Text(person.name).font(Theme.title).foregroundStyle(Theme.text).lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 10).frame(minHeight: 44).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).accessibilityIdentifier("search-person-\(person.id)")
+            }
+            if let kind = lookupKind {
+                let label = kind == .email ? "Find \(kind.query(query)) on lime" : "Find @\(kind.query(query)) on lime"
+                Button { findOnLime() } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "magnifyingglass").frame(width: 44, height: 44).background(Theme.surface, in: Circle()).accessibilityHidden(true)
+                        Text(label).font(Theme.title).foregroundStyle(Theme.text).lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 6).frame(minHeight: 44).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).accessibilityLabel("\(label), button").accessibilityIdentifier("search-find-on-lime")
+                lookupResult
+            }
+            Button { inviting = true } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "person.badge.plus").frame(width: 44, height: 44).background(Theme.surface, in: Circle()).accessibilityHidden(true)
+                    Text("Invite a teacher").font(Theme.title).foregroundStyle(Theme.text)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 8).padding(.vertical, 6).frame(minHeight: 44).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).accessibilityIdentifier("search-invite")
+        }
+    }
+
+    /// The exact lookup's answer (the same views New Message uses).
+    @ViewBuilder
+    private var lookupResult: some View {
+        switch lookup.state {
+        case .idle: EmptyView()
+        case .searching:
+            HStack(spacing: 10) { ProgressView(); Text("Searching\u{2026}").font(Theme.secondary).foregroundStyle(Theme.textSecondary) }
+                .padding(.horizontal, 8).padding(.vertical, 12).accessibilityIdentifier("lookup-searching")
+        case .found(let person): LookupResult(person: person) { Task { await store.startChat(with: person) } }
+        case .nobody: LookupNobody()
+        case .problem(let text): LookupProblem(text: text)
+        }
     }
 
     @ViewBuilder
@@ -56,18 +147,22 @@ struct MessageSearchScreen: View {
         if query.trimmingCharacters(in: .whitespaces).isEmpty {
             VStack(spacing: 8) {
                 Image(systemName: "lock.shield").font(.system(size: 28)).foregroundStyle(Theme.textSecondary)
-                Text("Search your chats and messages.").font(Theme.body).foregroundStyle(Theme.text)
+                Text("Search your chats and messages.").font(Theme.body).foregroundStyle(Theme.text).accessibilityIdentifier("search-hint")
                 Text("Search happens on this iPhone only. Nothing you type is sent anywhere.")
                     .font(Theme.secondary).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
+                Text("Find a teacher by their username or email.").font(Theme.secondary).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
+                Button { inviting = true } label: { Text("Invite a teacher").font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.text).frame(minHeight: 44) }
+                    .accessibilityIdentifier("search-invite")
             }
             .frame(maxWidth: .infinity).padding(.top, 60).padding(.horizontal, 24)
-            .accessibilityIdentifier("search-hint")
         } else if results.isEmpty && searched == query {
-            Text("No results for “\(query.trimmingCharacters(in: .whitespaces))”")
+            peopleSection
+            Text("No chats or messages for “\(query.trimmingCharacters(in: .whitespaces))”")
                 .font(Theme.body).foregroundStyle(Theme.textSecondary)
-                .frame(maxWidth: .infinity).padding(.top, 60)
+                .frame(maxWidth: .infinity).padding(.top, 30)
                 .accessibilityIdentifier("search-none")
         } else {
+            peopleSection
             if !results.chats.isEmpty {
                 sectionTitle("Chats")
                 ForEach(results.chats) { conversation in
@@ -132,6 +227,8 @@ struct SearchHeader: View {
     let placeholder: String
     @Binding var query: String
     var focused: FocusState<Bool>.Binding
+    /// Pressing Search on the keyboard (LIME-205: Messages' search runs the exact lookup then).
+    var onSubmit: (() -> Void)? = nil
     let back: () -> Void
 
     var body: some View {
@@ -151,6 +248,7 @@ struct SearchHeader: View {
                     .focused(focused)
                     .selectionTint()
                     .accessibilityIdentifier("search-field")
+                    .onSubmit { onSubmit?() }
                 if !query.isEmpty {
                     Button { query = "" } label: {
                         Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.textSecondary)

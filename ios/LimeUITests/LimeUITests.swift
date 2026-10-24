@@ -2410,10 +2410,10 @@ final class LimeUITestsGroupsAndSignIn: LimeUITestCase {
         // Messages: empty, with the two ways to start.
         XCTAssertTrue(app.staticTexts["empty-title"].waitForExistence(timeout: 10))
         XCTAssertEqual(app.staticTexts["empty-title"].label, "No chats yet")
+        XCTAssertTrue(app.buttons["card-find"].exists, "Find teachers (LIME-205)")
         XCTAssertTrue(app.buttons["card-new-message"].exists)
         XCTAssertTrue(app.buttons["card-invite"].exists)
-        app.buttons["card-invite"].tap()
-        XCTAssertTrue(app.staticTexts["coming-soon-banner"].waitForExistence(timeout: 5))
+        // (Invite is the real flow now, opening the system contact picker: not driven here.)
 
         // Sign out (after a confirmation), then sign in with the username: password, then a new code.
         app.buttons["lime menu"].press(forDuration: 1.2)
