@@ -771,7 +771,7 @@ struct PostAsSheet: View {
                             // Its tile with its writers' circles at the bottom right, you included (LIME-215b).
                             BylineAvatar(people: store.jamAuthors(jam.jamId), jam: jam.title, size: 44).frame(width: 52, height: 44, alignment: .leading)
                             VStack(alignment: .leading, spacing: 0) {
-                                Text(jam.title).font(Theme.body).foregroundStyle(Theme.text)
+                                Text(jam.title).font(Theme.font(.callout, weight: .medium)).foregroundStyle(Theme.text).lineLimit(1).minimumScaleFactor(0.85)
                                 Text((["You"] + store.jamAuthors(jam.jamId).dropFirst().map(\.name)).joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
                             }
                             Spacer()

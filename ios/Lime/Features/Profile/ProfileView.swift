@@ -44,7 +44,6 @@ struct ProfileView: View {
     @State private var confirmingDelete = false
     @State private var confirmingSignOut = false
     @State private var showStatus = false
-    @State private var openOrg: JamPageInfo?
     @State private var confirmingUnsubscribe = false
     /// Settings as a sheet, opened on the root or straight on a screen (Edit profile).
     @State private var settingsLaunch: SettingsLaunch?
@@ -113,7 +112,6 @@ struct ProfileView: View {
         ScrollView {
             VStack(spacing: 18) {
                 top
-                if !route.isMe, accepted { actions }
                 ProfileTabs(sections: available, selection: $section, badged: route.isMe && store.jamHasUnseen() ? [.activity] : [])
                 switch section {
                 case .info: info
@@ -144,7 +142,6 @@ struct ProfileView: View {
         }
         .sheet(isPresented: $showStatus) { StatusSheet(openSettings: { showStatus = false; settingsLaunch = SettingsLaunch(start: nil) }) }
         .sheet(item: $settingsLaunch) { SettingsView(startAt: $0.start) }
-        .sheet(item: $openOrg) { JamOrgPage(page: $0, isMe: route.isMe) }
         .confirmSheet("Unsubscribe from \(jamPage?.title ?? "this jam")?", isPresented: $confirmingUnsubscribe) {
             Button("Unsubscribe", role: .destructive) { if let jamPage { Task { await store.unsubscribe(jamPage.jamId) } } }.accessibilityIdentifier("profile-jam-subscribe-confirm")
             Button("Cancel", role: .cancel) {}
@@ -226,7 +223,8 @@ struct ProfileView: View {
             if let school = profile?.school, !school.isEmpty {
                 Text("\u{1F3EB} \(school)").font(Theme.secondary).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("profile-school-line")
             }
-            if !orgs.isEmpty { orgChips }
+            // Subscribe sits under the school, as a pill (LIME-221): lime to subscribe, neutral once you do.
+            if let jamPage, !route.isMe { subscribePill(jamPage).padding(.top, 4) }
             if let statusLine {
                 Text(statusLine).font(Theme.secondary).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("profile-status")
             }
@@ -253,54 +251,7 @@ struct ProfileView: View {
         }
     }
 
-    /// The orgs as small chips (tile + name) that scroll sideways; a tap opens the org's page.
-    private var orgChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(orgs, id: \.jamId) { org in
-                    Button { openOrg = org } label: {
-                        HStack(spacing: 6) {
-                            JamInitialTile(title: org.title, size: 22).accessibilityHidden(true)
-                            Text(org.title).font(Theme.font(.footnote, weight: .medium)).foregroundStyle(Theme.text).lineLimit(1)
-                        }
-                        .padding(.leading, 6).padding(.trailing, 10).frame(minHeight: 44)
-                        .background(Theme.surface, in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(org.title).accessibilityHint("Opens its page")
-                    .accessibilityIdentifier("profile-org-chip-\(org.jamId)")
-                }
-            }
-            .padding(.horizontal, 2)
-        }
-    }
-
-    @ViewBuilder
-    private var actions: some View {
-        HStack(spacing: 12) {
-            if accepted {
-                card("message", "Message", id: "profile-message") { store.openFromNotification("dm:\(route.userID)", thread: nil) }
-                card("phone", "Voice", id: "profile-voice") { Task { _ = await store.calls.start(peerID: route.userID, name: displayName, video: false) } }
-                card("video", "Video", id: "profile-video") { Task { _ = await store.calls.start(peerID: route.userID, name: displayName, video: true) } }
-            }
-        }
-    }
-
-    private func card(_ symbol: String, _ title: String, id: String, perform: @escaping () -> Void) -> some View {
-        Button(action: perform) {
-            VStack(spacing: 6) {
-                Image(systemName: symbol).font(.system(size: 20)).frame(height: 24)
-                Text(title).font(Theme.secondary)
-            }
-            .foregroundStyle(Theme.text)
-            .frame(maxWidth: .infinity, minHeight: 64)
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier(id)
-    }
-
-    /// Top right (LIME-213). Your own: Edit, Settings, ⋯. Someone else's: Subscribe (when they have a jam), ⋯.
+    /// Top right (LIME-213, 221). Your own: Edit, Settings, ⋯. Someone else's: Message, Voice, Video, ⋯.
     @ToolbarContentBuilder
     private var toolbarItems: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarTrailing) {
@@ -309,8 +260,13 @@ struct ProfileView: View {
                     .accessibilityLabel("Edit profile").accessibilityIdentifier("profile-edit")
                 Button { settingsLaunch = SettingsLaunch(start: nil) } label: { Image(systemName: "gearshape") }
                     .accessibilityLabel("Settings").accessibilityIdentifier("profile-settings")
-            } else if let jamPage {
-                subscribePill(jamPage)
+            } else if accepted {
+                Button { store.openFromNotification("dm:\(route.userID)", thread: nil) } label: { Image(systemName: "message") }
+                    .accessibilityLabel("Message \(displayName)").accessibilityIdentifier("profile-message")
+                Button { Task { _ = await store.calls.start(peerID: route.userID, name: displayName, video: false) } } label: { Image(systemName: "phone") }
+                    .accessibilityLabel("Voice call").accessibilityIdentifier("profile-voice")
+                Button { Task { _ = await store.calls.start(peerID: route.userID, name: displayName, video: true) } } label: { Image(systemName: "video") }
+                    .accessibilityLabel("Video call").accessibilityIdentifier("profile-video")
             }
             moreMenu
         }
@@ -320,10 +276,11 @@ struct ProfileView: View {
         let following = store.isFollowing(page.jamId)
         return Button { if following { confirmingUnsubscribe = true } else { Task { await store.subscribe(to: page) } } } label: {
             Text(following ? "Subscribed \u{2713}" : "Subscribe").font(Theme.font(.subheadline, weight: .semibold))
-                .foregroundStyle(following ? Theme.textSecondary : Theme.accentInk)
-                .padding(.horizontal, 12).frame(minHeight: 44)
-                .background { if !following { Capsule().fill(Theme.accent).frame(height: 32) } }
+                .foregroundStyle(following ? Theme.text : Theme.accentInk)
+                .padding(.horizontal, 20).frame(minHeight: 44)
+                .background(following ? Theme.surface : Theme.accent, in: Capsule())
         }
+        .buttonStyle(.plain)
         .accessibilityLabel(following ? "Subscribed to \(page.title). Tap to unsubscribe." : "Subscribe to \(page.title)")
         .accessibilityIdentifier("profile-jam-subscribe")
     }

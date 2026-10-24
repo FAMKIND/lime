@@ -7729,3 +7729,12 @@ Both white outlines are deleted from `CoverArt`'s default cover in `JamAudio.swi
 - Tests: new `Jam220UITests`; Jam212 updated (bar present, title found as any element). Jam212b re-run, pass.
 - Installed: 13mini: yes · iPad: yes · Jean: no (unavailable)
 - For plot: pictures inside a description appear as the editor's picture placeholders, same as articles. Not tested on device with a real inline picture.
+
+## LIME-221 — profiles alike: Message and Call in the header, Subscribe under the school — DONE
+
+- Someone else's header: ‹ · 💬 Message · 📞 Voice · 🎥 Video · ⋯ (44 pt, labels "Message <name>", "Voice call", "Video call"; hidden for a request or a blocked person as before). The row under the names is gone.
+- Subscribe is a pill under "🏫 School" (lime → neutral "Subscribed ✓", tap asks before unsubscribing), removed from the header. The org chips are removed on every profile. Your own keeps ✎ ⚙ ⋯ and the status button.
+- Post as sheet: the org's name is `.callout` medium, one line (scales down to 85%).
+- Tests: `Profile213UITests` rewritten for the new header; ProfileUITests, Jam188t, a CallsTab test re-run: 18 pass.
+- Installed: 13mini: yes · iPad: yes · Jean: no (the phone is locked: "developer disk image could not be mounted… device is currently locked", error 12040/10003; unlock it and run the install)
+- For plot: nothing server-side.

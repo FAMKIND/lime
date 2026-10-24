@@ -188,7 +188,7 @@ final class ProfileUITests: XCTestCase {
 /// LIME-213: the profile's header: Subscribe before ⋯ on someone else's, the status dot on your avatar.
 @MainActor
 final class Profile213UITests: LimeUITestCase {
-    func testSomeoneElsesHeaderHasSubscribeBeforeMoreAndItToggles() {
+    func testSomeoneElsesHeaderHasMessageCallsAndMoreAndSubscribeIsAPillUnderTheSchool() {
         let app = XCUIApplication()
         app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat"]
         app.launch()
@@ -196,8 +196,16 @@ final class Profile213UITests: LimeUITestCase {
         app.descendants(matching: .any).matching(identifier: "chat-title").firstMatch.tap()
         let subscribe = app.buttons["profile-jam-subscribe"]
         XCTAssertTrue(subscribe.waitForExistence(timeout: 10))
-        XCTAssertLessThan(subscribe.frame.maxX, app.buttons["profile-more"].frame.minX + 1, "before the ⋯")
-        XCTAssertLessThan(subscribe.frame.midY, 120, "in the header")
+        let more = app.buttons["profile-more"]
+        for id in ["profile-message", "profile-voice", "profile-video"] {
+            let b = app.buttons[id]
+            XCTAssertTrue(b.exists, id)
+            XCTAssertLessThan(b.frame.midY, 120, "\(id) is in the header")
+            XCTAssertLessThan(b.frame.maxX, more.frame.minX + 1, "\(id) is left of the ⋯")
+        }
+        XCTAssertGreaterThan(subscribe.frame.minY, 150, "Subscribe is a pill in the page, not the header")
+        XCTAssertGreaterThan(subscribe.frame.minY, app.staticTexts["profile-school-line"].frame.maxY - 1, "under the school")
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'profile-org-chip-'")).firstMatch.exists, "no org chips")
         subscribe.tap()
         expectation(for: NSPredicate(format: "label BEGINSWITH 'Subscribed'"), evaluatedWith: subscribe)
         waitForExpectations(timeout: 8)
