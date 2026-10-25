@@ -45,6 +45,12 @@ extension ConversationStore {
         }
     }
 
+    /// Settings' profile card: your profile, in edit mode (it turns on in place; if your profile is not on screen it is opened first).
+    func beginProfileEdit() {
+        profileEditRequest = true
+        if !myProfileOnScreen { openMyProfile() }
+    }
+
     /// Your own header avatar: your profile.
     func openMyProfile() {
         let me = meProvider()

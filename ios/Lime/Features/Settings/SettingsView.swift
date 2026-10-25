@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Where Settings can go.
 enum SettingsRoute: Hashable {
-    case profile, account, privacy, blocked, keys, devices, notifications, calls, customize, textSize, about, acknowledgements, changePassword, myQR, photo, storage, workHours, emergency, links, background
+    case account, privacy, blocked, keys, devices, notifications, calls, customize, textSize, about, acknowledgements, changePassword, myQR, photo, storage, workHours, emergency, links, background
     case chatMedia(String)
 }
 
@@ -29,7 +29,6 @@ struct SettingsView: View {
             root
                 .navigationDestination(for: SettingsRoute.self) { route in
                     switch route {
-                    case .profile: ProfileSettingsScreen()
                     case .account: AccountScreen(onClose: { dismiss() })
                     case .privacy: PrivacyScreen()
                     case .blocked: BlockedScreen()
@@ -64,7 +63,7 @@ struct SettingsView: View {
     /// Debug demo: open straight to a screen for screenshots ("profile", "privacy", "blocked", ...).
     static func route(from names: [String]) -> [SettingsRoute] {
         let table: [String: SettingsRoute] = [
-            "profile": .profile, "account": .account, "privacy": .privacy, "blocked": .blocked, "keys": .keys, "devices": .devices,
+            "account": .account, "privacy": .privacy, "blocked": .blocked, "keys": .keys, "devices": .devices,
             "notifications": .notifications, "customize": .customize, "text-size": .textSize, "calls": .calls, "about": .about, "ack": .acknowledgements, "password": .changePassword, "my-qr": .myQR, "photo": .photo, "links": .links, "background": .background, "crop": .photo, "storage": .storage, "work-hours": .workHours,
         ]
         return names.compactMap { table[$0] }
@@ -75,7 +74,8 @@ struct SettingsView: View {
         ScrollView {
             VStack(spacing: 16) {
                 header
-                NavigationLink(value: SettingsRoute.profile) { profileCard }
+                // Your profile edits in place now (LIME-225): the card closes Settings and turns your profile into its editor.
+                Button { store.beginProfileEdit(); dismiss() } label: { profileCard }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("settings-profile")
                 SettingsCard {

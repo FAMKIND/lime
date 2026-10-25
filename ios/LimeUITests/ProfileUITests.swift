@@ -175,12 +175,12 @@ final class ProfileUITests: XCTestCase {
         XCTAssertTrue(any(app, "attachment-viewer").waitForExistence(timeout: 8), "the viewer opens")
     }
 
-    func testEditProfileOpensTheProfileEditorItself() {
+    func testEditProfileTurnsYourProfileIntoItsOwnEditorInPlace() {
         let app = app()
         app.buttons["settings-button"].tap()
         XCTAssertTrue(app.buttons["profile-edit"].waitForExistence(timeout: 8))
         app.buttons["profile-edit"].tap()
-        XCTAssertTrue(app.buttons["profile-about"].waitForExistence(timeout: 8), "the Edit Profile screen, not the Settings root")
+        XCTAssertTrue(app.buttons["profile-about"].waitForExistence(timeout: 8), "the rows are on the profile itself, not a separate screen")
         XCTAssertFalse(app.buttons["settings-profile"].exists)
     }
 }

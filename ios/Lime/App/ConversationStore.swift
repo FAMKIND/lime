@@ -160,6 +160,9 @@ final class ConversationStore {
     /// My links and background in the demo (by slot), who may see them, and a counter so screens reload after a change (LIME-214, LIME-217).
     var demoExtras: [String: Data] = [:]
     var demoExtraVisibility: [String: String] = [:]
+    /// Edit your profile in place (LIME-225): set by Settings' profile card, taken by your profile when it appears; and whether it is on screen.
+    var profileEditRequest = false
+    var myProfileOnScreen = false
     var extrasVersion = 0
     var demoPhotoVisibility: PhotoVisibility = .everyone
     #endif

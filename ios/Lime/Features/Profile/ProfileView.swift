@@ -39,6 +39,18 @@ private struct HeroInsetKey: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
+/// A sheet over your profile that holds one of the editing screens (photo, links, background) with a Done button (LIME-225).
+private struct EditSheet<Content: View>: View {
+    @Environment(\.dismiss) private var dismiss
+    @ViewBuilder var content: Content
+    var body: some View {
+        NavigationStack {
+            content.toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() }.fontWeight(.semibold).accessibilityIdentifier("edit-sheet-done") } }
+        }
+        .presentationDetents([.large])
+    }
+}
+
 struct ProfileView: View {
     let route: ProfileRoute
     @Environment(ConversationStore.self) private var store
@@ -52,6 +64,13 @@ struct ProfileView: View {
     @State private var confirmingUnsubscribe = false
     @State private var links: [ProfileLink] = []
     @State private var heroImage: UIImage?
+    // Edit in place (LIME-225): your own profile turns into its own editor; each field opens a sheet.
+    @State private var editing = false
+    @State private var fieldSheet: ProfileField?
+    @State private var photoSheet = false
+    @State private var linksSheet = false
+    @State private var backgroundSheet = false
+    @State private var hideError: String?
     /// The top safe area (status bar and header) the photo reaches up into.
     @State private var topInset: CGFloat = 0
     @State private var openOrg: JamPageInfo?
@@ -122,6 +141,7 @@ struct ProfileView: View {
         ScrollView {
             VStack(spacing: 18) {
                 headBlock(available)
+                if editingNow { editRows } else {
                 switch section {
                 case .info: info
                 case .posts: JamProfilePosts(posts: ownPosts.filter { $0.kind == "quick" }, locked: postsLocked)
@@ -131,6 +151,7 @@ struct ProfileView: View {
                 case .activity: JamActivityList(userID: route.userID, isMe: route.isMe)
                 case .shared: shared
                 case .calls: callsList
+                }
                 }
             }
             .padding(.horizontal, 16).padding(.bottom, 40)
@@ -147,7 +168,16 @@ struct ProfileView: View {
         .task { await store.loadProfile(route.userID) }
         .task(id: route.userID) { await loadJam() }
         .onChange(of: store.jamsMine) { _, _ in if route.isMe { Task { await loadJam() } } }
-        .onAppear { if route.callIDs != nil, available.contains(.calls) { section = .calls } }
+        .onAppear {
+            if route.callIDs != nil, available.contains(.calls) { section = .calls }
+            if route.isMe { store.myProfileOnScreen = true; if store.profileEditRequest { store.profileEditRequest = false; editing = true } }
+        }
+        .onDisappear { if route.isMe { store.myProfileOnScreen = false } }
+        .onChange(of: store.profileEditRequest) { _, wanted in if wanted, route.isMe { store.profileEditRequest = false; editing = true } }
+        .sheet(item: $fieldSheet) { FieldEditorSheet(model: FieldEditorModel(field: $0, profile: session.profile ?? Profile(displayName: ""))) }
+        .sheet(isPresented: $photoSheet) { EditSheet { ProfilePhotoScreen() } }
+        .sheet(isPresented: $linksSheet) { EditSheet { LinksScreen() } }
+        .sheet(isPresented: $backgroundSheet) { EditSheet { BackgroundScreen() } }
         .sheet(isPresented: $labelling) {
             LabelSheet(name: displayName, text: $labelText) { saved in
                 labelling = false
@@ -220,9 +250,12 @@ struct ProfileView: View {
             VStack(spacing: 0) {
                 top.padding(.top, HeroShape.avatarTopPadding(screen: screen, inset: inset, avatar: 104) - 12)
                 Spacer(minLength: 18)
-                ProfileTabs(sections: available, selection: $section, badged: route.isMe && store.jamHasUnseen() ? [.activity] : [])
+                if editingNow { Color.clear.frame(height: HeroShape.pillsRow) } else {
+                    ProfileTabs(sections: available, selection: $section, badged: route.isMe && store.jamHasUnseen() ? [.activity] : [])
+                }
             }
             .frame(minHeight: HeroShape.blockHeight(screen: screen, inset: inset))
+            .overlay(alignment: .topTrailing) { if editingNow { changeBackgroundButton } }
             .background(alignment: .top) {
                 ProfileHeroBackground(image: heroImage, screenHeight: screen, exposedForTests: store.isDemo)
                     .padding(.top, -inset).padding(.bottom, -(HeroShape.heroHeight(screen: screen) - HeroShape.blockHeight(screen: screen, inset: inset) - inset)).padding(.horizontal, -16)
@@ -230,7 +263,106 @@ struct ProfileView: View {
         } else {
             VStack(spacing: 18) {
                 top
-                ProfileTabs(sections: available, selection: $section, badged: route.isMe && store.jamHasUnseen() ? [.activity] : [])
+                if !editingNow { ProfileTabs(sections: available, selection: $section, badged: route.isMe && store.jamHasUnseen() ? [.activity] : []) }
+            }
+            .overlay(alignment: .topTrailing) { if editingNow { changeBackgroundButton } }
+        }
+    }
+
+    private var editingNow: Bool { route.isMe && editing }
+
+    /// "Change background" on the hero (LIME-225): a small glass button in its corner.
+    private var changeBackgroundButton: some View {
+        Button { backgroundSheet = true } label: {
+            Label(heroImage == nil ? "Add background" : "Change background", systemImage: "photo").font(Theme.font(.footnote, weight: .semibold)).foregroundStyle(Theme.text)
+                .padding(.horizontal, 12).frame(minHeight: 44).limeGlass(in: Capsule())
+        }
+        .buttonStyle(.plain).accessibilityIdentifier("profile-edit-background")
+    }
+
+    /// A small pencil after a line of the hero: opens that field's sheet.
+    private func pencil(_ label: String, id: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "pencil").font(.system(size: 12, weight: .semibold)).foregroundStyle(heroImage != nil ? Color.white : Theme.textSecondary)
+                .frame(width: 26, height: 26).background((heroImage != nil ? Color.black.opacity(0.3) : Theme.surface), in: Circle())
+                .frame(width: 44, height: 44).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).accessibilityLabel(label).accessibilityIdentifier(id)
+    }
+
+    /// A line with its pencil after it, the line itself staying centred.
+    private func editable<Line: View>(_ line: Line, label: String, id: String, _ action: @escaping () -> Void) -> some View {
+        HStack(spacing: 0) {
+            Color.clear.frame(width: 44, height: 44)
+            line
+            pencil(label, id: id, action)
+        }
+    }
+
+    // MARK: Edit in place
+
+    /// Under the hero, the tabs give way to the fields as grouped rows (Signal's pattern); each opens its own sheet.
+    @ViewBuilder
+    private var editRows: some View {
+        let mine = session.profile ?? Profile(displayName: "")
+        VStack(spacing: 16) {
+            SettingsCard {
+                editRow("person", mine.displayName.isEmpty ? "Name" : mine.displayName, field: .name, id: "profile-name", label: "Name, \(mine.displayName)")
+                editRow("pencil", mine.about ?? "About", field: .about, id: "profile-about", dim: mine.about == nil, divider: false, label: "About, \(mine.about ?? "none")")
+            }
+            SettingsFootnote(text: "Your profile and changes to it will be visible to teachers you message.")
+            SettingsCard {
+                editRow("at", mine.username.map { "@\($0)" } ?? "Username", field: .username, id: "profile-username", dim: mine.username == nil, label: "Username, \(mine.username ?? "none")")
+                editRow("building.columns", mine.school ?? "School", field: .school, id: "profile-school", dim: mine.school == nil, divider: false, label: "School, \(mine.school ?? "none")")
+            }
+            SettingsFootnote(text: "Teachers can find you with your optional username, so you don't have to give out your email.")
+            SettingsCard {
+                sheetRow("link", links.isEmpty ? "Links" : "Links (\(links.count))", id: "profile-links-row") { linksSheet = true }
+                sheetRow("photo.artframe", "Background", id: "profile-background-row", divider: false) { backgroundSheet = true }
+            }
+            SettingsFootnote(text: "You choose who can see your links and your background.")
+            SettingsCard {
+                Toggle(isOn: Binding(get: { mine.hideFromSearch }, set: { setHidden($0) })) {
+                    Text("Hide me from search").font(Theme.body).foregroundStyle(Theme.text)
+                }
+                .tint(Theme.accent)
+                .padding(.horizontal, 18).frame(minHeight: 58)
+                .accessibilityIdentifier("profile-hide-toggle")
+            }
+            SettingsFootnote(text: hideError ?? "When this is on, nobody can find you by your username or email. People you already message still see your name.")
+        }
+    }
+
+    private func editRow(_ symbol: String, _ title: String, field: ProfileField, id: String, dim: Bool = false, divider: Bool = true, label: String) -> some View {
+        sheetRow(symbol, title, id: id, dim: dim, divider: divider, label: label) { fieldSheet = field }
+    }
+
+    private func sheetRow(_ symbol: String, _ title: String, id: String, dim: Bool = false, divider: Bool = true, label: String? = nil, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 0) {
+                HStack(spacing: 14) {
+                    Image(systemName: symbol).font(.system(size: 20)).frame(width: 28).foregroundStyle(Theme.text)
+                    Text(title).font(Theme.body).foregroundStyle(dim ? Theme.textSecondary : Theme.text).lineLimit(2).multilineTextAlignment(.leading)
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.textSecondary.opacity(0.7))
+                }
+                .padding(.horizontal, 18).frame(minHeight: 58)
+                if divider { Divider().overlay(Theme.hairline).padding(.leading, 60) }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label ?? title)
+        .accessibilityIdentifier(id)
+    }
+
+    private func setHidden(_ hidden: Bool) {
+        var draft = ProfileDraft(session.profile ?? Profile(displayName: ""))
+        draft.hideFromSearch = hidden
+        hideError = nil
+        Task {
+            do { try await session.updateProfile(draft) } catch {
+                hideError = (error as? AuthError)?.message ?? ConnectionProblem.from(error).message
             }
         }
     }
@@ -257,19 +389,26 @@ struct ProfileView: View {
         let secondary: Color = onPhoto ? .white.opacity(0.92) : Theme.textSecondary
         return VStack(spacing: 6) {
             avatar.padding(.top, 12)
-            HStack(spacing: 6) {
+            let nameLine = HStack(spacing: 6) {
                 Text(displayName).font(Theme.font(.title2, weight: .semibold)).foregroundStyle(primary)
                     .accessibilityIdentifier("profile-name")
                 if conversation?.verified == true {
                     Image(systemName: "checkmark.seal.fill").foregroundStyle(primary).font(Theme.font(.callout)).accessibilityLabel("Verified in person")
                 }
             }
-            // Under the name (LIME-213): @handle, then the school.
+            if editingNow { editable(nameLine, label: "Edit name", id: "profile-edit-name") { fieldSheet = .name } } else { nameLine }
+            // Under the name (LIME-213): @handle, then the school. In edit mode both are always there, each with its pencil (LIME-225).
             if let username = profile?.username {
-                Text("@\(username)").font(Theme.secondary).foregroundStyle(secondary).accessibilityIdentifier("profile-handle")
+                let line = Text("@\(username)").font(Theme.secondary).foregroundStyle(secondary).accessibilityIdentifier("profile-handle")
+                if editingNow { editable(line, label: "Edit username", id: "profile-edit-username") { fieldSheet = .username } } else { line }
+            } else if editingNow {
+                editable(Text("Add a username").font(Theme.secondary).foregroundStyle(secondary), label: "Edit username", id: "profile-edit-username") { fieldSheet = .username }
             }
             if let school = profile?.school, !school.isEmpty {
-                Text("\u{1F3EB} \(school)").font(Theme.secondary).foregroundStyle(secondary).accessibilityIdentifier("profile-school-line")
+                let line = Text("\u{1F3EB} \(school)").font(Theme.secondary).foregroundStyle(secondary).accessibilityIdentifier("profile-school-line")
+                if editingNow { editable(line, label: "Edit school", id: "profile-edit-school") { fieldSheet = .school } } else { line }
+            } else if editingNow {
+                editable(Text("\u{1F3EB} Add your school").font(Theme.secondary).foregroundStyle(secondary), label: "Edit school", id: "profile-edit-school") { fieldSheet = .school }
             }
             // Subscribe sits under the school, as a pill (LIME-221): lime to subscribe, neutral once you do.
             if let jamPage, !route.isMe { subscribePill(jamPage).padding(.top, 4) }
@@ -299,6 +438,17 @@ struct ProfileView: View {
                 .accessibilityLabel("Status: \(state.title)").accessibilityHint("Changes your status")
                 .accessibilityIdentifier("profile-change-status")
             }
+            // In edit mode the avatar gets a camera badge: change or remove the photo, and who sees it (LIME-225).
+            .overlay(alignment: .bottomLeading) {
+                if editingNow {
+                    Button { photoSheet = true } label: {
+                        Image(systemName: "camera.fill").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.text)
+                            .frame(width: 34, height: 34).limeGlass(in: Circle()).frame(width: 44, height: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain).offset(x: -8, y: 8)
+                    .accessibilityLabel("Change photo").accessibilityIdentifier("profile-edit-photo")
+                }
+            }
         } else if shaped {
             LimeShapedAvatar(person: person, size: 104)
                 .overlay(alignment: .bottomTrailing) {
@@ -324,10 +474,12 @@ struct ProfileView: View {
     private var legacyItems: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarTrailing) {
             if route.isMe {
-                Button { settingsLaunch = SettingsLaunch(start: .profile) } label: { Image(systemName: "pencil") }
-                    .accessibilityLabel("Edit profile").accessibilityIdentifier("profile-edit")
-                Button { settingsLaunch = SettingsLaunch(start: nil) } label: { Image(systemName: "gearshape") }
-                    .accessibilityLabel("Settings").accessibilityIdentifier("profile-settings")
+                if editing { doneButton } else {
+                    Button { editing = true } label: { Image(systemName: "pencil") }
+                        .accessibilityLabel("Edit profile").accessibilityIdentifier("profile-edit")
+                    Button { settingsLaunch = SettingsLaunch(start: nil) } label: { Image(systemName: "gearshape") }
+                        .accessibilityLabel("Settings").accessibilityIdentifier("profile-settings")
+                }
             } else if accepted {
                 Button { store.openFromNotification("dm:\(route.userID)", thread: nil) } label: { Image(systemName: "message") }
                     .accessibilityLabel("Message \(displayName)").accessibilityIdentifier("profile-message")
@@ -335,7 +487,7 @@ struct ProfileView: View {
                                voice: { Task { _ = await store.calls.start(peerID: route.userID, name: displayName, video: false) } },
                                video: { Task { _ = await store.calls.start(peerID: route.userID, name: displayName, video: true) } })
             }
-            moreMenu
+            if !(route.isMe && editing) { moreMenu }
         }
     }
 
@@ -344,17 +496,21 @@ struct ProfileView: View {
     private var modernItems: some ToolbarContent {
         if route.isMe {
             // Three separate glass circles (LIME-217b).
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { settingsLaunch = SettingsLaunch(start: .profile) } label: { Image(systemName: "pencil") }
-                    .accessibilityLabel("Edit profile").accessibilityIdentifier("profile-edit")
+            if editing {
+                ToolbarItem(placement: .topBarTrailing) { doneButton }
+            } else {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { editing = true } label: { Image(systemName: "pencil") }
+                        .accessibilityLabel("Edit profile").accessibilityIdentifier("profile-edit")
+                }
+                ToolbarSpacer(.fixed, placement: .topBarTrailing)
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { settingsLaunch = SettingsLaunch(start: nil) } label: { Image(systemName: "gearshape") }
+                        .accessibilityLabel("Settings").accessibilityIdentifier("profile-settings")
+                }
+                ToolbarSpacer(.fixed, placement: .topBarTrailing)
+                ToolbarItem(placement: .topBarTrailing) { moreMenu }
             }
-            ToolbarSpacer(.fixed, placement: .topBarTrailing)
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { settingsLaunch = SettingsLaunch(start: nil) } label: { Image(systemName: "gearshape") }
-                    .accessibilityLabel("Settings").accessibilityIdentifier("profile-settings")
-            }
-            ToolbarSpacer(.fixed, placement: .topBarTrailing)
-            ToolbarItem(placement: .topBarTrailing) { moreMenu }
         } else if accepted {
             // Three separate bubbles (LIME-224): Message · Call (Voice or Video) · More.
             ToolbarItem(placement: .topBarTrailing) {
@@ -372,6 +528,11 @@ struct ProfileView: View {
         } else {
             ToolbarItem(placement: .topBarTrailing) { moreMenu }
         }
+    }
+
+    /// Done turns the editor back into your profile (LIME-225).
+    private var doneButton: some View {
+        Button("Done") { editing = false }.fontWeight(.semibold).accessibilityIdentifier("profile-done")
     }
 
     private func subscribePill(_ page: JamPageInfo) -> some View {

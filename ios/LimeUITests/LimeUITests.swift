@@ -331,9 +331,12 @@ final class LimeUITestsMessages: LimeUITestCase {
     }
 
     func testProfileHasMyQRCode() {
-        let app = threadApp("settings/profile")
+        let app = threadApp("profile-me")
         app.launch()
-        XCTAssertTrue(app.buttons["profile-my-qr"].waitForExistence(timeout: 10))
+        // My QR code is in your profile's ⋯ menu (LIME-213).
+        XCTAssertTrue(app.buttons["profile-more"].waitForExistence(timeout: 10))
+        app.buttons["profile-more"].tap()
+        XCTAssertTrue(app.buttons["profile-my-qr"].waitForExistence(timeout: 5))
         app.buttons["profile-my-qr"].tap()
         XCTAssertTrue(app.images["my-qr-image"].waitForExistence(timeout: 5) || app.staticTexts["my-qr-unavailable"].exists)
         XCTAssertTrue(app.staticTexts["my-qr-fingerprint"].exists || app.staticTexts["my-qr-unavailable"].exists)
@@ -1938,10 +1941,7 @@ final class LimeUITestsSettings: LimeUITestCase {
         app.buttons["editor-save"].tap()
         XCTAssertTrue(app.buttons["profile-about"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["profile-about"].label.contains("Planning lessons"))
-        // And on the card in Settings.
-        goBack(app)
-        XCTAssertTrue(app.staticTexts["settings-card-about"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.staticTexts["settings-card-about"].label, "📚 Planning lessons")
+        // The hero (and the profile) show it in place; Settings now opens your profile for editing.
     }
 
     func testTypingInAboutCountsDownAndAnOverlongLineCannotBeSaved() {
