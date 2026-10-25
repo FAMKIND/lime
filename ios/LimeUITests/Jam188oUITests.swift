@@ -24,6 +24,9 @@ final class Jam188oUITests: LimeUITestCase {
         XCTAssertTrue(any(app, "jam-video-screen").waitForExistence(timeout: 5))
         let chip = any(app, "jam-video-caption")
         XCTAssertTrue(chip.waitForExistence(timeout: 5))
-        // (The player's ⋯ should offer Transcript too; from the card it opens through the shared player, which does not carry the captions yet: a bug from LIME-212, noted in TEND.md, not fixed here.)
+        // LIME-230: the shared player carries the captions, so its ⋯ has Closed captions and Transcript.
+        app.buttons["jam-video-more"].tap()
+        XCTAssertTrue(app.buttons["Transcript"].waitForExistence(timeout: 5), "Transcript is in the player's ⋯")
+        XCTAssertTrue(app.switches["Closed captions"].exists || app.buttons["Closed captions"].exists)
     }
 }

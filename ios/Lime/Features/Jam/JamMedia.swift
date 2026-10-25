@@ -245,6 +245,10 @@ struct JamVideoScreen: View {
 
     private var active: (postID: String, file: JamAttachmentInfo, controller: PodcastController) { current ?? (postID, file, controller) }
 
+    /// The post's captions, read from its .vtt when the player came up without them (the shared path from a card, the mini player or the queue, LIME-230).
+    @State private var loadedCues: [CaptionCue] = []
+    private var shownCues: [CaptionCue] { cues.isEmpty ? loadedCues : cues }
+
     var body: some View {
         let item = active
         let post = store.jamPost(item.postID)
@@ -268,7 +272,7 @@ struct JamVideoScreen: View {
                 .contentShape(Rectangle())
                 .onTapGesture { toggleControls() }
                 VStack(alignment: .leading, spacing: 12) {
-                    if captionsOn, let line = JamCaptions.line(at: Int(item.controller.position * 1000), in: cues) {
+                    if captionsOn, let line = JamCaptions.line(at: Int(item.controller.position * 1000), in: shownCues) {
                         Text(line).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(.white).multilineTextAlignment(.center)
                             .padding(.horizontal, 12).padding(.vertical, 6).background(.white.opacity(0.16), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                             .frame(maxWidth: .infinity).accessibilityIdentifier("jam-video-caption")
@@ -310,13 +314,20 @@ struct JamVideoScreen: View {
                     .presentationBackground(Color.black.opacity(0.88))
             }
         }
+        .task(id: item.file.attachmentId) {
+            loadedCues = []
+            guard cues.isEmpty || current != nil,
+                  let vtt = JamCaptions.file(for: store.jamAttachments(item.postID).firstIndex { $0.attachmentId == item.file.attachmentId } ?? 0, in: store.jamAttachments(item.postID)),
+                  let data = await store.jamAttachmentData(item.postID, vtt.attachmentId), let text = String(data: data, encoding: .utf8) else { return }
+            loadedCues = parseCaptions(vtt: text)
+        }
         .onAppear {
             item.controller.muted = false; if !isAudio { scheduleHide() }
             if NowPlaying.shared.opensComments { NowPlaying.shared.opensComments = false; commenting = true }
         }
         .onChange(of: active.controller.atEnd) { _, ended in if ended, !isAudio { advance() } }
         .sheet(isPresented: $sharing) { if let post { JamShareSheet(post: post) } }
-        .sheet(isPresented: $transcript) { TranscriptSheet(cues: cues) }
+        .sheet(isPresented: $transcript) { TranscriptSheet(cues: shownCues) }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("jam-video-screen")
     }
@@ -348,8 +359,8 @@ struct JamVideoScreen: View {
                     Button { viewPost() } label: { Label("View post", systemImage: "doc.text") }.accessibilityIdentifier("jam-video-viewpost")
                 }
                 Section {
-                    if !cues.isEmpty, !isAudio { Toggle(isOn: $captionsOn) { Label("Closed captions", systemImage: "captions.bubble") }.accessibilityIdentifier("jam-video-captions-toggle") }
-                    if !cues.isEmpty { Button { transcript = true } label: { Label("Transcript", systemImage: "text.alignleft") }.accessibilityIdentifier("jam-video-transcript") }
+                    if !shownCues.isEmpty, !isAudio { Toggle(isOn: $captionsOn) { Label("Closed captions", systemImage: "captions.bubble") }.accessibilityIdentifier("jam-video-captions-toggle") }
+                    if !shownCues.isEmpty { Button { transcript = true } label: { Label("Transcript", systemImage: "text.alignleft") }.accessibilityIdentifier("jam-video-transcript") }
                     if !isAudio { Toggle(isOn: $autoAdvance) { Label("Auto-advance", systemImage: "forward.end") }.accessibilityIdentifier("jam-video-autoadvance") }
                 }
                 Section {

@@ -7945,3 +7945,17 @@ Only when the profile has a background; without one, today's canvas and dark tex
 - **Tests:** new `testTheHeaderIsEditAndMoreThenEditCoverAndDone` (Settings inside ⋯; Edit Cover and Done; no corner button; Edit Cover opens the background screen; ‹ returns to Edit and ⋯). Because Settings moved, tests reach it through a new `openProfileSettings` helper (Calls tab, ConfirmSheet, Emergency, 225, LimeUITests). Pass: Profile225, Profile, Profile217, Emergency, CallsTab, Org216 and the ProfileHero unit test (its 58 % check now subtracts the lift).
 - Installed: 13mini: yes · iPad: yes · Jean: yes
 - For plot: the system header circles keep iOS 26's soft glass edge (as in 217e). The text capsules "Edit" / "Edit Cover" / "Done" are the system's toolbar buttons.
+
+## LIME-229b — the profile's tabs in Liquid Glass again — DONE
+
+- The selected tab on every profile (person and org share `ProfileTabs`) is a `limeGlass` capsule (`.glassEffect` on iOS 26, the thin material before) instead of 217e's flat surface fill; no shadow added; 229's lift kept. Unselected tabs stay plain text.
+- Tests: visual (your check); Profile217, Profile225 and Org216 tab tests pass.
+- Installed: 13mini: yes · iPad: yes · Jean: yes
+- For plot: nothing.
+
+## LIME-230 — captions in the shared player — DONE
+
+- `JamVideoScreen` (the one player for card, mini player, title and queue) now reads the post's `.vtt` itself when it came up without cues (`NowPlaying.makeItem` stays synchronous), also for the next item when the queue advances. So the CC button, the caption line, ⋯ → Closed captions and Transcript show everywhere; no captions file = those items stay hidden as before. The CC default is still 188o's.
+- Tests: `Jam188oUITests` has its Transcript / Closed captions lines back (video recorded in the studio, opened from the feed: ⋯ → Transcript, Closed captions); with Profile217/225 and Org216: 19 pass.
+- Installed: 13mini: yes · iPad: yes · Jean: yes (one install for both briefs)
+- For plot: nothing.
