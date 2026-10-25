@@ -44,10 +44,11 @@ enum HeroScrim {
 /// A dark colour from a photo (LIME-217b): its few dominant colours by a small k-means on a tiny copy, then the darkest that holds a fair share of the picture.
 /// Worked out once per picture and kept.
 enum HeroPalette {
-    nonisolated(unsafe) private static let cache = NSCache<NSData, UIColor>()
+    nonisolated(unsafe) private static let cache = NSCache<NSString, UIColor>()
 
-    static func darkColor(of image: UIImage, key: Data? = nil) -> UIColor {
-        let id = (key ?? image.pngData() ?? Data()) as NSData
+    /// `key` names the picture (a person and a version), so it is not re-encoded to find it again.
+    static func darkColor(of image: UIImage, key: String) -> UIColor {
+        let id = key as NSString
         if let hit = cache.object(forKey: id) { return hit }
         let result = compute(image)
         cache.setObject(result, forKey: id)
@@ -125,6 +126,10 @@ enum HeroShape {
 /// the canvas) that the pills sit on.
 struct ProfileHeroBackground: View {
     let image: UIImage
+    /// Names this picture (for the colour sampled from it, worked out once).
+    let cacheKey: String
+    /// The default (no background chosen or visible) is a blurred photo or a tone: decorative everywhere, also in tests.
+    var isDefault = false
     /// The screen's height, which every proportion is a share of.
     var screenHeight: CGFloat = UIScreen.main.bounds.height
     /// Demo runs (UI tests) expose it so a test can find it; for a person it is decorative and hidden from VoiceOver.
@@ -134,11 +139,11 @@ struct ProfileHeroBackground: View {
 
     var body: some View {
         let strength = HeroScrim.opacity(reduceTransparency: reduceTransparency, increaseContrast: contrast == .increased)
-        let tint = Color(uiColor: HeroScrim.tint(from: HeroPalette.darkColor(of: image)))
+        let tint = Color(uiColor: HeroScrim.tint(from: HeroPalette.darkColor(of: image, key: cacheKey)))
         GeometryReader { geo in layers(size: geo.size, strength: strength, tint: tint) }
         .clipped()
         .accessibilityHidden(!exposedForTests)
-        .accessibilityIdentifier("profile-hero-background")
+        .accessibilityIdentifier(isDefault ? "profile-hero-default" : "profile-hero-background")
     }
 }
 
@@ -168,6 +173,59 @@ extension ProfileHeroBackground {
             LinearGradient(stops: eased(tint, size: h, from: s * HeroShape.blendStart, to: s * HeroShape.blendEnd, steps: 9) { 0.35 * sin(Double.pi * $0) }, startPoint: .top, endPoint: .bottom)
             LinearGradient(stops: eased(canvas, size: h, from: s * HeroShape.blendStart, to: s * HeroShape.blendEnd, steps: 9) { HeroShape.smooth($0) }
                            + [.init(color: canvas, location: 1)], startPoint: .top, endPoint: .bottom)
+        }
+    }
+}
+
+/// What the hero shows when a person has no background, or one you cannot see (LIME-217d): their profile photo scaled to fill and heavily blurred and a
+/// little dimmed; with no photo, a soft gradient of their avatar's tone colour to a darker shade. Both are decorative and made small (they are blurred).
+enum HeroDefault {
+    nonisolated(unsafe) private static let cache = NSCache<NSString, UIImage>()
+    private static let size = CGSize(width: 270, height: 338)   // 4:5
+
+    /// The picture and the string that names it (for caching the colour sampled from it).
+    static func image(for person: Person, photo: UIImage?, dark: Bool) -> (image: UIImage, key: String) {
+        let key = photo.map { "photo-\(person.id)-\(ObjectIdentifier($0).hashValue)" } ?? "tone-\(((person.tone % 8) + 8) % 8)-\(dark)"
+        if let hit = cache.object(forKey: key as NSString) { return (hit, key) }
+        let made = photo.map(blurred) ?? tone(person.tone, dark: dark)
+        cache.setObject(made, forKey: key as NSString)
+        return (made, key)
+    }
+
+    /// The photo, aspect-filled into the frame, blurred (radius about 40 at the real size: here a fifth of it, as this copy is a fifth the size) and dimmed.
+    static func blurred(_ photo: UIImage) -> UIImage {
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = true
+        let filled = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            let cover = max(size.width / photo.size.width, size.height / photo.size.height)
+            let drawn = CGSize(width: photo.size.width * cover, height: photo.size.height * cover)
+            photo.draw(in: CGRect(x: (size.width - drawn.width) / 2, y: (size.height - drawn.height) / 2, width: drawn.width, height: drawn.height))
+        }
+        guard let input = CIImage(image: filled), let blur = CIFilter(name: "CIGaussianBlur") else { return filled }
+        blur.setValue(input.clampedToExtent(), forKey: kCIInputImageKey)
+        blur.setValue(16, forKey: kCIInputRadiusKey)
+        guard let output = blur.outputImage?.cropped(to: input.extent), let cg = CIContext().createCGImage(output, from: input.extent) else { return filled }
+        return UIGraphicsImageRenderer(size: size, format: format).image { context in
+            UIImage(cgImage: cg).draw(in: CGRect(origin: .zero, size: size))
+            UIColor.black.withAlphaComponent(0.14).setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+        }
+    }
+
+    /// A soft vertical gradient of the avatar's tone colour (the one behind their initials) to a darker shade of it.
+    static func tone(_ tone: Int, dark: Bool) -> UIImage {
+        let base = UIColor(Theme.avatar(tone)).resolvedColor(with: UITraitCollection(userInterfaceStyle: dark ? .dark : .light))
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        base.getRed(&r, green: &g, blue: &b, alpha: &a)
+        let deeper = UIColor(red: r * 0.55, green: g * 0.55, blue: b * 0.55, alpha: 1)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: size, format: format).image { context in
+            let colours = [base.cgColor, deeper.cgColor] as CFArray
+            let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colours, locations: [0, 1])!
+            context.cgContext.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: size.width * 0.3, y: size.height), options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
         }
     }
 }

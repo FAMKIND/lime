@@ -33,7 +33,8 @@ struct FieldEditorSheet: View {
         .padding(.horizontal, 16).padding(.top, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Theme.canvas.ignoresSafeArea())
-        .presentationDetents([.large])
+        // Medium first (LIME-217d, as 225 asked); drag up for large.
+        .presentationDetents([.medium, .large])
         .onAppear { focused = true }
         .overlay { EmojiKeyboardField(isActive: $pickingEmoji) { model.pickEmoji($0); focused = true }.frame(width: 1, height: 1).opacity(0.01) }
     }

@@ -38,14 +38,26 @@ final class Profile217UITests: LimeUITestCase {
         XCTAssertTrue(app.staticTexts["profile-name"].exists)
     }
 
-    func testAProfileWithNoBackgroundKeepsTheCleanLook() {
-        // Lee has no background in the demo.
-        let again = XCUIApplication()
-        again.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat"]
-        again.launch()
-        again.buttons["conversation-row-dm:lee"].tap()
-        again.descendants(matching: .any).matching(identifier: "chat-title").firstMatch.tap()
-        XCTAssertTrue(again.staticTexts["profile-name"].waitForExistence(timeout: 10))
-        XCTAssertFalse(again.descendants(matching: .any)["profile-hero-background"].exists, "no photo: today's canvas")
+    func testAProfileWithNoBackgroundShowsTheHeroWithADefault() {
+        // Lee has no background and no photo in the demo: the hero is a soft tone colour.
+        let app = app()
+        app.buttons["conversation-row-dm:lee"].tap()
+        app.descendants(matching: .any).matching(identifier: "chat-title").firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["profile-name"].waitForExistence(timeout: 10))
+        let hero = app.descendants(matching: .any)["profile-hero-default"]
+        XCTAssertTrue(hero.waitForExistence(timeout: 8), "the default hero is there")
+        XCTAssertFalse(app.descendants(matching: .any)["profile-hero-background"].exists, "not a real background")
+        XCTAssertLessThan(hero.frame.minY, 1, "full bleed from the top")
+        XCTAssertGreaterThanOrEqual(hero.frame.height, app.windows.firstMatch.frame.height * 0.58)
+        XCTAssertGreaterThan(app.buttons["profile-tab-Info"].frame.minY, app.staticTexts["profile-name"].frame.maxY, "the tabs are below the name")
+        XCTAssertLessThan(app.buttons["profile-tab-Info"].frame.midY, hero.frame.maxY, "on the fade")
+    }
+
+    func testYourOwnProfileWithNoBackgroundShowsTheHeroToo() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat"]
+        app.launch()
+        app.buttons["settings-button"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["profile-hero-default"].waitForExistence(timeout: 10))
     }
 }

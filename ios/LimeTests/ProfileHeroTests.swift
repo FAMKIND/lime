@@ -28,6 +28,37 @@ final class ProfileHeroTests: XCTestCase {
         }
     }
 
+    func testWhiteTextKeepsContrastOnEveryDefaultHeroTone() {
+        for dark in [false, true] {
+            for tone in 0..<8 {
+                let image = HeroDefault.tone(tone, dark: dark)
+                let tint = HeroScrim.tint(from: HeroPalette.compute(image))
+                // The lightest pixel of the gradient (its first colour) is what the text could sit over.
+                let lightest = UIColor(Theme.avatar(tone)).resolvedColor(with: UITraitCollection(userInterfaceStyle: dark ? .dark : .light))
+                for (name, scrim) in settings {
+                    let ratio = HeroScrim.contrast(text: .white, tint: tint, image: lightest, scrim: scrim)
+                    XCTAssertGreaterThanOrEqual(ratio, 4.5, "tone \(tone) \(dark ? "dark" : "light") at \(name): \(ratio)")
+                }
+            }
+        }
+    }
+
+    func testTheDefaultFromAPhotoIsBlurredAndTheSameSizeAsATone() {
+        let photo = UIGraphicsImageRenderer(size: CGSize(width: 512, height: 512)).image { c in
+            UIColor.black.setFill(); c.fill(CGRect(x: 0, y: 0, width: 512, height: 512))
+            UIColor.white.setFill(); c.fill(CGRect(x: 256, y: 0, width: 256, height: 512))   // a hard edge down the middle
+        }
+        let blurred = HeroDefault.blurred(photo)
+        XCTAssertEqual(blurred.size, HeroDefault.tone(0, dark: false).size)
+        // Across the old edge the brightness changes gradually: the pixel just either side of the middle differ far less than black vs white.
+        func luma(_ x: Int) -> Double {
+            guard let cg = blurred.cgImage, let data = cg.dataProvider?.data, let bytes = CFDataGetBytePtr(data) else { return 0 }
+            let o = 160 * cg.bytesPerRow + x * (cg.bitsPerPixel / 8)
+            return Double(bytes[o]) / 255
+        }
+        XCTAssertLessThan(abs(luma(134) - luma(136)), 0.15, "no hard edge is left")
+    }
+
     func testTheTintIsDarkEnoughWhateverTheSample() {
         for colour in [UIColor.white, .systemYellow, .systemGreen, .systemBlue, .gray, .black] {
             var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0

@@ -64,6 +64,7 @@ struct ProfileView: View {
     @State private var confirmingUnsubscribe = false
     @State private var links: [ProfileLink] = []
     @State private var heroImage: UIImage?
+    @Environment(\.colorScheme) private var colorScheme
     // Edit in place (LIME-225): your own profile turns into its own editor; each field opens a sheet.
     @State private var editing = false
     @State private var fieldSheet: ProfileField?
@@ -160,8 +161,8 @@ struct ProfileView: View {
         .background { GeometryReader { geo in Color.clear.preference(key: HeroInsetKey.self, value: geo.safeAreaInsets.top) } }
         .onPreferenceChange(HeroInsetKey.self) { topInset = $0 }
         // Over a photo the header sits on it: no bar background, light glass with dark icons.
-        .toolbarBackground(heroImage == nil ? .automatic : .hidden, for: .navigationBar)
-        .toolbarColorScheme(heroImage == nil ? nil : .light, for: .navigationBar)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbarColorScheme(.light, for: .navigationBar)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
         .toolbar { toolbarItems }
@@ -240,33 +241,33 @@ struct ProfileView: View {
         }
     }
 
-    /// The name block and the tabs. With a background photo (LIME-217c) the block is tall enough that the tab pills' centre sits at 58 % of the screen's
-    /// height, the avatar's centre at 29 %, and the photo fills from the top edge behind it all; without one it is the compact block it always was.
+    /// The name block and the tabs on the hero (LIME-217c, 217d): every profile has it. The block is tall enough that the tab pills' centre sits at 58 % of the
+    /// screen's height and the avatar's centre at 29 %; the picture fills from the top edge behind it all: their background if there is one, else a default.
     @ViewBuilder
     private func headBlock(_ available: [Section]) -> some View {
         let screen = UIScreen.main.bounds.height
         let inset = topInset > 0 ? topInset : 100
-        if let heroImage {
-            VStack(spacing: 0) {
-                top.padding(.top, HeroShape.avatarTopPadding(screen: screen, inset: inset, avatar: 104) - 12)
-                Spacer(minLength: 18)
-                if editingNow { Color.clear.frame(height: HeroShape.pillsRow) } else {
-                    ProfileTabs(sections: available, selection: $section, badged: route.isMe && store.jamHasUnseen() ? [.activity] : [])
-                }
+        let shown = shownHero
+        VStack(spacing: 0) {
+            top.padding(.top, HeroShape.avatarTopPadding(screen: screen, inset: inset, avatar: 104) - 12)
+            Spacer(minLength: 18)
+            if editingNow { Color.clear.frame(height: HeroShape.pillsRow) } else {
+                ProfileTabs(sections: available, selection: $section, badged: route.isMe && store.jamHasUnseen() ? [.activity] : [])
             }
-            .frame(minHeight: HeroShape.blockHeight(screen: screen, inset: inset))
-            .overlay(alignment: .topTrailing) { if editingNow { changeBackgroundButton } }
-            .background(alignment: .top) {
-                ProfileHeroBackground(image: heroImage, screenHeight: screen, exposedForTests: store.isDemo)
-                    .padding(.top, -inset).padding(.bottom, -(HeroShape.heroHeight(screen: screen) - HeroShape.blockHeight(screen: screen, inset: inset) - inset)).padding(.horizontal, -16)
-            }
-        } else {
-            VStack(spacing: 18) {
-                top
-                if !editingNow { ProfileTabs(sections: available, selection: $section, badged: route.isMe && store.jamHasUnseen() ? [.activity] : []) }
-            }
-            .overlay(alignment: .topTrailing) { if editingNow { changeBackgroundButton } }
         }
+        .frame(minHeight: HeroShape.blockHeight(screen: screen, inset: inset))
+        .overlay(alignment: .topTrailing) { if editingNow { changeBackgroundButton } }
+        .background(alignment: .top) {
+            ProfileHeroBackground(image: shown.image, cacheKey: shown.key, isDefault: heroImage == nil, screenHeight: screen, exposedForTests: store.isDemo)
+                .padding(.top, -inset).padding(.bottom, -(HeroShape.heroHeight(screen: screen) - HeroShape.blockHeight(screen: screen, inset: inset) - inset)).padding(.horizontal, -16)
+                .animation(.easeInOut(duration: 0.25), value: shown.key)
+        }
+    }
+
+    /// Their background when there is one, else the default made from their photo or tone; the layout is the same either way, so a real one arriving just replaces it.
+    private var shownHero: (image: UIImage, key: String) {
+        if let heroImage { return (heroImage, "bg-\(route.userID)-\(store.extrasVersion)-\(Int(heroImage.size.width))") }
+        return HeroDefault.image(for: person, photo: AvatarCache.shared.image(for: person.id), dark: colorScheme == .dark)
     }
 
     private var editingNow: Bool { route.isMe && editing }
@@ -283,8 +284,8 @@ struct ProfileView: View {
     /// A small pencil after a line of the hero: opens that field's sheet.
     private func pencil(_ label: String, id: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: "pencil").font(.system(size: 12, weight: .semibold)).foregroundStyle(heroImage != nil ? Color.white : Theme.textSecondary)
-                .frame(width: 26, height: 26).background((heroImage != nil ? Color.black.opacity(0.3) : Theme.surface), in: Circle())
+            Image(systemName: "pencil").font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.white)
+                .frame(width: 26, height: 26).background(Color.black.opacity(0.3), in: Circle())
                 .frame(width: 44, height: 44).contentShape(Rectangle())
         }
         .buttonStyle(.plain).accessibilityLabel(label).accessibilityIdentifier(id)
@@ -383,7 +384,7 @@ struct ProfileView: View {
     // MARK: The top
 
     private var top: some View {
-        let onPhoto = heroImage != nil
+        let onPhoto = true   // every profile is on the hero (LIME-217d)
         // On a photo the name and the lines are white with a soft shadow (the gradient behind them keeps them readable); otherwise as before.
         let primary: Color = onPhoto ? .white : Theme.text
         let secondary: Color = onPhoto ? .white.opacity(0.92) : Theme.textSecondary
@@ -423,7 +424,7 @@ struct ProfileView: View {
     @ViewBuilder
     private var avatar: some View {
         // On a photo the avatar takes the lime logomark's outline (LIME-217b); everywhere else people are circles.
-        let shaped = heroImage != nil
+        let shaped = true   // the lime-shaped avatar on every hero (LIME-217d)
         if route.isMe {
             let state = store.status(of: route.userID)?.state ?? .available
             Group {
