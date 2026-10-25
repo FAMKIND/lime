@@ -2,9 +2,15 @@
 //! Everyone: a public object through `avatar` with a `slot`; contacts only: an encrypted blob under my profile key. Nothing here is sent in
 //! the clear unless the person chose Everyone.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use super::*;
 use crate::store::extras::{self as extras, Mine};
 use crate::store::photos;
+
+/// Whether this phone may download other people's background videos now (LIME-226b): the app turns it off on cellular and in Low Data Mode. When it is
+/// off a contact's video is only noted (`pending`) and fetched when the person asks.
+static FETCH_VIDEOS: AtomicBool = AtomicBool::new(true);
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct MyExtra {
@@ -30,6 +36,27 @@ impl LimeStore {
         }
         let mine = self.with_conn(|conn| extras::mine(conn, &slot))?;
         Ok(MyExtra { data: mine.data, visibility: mine.visibility })
+    }
+
+    /// Allows or stops downloading other people's background videos (the app calls it as the network changes).
+    pub fn set_background_video_fetching(&self, allowed: bool) {
+        FETCH_VIDEOS.store(allowed, Ordering::Relaxed);
+    }
+
+    /// True when someone has a background video this phone knows of but has not downloaded (fetching was off): the profile can offer to play it.
+    pub fn peer_extra_pending(&self, user_id: String, slot: String) -> Result<bool, StoreError> {
+        if !extras::is_slot(&slot) {
+            return Err(StoreError::Rejected);
+        }
+        self.with_conn(|conn| Ok(extras::cached(conn, &user_id, &slot)?.is_some_and(|c| c.source == "pending")))
+    }
+
+    /// Downloads a pending video now (the person tapped it), whatever the network. `true` when it was fetched.
+    pub fn fetch_peer_extra(&self, transport: Arc<dyn Transport>, auth_token: String, user_id: String, slot: String) -> Result<bool, StoreError> {
+        if !extras::is_slot(&slot) {
+            return Err(StoreError::Rejected);
+        }
+        self.refresh_extra(&transport, &auth_token, &user_id, &slot, true)
     }
 
     /// Another person's links or background, if they have one we can see.
@@ -164,13 +191,15 @@ impl LimeStore {
     pub(super) fn refresh_extras_of_one(&self, transport: &Arc<dyn Transport>, token: &str, user: &str) -> Result<bool, StoreError> {
         let mut changed = false;
         for slot in [extras::LINKS, extras::BACKGROUND, extras::BACKGROUND_VIDEO] {
-            changed |= self.refresh_extra(transport, token, user, slot)?;
+            changed |= self.refresh_extra(transport, token, user, slot, false)?;
         }
         Ok(changed)
     }
 
-    fn refresh_extra(&self, transport: &Arc<dyn Transport>, token: &str, user: &str, slot: &str) -> Result<bool, StoreError> {
+    fn refresh_extra(&self, transport: &Arc<dyn Transport>, token: &str, user: &str, slot: &str, force: bool) -> Result<bool, StoreError> {
         let now = now_ms();
+        // A video is only noted, not downloaded, while fetching videos is off (cellular, Low Data Mode) unless the person asked for it.
+        let hold = slot == extras::BACKGROUND_VIDEO && !force && !FETCH_VIDEOS.load(Ordering::Relaxed);
         let held = self.with_conn(|conn| extras::cached(conn, user, slot))?;
         let had = held.as_ref().is_some_and(|c| !c.bytes.is_empty());
 
@@ -180,6 +209,10 @@ impl LimeStore {
             let url = body.get("url").and_then(Value::as_str).ok_or(StoreError::BadMessage)?;
             if let Some(c) = held.as_ref().filter(|c| c.source == "public" && c.version == version && !c.bytes.is_empty()) {
                 self.with_conn(|conn| extras::save_cached(conn, user, slot, &c.bytes, "public", version, now))?;
+                return Ok(false);
+            }
+            if hold {
+                self.with_conn(|conn| extras::save_cached(conn, user, slot, &[], "pending", version, now))?;
                 return Ok(false);
             }
             let (got, bytes) = super::photos::raw(transport, "GET", url, None, Vec::new())?;
@@ -202,6 +235,10 @@ impl LimeStore {
                 let url = body.get("url").and_then(Value::as_str).ok_or(StoreError::BadMessage)?;
                 if let Some(c) = held.as_ref().filter(|c| c.source == "encrypted" && c.version == version && !c.bytes.is_empty()) {
                     self.with_conn(|conn| extras::save_cached(conn, user, slot, &c.bytes, "encrypted", version, now))?;
+                    return Ok(false);
+                }
+                if hold {
+                    self.with_conn(|conn| extras::save_cached(conn, user, slot, &[], "pending", version, now))?;
                     return Ok(false);
                 }
                 let (got, bytes) = super::photos::raw(transport, "GET", url, None, Vec::new())?;

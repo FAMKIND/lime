@@ -6124,3 +6124,33 @@ fn a_contacts_only_background_video_is_ciphertext_needs_its_still_and_removing_i
     assert_eq!(alice.store.my_extra(BACKGROUND_VIDEO.into()).unwrap().data, None, "no video without its still");
     assert!(!server.state.lock().unwrap().objects.keys().any(|k| k.ends_with("background.mp4")));
 }
+
+#[test]
+fn a_contacts_background_video_waits_for_a_tap_while_fetching_videos_is_off() {
+    use crate::store::extras::{BACKGROUND, BACKGROUND_VIDEO};
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let clip: Vec<u8> = b"\x00\x00\x00\x18ftypmp42 a clip".repeat(300);
+    alice.store.set_my_extra(transport.clone(), alice.token.clone(), BACKGROUND.into(), photo_bytes()).unwrap();
+    alice.store.set_my_extra(transport.clone(), alice.token.clone(), BACKGROUND_VIDEO.into(), clip.clone()).unwrap();
+
+    // On cellular (fetching off): the still comes, the clip is only noted.
+    bob.store.set_background_video_fetching(false);
+    refresh(&bob, &transport);
+    assert_eq!(bob.store.peer_extra("alice".into(), BACKGROUND.into()).unwrap(), Some(photo_bytes()), "the still is small and comes anyway");
+    assert_eq!(bob.store.peer_extra("alice".into(), BACKGROUND_VIDEO.into()).unwrap(), None, "the clip was not downloaded");
+    assert!(bob.store.peer_extra_pending("alice".into(), BACKGROUND_VIDEO.into()).unwrap(), "but it is known, so the profile can offer it");
+    // A tap fetches it, whatever the network.
+    assert!(bob.store.fetch_peer_extra(transport.clone(), bob.token.clone(), "alice".into(), BACKGROUND_VIDEO.into()).unwrap());
+    assert_eq!(bob.store.peer_extra("alice".into(), BACKGROUND_VIDEO.into()).unwrap(), Some(clip.clone()));
+    assert!(!bob.store.peer_extra_pending("alice".into(), BACKGROUND_VIDEO.into()).unwrap());
+
+    // Back on Wi-Fi a changed clip is fetched at the next check.
+    bob.store.set_background_video_fetching(true);
+    let newer: Vec<u8> = b"\x00\x00\x00\x18ftypmp42 another clip".repeat(300);
+    alice.store.set_my_extra(transport.clone(), alice.token.clone(), BACKGROUND_VIDEO.into(), newer.clone()).unwrap();
+    refresh(&bob, &transport);
+    assert_eq!(bob.store.peer_extra("alice".into(), BACKGROUND_VIDEO.into()).unwrap(), Some(newer));
+}

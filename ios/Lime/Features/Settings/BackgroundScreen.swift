@@ -6,8 +6,10 @@ struct BackgroundScreen: View {
     @Environment(ConversationStore.self) private var store
     @State private var current: UIImage?
     @State private var visibility: ConversationStore.PhotoVisibility = .contacts
+    @State private var hasVideo = false
     @State private var picking = false
-    @State private var cropping: UIImage?
+    @State private var trimming: PickedVideo?
+    @State private var framing: Framing?
     @State private var busy = false
     @State private var problem: String?
 
@@ -27,14 +29,18 @@ struct BackgroundScreen: View {
             .padding(.top, 8)
             .accessibilityLabel(current == nil ? "No background" : "Your background").accessibilityIdentifier("background-preview")
             SettingsCard {
-                row("photo.on.rectangle", current == nil ? "Choose from Library" : "Change Background", id: "background-choose") { choose() }
+                row("photo.on.rectangle", current == nil ? "Choose a Photo or Video" : "Change Background", id: "background-choose") { choose() }
+                if hasVideo {
+                    Divider().overlay(Theme.hairline).padding(.leading, 60)
+                    row("video.slash", "Remove Video (keep the photo)", id: "background-remove-video", destructive: true) { removeVideo() }
+                }
                 if current != nil {
                     Divider().overlay(Theme.hairline).padding(.leading, 60)
                     row("trash", "Remove Background", id: "background-remove", destructive: true) { remove() }
                 }
             }
             if busy { ProgressView().padding(.top, 4).accessibilityIdentifier("background-busy") }
-            SettingsFootnote(text: problem ?? "It fills the top of your profile and fades out behind the tabs. It's shrunk on this iPhone, and location and camera details are never uploaded.")
+            SettingsFootnote(text: problem ?? "It fills the top of your profile and fades out behind the tabs. A video plays silently on a loop (up to 10 seconds, no sound). It's shrunk on this iPhone, and location and camera details are never uploaded.")
             SettingsCard {
                 visibilityChoice(.everyone, "Everyone on lime", detail: "Any signed-in teacher who sees your profile can see it. lime's servers keep a copy of the picture.", id: "background-vis-everyone")
                 Divider().overlay(Theme.hairline).padding(.leading, 18)
@@ -46,34 +52,84 @@ struct BackgroundScreen: View {
             let mine = await store.myExtra(.background)
             current = mine.data.flatMap(UIImage.init(data:))
             visibility = mine.visibility
+            hasVideo = await store.myExtra(.backgroundVideo).data != nil
         }
         .fullScreenCover(isPresented: $picking) {
-            LibraryPicker(onPick: { picked in picking = false; cropping = picked }, onCancel: { picking = false }).ignoresSafeArea()
+            MediaLibraryPicker(limit: 1, onPick: { images, videos in
+                picking = false
+                if let image = images.first { framing = Framing(image: image, video: nil) }
+                else if let url = videos.first { Task { await received(video: url) } }
+            }, onCancel: { picking = false }).ignoresSafeArea()
         }
-        .fullScreenCover(item: Binding(get: { cropping.map(CropItem.init) }, set: { if $0 == nil { cropping = nil } })) { item in
-            BackgroundCropScreen(image: item.image, onSave: { cropped in cropping = nil; save(cropped) }, onCancel: { cropping = nil })
+        .sheet(item: $trimming) { picked in
+            VideoTrimSheet(video: picked) { start in
+                trimming = nil
+                Task { await frame(picked.url, start: start) }
+            } onCancel: { trimming = nil }
+        }
+        .fullScreenCover(item: $framing) { item in
+            BackgroundCropScreen(image: item.image, onSave: { crop in framing = nil; save(crop, item) }, onCancel: { framing = nil })
         }
     }
 
-    private struct CropItem: Identifiable {
+    /// A photo (or a video's frame) being framed into the 4:5 crop; for a video, which file and where the clip starts.
+    private struct Framing: Identifiable {
+        let id = UUID()
         let image: UIImage
-        var id: ObjectIdentifier { ObjectIdentifier(image) }
+        let video: (url: URL, start: Double)?
     }
 
     private func choose() {
         #if DEBUG
-        if store.isDemo { cropping = ProfilePhotoScreen.demoPicture; return }
+        if store.isDemo {
+            // UI tests: no system picker. A made-up clip goes through the whole video path; otherwise a made-up photo.
+            if ProcessInfo.processInfo.arguments.contains("-lime-demo-pick-video") { Task { if let url = await DemoClip.url() { await received(video: url) } } }
+            else { framing = Framing(image: ProfilePhotoScreen.demoPicture, video: nil) }
+            return
+        }
         #endif
         picking = true
     }
 
-    private func save(_ cropped: UIImage) {
-        guard let data = BackgroundProcessing.jpeg(cropped) else { problem = "That picture could not be prepared."; return }
+    /// A picked video: its length decides whether to ask where the 10 seconds start, then it is framed on its first frame.
+    private func received(video url: URL) async {
+        let duration = await BackgroundVideoProcessing.duration(of: url)
+        guard duration > 0 else { problem = "That video could not be used."; return }
+        if duration > BackgroundVideoProcessing.maxSeconds { trimming = PickedVideo(url: url, duration: duration) }
+        else { await frame(url, start: 0) }
+    }
+
+    private func frame(_ url: URL, start: Double) async {
+        guard let poster = await BackgroundVideoProcessing.frame(of: url, at: start) else { problem = "That video could not be used."; return }
+        framing = Framing(image: poster, video: (url, start))
+    }
+
+    /// The framed photo is the background (and a video's still); for a video the clip is cut, framed and re-encoded the same way, then saved after the still.
+    private func save(_ crop: BackgroundCrop, _ item: Framing) {
+        guard let still = BackgroundProcessing.jpeg(crop.image) else { problem = "That picture could not be prepared."; return }
         busy = true; problem = nil
         Task {
-            let ok = await store.setMyExtra(.background, data)
+            var clip: Data?
+            if let video = item.video {
+                do { clip = try await BackgroundVideoProcessing.export(video.url, start: video.start, crop: crop) }
+                catch { busy = false; problem = "That video could not be prepared. Try a shorter one."; return }
+            }
+            let ok = await store.setMyExtra(.background, still)
+            var okVideo = true
+            if ok, let clip { okVideo = await store.setMyExtra(.backgroundVideo, clip) }
+            else if ok, hasVideo { okVideo = await store.setMyExtra(.backgroundVideo, nil) }   // a new photo replaces an old video
             busy = false
-            if ok { current = UIImage(data: data) } else { problem = "The background could not be saved. Check your connection and try again." }
+            if ok { current = UIImage(data: still); hasVideo = clip != nil && okVideo }
+            if !ok || !okVideo { problem = "The background could not be saved. Check your connection and try again." }
+        }
+    }
+
+    private func removeVideo() {
+        busy = true; problem = nil
+        Task {
+            let ok = await store.setMyExtra(.backgroundVideo, nil)
+            busy = false
+            if ok { hasVideo = false } else { problem = "The video could not be removed. Check your connection and try again." }
         }
     }
 
@@ -82,7 +138,7 @@ struct BackgroundScreen: View {
         Task {
             let ok = await store.setMyExtra(.background, nil)
             busy = false
-            if ok { current = nil } else { problem = "The background could not be removed. Check your connection and try again." }
+            if ok { current = nil; hasVideo = false } else { problem = "The background could not be removed. Check your connection and try again." }
         }
     }
 
@@ -130,9 +186,24 @@ struct BackgroundScreen: View {
 }
 
 /// Move and scale a picture into the wide frame the background will have.
+/// What the framing screen made: the 4:5 picture, and the geometry behind it (so a video can be framed the same way).
+struct BackgroundCrop {
+    let image: UIImage
+    let scale: CGFloat
+    let offset: CGSize
+    let viewport: CGSize
+}
+
+/// A video picked for a background, longer than 10 seconds: the person chooses where the 10 seconds start.
+struct PickedVideo: Identifiable {
+    let url: URL
+    let duration: Double
+    var id: URL { url }
+}
+
 struct BackgroundCropScreen: View {
     let image: UIImage
-    let onSave: (UIImage) -> Void
+    let onSave: (BackgroundCrop) -> Void
     let onCancel: () -> Void
 
     @State private var scale: CGFloat = 1
@@ -147,7 +218,7 @@ struct BackgroundCropScreen: View {
             let viewport = CGSize(width: geometry.size.width - 32, height: (geometry.size.width - 32) / BackgroundProcessing.ratio)
             VStack(spacing: 0) {
                 SheetHeader(title: "Move and Scale", leading: .close { onCancel() }) {
-                    Button { onSave(BackgroundProcessing.crop(image, viewport: viewport, scale: liveScale, offset: liveOffset(viewport))) } label: {
+                    Button { onSave(BackgroundCrop(image: BackgroundProcessing.crop(image, viewport: viewport, scale: liveScale, offset: liveOffset(viewport)), scale: liveScale, offset: liveOffset(viewport), viewport: viewport)) } label: {
                         Text("Save").font(Theme.title).foregroundStyle(Theme.accentInk)
                             .padding(.horizontal, 18).frame(minHeight: 44).background(Theme.accent, in: Capsule())
                     }
@@ -217,4 +288,38 @@ private struct HoleShape: Shape {
         path.addRect(hole)
         return path
     }
+}
+
+/// Where do the 10 seconds start? A slider over the video's length, with the frame it starts on.
+struct VideoTrimSheet: View {
+    let video: PickedVideo
+    let onNext: (Double) -> Void
+    let onCancel: () -> Void
+    @State private var start = 0.0
+    @State private var poster: UIImage?
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Text("Choose 10 seconds").font(Theme.title).foregroundStyle(Theme.text).accessibilityAddTraits(.isHeader).padding(.top, 20)
+            Group {
+                if let poster { Image(uiImage: poster).resizable().scaledToFit() } else { Theme.surface }
+            }
+            .frame(maxHeight: 260).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous)).accessibilityHidden(true)
+            let span = max(0.1, video.duration - BackgroundVideoProcessing.maxSeconds)
+            Slider(value: $start, in: 0...span).accessibilityLabel("Start of the 10 seconds").accessibilityValue("\(Int(start)) seconds in")
+                .accessibilityIdentifier("trim-slider").padding(.horizontal, 24)
+            Text("From \(clock(start)) to \(clock(start + BackgroundVideoProcessing.maxSeconds)) of \(clock(video.duration))").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
+            HStack(spacing: 12) {
+                Button { onCancel() } label: { Text("Cancel").font(Theme.title).foregroundStyle(Theme.text).frame(maxWidth: .infinity, minHeight: 50).background(Theme.surface, in: Capsule()) }
+                Button { onNext(start) } label: { Text("Next").font(Theme.title).foregroundStyle(Theme.accentInk).frame(maxWidth: .infinity, minHeight: 50).background(Theme.accent, in: Capsule()) }
+                    .accessibilityIdentifier("trim-next")
+            }
+            .padding(.horizontal, 20).padding(.bottom, 20)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity).background(Theme.canvas.ignoresSafeArea())
+        .presentationDetents([.medium])
+        .task(id: Int(start)) { poster = await BackgroundVideoProcessing.frame(of: video.url, at: start) }
+    }
+
+    private func clock(_ seconds: Double) -> String { String(format: "%d:%02d", Int(seconds) / 60, Int(seconds) % 60) }
 }

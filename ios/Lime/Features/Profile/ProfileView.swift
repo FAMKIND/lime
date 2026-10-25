@@ -64,6 +64,14 @@ struct ProfileView: View {
     @State private var confirmingUnsubscribe = false
     @State private var links: [ProfileLink] = []
     @State private var heroImage: UIImage?
+    // A background video (LIME-226b).
+    @State private var heroVideo: URL?
+    @State private var videoPending = false
+    @State private var heroVideoReady = false
+    @State private var backgroundPaused = false
+    @State private var lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var colorScheme
     // Edit in place (LIME-225): your own profile turns into its own editor; each field opens a sheet.
     @State private var editing = false
@@ -174,6 +182,7 @@ struct ProfileView: View {
             if route.isMe { store.myProfileOnScreen = true; if store.profileEditRequest { store.profileEditRequest = false; editing = true } }
         }
         .onDisappear { if route.isMe { store.myProfileOnScreen = false } }
+        .onReceive(NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)) { _ in lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled }
         .onChange(of: store.profileEditRequest) { _, wanted in if wanted, route.isMe { store.profileEditRequest = false; editing = true } }
         .sheet(item: $fieldSheet) { FieldEditorSheet(model: FieldEditorModel(field: $0, profile: session.profile ?? Profile(displayName: ""))) }
         .sheet(isPresented: $photoSheet) { EditSheet { ProfilePhotoScreen() } }
@@ -191,6 +200,10 @@ struct ProfileView: View {
         .task(id: "\(route.userID)-\(store.extrasVersion)") {
             links = ProfileLinks.decode(await store.peerExtra(route.userID, .links))
             heroImage = await store.peerExtra(route.userID, .background).flatMap(UIImage.init(data:))
+            if heroImage != nil, let clip = await store.peerExtra(route.userID, .backgroundVideo) {
+                heroVideo = HeroVideoCache.url(for: clip, key: "\(route.userID)-\(store.extrasVersion)")
+            } else { heroVideo = nil }
+            videoPending = heroImage != nil && heroVideo == nil && !route.isMe ? await store.peerExtraPending(route.userID, .backgroundVideo) : false
         }
         .confirmSheet("Unsubscribe from \(jamPage?.title ?? "this jam")?", isPresented: $confirmingUnsubscribe) {
             Button("Unsubscribe", role: .destructive) { if let jamPage { Task { await store.unsubscribe(jamPage.jamId) } } }.accessibilityIdentifier("profile-jam-subscribe-confirm")
@@ -257,8 +270,12 @@ struct ProfileView: View {
         }
         .frame(minHeight: HeroShape.blockHeight(screen: screen, inset: inset))
         .overlay(alignment: .topTrailing) { if editingNow { changeBackgroundButton } }
+        .overlay(alignment: .topLeading) { if videoPending && !editingNow { playBackgroundButton } }
+        // Demo runs: a marker that the clip is really showing (a UI test cannot look inside the player).
+        .overlay(alignment: .bottomLeading) { if store.isDemo, heroVideoReady { Rectangle().fill(Color.white.opacity(0.01)).frame(width: 2, height: 2).accessibilityLabel("player").accessibilityIdentifier("profile-hero-video") } }
         .background(alignment: .top) {
-            ProfileHeroBackground(image: shown.image, cacheKey: shown.key, isDefault: heroImage == nil, screenHeight: screen, exposedForTests: store.isDemo)
+            ProfileHeroBackground(image: shown.image, cacheKey: shown.key, isDefault: heroImage == nil, screenHeight: screen, videoURL: heroVideo, playVideo: videoMayPlay,
+                                  onVideoReady: { heroVideoReady = $0 }, exposedForTests: store.isDemo)
                 .padding(.top, -inset).padding(.bottom, -(HeroShape.heroHeight(screen: screen) - HeroShape.blockHeight(screen: screen, inset: inset) - inset)).padding(.horizontal, -16)
                 .animation(.easeInOut(duration: 0.25), value: shown.key)
         }
@@ -271,6 +288,25 @@ struct ProfileView: View {
     }
 
     private var editingNow: Bool { route.isMe && editing }
+
+    /// The background video plays only while the profile is on screen and nothing asks for less motion (LIME-226b): Reduce Motion, Low Power Mode, the
+    /// person's own "Pause background", the app in the background; otherwise the still stays.
+    private var videoMayPlay: Bool {
+        var reduce = reduceMotion
+        #if DEBUG
+        if store.isDemo, ProcessInfo.processInfo.arguments.contains("-lime-demo-reduce-motion") { reduce = true }
+        #endif
+        return heroVideo != nil && !reduce && !lowPower && !backgroundPaused && scenePhase == .active
+    }
+
+    /// Someone else's video that was not downloaded (cellular, Low Data Mode): a tap fetches and plays it.
+    private var playBackgroundButton: some View {
+        Button { Task { await store.fetchPeerExtra(route.userID, .backgroundVideo) } } label: {
+            Label("Play background", systemImage: "play.fill").font(Theme.font(.footnote, weight: .semibold)).foregroundStyle(Theme.text)
+                .padding(.horizontal, 12).frame(minHeight: 44).limeGlass(in: Capsule())
+        }
+        .buttonStyle(.plain).padding(.top, 4).accessibilityIdentifier("profile-hero-play")
+    }
 
     /// "Change background" on the hero (LIME-225): a small glass button in its corner.
     private var changeBackgroundButton: some View {
@@ -418,6 +454,7 @@ struct ProfileView: View {
             }
         }
         .shadow(color: onPhoto ? .black.opacity(0.45) : .clear, radius: 3, y: 1)
+        .accessibilityAction(named: heroVideo == nil ? "" : (backgroundPaused ? "Play background" : "Pause background")) { if heroVideo != nil { backgroundPaused.toggle() } }
     }
 
     /// The avatar with the status dot at its bottom right; on your own profile it is the button for the status picker.

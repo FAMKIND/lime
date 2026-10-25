@@ -164,6 +164,7 @@ final class ConversationStore {
     var profileEditRequest = false
     var myProfileOnScreen = false
     var extrasVersion = 0
+    var demoFetchedPending = false
     var demoPhotoVisibility: PhotoVisibility = .everyone
     #endif
 

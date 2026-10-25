@@ -132,8 +132,14 @@ struct ProfileHeroBackground: View {
     var isDefault = false
     /// The screen's height, which every proportion is a share of.
     var screenHeight: CGFloat = UIScreen.main.bounds.height
+    /// A background video (LIME-226b): the still is its poster, shown first and whenever the video is not playing.
+    var videoURL: URL? = nil
+    var playVideo = false
+    /// Told when the clip is actually showing (ready) or not.
+    var onVideoReady: (Bool) -> Void = { _ in }
     /// Demo runs (UI tests) expose it so a test can find it; for a person it is decorative and hidden from VoiceOver.
     var exposedForTests = false
+    @State private var videoReady = false
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
 
@@ -141,6 +147,8 @@ struct ProfileHeroBackground: View {
         let strength = HeroScrim.opacity(reduceTransparency: reduceTransparency, increaseContrast: contrast == .increased)
         let tint = Color(uiColor: HeroScrim.tint(from: HeroPalette.darkColor(of: image, key: cacheKey)))
         GeometryReader { geo in layers(size: geo.size, strength: strength, tint: tint) }
+        .onChange(of: playVideo) { _, playing in if !playing { videoReady = false } }
+        .onChange(of: videoReady) { _, now in onVideoReady(now) }
         .clipped()
         .accessibilityHidden(!exposedForTests)
         .accessibilityIdentifier(isDefault ? "profile-hero-default" : "profile-hero-background")
@@ -163,6 +171,13 @@ extension ProfileHeroBackground {
         let canvas = Theme.canvas
         ZStack {
             Image(uiImage: image).resizable().scaledToFill().frame(width: size.width, height: h).clipped()
+            // The clip, silent, looping, over its still once it is ready to show (only while allowed to play: otherwise the still stays).
+            if let videoURL, playVideo {
+                HeroVideoView(url: videoURL, playing: true, onReady: { withAnimation(.easeIn(duration: 0.3)) { videoReady = true } })
+                    .frame(width: size.width, height: h).clipped()
+                    .opacity(videoReady ? 1 : 0)
+                    
+            }
             // Long and faint under the status bar and the header circles: up to 45 % at the very top, eased to nothing by a quarter of the screen.
             LinearGradient(stops: eased(tint, size: h, from: 0, to: s * HeroShape.topEnd) { 0.45 * (1 - HeroShape.smooth($0)) }, startPoint: .top, endPoint: .bottom)
             // Local, behind the name block only (so the photo is not darkened as a whole): in, held, out.
