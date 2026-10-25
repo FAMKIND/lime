@@ -77,9 +77,9 @@ struct JamEngagementSection: View {
         let top = comments.filter { $0.parentId == nil }
         let mineJam = store.isMyJamPost(post)
         let writer = store.teacherName(post.author)
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("\(counts.likes) \(counts.likes == 1 ? "like" : "likes") \u{00B7} \(counts.comments) \(counts.comments == 1 ? "comment" : "comments") \u{00B7} \(counts.remixes) remixes")
-                .font(Theme.secondary).foregroundStyle(soft).accessibilityIdentifier("jam-counts-line")
+                .font(Theme.caption).foregroundStyle(soft).accessibilityIdentifier("jam-counts-line")
             faces(counts)
             composer(writer)
             ForEach(top, id: \.commentId) { comment in
@@ -126,13 +126,13 @@ struct JamEngagementSection: View {
             }
             HStack(alignment: .bottom, spacing: 8) {
                 TextField("Leave a comment\u{2026}", text: $text, axis: .vertical).lineLimit(1...5).focused($focused)
-                    .font(Theme.body).foregroundStyle(ink).padding(.horizontal, 14).padding(.vertical, 10)
+                    .font(Theme.body).foregroundStyle(ink).tint(ink).padding(.horizontal, 14).padding(.vertical, 10)
                     .background(fieldFill, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                     .accessibilityIdentifier("jam-comment-field")
                 let ready = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !sending
                 Button { send() } label: {
-                    Image(systemName: "arrow.up").font(.system(size: 16, weight: .bold)).foregroundStyle(Theme.accentInk).frame(width: 40, height: 40)
-                        .background(Theme.accent.opacity(ready ? 1 : 0.35), in: Circle()).frame(width: 44, height: 44)
+                    Image(systemName: "arrow.up").font(.system(size: 16, weight: .bold)).foregroundStyle(ready ? Theme.accentInk : soft).frame(width: 40, height: 40)
+                        .background(ready ? Theme.accent : (dark ? Color.white.opacity(0.18) : Theme.hairline), in: Circle()).frame(width: 44, height: 44)
                 }
                 .disabled(!ready).accessibilityLabel("Send comment").accessibilityIdentifier("jam-comment-send")
             }
@@ -149,6 +149,12 @@ struct JamEngagementSection: View {
         }
     }
 
+    /// "3:47 AM" today, else "Oct 25" (LIME-228): one short line beside the name.
+    static func when(_ millis: Int64) -> String {
+        let date = Date(timeIntervalSince1970: Double(millis) / 1000)
+        return Calendar.current.isDateInToday(date) ? date.formatted(date: .omitted, time: .shortened) : JamDates.short(millis)
+    }
+
     private func row(_ comment: JamCommentInfo, mineJam: Bool, writer: String) -> some View {
         let person = store.teacher(comment.author)
         let pending = comment.state == "pending"
@@ -157,9 +163,10 @@ struct JamEngagementSection: View {
             AvatarView(person: person, size: 32).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    Text(person.name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(ink)
-                    Text(JamDates.text(comment.created)).font(Theme.caption).foregroundStyle(soft)
+                    Text(person.name).font(Theme.font(.footnote, weight: .semibold)).foregroundStyle(ink).lineLimit(1).truncationMode(.tail)
+                    Text(Self.when(comment.created)).font(Theme.caption).foregroundStyle(soft).lineLimit(1).fixedSize().accessibilityIdentifier("jam-comment-date-\(comment.commentId)")
                 }
+                .accessibilityElement(children: .combine)
                 Text(comment.text).font(Theme.body).foregroundStyle(ink).fixedSize(horizontal: false, vertical: true)
                 if pending {
                     Text(stale ? "Not delivered yet" : "Waiting for \(writer)\u{2019}s phone").font(Theme.caption).foregroundStyle(soft).accessibilityIdentifier("jam-comment-pending")

@@ -304,9 +304,10 @@ struct JamVideoScreen: View {
         } message: { Text("Subscribers' copies are removed.") }
         .sheet(isPresented: $commenting) {
             if let post {
-                // The system's dark sheet (an elevated grey with its grabber), the shared comments component in dark mode (LIME-212b).
+                // Black with a little see-through, not the glass (LIME-228); the shared comments component in dark mode.
                 ScrollView { JamEngagementSection(post: post).padding(20) }
                     .preferredColorScheme(.dark).presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+                    .presentationBackground(Color.black.opacity(0.88))
             }
         }
         .onAppear {
