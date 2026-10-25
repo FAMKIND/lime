@@ -34,14 +34,15 @@ export async function requireModerator(req: Request): Promise<string> {
 /** Tells the moderators' address that a report arrived: the reason only, never the content ("URGENT" for a child's safety). Best effort. */
 export async function notifyModerators(reason: string, urgent: boolean): Promise<void> {
   const to = Deno.env.get("MODERATION_EMAIL");
-  const key = Deno.env.get("RESEND_API_KEY");
+  // The same Resend key and sender as the account notices (LIME_NOTIFY_*), unless moderation has its own.
+  const key = Deno.env.get("RESEND_API_KEY") ?? Deno.env.get("LIME_NOTIFY_RESEND_API_KEY");
   if (!to || !key) return;
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
       body: JSON.stringify({
-        from: Deno.env.get("MODERATION_FROM") ?? "lime <reports@limemessenger.org>", to: [to],
+        from: Deno.env.get("MODERATION_FROM") ?? Deno.env.get("LIME_NOTIFY_FROM") ?? "lime <reports@limemessenger.org>", to: [to],
         subject: `${urgent ? "URGENT: " : ""}lime report: ${reason.replace("_", " ")}`,
         text: "A new report is waiting in Settings > Moderation. The report's content is not in this email.",
       }),
