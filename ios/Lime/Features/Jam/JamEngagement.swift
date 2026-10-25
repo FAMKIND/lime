@@ -69,6 +69,7 @@ struct JamEngagementSection: View {
     @State private var text = ""
     @State private var replyingTo: JamCommentInfo?
     @State private var sending = false
+    @State private var reporting: ReportTarget?
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -94,6 +95,7 @@ struct JamEngagementSection: View {
             }
         }
         .onAppear { if mineJam { store.jamMarkSeen(post.postId) } }
+        .reportSheet($reporting)
         .onChange(of: focused) { _, now in typing?.wrappedValue = now }
         // Room under the last comment: the action pill and the dock must not cover the field or the words (LIME-189d).
         .padding(.bottom, dark ? 24 : 96)
@@ -177,6 +179,7 @@ struct JamEngagementSection: View {
             }
             Spacer(minLength: 0)
             Menu {
+                if !comment.mine { Button(role: .destructive) { reporting = store.reportTarget(comment: comment) } label: { Label("Report", systemImage: "flag") }.accessibilityIdentifier("jam-comment-report") }
                 if !comment.mine && !mineJam { Button { Task { await store.messageWriter(post.author) } } label: { Label("Reply privately", systemImage: "paperplane") }.accessibilityIdentifier("jam-comment-private") }
                 if comment.mine { Button(role: .destructive) { Task { await store.jamDeleteComment(comment.commentId, postID: post.postId) } } label: { Label("Delete", systemImage: "trash") }.accessibilityIdentifier("jam-comment-delete") }
                 else if mineJam { Button(role: .destructive) { Task { await store.jamDeleteComment(comment.commentId, postID: post.postId) } } label: { Label("Remove", systemImage: "trash") }.accessibilityIdentifier("jam-comment-remove") }

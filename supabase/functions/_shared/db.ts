@@ -57,7 +57,15 @@ export async function requireUser(req: Request): Promise<string> {
   if (!(await isVerified(session.sessionId))) {
     throw new HttpError(403, "not_verified", "Finish signing in: this session has not passed both steps.");
   }
+  await refuseIfSuspended(session.userId);
   return session.userId;
+}
+
+/** A suspended account (LIME-191) can do nothing with a session: "This account is suspended" (403, `suspended`). */
+export async function refuseIfSuspended(userId: string): Promise<void> {
+  const { data, error } = await admin().from("account_suspensions").select("user_id").eq("user_id", userId).maybeSingle();
+  if (error) throw new HttpError(500, "internal");
+  if (data) throw new HttpError(403, "suspended", "This account is suspended.");
 }
 
 /** The caller's own, non-revoked device. */

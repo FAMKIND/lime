@@ -3,7 +3,7 @@
 // records "password ok" for the new session, and emails a 6-digit code. The session is returned,
 // but it can do nothing until the code is verified (code-verify): see _shared/db.ts requireUser.
 
-import { admin, accountConfig, rateLimit, sessionIdOf } from "../_shared/db.ts";
+import { admin, accountConfig, rateLimit, refuseIfSuspended, sessionIdOf } from "../_shared/db.ts";
 import { authCall, clientIp, maskEmail, normaliseEmail, sendCode, sha256Hex, usernameError } from "../_shared/auth.ts";
 import { handler, HttpError, json, readJson } from "../_shared/http.ts";
 
@@ -40,6 +40,7 @@ Deno.serve(handler(async (req) => {
   if (signedIn.status !== 200 || !session?.access_token || !session?.user?.id) throw invalid;
   const sessionId = sessionIdOf(session.access_token);
   if (!sessionId) throw new HttpError(500, "internal");
+  await refuseIfSuspended(session.user.id);   // the password was right: say so, and why they cannot come in (LIME-191)
 
   const db = admin();
   const { error } = await db.from("auth_proofs").upsert({

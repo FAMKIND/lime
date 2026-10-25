@@ -22,7 +22,7 @@ Deno.serve(handler(async (req) => {
   let url: string | null = null;
   if (isUuid(body.blob_id)) {
     const id = (body.blob_id as string).toLowerCase();
-    const { data, error } = await admin().from("blobs").select("id").eq("id", id).eq("class", "jam").not("committed_at", "is", null).maybeSingle();
+    const { data, error } = await admin().from("blobs").select("id").eq("id", id).eq("class", "jam").is("hidden_at", null).not("committed_at", "is", null).maybeSingle();
     if (error) throw new HttpError(500, "internal");
     if (data) {
       try {

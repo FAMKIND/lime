@@ -23,6 +23,9 @@ Deno.serve(handler(async (req) => {
   const { data: target } = await db.from("sweep_target").select("secret").eq("id", 1).maybeSingle();
   if (!target || !sameText(presented, target.secret)) throw new HttpError(401, "unauthorized", "Not allowed.");
 
+  // Resolved reports are deleted 180 days after they were resolved (LIME-191).
+  await db.rpc("sweep_moderation");
+
   const now = new Date().toISOString();
   const dayAgo = new Date(Date.now() - 86_400_000).toISOString();
   let attachments = 0;

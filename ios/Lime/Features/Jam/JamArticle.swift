@@ -631,7 +631,7 @@ struct ReaderOptionsSheet: View {
     @State private var saved = false
     @State private var confirmingDelete = false
 
-    @State private var reportSoon = false
+    @State private var reporting: ReportTarget?
 
     var body: some View {
         let mine = post.author == store.meProvider().id
@@ -677,7 +677,7 @@ struct ReaderOptionsSheet: View {
                     if mine {
                         row("trash", "Delete post", id: "options-delete", destructive: true) { confirmingDelete = true }
                     } else {
-                        row("flag", reportSoon ? "Report \u{00B7} coming soon" : "Report", id: "options-report", destructive: true) { reportSoon = true }
+                        row("flag", "Report", id: "options-report", destructive: true) { reporting = store.reportTarget(post: post) }
                     }
                     // No "Download" (posts are already on the phone, encrypted), no "Scan for AI text" (it would send the text to a model),
                     // no "Copy link" (there is no public link until LIME-190).
@@ -687,6 +687,7 @@ struct ReaderOptionsSheet: View {
         }
         .background(Theme.canvas)
         .sheet(isPresented: $sharing) { JamShareSheet(post: post) }
+        .reportSheet($reporting)
         .confirmationDialog("Delete this post?", isPresented: $confirmingDelete, titleVisibility: .visible) {
             Button("Delete post", role: .destructive) { Task { _ = await store.deleteJamPost(post.postId); dismiss(); deleted() } }.accessibilityIdentifier("options-delete-confirm")
             Button("Cancel", role: .cancel) {}

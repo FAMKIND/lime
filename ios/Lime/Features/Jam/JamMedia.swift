@@ -240,6 +240,7 @@ struct JamVideoScreen: View {
     @State private var editingPost: JamPostInfo?
     @State private var confirmingDelete = false
     @State private var sharing = false
+    @State private var reporting: ReportTarget?
     @State private var transcript = false
     @State private var current: (postID: String, file: JamAttachmentInfo, controller: PodcastController)?
 
@@ -327,6 +328,7 @@ struct JamVideoScreen: View {
         }
         .onChange(of: active.controller.atEnd) { _, ended in if ended, !isAudio { advance() } }
         .sheet(isPresented: $sharing) { if let post { JamShareSheet(post: post) } }
+        .reportSheet($reporting)
         .sheet(isPresented: $transcript) { TranscriptSheet(cues: shownCues) }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("jam-video-screen")
@@ -365,6 +367,9 @@ struct JamVideoScreen: View {
                 }
                 Section {
                     Button { hide(post) } label: { Label("Hide post", systemImage: "eye.slash") }.accessibilityIdentifier("jam-video-hide")
+                    if let post, post.author != store.meProvider().id {
+                        Button(role: .destructive) { reporting = store.reportTarget(post: post) } label: { Label("Report", systemImage: "flag") }.accessibilityIdentifier("jam-video-report")
+                    }
                 }
                 if let post, post.author == store.meProvider().id {
                     Section {

@@ -22,6 +22,7 @@ struct JamPostMenu: View {
     @State private var editing: JamPostInfo?
     @State private var confirmingDelete = false
     @State private var sharing = false
+    @State private var reporting: ReportTarget?
 
     var body: some View {
         let mine = post.author == store.meProvider().id
@@ -49,6 +50,7 @@ struct JamPostMenu: View {
             if !mine {
                 Section {
                     Button { store.hideJamPost(post.postId) } label: { Label("Hide post", systemImage: "eye.slash") }.accessibilityIdentifier("card-hide")
+                    Button(role: .destructive) { reporting = store.reportTarget(post: post) } label: { Label("Report", systemImage: "flag") }.accessibilityIdentifier("card-report")
                 }
             }
             // Delete is last, alone in its group (LIME-218).
@@ -63,6 +65,7 @@ struct JamPostMenu: View {
         .accessibilityLabel("More").accessibilityIdentifier("card-more-\(post.postId)")
         .fullScreenCover(item: $editing) { JamEditSheet(post: $0) }
         .sheet(isPresented: $sharing) { JamShareSheet(post: post) }
+        .reportSheet($reporting)
         .confirmationDialog("Delete this post for everyone?", isPresented: $confirmingDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive) { Task { _ = await store.deleteJamPost(post.postId) } }.accessibilityIdentifier("card-delete-confirm")
             Button("Cancel", role: .cancel) {}

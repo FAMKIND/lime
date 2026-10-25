@@ -26,6 +26,8 @@ final class MessageActionsState {
     }
     /// The messages a Delete is about (one from the menu, or the selected ones).
     var deleting: [Message] = []
+    /// A message being reported (LIME-191).
+    var reporting: ReportTarget?
 }
 
 /// The long-press menu in this order: an emoji row (six quick ones and "+"), Reply, Forward, Edit (my own, for a day), Copy, Select, Delete.
@@ -81,6 +83,7 @@ struct MessageActionsHost: ViewModifier {
                     }) { state.reactors = nil }
                 }
             }
+            .reportSheet(Binding(get: { state.reporting }, set: { state.reporting = $0 }))
             .sheet(isPresented: Binding(get: { state.forwarding != nil }, set: { if !$0 { state.forwarding = nil } })) {
                 if let messages = state.forwarding {
                     ForwardSheet(messageIDs: messages.map(\.id)) { sent in
@@ -279,6 +282,12 @@ struct MessageActionsHost: ViewModifier {
                     }
                     if message.call == nil {
                         row("checkmark.circle", "Select", id: "action-select") { state.menu = nil; selection = [message.id] }
+                    }
+                    if !message.isOwn, !message.deleted, !message.isSystem, message.call == nil {
+                        row("flag", "Report", id: "action-report", destructive: true) {
+                            state.menu = nil
+                            state.reporting = store.reportTarget(message: message, conversationID: conversationID, from: message.senderID.map { store.teacherName($0) })
+                        }
                     }
                     row("trash", "Delete", id: "action-delete", destructive: true, last: true) { state.menu = nil; state.deleting = [message] }
                 }

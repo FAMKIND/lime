@@ -170,6 +170,7 @@ struct OrgProfileView: View {
     @State private var tab: OrgTab = .all
     @State private var reading: JamPostRoute?
     @State private var action: OrgAction?
+    @State private var reporting: ReportTarget?
     @State private var confirmingUnsubscribe = false
     @State private var topInset: CGFloat = 0
     @State private var windowHeight: CGFloat = 0
@@ -200,6 +201,7 @@ struct OrgProfileView: View {
         .toolbar { toolbarItems }
         .sheet(item: $reading) { route in NavigationStack { JamPostView(postID: route.postID).toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { reading = nil } } } } }
         .orgActions($action, closesPageAfterEnd: true)
+        .reportSheet($reporting)
         .confirmSheet("Unsubscribe from \(page.title)?", isPresented: $confirmingUnsubscribe) {
             Button("Unsubscribe", role: .destructive) { Task { await store.unsubscribe(page.jamId) } }.accessibilityIdentifier("profile-org-page-subscribe-confirm")
             Button("Cancel", role: .cancel) {}
@@ -245,6 +247,9 @@ struct OrgProfileView: View {
             }
             if let username = store.publicProfiles[page.writerId]?.username, let url = URL(string: InviteLink.url(username: username)) {
                 ShareLink(item: url, message: Text("\(page.title) on lime")) { Label("Share", systemImage: "square.and.arrow.up") }.accessibilityIdentifier("org-share")
+            }
+            if !isMe {
+                Button(role: .destructive) { reporting = store.reportTarget(page: page) } label: { Label("Report", systemImage: "flag") }.accessibilityIdentifier("org-report")
             }
         } label: { Image(systemName: "ellipsis") }
             .accessibilityLabel("More").accessibilityIdentifier("profile-org-more")

@@ -25,7 +25,7 @@ Deno.serve(handler(async (req) => {
   if (body.action === "by_writer") {
     if (!isUuid(body.writer_id)) throw new HttpError(400, "bad_request", "writer_id must be a UUID.");
     const { data, error } = await admin().from("jams").select("jam_id, writer_id, title, about, topics, post_count, subscriber_count, created_at")
-      .eq("writer_id", (body.writer_id as string).toLowerCase()).is("ended_at", null).order("created_at", { ascending: false }).limit(1);
+      .eq("writer_id", (body.writer_id as string).toLowerCase()).is("ended_at", null).is("taken_down_at", null).order("created_at", { ascending: false }).limit(1);
     if (error) throw new HttpError(500, "internal");
     return json({ jam: data?.[0] ?? null });
   }
@@ -52,9 +52,10 @@ Deno.serve(handler(async (req) => {
       return json({ ok: true });
     }
     case "get": {
-      const { data, error } = await db.from("jams").select("jam_id, writer_id, title, about, topics, post_count, subscriber_count, created_at, ended_at").eq("jam_id", jamId).maybeSingle();
+      const { data, error } = await db.from("jams").select("jam_id, writer_id, title, about, topics, post_count, subscriber_count, created_at, ended_at, taken_down_at").eq("jam_id", jamId).maybeSingle();
       if (error) throw new HttpError(500, "internal");
       if (!data) throw new HttpError(404, "not_found", "No such jam.");
+      if (data.taken_down_at) throw new HttpError(410, "taken_down", "That jam was taken down.");
       return json({ jam: data });
     }
     case "end": {

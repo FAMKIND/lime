@@ -70,6 +70,7 @@ struct ProfileView: View {
     @Environment(AccountSession.self) private var session
     @State private var confirmingMute = false
     @State private var confirmingBlock = false
+    @State private var reporting: ReportTarget?
     @State private var confirmingDelete = false
     @State private var confirmingSignOut = false
     @State private var showStatus = false
@@ -237,6 +238,7 @@ struct ProfileView: View {
             }
             Button("Cancel", role: .cancel) {}
         }
+        .reportSheet($reporting)
         .confirmSheet("Block \(displayName)?", isPresented: $confirmingBlock) {
             Button("Block", role: .destructive) {
                 Task { await store.block("dm:\(route.userID)"); store.path = NavigationPath(); store.callPath = NavigationPath() }
@@ -638,6 +640,8 @@ struct ProfileView: View {
                     .accessibilityIdentifier("profile-verify")
                 Button { showStorage = true } label: { Label("Storage", systemImage: "internaldrive") }
                     .accessibilityIdentifier("profile-storage")
+                Button(role: .destructive) { reporting = store.reportTarget(personID: route.userID, name: displayName) } label: { Label("Report", systemImage: "flag") }
+                    .accessibilityIdentifier("profile-report")
                 Button(role: .destructive) { confirmingBlock = true } label: { Label("Block \(displayName)", systemImage: "hand.raised") }
                     .accessibilityIdentifier("profile-block")
                 Button(role: .destructive) { confirmingDelete = true } label: { Label("Delete chat", systemImage: "trash") }
