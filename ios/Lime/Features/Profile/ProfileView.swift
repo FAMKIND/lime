@@ -39,6 +39,18 @@ private struct HeroInsetKey: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
+/// The height of the window the profile is in (not the screen: a Split View or Stage Manager window is shorter).
+private struct HeroWindowKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+/// How far the page's content is inset from the window's left and right edges (the notch and the home indicator in landscape): the photo reaches past it.
+private struct HeroSideKey: PreferenceKey {
+    static let defaultValue = EdgeInsets()
+    static func reduce(value: inout EdgeInsets, nextValue: () -> EdgeInsets) { value = nextValue() }
+}
+
 /// A sheet over your profile that holds one of the editing screens (photo, links, background) with a Done button (LIME-225).
 private struct EditSheet<Content: View>: View {
     @Environment(\.dismiss) private var dismiss
@@ -82,6 +94,8 @@ struct ProfileView: View {
     @State private var hideError: String?
     /// The top safe area (status bar and header) the photo reaches up into.
     @State private var topInset: CGFloat = 0
+    @State private var windowHeight: CGFloat = 0
+    @State private var sideInsets = EdgeInsets()
     @State private var openOrg: JamPageInfo?
     /// Settings as a sheet, opened on the root or straight on a screen (Edit profile).
     @State private var settingsLaunch: SettingsLaunch?
@@ -166,8 +180,14 @@ struct ProfileView: View {
             .padding(.horizontal, 16).padding(.bottom, 40)
         }
         .background(Theme.canvas.ignoresSafeArea().accessibilityIdentifier("profile-screen"))
-        .background { GeometryReader { geo in Color.clear.preference(key: HeroInsetKey.self, value: geo.safeAreaInsets.top) } }
+        .background { GeometryReader { geo in
+            Color.clear.preference(key: HeroInsetKey.self, value: geo.safeAreaInsets.top)
+                .preference(key: HeroWindowKey.self, value: geo.size.height + geo.safeAreaInsets.top + geo.safeAreaInsets.bottom)
+                .preference(key: HeroSideKey.self, value: geo.safeAreaInsets)
+        } }
         .onPreferenceChange(HeroInsetKey.self) { topInset = $0 }
+        .onPreferenceChange(HeroWindowKey.self) { windowHeight = $0 }
+        .onPreferenceChange(HeroSideKey.self) { sideInsets = $0 }
         // Over a photo the header sits on it: no bar background, light glass with dark icons.
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbarColorScheme(.light, for: .navigationBar)
@@ -258,17 +278,18 @@ struct ProfileView: View {
     /// screen's height and the avatar's centre at 29 %; the picture fills from the top edge behind it all: their background if there is one, else a default.
     @ViewBuilder
     private func headBlock(_ available: [Section]) -> some View {
-        let screen = UIScreen.main.bounds.height
+        let screen = windowHeight > 0 ? windowHeight : UIScreen.main.bounds.height
         let inset = topInset > 0 ? topInset : 100
         let shown = shownHero
         VStack(spacing: 0) {
             top.padding(.top, HeroShape.avatarTopPadding(screen: screen, inset: inset, avatar: 104) - 12)
-            Spacer(minLength: 18)
+            // Room under the text for the start of the blend, so the white text is always on the photo and never on the canvas (LIME-217e).
+            Spacer(minLength: HeroShape.textToPills(screen: screen))
             if editingNow { Color.clear.frame(height: HeroShape.pillsRow) } else {
                 ProfileTabs(sections: available, selection: $section, badged: route.isMe && store.jamHasUnseen() ? [.activity] : [])
             }
         }
-        .frame(minHeight: HeroShape.blockHeight(screen: screen, inset: inset))
+        .frame(maxWidth: .infinity, minHeight: HeroShape.blockHeight(screen: screen, inset: inset))
         .overlay(alignment: .topTrailing) { if editingNow { changeBackgroundButton } }
         .overlay(alignment: .topLeading) { if videoPending && !editingNow { playBackgroundButton } }
         // Demo runs: a marker that the clip is really showing (a UI test cannot look inside the player).
@@ -276,7 +297,7 @@ struct ProfileView: View {
         .background(alignment: .top) {
             ProfileHeroBackground(image: shown.image, cacheKey: shown.key, isDefault: heroImage == nil, screenHeight: screen, videoURL: heroVideo, playVideo: videoMayPlay,
                                   onVideoReady: { heroVideoReady = $0 }, exposedForTests: store.isDemo)
-                .padding(.top, -inset).padding(.bottom, -(HeroShape.heroHeight(screen: screen) - HeroShape.blockHeight(screen: screen, inset: inset) - inset)).padding(.horizontal, -16)
+                .padding(.top, -inset).padding(.bottom, -8).padding(.leading, -(16 + windowSideInsets.leading)).padding(.trailing, -(16 + windowSideInsets.trailing))
                 .animation(.easeInOut(duration: 0.25), value: shown.key)
         }
     }
@@ -288,6 +309,14 @@ struct ProfileView: View {
     }
 
     private var editingNow: Bool { route.isMe && editing }
+
+    /// How far the window's own safe areas (the notch, the home indicator in landscape) inset the page at the sides: the photo reaches past them to the window's edges.
+    private var windowSideInsets: EdgeInsets {
+        _ = windowHeight   // the page re-reads this when the window changes shape (rotation, a new window size)
+        let window = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).first(where: \.isKeyWindow)
+        let insets = window?.safeAreaInsets ?? .zero
+        return EdgeInsets(top: 0, leading: insets.left, bottom: 0, trailing: insets.right)
+    }
 
     /// The background video plays only while the profile is on screen and nothing asks for less motion (LIME-226b): Reduce Motion, Low Power Mode, the
     /// person's own "Pause background", the app in the background; otherwise the still stays.
@@ -303,7 +332,7 @@ struct ProfileView: View {
     private var playBackgroundButton: some View {
         Button { Task { await store.fetchPeerExtra(route.userID, .backgroundVideo) } } label: {
             Label("Play background", systemImage: "play.fill").font(Theme.font(.footnote, weight: .semibold)).foregroundStyle(Theme.text)
-                .padding(.horizontal, 12).frame(minHeight: 44).limeGlass(in: Capsule())
+                .padding(.horizontal, 12).frame(minHeight: 44).background(Theme.surface.opacity(0.92), in: Capsule())
         }
         .buttonStyle(.plain).padding(.top, 4).accessibilityIdentifier("profile-hero-play")
     }
@@ -312,7 +341,7 @@ struct ProfileView: View {
     private var changeBackgroundButton: some View {
         Button { backgroundSheet = true } label: {
             Label(heroImage == nil ? "Add background" : "Change background", systemImage: "photo").font(Theme.font(.footnote, weight: .semibold)).foregroundStyle(Theme.text)
-                .padding(.horizontal, 12).frame(minHeight: 44).limeGlass(in: Capsule())
+                .padding(.horizontal, 12).frame(minHeight: 44).background(Theme.surface.opacity(0.92), in: Capsule())
         }
         .buttonStyle(.plain).accessibilityIdentifier("profile-edit-background")
     }
@@ -453,7 +482,6 @@ struct ProfileView: View {
                 Text(statusLine).font(Theme.secondary).foregroundStyle(secondary).accessibilityIdentifier("profile-status")
             }
         }
-        .shadow(color: onPhoto ? .black.opacity(0.45) : .clear, radius: 3, y: 1)
         .accessibilityAction(named: heroVideo == nil ? "" : (backgroundPaused ? "Play background" : "Pause background")) { if heroVideo != nil { backgroundPaused.toggle() } }
     }
 
@@ -481,7 +509,7 @@ struct ProfileView: View {
                 if editingNow {
                     Button { photoSheet = true } label: {
                         Image(systemName: "camera.fill").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.text)
-                            .frame(width: 34, height: 34).limeGlass(in: Circle()).frame(width: 44, height: 44).contentShape(Rectangle())
+                            .frame(width: 34, height: 34).background(Theme.surface.opacity(0.92), in: Circle()).frame(width: 44, height: 44).contentShape(Rectangle())
                     }
                     .buttonStyle(.plain).offset(x: -8, y: 8)
                     .accessibilityLabel("Change photo").accessibilityIdentifier("profile-edit-photo")
@@ -914,7 +942,7 @@ struct ProfileTabs: View {
                         Button { selection = section } label: {
                             Text(section.rawValue).font(Theme.font(.subheadline, weight: on ? .semibold : .regular)).foregroundStyle(on ? Theme.text : Theme.textSecondary)
                                 .padding(.horizontal, 14).frame(minHeight: 44)
-                                .background { if on { Capsule().fill(.clear).limeGlass(in: Capsule()) } }
+                                .background { if on { Capsule().fill(Theme.surface.opacity(0.92)) } }
                                 .overlay(alignment: .topTrailing) { if badged.contains(section) { Circle().fill(Theme.accent).frame(width: 8, height: 8).padding(.top, 8).padding(.trailing, 6).accessibilityIdentifier("profile-tab-dot-\(section.rawValue)") } }
                         }
                         .buttonStyle(.plain).id(section)

@@ -13,6 +13,10 @@ enum HeroScrim {
     /// The darkest luminance the tint may have: the photo's own dark colour is used when it is at least this dark, else it is darkened to it.
     static let maxTintLuminance = 0.02
 
+    /// How strong the one overlay is at `y` points from the top of the photo: 40 % of `strength` at the very top (under the time), all of it from 18 % of the
+    /// screen's height down.
+    static func overlay(at y: CGFloat, screen: CGFloat, strength: Double) -> Double { strength * (0.4 + 0.6 * HeroShape.smooth(Double(y / max(screen * 0.18, 1)))) }
+
     /// The colour of the gradients: `sampled` (a dark colour from the photo), darkened until it is dark enough to keep white text readable.
     static func tint(from sampled: UIColor) -> UIColor {
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
@@ -104,6 +108,8 @@ enum HeroShape {
     static let topEnd = 0.25
     /// The height of the tab pills row; the pills' centre is half of it above the row's bottom.
     static let pillsRow: CGFloat = 52
+    /// How long the blend into the canvas is: about a fifth of the screen, never less than 140 pt.
+    static func blendLength(screen: CGFloat) -> CGFloat { max(0.20 * screen, 140) }
 
     /// The photo's height from the top of the screen: the pills' row bottom plus a little under it, at least to where the blend ends.
     static func heroHeight(screen: CGFloat) -> CGFloat { max(screen * pillsCentre + pillsRow / 2 + 8, screen * blendEnd) }
@@ -113,6 +119,10 @@ enum HeroShape {
 
     /// Space above the avatar so its centre sits at 29 % (never less than the usual 12 pt).
     static func avatarTopPadding(screen: CGFloat, inset: CGFloat, avatar: CGFloat) -> CGFloat { max(12, screen * avatarCentre - avatar / 2 - inset) }
+
+    /// The least space between the bottom of the name block and the pills' row, so the blend (about a fifth of the screen, ending just under the pills) has
+    /// barely begun where the text ends: 80 % of its length less the row and the little under it.
+    static func textToPills(screen: CGFloat) -> CGFloat { max(18, 0.8 * blendLength(screen: screen) - pillsRow - 4) }
 
     /// Smoothstep: 0 to 1 with no kink at either end, so a gradient built on it has no visible start or end.
     static func smooth(_ t: Double) -> Double { let x = min(max(t, 0), 1); return x * x * (3 - 2 * x) }
@@ -150,8 +160,9 @@ struct ProfileHeroBackground: View {
         .onChange(of: playVideo) { _, playing in if !playing { videoReady = false } }
         .onChange(of: videoReady) { _, now in onVideoReady(now) }
         .clipped()
-        .accessibilityHidden(!exposedForTests)
-        .accessibilityIdentifier(isDefault ? "profile-hero-default" : "profile-hero-background")
+        .accessibilityHidden(true)
+        // Demo runs (UI tests) get a marker of exactly the photo's box (a picture that fills would report its own, larger, frame); a person gets nothing.
+        .overlay { if exposedForTests { Color.clear.accessibilityIdentifier(isDefault ? "profile-hero-default" : "profile-hero-background") } }
     }
 }
 
@@ -165,10 +176,15 @@ extension ProfileHeroBackground {
         }
     }
 
+    /// One overlay over the whole photo (LIME-217e): the photo's dark colour at `strength`, a little lighter only at the very top (under the time and the
+    /// circles), so light photos come out evenly dimmed and dark ones barely change, with no band and no edge; then, in the last stretch above the pills, the
+    /// blend into the canvas. The blend is measured from the bottom of the photo, which is always below the text and the pills.
     @ViewBuilder
     func layers(size: CGSize, strength: Double, tint: Color) -> some View {
         let h = max(size.height, 1), s = screenHeight
         let canvas = Theme.canvas
+        let blend = HeroShape.blendLength(screen: s)
+        let end = h - 4, start = max(0, end - blend)
         ZStack {
             Image(uiImage: image).resizable().scaledToFill().frame(width: size.width, height: h).clipped()
             // The clip, silent, looping, over its still once it is ready to show (only while allowed to play: otherwise the still stays).
@@ -176,18 +192,13 @@ extension ProfileHeroBackground {
                 HeroVideoView(url: videoURL, playing: true, onReady: { withAnimation(.easeIn(duration: 0.3)) { videoReady = true } })
                     .frame(width: size.width, height: h).clipped()
                     .opacity(videoReady ? 1 : 0)
-                    
             }
-            // Long and faint under the status bar and the header circles: up to 45 % at the very top, eased to nothing by a quarter of the screen.
-            LinearGradient(stops: eased(tint, size: h, from: 0, to: s * HeroShape.topEnd) { 0.45 * (1 - HeroShape.smooth($0)) }, startPoint: .top, endPoint: .bottom)
-            // Local, behind the name block only (so the photo is not darkened as a whole): in, held, out.
-            LinearGradient(stops: eased(tint, size: h, from: s * 0.31, to: s * 0.37) { strength * HeroShape.smooth($0) }
-                           + eased(tint, size: h, from: s * 0.37, to: s * 0.49, steps: 1) { _ in strength }
-                           + eased(tint, size: h, from: s * 0.49, to: s * 0.56) { strength * (1 - HeroShape.smooth($0)) }, startPoint: .top, endPoint: .bottom)
-            // The blend: a little of the photo's dark colour (at most 35 %) that comes and goes, under the canvas coming in; the pills sit on its lower half.
-            LinearGradient(stops: eased(tint, size: h, from: s * HeroShape.blendStart, to: s * HeroShape.blendEnd, steps: 9) { 0.35 * sin(Double.pi * $0) }, startPoint: .top, endPoint: .bottom)
-            LinearGradient(stops: eased(canvas, size: h, from: s * HeroShape.blendStart, to: s * HeroShape.blendEnd, steps: 9) { HeroShape.smooth($0) }
-                           + [.init(color: canvas, location: 1)], startPoint: .top, endPoint: .bottom)
+            // The one overlay: 40 % of its strength at the very top, eased to all of it by 18 % of the screen, then the same all the way down.
+            LinearGradient(stops: eased(tint, size: h, from: 0, to: s * 0.18) { strength * (0.4 + 0.6 * HeroShape.smooth($0)) } + [.init(color: tint.opacity(strength), location: 1)],
+                           startPoint: .top, endPoint: .bottom)
+            // The blend: a little more of the dark colour that comes and goes, under the canvas coming in; the pills sit on its lower half.
+            LinearGradient(stops: eased(tint, size: h, from: start, to: end, steps: 9) { 0.35 * sin(Double.pi * $0) }, startPoint: .top, endPoint: .bottom)
+            LinearGradient(stops: eased(canvas, size: h, from: start, to: end, steps: 9) { HeroShape.smooth($0) } + [.init(color: canvas, location: 1)], startPoint: .top, endPoint: .bottom)
         }
     }
 }
@@ -263,7 +274,6 @@ struct LimeShapedAvatar: View {
         }
         .frame(width: size, height: size).clipped()
         .mask { Image("LimeMask").resizable().scaledToFit().frame(width: size, height: size) }
-        .shadow(color: .black.opacity(0.25), radius: 6, y: 2)
         .accessibilityHidden(true)
     }
 }

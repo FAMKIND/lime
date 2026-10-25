@@ -59,6 +59,24 @@ final class ProfileHeroTests: XCTestCase {
         XCTAssertLessThan(abs(luma(134) - luma(136)), 0.15, "no hard edge is left")
     }
 
+    func testWhiteTextKeepsContrastOverPureWhiteAtEveryTextPosition() {
+        // The name block starts below the avatar (29 % + half of it) and ends before the blend: sample every 2 % of a 812 pt screen from 30 % down to 70 %.
+        let screen: CGFloat = 812
+        let tint = HeroScrim.tint(from: .white)
+        for (name, strength) in settings {
+            var fraction = 0.30
+            while fraction <= 0.70 {
+                let covered = HeroScrim.overlay(at: CGFloat(fraction) * screen, screen: screen, strength: strength)
+                let ratio = HeroScrim.contrast(text: .white, tint: tint, image: .white, scrim: covered)
+                XCTAssertGreaterThanOrEqual(ratio, 4.5, "at \(Int(fraction * 100)) % of the height, \(name): \(ratio)")
+                fraction += 0.02
+            }
+        }
+        // The overlay is the same everywhere below the top: no band.
+        XCTAssertEqual(HeroScrim.overlay(at: 200, screen: screen, strength: 0.7), HeroScrim.overlay(at: 500, screen: screen, strength: 0.7), accuracy: 1e-9)
+        XCTAssertLessThan(HeroScrim.overlay(at: 0, screen: screen, strength: 0.7), 0.7 * 0.45, "lighter only at the very top")
+    }
+
     func testTheTintIsDarkEnoughWhateverTheSample() {
         for colour in [UIColor.white, .systemYellow, .systemGreen, .systemBlue, .gray, .black] {
             var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
