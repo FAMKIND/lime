@@ -34,6 +34,11 @@ struct SettingsLaunch: Identifiable {
     let start: SettingsRoute?
 }
 
+private struct HeroInsetKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
 struct ProfileView: View {
     let route: ProfileRoute
     @Environment(ConversationStore.self) private var store
@@ -47,6 +52,8 @@ struct ProfileView: View {
     @State private var confirmingUnsubscribe = false
     @State private var links: [ProfileLink] = []
     @State private var heroImage: UIImage?
+    /// The top safe area (status bar and header) the photo reaches up into.
+    @State private var topInset: CGFloat = 0
     @State private var openOrg: JamPageInfo?
     /// Settings as a sheet, opened on the root or straight on a screen (Edit profile).
     @State private var settingsLaunch: SettingsLaunch?
@@ -114,8 +121,17 @@ struct ProfileView: View {
         let available = sections
         ScrollView {
             VStack(spacing: 18) {
-                top
-                ProfileTabs(sections: available, selection: $section, badged: route.isMe && store.jamHasUnseen() ? [.activity] : [])
+                VStack(spacing: 18) {
+                    top
+                    ProfileTabs(sections: available, selection: $section, badged: route.isMe && store.jamHasUnseen() ? [.activity] : [])
+                }
+                // The background photo, full bleed from the top edge to just below the pills, fading to the canvas there (LIME-217b).
+                .background(alignment: .top) {
+                    if let heroImage {
+                        ProfileHeroBackground(image: heroImage, exposedForTests: store.isDemo)
+                            .padding(.top, -(topInset > 0 ? topInset : 100)).padding(.bottom, -60).padding(.horizontal, -16)
+                    }
+                }
                 switch section {
                 case .info: info
                 case .posts: JamProfilePosts(posts: ownPosts.filter { $0.kind == "quick" }, locked: postsLocked)
@@ -128,14 +144,13 @@ struct ProfileView: View {
                 }
             }
             .padding(.horizontal, 16).padding(.bottom, 40)
-            // The background image (LIME-217), full width behind the top of the page, fading into the canvas.
-            .background(alignment: .top) {
-                if let heroImage {
-                    ProfileHeroBackground(image: heroImage, exposedForTests: store.isDemo).frame(height: 300).padding(.horizontal, -16).offset(y: -60)
-                }
-            }
         }
         .background(Theme.canvas.ignoresSafeArea().accessibilityIdentifier("profile-screen"))
+        .background { GeometryReader { geo in Color.clear.preference(key: HeroInsetKey.self, value: geo.safeAreaInsets.top) } }
+        .onPreferenceChange(HeroInsetKey.self) { topInset = $0 }
+        // Over a photo the header sits on it: no bar background, light glass with dark icons.
+        .toolbarBackground(heroImage == nil ? .automatic : .hidden, for: .navigationBar)
+        .toolbarColorScheme(heroImage == nil ? nil : .light, for: .navigationBar)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
         .toolbar { toolbarItems }
@@ -221,44 +236,62 @@ struct ProfileView: View {
     // MARK: The top
 
     private var top: some View {
-        VStack(spacing: 6) {
+        let onPhoto = heroImage != nil
+        // On a photo the name and the lines are white with a soft shadow (the gradient behind them keeps them readable); otherwise as before.
+        let primary: Color = onPhoto ? .white : Theme.text
+        let secondary: Color = onPhoto ? .white.opacity(0.92) : Theme.textSecondary
+        return VStack(spacing: 6) {
             avatar.padding(.top, 12)
             HStack(spacing: 6) {
-                Text(displayName).font(Theme.font(.title2, weight: .semibold)).foregroundStyle(Theme.text)
+                Text(displayName).font(Theme.font(.title2, weight: .semibold)).foregroundStyle(primary)
                     .accessibilityIdentifier("profile-name")
                 if conversation?.verified == true {
-                    Image(systemName: "checkmark.seal.fill").foregroundStyle(Theme.text).font(Theme.font(.callout)).accessibilityLabel("Verified in person")
+                    Image(systemName: "checkmark.seal.fill").foregroundStyle(primary).font(Theme.font(.callout)).accessibilityLabel("Verified in person")
                 }
             }
-            // Under the name (LIME-213): @handle, then the school, then the orgs as chips.
+            // Under the name (LIME-213): @handle, then the school.
             if let username = profile?.username {
-                Text("@\(username)").font(Theme.secondary).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("profile-handle")
+                Text("@\(username)").font(Theme.secondary).foregroundStyle(secondary).accessibilityIdentifier("profile-handle")
             }
             if let school = profile?.school, !school.isEmpty {
-                Text("\u{1F3EB} \(school)").font(Theme.secondary).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("profile-school-line")
+                Text("\u{1F3EB} \(school)").font(Theme.secondary).foregroundStyle(secondary).accessibilityIdentifier("profile-school-line")
             }
             // Subscribe sits under the school, as a pill (LIME-221): lime to subscribe, neutral once you do.
             if let jamPage, !route.isMe { subscribePill(jamPage).padding(.top, 4) }
             if let statusLine {
-                Text(statusLine).font(Theme.secondary).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("profile-status")
+                Text(statusLine).font(Theme.secondary).foregroundStyle(secondary).accessibilityIdentifier("profile-status")
             }
         }
+        .shadow(color: onPhoto ? .black.opacity(0.45) : .clear, radius: 3, y: 1)
     }
 
     /// The avatar with the status dot at its bottom right; on your own profile it is the button for the status picker.
     @ViewBuilder
     private var avatar: some View {
+        // On a photo the avatar takes the lime logomark's outline (LIME-217b); everywhere else people are circles.
+        let shaped = heroImage != nil
         if route.isMe {
             let state = store.status(of: route.userID)?.state ?? .available
-            AvatarView(person: person, size: 96)
+            Group {
+                if shaped { LimeShapedAvatar(person: person, size: 104) } else { AvatarView(person: person, size: 96) }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                Button { showStatus = true } label: {
+                    StatusBadge(state: state, size: 24).frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .offset(x: 10, y: 10)
+                .accessibilityLabel("Status: \(state.title)").accessibilityHint("Changes your status")
+                .accessibilityIdentifier("profile-change-status")
+            }
+        } else if shaped {
+            LimeShapedAvatar(person: person, size: 104)
                 .overlay(alignment: .bottomTrailing) {
-                    Button { showStatus = true } label: {
-                        StatusBadge(state: state, size: 24).frame(width: 44, height: 44)
+                    if let status = store.status(of: route.userID) {
+                        StatusBadge(state: status.state, size: 22).offset(x: 4, y: 4)
+                            .accessibilityElement(children: .ignore).accessibilityLabel(status.state.title)
+                            .accessibilityIdentifier("status-badge-\(route.userID)")
                     }
-                    .buttonStyle(.plain)
-                    .offset(x: 10, y: 10)
-                    .accessibilityLabel("Status: \(state.title)").accessibilityHint("Changes your status")
-                    .accessibilityIdentifier("profile-change-status")
                 }
         } else {
             AvatarView(person: person, size: 96, showsStatus: true)
@@ -295,13 +328,18 @@ struct ProfileView: View {
     @ToolbarContentBuilder
     private var modernItems: some ToolbarContent {
         if route.isMe {
-            ToolbarItemGroup(placement: .topBarTrailing) {
+            // Three separate glass circles (LIME-217b).
+            ToolbarItem(placement: .topBarTrailing) {
                 Button { settingsLaunch = SettingsLaunch(start: .profile) } label: { Image(systemName: "pencil") }
                     .accessibilityLabel("Edit profile").accessibilityIdentifier("profile-edit")
+            }
+            ToolbarSpacer(.fixed, placement: .topBarTrailing)
+            ToolbarItem(placement: .topBarTrailing) {
                 Button { settingsLaunch = SettingsLaunch(start: nil) } label: { Image(systemName: "gearshape") }
                     .accessibilityLabel("Settings").accessibilityIdentifier("profile-settings")
-                moreMenu
             }
+            ToolbarSpacer(.fixed, placement: .topBarTrailing)
+            ToolbarItem(placement: .topBarTrailing) { moreMenu }
         } else if accepted {
             // Three separate bubbles (LIME-224): Message · Call (Voice or Video) · More.
             ToolbarItem(placement: .topBarTrailing) {

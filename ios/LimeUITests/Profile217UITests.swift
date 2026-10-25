@@ -29,6 +29,22 @@ final class Profile217UITests: LimeUITestCase {
         let app = app()
         app.buttons["conversation-row-dm:sam"].tap()
         app.descendants(matching: .any).matching(identifier: "chat-title").firstMatch.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["profile-hero-background"].waitForExistence(timeout: 10), "Sam is a contact: his background shows")
+        let hero = app.descendants(matching: .any)["profile-hero-background"]
+        XCTAssertTrue(hero.waitForExistence(timeout: 10), "Sam is a contact: his background shows")
+        XCTAssertLessThan(hero.frame.minY, 1, "full bleed from the very top, under the status bar")
+        XCTAssertGreaterThan(app.buttons["profile-tab-Info"].frame.minY, app.staticTexts["profile-name"].frame.maxY, "the tabs are below the name")
+        XCTAssertLessThan(app.buttons["profile-tab-Info"].frame.midY, hero.frame.maxY, "and sit on the photo's fade")
+        XCTAssertTrue(app.staticTexts["profile-name"].exists)
+    }
+
+    func testAProfileWithNoBackgroundKeepsTheCleanLook() {
+        // Lee has no background in the demo.
+        let again = XCUIApplication()
+        again.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat"]
+        again.launch()
+        again.buttons["conversation-row-dm:lee"].tap()
+        again.descendants(matching: .any).matching(identifier: "chat-title").firstMatch.tap()
+        XCTAssertTrue(again.staticTexts["profile-name"].waitForExistence(timeout: 10))
+        XCTAssertFalse(again.descendants(matching: .any)["profile-hero-background"].exists, "no photo: today's canvas")
     }
 }
