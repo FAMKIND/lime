@@ -7809,3 +7809,12 @@ Both white outlines are deleted from `CoverArt`'s default cover in `JamAudio.swi
 - **Docs:** api-v2 (the slot, limits, the still rule, what each party learns).
 - Tests: core 335 pass (new: contacts-only video is ciphertext, only a contact reads it, a non-contact sees none, Everyone is a public mp4, 6 MiB + 1 refused, needs its still, removing the video keeps the still); `deno check` on `avatar`.
 - For plot: the deploy is now one migration (`20261024100000`, with the bucket update) + functions `avatar` and `profile-get`. **Run the migration before the functions.** Nothing deployed.
+
+## Staging deploy of the profile extras (the user's go, 2026-10-24) — DONE
+
+Project `ddshpgfkjygftkuorrqw` (**lime-staging**; `supabase/.temp/linked-project.json`). Only what was asked, not `deploy-staging.sh` (which redeploys everything):
+- **Migration:** `supabase db push --linked --dry-run` showed exactly one pending file, `20261024100000_profile_extras.sql`; `db push --linked --yes` applied it. It adds the six columns (`links_*`, `background_*`, `background_video_*`) **and the bucket rule**: `public-avatars` now allows `image/jpeg`, `application/json`, `video/mp4`, 6 MiB. **No steps outside the migration** (226a's record said none).
+- **Functions:** `supabase functions deploy avatar profile-get --project-ref ddshpgfkjygftkuorrqw --use-api`: both deployed.
+- **Smoke test** (`supabase/smoke-extras-staging.sh` → `supabase/tests/extras_test.ts`, throwaway users deleted at the end; service key read into memory only): **4 of 4 pass on staging**: the bucket rule reads back as 6291456 bytes and exactly those three types, still not public; links, background and background video are each published, read by a second user byte for byte, hidden (contacts only deletes only that slot's public copy) and removed (removing the video keeps the still); each slot's declared limit is refused (links > 8 KB, background > 1 MiB, clip > 6 MiB, exactly 6 MiB accepted, unknown slot 400) **and an actual upload larger than its slot's limit is refused at commit and removed** (the bucket alone would have taken it); `profile-get` returns `since` for a findable person and null for someone who hid.
+- The same file runs against a local stack with `./supabase/test.sh`.
+- **Not done:** live was not touched. Phones on staging can now set and read links and backgrounds.
