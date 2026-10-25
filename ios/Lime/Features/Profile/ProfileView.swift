@@ -192,6 +192,7 @@ struct ProfileView: View {
         .toolbarColorScheme(.light, for: .navigationBar)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
+        .navigationBarBackButtonHidden(editingNow)
         .toolbar { toolbarItems }
         .task { await store.loadProfile(route.userID) }
         .task(id: route.userID) { await loadJam() }
@@ -288,7 +289,6 @@ struct ProfileView: View {
             }
         }
         .frame(maxWidth: .infinity, minHeight: HeroShape.blockHeight(screen: screen, inset: inset))
-        .overlay(alignment: .topTrailing) { if editingNow { changeBackgroundButton } }
         .overlay(alignment: .topLeading) { if videoPending && !editingNow { playBackgroundButton } }
         // Demo runs: a marker that the clip is really showing (a UI test cannot look inside the player).
         .overlay(alignment: .bottomLeading) { if store.isDemo, heroVideoReady { Rectangle().fill(Color.white.opacity(0.01)).frame(width: 2, height: 2).accessibilityLabel("player").accessibilityIdentifier("profile-hero-video") } }
@@ -333,15 +333,6 @@ struct ProfileView: View {
                 .padding(.horizontal, 12).frame(minHeight: 44).background(Theme.surface.opacity(0.92), in: Capsule())
         }
         .buttonStyle(.plain).padding(.top, 4).accessibilityIdentifier("profile-hero-play")
-    }
-
-    /// "Change background" on the hero (LIME-225): a small glass button in its corner.
-    private var changeBackgroundButton: some View {
-        Button { backgroundSheet = true } label: {
-            Label(heroImage == nil ? "Add background" : "Change background", systemImage: "photo").font(Theme.font(.footnote, weight: .semibold)).foregroundStyle(Theme.text)
-                .padding(.horizontal, 12).frame(minHeight: 44).background(Theme.surface.opacity(0.92), in: Capsule())
-        }
-        .buttonStyle(.plain).accessibilityIdentifier("profile-edit-background")
     }
 
     /// A small pencil after a line of the hero: opens that field's sheet.
@@ -538,12 +529,7 @@ struct ProfileView: View {
     private var legacyItems: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarTrailing) {
             if route.isMe {
-                if editing { doneButton } else {
-                    Button { editing = true } label: { Image(systemName: "pencil") }
-                        .accessibilityLabel("Edit profile").accessibilityIdentifier("profile-edit")
-                    Button { settingsLaunch = SettingsLaunch(start: nil) } label: { Image(systemName: "gearshape") }
-                        .accessibilityLabel("Settings").accessibilityIdentifier("profile-settings")
-                }
+                if editing { editCoverButton; doneButton } else { editButton }
             } else if accepted {
                 Button { store.openFromNotification("dm:\(route.userID)", thread: nil) } label: { Image(systemName: "message") }
                     .accessibilityLabel("Message \(displayName)").accessibilityIdentifier("profile-message")
@@ -553,25 +539,21 @@ struct ProfileView: View {
             }
             if !(route.isMe && editing) { moreMenu }
         }
+        ToolbarItem(placement: .topBarLeading) { if editingNow { backToProfile } }
     }
 
     @available(iOS 26, *)
     @ToolbarContentBuilder
     private var modernItems: some ToolbarContent {
         if route.isMe {
-            // Three separate glass circles (LIME-217b).
+            // Normal: Edit · ⋯. Editing: Edit Cover · Done, and ‹ back to the profile (LIME-229).
             if editing {
+                ToolbarItem(placement: .topBarLeading) { backToProfile }
+                ToolbarItem(placement: .topBarTrailing) { editCoverButton }
+                ToolbarSpacer(.fixed, placement: .topBarTrailing)
                 ToolbarItem(placement: .topBarTrailing) { doneButton }
             } else {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { editing = true } label: { Image(systemName: "pencil") }
-                        .accessibilityLabel("Edit profile").accessibilityIdentifier("profile-edit")
-                }
-                ToolbarSpacer(.fixed, placement: .topBarTrailing)
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { settingsLaunch = SettingsLaunch(start: nil) } label: { Image(systemName: "gearshape") }
-                        .accessibilityLabel("Settings").accessibilityIdentifier("profile-settings")
-                }
+                ToolbarItem(placement: .topBarTrailing) { editButton }
                 ToolbarSpacer(.fixed, placement: .topBarTrailing)
                 ToolbarItem(placement: .topBarTrailing) { moreMenu }
             }
@@ -596,7 +578,21 @@ struct ProfileView: View {
 
     /// Done turns the editor back into your profile (LIME-225).
     private var doneButton: some View {
-        Button("Done") { editing = false }.fontWeight(.semibold).accessibilityIdentifier("profile-done")
+        Button("Done") { editing = false }.fontWeight(.semibold).accessibilityLabel("Done editing").accessibilityIdentifier("profile-done")
+    }
+
+    private var editButton: some View {
+        Button("Edit") { editing = true }.accessibilityLabel("Edit profile").accessibilityIdentifier("profile-edit")
+    }
+
+    /// Opens the background screen (photo or video, who sees it) (LIME-229; it was the hero's corner button).
+    private var editCoverButton: some View {
+        Button("Edit Cover") { backgroundSheet = true }.accessibilityLabel("Edit cover").accessibilityIdentifier("profile-edit-background")
+    }
+
+    /// While editing, ‹ goes back to your profile, not out of it.
+    private var backToProfile: some View {
+        Button { editing = false } label: { Image(systemName: "chevron.left") }.accessibilityLabel("Back to your profile").accessibilityIdentifier("profile-edit-back")
     }
 
     private func subscribePill(_ page: JamPageInfo) -> some View {
@@ -615,6 +611,10 @@ struct ProfileView: View {
     @ViewBuilder
     private var moreMenu: some View {
         Menu {
+            if route.isMe {
+                Button { settingsLaunch = SettingsLaunch(start: nil) } label: { Label("Settings", systemImage: "gearshape") }
+                    .accessibilityIdentifier("profile-settings")
+            }
             if let username = profile?.username, let url = URL(string: InviteLink.url(username: username)) {
                 ShareLink(item: url, message: Text("\(displayName) on lime")) { Label("Share profile", systemImage: "square.and.arrow.up") }
                     .accessibilityIdentifier("profile-share")

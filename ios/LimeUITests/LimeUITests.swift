@@ -29,9 +29,7 @@ class LimeUITestCase: XCTestCase {
     /// Your avatar opens your profile; Settings is one of its cards.
     func openSettingsFromAvatar(_ app: XCUIApplication) {
         app.buttons["settings-button"].tap()
-        let row = app.buttons["profile-settings"]
-        XCTAssertTrue(row.waitForExistence(timeout: 5), "your profile opens")
-        row.tap()
+        openProfileSettings(app)
         XCTAssertTrue(app.descendants(matching: .any)["settings-root"].waitForExistence(timeout: 10), "Settings opens")
     }
 
@@ -2477,4 +2475,17 @@ private extension XCUIElement {
 /// The sign-out warning (shown by the confirmation), as the app words it.
 enum SignOutCopyForTests {
     static let warning = "Signing out removes your messages and keys from this iPhone. Your contacts will see that your security key changed."
+}
+
+@MainActor
+extension XCTestCase {
+    /// Settings is the first item of your profile's ⋯ menu (LIME-229).
+    func openProfileSettings(_ app: XCUIApplication) {
+        let more = app.buttons["profile-more"]
+        XCTAssertTrue(more.waitForExistence(timeout: 8), "your profile opens")
+        more.tap()
+        let row = app.buttons["profile-settings"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "Settings is in the ⋯ menu")
+        row.tap()
+    }
 }

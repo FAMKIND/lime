@@ -7927,3 +7927,21 @@ Only when the profile has a background; without one, today's canvas and dark tex
 - **Known:** `Jam188qUITests` `testAddButtonOffers…` and, once, `testTheArticleBar…` fail waiting for the article body's keyboard focus on the simulator; the article composer is not changed by this brief, but I did not check them against the earlier build. **Pre-existing, not fixed:** a video opened from the feed through the shared player path (`NowPlaying.makeItem`, LIME-212) has no cues, so its ⋯ lacks Closed captions / Transcript; Jam188o's transcript lines were removed for it.
 - Installed: 13mini: yes · iPad: yes · Jean: yes
 - For plot: a brief for captions in the shared player (cues from the post's vtt); captions editing stays out as briefed.
+
+## LIME-228 — the comments sheet, tightened — DONE
+
+- **The sheet:** in the player the comments sheet is a plain black fill at 88 % (not the glass), the grabber stays. The article page's comments are inline on the page (there is no sheet there), so nothing changed for it except the shared parts below.
+- **The field and send:** the field is a neutral grey (white 14 % on dark, the surface on light) with the caret in the text colour, no green; send is a neutral grey circle with a grey arrow until there is text, then lime with the ink arrow.
+- **One-line heads:** name (footnote, semibold, truncates first) · date (caption, never wraps): "3:47 AM" today, else "Oct 25" (`JamDates.short`); the same in replies; the counts line is in the caption style and comments are 12 pt apart.
+- **Tests:** new `Jam228UITests` (send disabled until text; a comment's head is one line high); with Jam189c/189d: pass (iPhone 13 mini simulator).
+- Installed: 13mini: yes · iPad: yes · Jean: yes (one install for 228 and 229)
+- For plot: the light variant of the sheet (canvas at slight transparency) has nothing to apply to yet, since articles show comments inline.
+
+## LIME-229 — your profile's header: Edit, Edit Cover and Done; Settings in ⋯ — DONE
+
+- **Normal:** ‹ · "Edit" and ⋯. The ⋯ menu is Settings (gear) · Share profile · My QR code · Sign out (red, last). The pencil and gear circles are gone.
+- **Editing:** ‹ goes back to your profile (leaves edit mode; the system back is hidden meanwhile); on the right "Edit Cover" (opens the background screen) and "Done". The hero's "Change background" corner button is removed. Camera badge, pencils and rows are as in 225. Labels: "Edit profile", "Edit cover", "Done editing", "Back to your profile". Someone else's profile is unchanged.
+- **Pills (4):** the tab pills sit 28 pt higher (`HeroShape.pillsLift`) on every profile, person and org, on the photo's lower fade; the block height follows, so the content below moves up with them. Not seen on a device.
+- **Tests:** new `testTheHeaderIsEditAndMoreThenEditCoverAndDone` (Settings inside ⋯; Edit Cover and Done; no corner button; Edit Cover opens the background screen; ‹ returns to Edit and ⋯). Because Settings moved, tests reach it through a new `openProfileSettings` helper (Calls tab, ConfirmSheet, Emergency, 225, LimeUITests). Pass: Profile225, Profile, Profile217, Emergency, CallsTab, Org216 and the ProfileHero unit test (its 58 % check now subtracts the lift).
+- Installed: 13mini: yes · iPad: yes · Jean: yes
+- For plot: the system header circles keep iOS 26's soft glass edge (as in 217e). The text capsules "Edit" / "Edit Cover" / "Done" are the system's toolbar buttons.

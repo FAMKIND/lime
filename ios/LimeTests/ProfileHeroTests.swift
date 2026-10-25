@@ -114,7 +114,7 @@ final class ProfileHeroTests: XCTestCase {
         // The avatar's centre at 29 % and the pills' centre at 58 % on a 812 pt screen with a 104 pt header.
         let pad = HeroShape.avatarTopPadding(screen: 812, inset: 104, avatar: 104)
         XCTAssertEqual(104 + pad + 52, 812 * 0.29, accuracy: 1)
-        XCTAssertEqual(104 + HeroShape.blockHeight(screen: 812, inset: 104) - HeroShape.pillsRow / 2, 812 * 0.58, accuracy: 1)
+        XCTAssertEqual(104 + HeroShape.blockHeight(screen: 812, inset: 104) - HeroShape.pillsRow / 2, 812 * 0.58 - HeroShape.pillsLift, accuracy: 1)
     }
 
     func testTheCropIsPortraitAndSmallAndHasNoPersonalMetadata() throws {

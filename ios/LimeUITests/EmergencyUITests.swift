@@ -67,7 +67,7 @@ final class EmergencyUITests: XCTestCase {
         let app = launch()
         XCTAssertTrue(app.buttons["settings-button"].waitForExistence(timeout: 10))
         app.buttons["settings-button"].tap()
-        app.buttons["profile-settings"].tap()
+        openProfileSettings(app)
         let row = app.buttons["settings-emergency"]
         XCTAssertTrue(row.waitForExistence(timeout: 8))
         row.tap()

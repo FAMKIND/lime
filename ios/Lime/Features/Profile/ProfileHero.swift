@@ -102,6 +102,8 @@ enum HeroPalette {
 /// centred at 29 %, and the bottom blend runs from 44 % to 64 % (about 20 %, 160 pt on a 812 pt screen).
 enum HeroShape {
     static let pillsCentre = 0.58
+    /// The pills sit this far higher, on the photo's lower fade, with the photo faintly showing through their glass (LIME-229).
+    static let pillsLift: CGFloat = 28
     static let avatarCentre = 0.29
     static let blendStart = 0.44
     static let blendEnd = 0.64
@@ -115,7 +117,7 @@ enum HeroShape {
     static func heroHeight(screen: CGFloat) -> CGFloat { max(screen * pillsCentre + pillsRow / 2 + 8, screen * blendEnd) }
 
     /// How tall the profile's top block (under the header) must be so the pills' centre sits at 58 %.
-    static func blockHeight(screen: CGFloat, inset: CGFloat) -> CGFloat { max(0, screen * pillsCentre + pillsRow / 2 - inset) }
+    static func blockHeight(screen: CGFloat, inset: CGFloat) -> CGFloat { max(0, screen * pillsCentre - pillsLift + pillsRow / 2 - inset) }
 
     /// Space above the avatar so its centre sits at 29 % (never less than the usual 12 pt).
     static func avatarTopPadding(screen: CGFloat, inset: CGFloat, avatar: CGFloat) -> CGFloat { max(12, screen * avatarCentre - avatar / 2 - inset) }

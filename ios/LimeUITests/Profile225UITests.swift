@@ -20,13 +20,14 @@ final class Profile225UITests: LimeUITestCase {
         XCTAssertEqual(app.buttons["profile-edit-photo"].label, "Change photo")
         for id in ["profile-edit-name", "profile-edit-username", "profile-edit-school"] { XCTAssertTrue(app.buttons[id].exists, id) }
         XCTAssertEqual(app.buttons["profile-edit-name"].label, "Edit name")
-        XCTAssertTrue(app.buttons["profile-edit-background"].exists, "Change background on the hero")
+        XCTAssertTrue(app.buttons["profile-edit-background"].exists, "Edit Cover in the header")
         XCTAssertFalse(app.buttons["profile-tab-Info"].exists, "the tabs give way to the rows")
         for id in ["profile-name", "profile-about", "profile-username", "profile-school", "profile-links-row", "profile-background-row"] {
             XCTAssertTrue(app.buttons[id].exists, id)
         }
         XCTAssertTrue(app.switches["profile-hide-toggle"].exists || app.descendants(matching: .any)["profile-hide-toggle"].exists)
-        XCTAssertFalse(app.buttons["profile-settings"].exists || app.buttons["profile-more"].exists, "Done replaces the header's buttons")
+        XCTAssertFalse(app.buttons["profile-more"].exists, "Edit Cover and Done replace Edit and the ⋯")
+        XCTAssertTrue(app.buttons["profile-done"].exists)
         app.buttons["profile-done"].tap()
         XCTAssertTrue(app.buttons["profile-tab-Info"].waitForExistence(timeout: 8), "Done returns to the tabs")
         XCTAssertFalse(app.buttons["profile-edit-photo"].exists)
@@ -60,7 +61,7 @@ final class Profile225UITests: LimeUITestCase {
 
     func testTheSettingsProfileCardOpensYourProfileForEditing() {
         let app = ownProfile()
-        app.buttons["profile-settings"].tap()
+        openProfileSettings(app)
         XCTAssertTrue(app.buttons["settings-profile"].waitForExistence(timeout: 8))
         app.buttons["settings-profile"].tap()
         XCTAssertTrue(app.buttons["profile-done"].waitForExistence(timeout: 10), "Settings closed and your profile is its editor")
@@ -113,5 +114,29 @@ final class Profile225UITests: LimeUITestCase {
         XCTAssertTrue(app.buttons["profile-links-row"].waitForExistence(timeout: 8))
         app.buttons["profile-links-row"].tap()
         assertPage(app, ["links-add", "links-vis-everyone", "links-vis-contacts", "links-save"])
+    }
+
+    // MARK: LIME-229: Edit and ⋯; Edit Cover and Done while editing; no Change background on the photo.
+
+    func testTheHeaderIsEditAndMoreThenEditCoverAndDone() {
+        let app = ownProfile()
+        XCTAssertEqual(app.buttons["profile-edit"].label, "Edit profile")
+        XCTAssertTrue(app.buttons["profile-more"].exists)
+        app.buttons["profile-more"].tap()
+        XCTAssertTrue(app.buttons["profile-settings"].waitForExistence(timeout: 5), "Settings is inside the ⋯")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95)).tap()   // closes the menu
+        XCTAssertTrue(app.buttons["profile-edit"].waitForExistence(timeout: 5))
+        app.buttons["profile-edit"].tap()
+        XCTAssertTrue(app.buttons["profile-edit-background"].waitForExistence(timeout: 8))
+        XCTAssertEqual(app.buttons["profile-edit-background"].label, "Edit cover")
+        XCTAssertTrue(app.buttons["profile-done"].exists)
+        XCTAssertFalse(app.buttons["Change background"].exists || app.buttons["Add background"].exists, "the hero has no corner button")
+        app.buttons["profile-edit-background"].tap()
+        XCTAssertTrue(app.buttons["background-choose"].waitForExistence(timeout: 8), "the background screen")
+        app.buttons["edit-sheet-done"].tap()
+        // ‹ goes back to the profile, not out of it.
+        app.buttons["profile-edit-back"].tap()
+        XCTAssertTrue(app.buttons["profile-edit"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["profile-more"].exists)
     }
 }

@@ -231,8 +231,7 @@ final class CallsTabUITests: XCTestCase {
     func testSettingsPrivacyHasAlwaysRelayCallsOffByDefault() {
         let app = app()
         app.buttons["settings-button"].tap()
-        XCTAssertTrue(app.buttons["profile-settings"].waitForExistence(timeout: 5))
-        app.buttons["profile-settings"].tap()
+        openProfileSettings(app)
         XCTAssertTrue(app.buttons["settings-privacy"].waitForExistence(timeout: 8))
         app.buttons["settings-privacy"].tap()
         let toggle = app.switches["privacy-always-relay"]
@@ -248,8 +247,7 @@ final class CallsTabUITests: XCTestCase {
     func testSettingsPrivacyClearsTheCallHistory() {
         let app = app()
         app.buttons["settings-button"].tap()
-        XCTAssertTrue(app.buttons["profile-settings"].waitForExistence(timeout: 5))
-        app.buttons["profile-settings"].tap()
+        openProfileSettings(app)
         let privacy = app.buttons["settings-privacy"]
         XCTAssertTrue(privacy.waitForExistence(timeout: 8))
         privacy.tap()
