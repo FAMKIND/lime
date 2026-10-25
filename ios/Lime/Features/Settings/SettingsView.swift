@@ -64,7 +64,7 @@ struct SettingsView: View {
     static func route(from names: [String]) -> [SettingsRoute] {
         let table: [String: SettingsRoute] = [
             "account": .account, "privacy": .privacy, "blocked": .blocked, "keys": .keys, "devices": .devices,
-            "notifications": .notifications, "customize": .customize, "text-size": .textSize, "calls": .calls, "about": .about, "ack": .acknowledgements, "password": .changePassword, "my-qr": .myQR, "photo": .photo, "links": .links, "background": .background, "crop": .photo, "storage": .storage, "work-hours": .workHours,
+            "notifications": .notifications, "customize": .customize, "text-size": .textSize, "calls": .calls, "about": .about, "ack": .acknowledgements, "password": .changePassword, "my-qr": .myQR, "photo": .photo, "links": .links, "background": .background, "background-set": .background, "crop": .photo, "storage": .storage, "work-hours": .workHours,
         ]
         return names.compactMap { table[$0] }
     }

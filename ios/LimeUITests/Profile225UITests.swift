@@ -65,4 +65,53 @@ final class Profile225UITests: LimeUITestCase {
         app.buttons["settings-profile"].tap()
         XCTAssertTrue(app.buttons["profile-done"].waitForExistence(timeout: 10), "Settings closed and your profile is its editor")
     }
+
+    // MARK: LIME-225b: the sheets from the editor show their whole screens (the Background one was blank once a background was set).
+
+    /// Every id given is on screen and inside the window (nothing pushed off the side by an oversize child).
+    private func assertPage(_ app: XCUIApplication, _ ids: [String], file: StaticString = #filePath, line: UInt = #line) {
+        let window = app.windows.firstMatch.frame
+        for id in ids {
+            let element = app.descendants(matching: .any)[id]
+            XCTAssertTrue(element.waitForExistence(timeout: 8), "\(id) is there", file: file, line: line)
+            XCTAssertGreaterThanOrEqual(element.frame.minX, 0, "\(id) starts inside the screen", file: file, line: line)
+            XCTAssertLessThanOrEqual(element.frame.maxX, window.width + 1, "\(id) ends inside the screen: \(element.frame)", file: file, line: line)
+        }
+    }
+
+    private func editor(withBackground: Bool) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat"] + (withBackground ? ["-lime-demo-screen", "profile-me"] : [])
+        app.launch()
+        if !withBackground { app.buttons["settings-button"].tap() }
+        XCTAssertTrue(app.buttons["profile-edit"].waitForExistence(timeout: 10))
+        app.buttons["profile-edit"].tap()
+        return app
+    }
+
+    func testChangeBackgroundShowsItsWholeScreenWithABackgroundSet() {
+        let app = editor(withBackground: true)
+        app.buttons["profile-edit-background"].tap()
+        assertPage(app, ["background-preview", "background-choose", "background-remove", "background-vis-everyone", "background-vis-contacts"])
+        XCTAssertEqual(app.buttons["background-choose"].label, "Change Background")
+        XCTAssertEqual(app.buttons["background-choose"].frame.width, 343, accuracy: 2, "as wide as the page, not wider")
+        XCTAssertTrue(app.buttons["edit-sheet-done"].exists, "Done stays")
+    }
+
+    func testChangeBackgroundShowsItsWholeScreenWithNone() {
+        let app = editor(withBackground: false)
+        app.buttons["profile-edit-background"].tap()
+        assertPage(app, ["background-choose", "background-vis-everyone", "background-vis-contacts"])
+        XCTAssertEqual(app.buttons["background-choose"].label, "Choose a Photo or Video")
+    }
+
+    func testChangePhotoAndLinksShowTheirWholeScreens() {
+        let app = editor(withBackground: true)
+        app.buttons["profile-edit-photo"].tap()
+        assertPage(app, ["photo-library", "photo-vis-everyone", "photo-vis-contacts"])
+        app.buttons["edit-sheet-done"].tap()
+        XCTAssertTrue(app.buttons["profile-links-row"].waitForExistence(timeout: 8))
+        app.buttons["profile-links-row"].tap()
+        assertPage(app, ["links-add", "links-vis-everyone", "links-vis-contacts", "links-save"])
+    }
 }

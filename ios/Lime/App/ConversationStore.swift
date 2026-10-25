@@ -1158,6 +1158,12 @@ final class ConversationStore {
                 loadDemoAttachments(draft: false)
             }
             if let screen, screen.hasPrefix("settings") {
+                // `settings/background-set`: the Background screen with a real-sized background already set (LIME-225b).
+                if screen == "settings/background-set" {
+                    let size = CGSize(width: 1080, height: 1350)
+                    let format = UIGraphicsImageRendererFormat.default(); format.scale = 1
+                    demoExtras["background"] = UIGraphicsImageRenderer(size: size, format: format).image { _ in ProfilePhotoScreen.demoPicture.draw(in: CGRect(origin: .zero, size: size)) }.jpegData(compressionQuality: 0.7)
+                }
                 demoSheet = "settings"
                 demoSettingsRoute = screen.split(separator: "/").dropFirst().map(String.init)
             }

@@ -15,16 +15,18 @@ struct BackgroundScreen: View {
 
     var body: some View {
         SettingsPage(title: "Background") {
-            Group {
-                if let current {
-                    Image(uiImage: current).resizable().scaledToFill()
-                } else {
-                    Theme.surface.overlay { Image(systemName: "photo").font(.system(size: 28)).foregroundStyle(Theme.textSecondary) }
+            // The preview is this phone's hero shape: what the photo will fill (LIME-217c). A clear box sets the size and the picture is only drawn over it:
+            // a `scaledToFill` image as the sized view would take its own (pixel) size and make the whole page wider than the screen (LIME-225b).
+            Color.clear
+                .aspectRatio(HeroShape.aspect(screenWidth: UIScreen.main.bounds.width, screenHeight: UIScreen.main.bounds.height), contentMode: .fit)
+                .frame(maxHeight: 300)
+                .overlay {
+                    if let current {
+                        Image(uiImage: current).resizable().scaledToFill()
+                    } else {
+                        Theme.surface.overlay { Image(systemName: "photo").font(.system(size: 28)).foregroundStyle(Theme.textSecondary) }
+                    }
                 }
-            }
-            // The preview is this phone's hero shape: what the photo will fill (LIME-217c).
-            .aspectRatio(HeroShape.aspect(screenWidth: UIScreen.main.bounds.width, screenHeight: UIScreen.main.bounds.height), contentMode: .fit)
-            .frame(maxHeight: 300)
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .padding(.top, 8)
             .accessibilityLabel(current == nil ? "No background" : "Your background").accessibilityIdentifier("background-preview")
