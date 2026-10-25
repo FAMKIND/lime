@@ -6154,3 +6154,37 @@ fn a_contacts_background_video_waits_for_a_tap_while_fetching_videos_is_off() {
     refresh(&bob, &transport);
     assert_eq!(bob.store.peer_extra("alice".into(), BACKGROUND_VIDEO.into()).unwrap(), Some(newer));
 }
+
+#[test]
+fn an_edit_can_replace_a_recording_and_its_captions_and_a_subscribers_copy_follows() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let jam = new_jam(&alice);
+    join_jam(&alice, &bob, &jam, &transport);
+    let audio = |seed: u8, secs: u32| crate::OutgoingAttachment { name: "Recording.m4a".into(), mime: "audio/mp4".into(), duration_ms: Some(secs * 1000), width: None, height: None, ..pic(seed, 600) };
+    let captions = |index: u32, text: &str| crate::OutgoingAttachment { name: crate::captions::caption_name(index), mime: "text/vtt".into(), bytes: text.as_bytes().to_vec(), width: None, height: None, duration_ms: None, ..pic(9, 40) };
+    let cover = crate::OutgoingAttachment { name: "cover.jpg".into(), ..pic(1, 500) };
+    let post = alice.store.publish_jam_post(jam.clone(), "record".into(), "Songs".into(), "For children".into(), "About it".into(), "free".into(), vec![audio(7, 4), cover, captions(0, "WEBVTT\n\n00:00.000 --> 00:01.000\nold words\n")], vec![]).unwrap();
+    for _ in 0..4 {
+        catch_up(&alice, &[&bob], &transport);
+    }
+    let files = |p: &Party| p.store.list_jam_attachments(post.clone()).unwrap().into_iter().map(|a| (a.name, a.size, a.duration_ms)).collect::<Vec<_>>();
+    assert_eq!(files(&bob).iter().map(|f| f.0.as_str()).collect::<Vec<_>>(), vec!["Recording.m4a", "cover.jpg", "captions-0.vtt"]);
+    let blobs = |s: &FakeServer| s.state.lock().unwrap().objects.keys().filter(|k| k.starts_with("blobs/")).count();
+    let before = blobs(&server);
+
+    // A new recording (with its new captions, named for its place among the added files) replaces the old one and the old captions; the cover stays.
+    alice.store.edit_jam_post(post.clone(), "Songs".into(), "For children".into(), "About it".into(), vec![audio(8, 9), captions(0, "WEBVTT\n\n00:00.000 --> 00:01.000\nnew words\n")], "person".into(), false, None).unwrap();
+    for _ in 0..5 {
+        catch_up(&alice, &[&bob], &transport);
+    }
+    let after = files(&bob);
+    let names: Vec<&str> = after.iter().map(|f| f.0.as_str()).collect();
+    assert_eq!(names, vec!["cover.jpg", "Recording.m4a", "captions-1.vtt"], "one recording, the cover, the new captions pointing at the recording's new number");
+    assert_eq!(after[1].2, Some(9000), "the new length");
+    assert_eq!(files(&alice), after, "the writer's own copy is the same");
+    assert_eq!(blobs(&server), before, "old recording and old captions out, new ones in (the post's own blob swapped)");
+    // The old words are gone from the post's files: only one captions file, and it is the new one.
+    assert_eq!(names.iter().filter(|n| n.ends_with(".vtt")).count(), 1);
+}

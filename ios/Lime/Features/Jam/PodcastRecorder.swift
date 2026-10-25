@@ -206,12 +206,14 @@ struct PodcastRecorder: View {
     let attach: (OutgoingAttachment) -> Void
     /// The studio's Post: hands the take back and posts it at once (when not set, Next only hands the take back).
     var post: ((OutgoingAttachment) -> Void)?
+    /// A podcast of mine being edited (LIME-227): the same studio with a pencil by each line, a camera badge on the cover and Re-record; Cancel · Update on top.
+    var editing: JamPostInfo?
     init(title: Binding<String>, coauthors: Binding<[Person]>, camera: Bool, forArticle: Bool = false,
          subtitle: Binding<String> = .constant(""), details: Binding<String> = .constant(""), cover: Binding<OutgoingAttachment?> = .constant(nil),
-         postAsJam: Binding<String?> = .constant(nil), post: ((OutgoingAttachment) -> Void)? = nil,
-         attach: @escaping (OutgoingAttachment) -> Void) {
+         postAsJam: Binding<String?> = .constant(nil), post: ((OutgoingAttachment) -> Void)? = nil, editing: JamPostInfo? = nil,
+         attach: @escaping (OutgoingAttachment) -> Void = { _ in }) {
         _title = title; _coauthors = coauthors; self.camera = camera; self.forArticle = forArticle
-        _subtitle = subtitle; _details = details; _cover = cover; _postAsJam = postAsJam; self.post = post; self.attach = attach
+        _subtitle = subtitle; _details = details; _cover = cover; _postAsJam = postAsJam; self.post = post; self.editing = editing; self.attach = attach
     }
 
     @Environment(ConversationStore.self) private var store
@@ -233,6 +235,11 @@ struct PodcastRecorder: View {
     @State private var postingAs = false
     @State private var pickingCover = false
     @State private var confirmingRerecord = false
+    // Edit mode (LIME-227)
+    @State private var reRecording = false
+    @State private var removeCover = false
+    @State private var saving = false
+    @State private var initialHosts: [String] = []
     @FocusState private var focus: Line?
     private enum Line: Hashable { case title, subtitle, details }
 
@@ -285,7 +292,7 @@ struct PodcastRecorder: View {
         .fullScreenCover(isPresented: $pickingCover) {
             MediaLibraryPicker(limit: 1, onPick: { images, _ in
                 pickingCover = false
-                if let image = images.first, let made = AttachmentProcessing.photo(image, name: JamCover.name) { cover = made }
+                if let image = images.first, let made = AttachmentProcessing.photo(image, name: JamCover.name) { cover = made; removeCover = false }
             }, onCancel: { pickingCover = false }).ignoresSafeArea()
         }
         .confirmSheet("Replace this recording?", isPresented: $confirmingRerecord) {
@@ -302,6 +309,7 @@ struct PodcastRecorder: View {
             #if DEBUG
             voice.simulated = store.isDemo
             #endif
+            if let editing { prefill(editing); return }
             if camera { Task { await turnCamera(on: true) } }
         }
         .onDisappear { teardown() }
@@ -332,7 +340,10 @@ struct PodcastRecorder: View {
 
     /// Audio: the cover you chose, or your picture on a soft tone (the card's default), as a viewer will see it.
     private var coverLayer: some View {
-        CoverArt(image: coverImage, person: store.meProvider(), org: jamTitle)
+        Group {
+            if let editing, coverImage == nil, !removeCover { PostCover(postID: editing.postId) }
+            else { CoverArt(image: coverImage, person: store.meProvider(), org: jamTitle) }
+        }
             .accessibilityHidden(true)
             // A marker of exactly the stage's box (a picture that fills reports its own, larger, frame).
             .overlay { Color.clear.accessibilityElement().accessibilityLabel("Cover").accessibilityIdentifier("podcast-audio-layer") }
@@ -360,6 +371,8 @@ struct PodcastRecorder: View {
                 Image(systemName: take.playing ? "pause.fill" : "play.fill").font(.system(size: 30)).foregroundStyle(.white).frame(width: 72, height: 72).background(.black.opacity(0.45), in: Circle())
             }
             .accessibilityLabel(take.playing ? "Pause" : "Play").accessibilityIdentifier("podcast-play")
+        } else if editing != nil && !reRecording {
+            EmptyView()
         } else if isRecording {
             HStack(spacing: 24) {
                 if canPause { circle(isPaused ? "mic.fill" : "pause.fill", isPaused ? "Resume recording" : "Pause recording", id: "podcast-pause", size: 52) { togglePause() } }
@@ -442,11 +455,14 @@ struct PodcastRecorder: View {
             .accessibilityLabel(coauthors.isEmpty ? "Add co-host" : "Co-hosts: \(coauthors.map(\.name).joined(separator: ", "))").accessibilityIdentifier("podcast-hosts")
             if !cameraOn {
                 Button { pickingCover = true } label: {
-                    Label(cover == nil ? "Add cover" : "Change cover", systemImage: "photo").font(Theme.secondary).foregroundStyle(.white).padding(.horizontal, 12).frame(minHeight: 44).background(.white.opacity(0.12), in: Capsule())
+                    Label(cover == nil && (editing == nil || removeCover || !store.jamAttachments(editing?.postId ?? "").contains(where: JamCover.isCover)) ? "Add cover" : "Change cover", systemImage: "photo").font(Theme.secondary).foregroundStyle(.white).padding(.horizontal, 12).frame(minHeight: 44).background(.white.opacity(0.12), in: Capsule())
                 }
                 .accessibilityIdentifier("podcast-add-cover")
                 if cover != nil {
                     Button { cover = nil } label: { Image(systemName: "xmark").font(.system(size: 13, weight: .bold)).foregroundStyle(.white).frame(width: 44, height: 44) }
+                        .accessibilityLabel("Remove cover").accessibilityIdentifier("podcast-remove-cover")
+                } else if editing != nil, !removeCover, store.jamAttachments(editing?.postId ?? "").contains(where: JamCover.isCover) {
+                    Button { removeCover = true } label: { Image(systemName: "xmark").font(.system(size: 13, weight: .bold)).foregroundStyle(.white).frame(width: 44, height: 44) }
                         .accessibilityLabel("Remove cover").accessibilityIdentifier("podcast-remove-cover")
                 }
             }
@@ -467,7 +483,13 @@ struct PodcastRecorder: View {
                 }
                 .accessibilityLabel("Flip camera").accessibilityIdentifier("podcast-flip")
             }
-            if !forArticle { Button { Task { await turnCamera(on: !cameraOn) } } label: {
+            if editing != nil {
+                Button { Task { await update() } } label: {
+                    Text(saving ? "Saving\u{2026}" : "Update").font(Theme.font(.body, weight: .semibold)).foregroundStyle(canUpdate ? Theme.accentInk : .white.opacity(0.5))
+                        .padding(.horizontal, 16).frame(minHeight: 44).background(canUpdate ? Theme.accent : Color.white.opacity(0.12), in: Capsule())
+                }
+                .disabled(!canUpdate).accessibilityIdentifier("podcast-update")
+            } else if !forArticle { Button { Task { await turnCamera(on: !cameraOn) } } label: {
                 Image(systemName: cameraOn ? "video.fill" : "video.slash.fill").font(.system(size: 20)).foregroundStyle(.white).frame(width: 44, height: 44)
                     .background(cameraOn ? Theme.accent.opacity(0.9) : .white.opacity(0.14), in: Circle())
             }
@@ -481,19 +503,25 @@ struct PodcastRecorder: View {
     /// Post (lime) once there is a take and a title; Re-record beside it (it asks first). In an article, Next.
     private var bottom: some View {
         HStack(spacing: 10) {
-            if clip != nil {
+            if editing != nil {
+                Button { confirmingRerecord = true } label: {
+                    Label(reRecording || clip != nil ? "Re-record again" : "Re-record", systemImage: "arrow.counterclockwise").font(Theme.font(.body, weight: .semibold)).foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, minHeight: 50).background(.white.opacity(0.14), in: Capsule())
+                }
+                .accessibilityIdentifier("podcast-again")
+            } else if clip != nil {
                 Button { confirmingRerecord = true } label: {
                     Label("Re-record", systemImage: "arrow.counterclockwise").font(Theme.font(.body, weight: .semibold)).foregroundStyle(.white)
                         .padding(.horizontal, 16).frame(minHeight: 50).background(.white.opacity(0.14), in: Capsule())
                 }
                 .accessibilityIdentifier("podcast-again")
             }
-            Button { forArticle ? finishUp() : (post != nil ? postNow() : finishUp()) } label: {
+            if editing == nil { Button { forArticle ? finishUp() : (post != nil ? postNow() : finishUp()) } label: {
                 Text(preparing ? "Getting ready\u{2026}" : forArticle ? "Next" : "Post").font(Theme.title)
                     .foregroundStyle((forArticle ? clip != nil : canPost) ? Theme.accentInk : .white.opacity(0.5))
                     .frame(maxWidth: .infinity, minHeight: 50).background((forArticle ? clip != nil : canPost) ? Theme.accent : Color.white.opacity(0.12), in: Capsule())
             }
-            .disabled(preparing || !(forArticle ? clip != nil : canPost)).accessibilityIdentifier(forArticle ? "podcast-next" : "podcast-post")
+            .disabled(preparing || !(forArticle ? clip != nil : canPost)).accessibilityIdentifier(forArticle ? "podcast-next" : "podcast-post") }
         }
         .padding(.horizontal, 24).padding(.vertical, 10)
         .background(Color.black)
@@ -585,6 +613,50 @@ struct PodcastRecorder: View {
         take.unload()
         clip = nil
         seconds = 0
+        if editing != nil { reRecording = true }
+    }
+
+    // MARK: Editing a podcast (LIME-227)
+
+    private var canUpdate: Bool {
+        !saving && !title.trimmingCharacters(in: .whitespaces).isEmpty && !(reRecording && clip == nil)
+    }
+
+    /// The post's own words and people go in once; the stage shows its own cover (or poster) and the shape of what it holds.
+    private func prefill(_ post: JamPostInfo) {
+        let files = store.jamAttachments(post.postId)
+        cameraOn = files.contains { $0.kind == "video" }
+        title = post.title; subtitle = post.subtitle
+        // The description is the post's text without the picture block of its own cover (which the stage already shows).
+        var text = post.markdown
+        if let at = files.firstIndex(where: JamCover.isCover) { text = text.replacingOccurrences(of: "![](attachment:\(at))", with: "").trimmingCharacters(in: .whitespacesAndNewlines) }
+        details = text
+        initialHosts = post.coauthors
+        coauthors = Array(store.bylinePeople(post).dropFirst())
+        postAsJam = post.displayAs == "jam" ? post.jamId : nil
+    }
+
+    /// Update: the words, the cover and, after a Re-record, the new recording with its captions (made on this phone); the post is replaced in place.
+    private func update() async {
+        guard let editing, canUpdate else { return }
+        saving = true
+        var added: [OutgoingAttachment] = []
+        if let clip {
+            added.append(clip)
+            if clip.mime.hasPrefix("video/") || clip.mime.hasPrefix("audio/"), clip.durationMs.map({ Int($0) / 1000 <= CaptionMaker.maxSeconds }) ?? true {
+                let ext = clip.mime.hasPrefix("video/") ? "mp4" : "m4a"
+                if let cues = await CaptionMaker.make(bytes: clip.bytes, fileExtension: ext, demo: demo), !cues.isEmpty {
+                    // Named for the recording's place among the added files; the core renames it for the recording's real number.
+                    added.append(OutgoingAttachment(bytes: Data(captionsToVtt(cues: cues).utf8), name: captionFileName(index: 0), mime: "text/vtt", width: nil, height: nil, durationMs: nil, thumb: Data(), poster: Data()))
+                }
+            }
+        }
+        if let cover { added.append(cover) }
+        let hosts = coauthors.map(\.id)
+        let ok = await store.editJamPost(editing, title: title, subtitle: subtitle, markdown: details, added: added, displayAs: postAsJam == nil ? "person" : "jam",
+                                         removeCover: removeCover && cover == nil, coauthors: Set(hosts) == Set(initialHosts) ? nil : hosts)
+        saving = false
+        if ok { dismiss() } else { problem = "Could not update the podcast." }
     }
 
     /// The take goes back to the post (an article's audio, or Next without the studio's own Post).

@@ -47,6 +47,6 @@ final class Jam212bUITests: LimeUITestCase {
         let more = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'card-more-'")).firstMatch
         XCTAssertTrue(more.waitForExistence(timeout: 10)); more.tap()
         app.buttons["Edit"].tap()
-        XCTAssertTrue(app.buttons["podcast-edit-add-host"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["podcast-hosts"].waitForExistence(timeout: 8))
     }
 }

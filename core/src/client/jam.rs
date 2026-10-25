@@ -559,6 +559,16 @@ impl LimeStore {
                 }
                 // Which old files go: the pictures this text had and no longer has (an article only), and the captions of those.
                 let mut dropped: std::collections::BTreeSet<usize> = if row.kind == "article" { was.difference(&now_used).map(|n| *n as usize).filter(|n| *n < old_count).collect() } else { Default::default() };
+                // A new recording (LIME-227): a record post with an audio or video file among the added ones replaces its recording: the old file goes (its blob is
+                // released, its captions with it), the new one and its captions take their place. Anything else about the post stays.
+                let replacing = row.kind == "record" && added.iter().any(|a| a.name != "cover.jpg" && (a.mime.starts_with("audio/") || a.mime.starts_with("video/")));
+                if replacing {
+                    for (i, value) in old.iter().enumerate() {
+                        if value.get("mime").and_then(Value::as_str).is_some_and(|m| m.starts_with("audio/") || m.starts_with("video/")) {
+                            dropped.insert(i);
+                        }
+                    }
+                }
                 // A recording's cover (LIME-212): "Remove cover", or a new `cover.jpg` among the added files, drops the old one (its blob is released).
                 let new_cover = added.iter().any(|a| a.name == "cover.jpg");
                 if remove_cover || new_cover {
@@ -593,10 +603,22 @@ impl LimeStore {
                     }
                 }
                 let mut new_files: Vec<(String, Vec<u8>, String, i64)> = Vec::new();
+                // Where each added file landed (its place among the added ones, then its number in the post), so a new recording's captions, named for the
+                // recording's place among the added files, are renamed for its real number.
+                let mut landed: std::collections::BTreeMap<usize, u32> = Default::default();
                 for (j, file) in added.iter().enumerate() {
                     let number = (old_count + j) as u32;
-                    if !now_used.contains(&number) && file.name != "cover.jpg" {
+                    if !now_used.contains(&number) && file.name != "cover.jpg" && !replacing {
                         continue;
+                    }
+                    let mut name = file.name.clone();
+                    if replacing {
+                        if let Some(target) = crate::captions::caption_target(&name) {
+                            match landed.get(&(target as usize)) {
+                                Some(real) => name = crate::captions::caption_name(*real),
+                                None => continue,
+                            }
+                        }
                     }
                     let id = new_id();
                     let key = crate::store::attachments::new_key();
@@ -608,7 +630,7 @@ impl LimeStore {
                         digest: crate::store::attachments::digest_hex(&file.bytes),
                         size: file.bytes.len() as u64,
                         mime: file.mime.clone(),
-                        name: file.name.clone(),
+                        name,
                         width: file.width,
                         height: file.height,
                         duration_ms: file.duration_ms,
@@ -620,6 +642,7 @@ impl LimeStore {
                     value["blob_size"] = json!(size);
                     crate::store::attachments::Descriptor::parse(&value).ok_or(StoreError::Rejected)?;
                     map.insert(number, kept.len() as u32);
+                    landed.insert(j, kept.len() as u32);
                     kept.push(value);
                     new_files.push((id, file.bytes.clone(), hash, size));
                 }
