@@ -137,7 +137,12 @@ struct JamComposeSheet: View {
                         insertIntoArticle(clip, preview: Self.fileCard(named: "Audio recording \(VoiceFormat.clock(Double(clip.durationMs ?? 0) / 1000))"))
                     }
                 } else {
-                    PodcastRecorder(title: $recordTitle, coauthors: $coauthors, camera: mode.mode == 0, subtitle: $recordSubtitle, details: $recordDetails, cover: $recordCover) { clip in clips = [clip]; captions = captions.filter { if case .clip = $0.key { false } else { true } }; startCaptions(clip, .clip(0)) }
+                    PodcastRecorder(title: $recordTitle, coauthors: $coauthors, camera: mode.mode == 0, subtitle: $recordSubtitle, details: $recordDetails, cover: $recordCover, postAsJam: $postAsJam,
+                                    // The studio's Post (LIME-227): the take goes in, the studio closes and the post is made.
+                                    post: { clip in
+                        clips = [clip]; captions = captions.filter { if case .clip = $0.key { false } else { true } }; startCaptions(clip, .clip(0))
+                        Task { try? await Task.sleep(for: .milliseconds(450)); post() }
+                    }) { clip in clips = [clip]; captions = captions.filter { if case .clip = $0.key { false } else { true } }; startCaptions(clip, .clip(0)) }
                 }
             }
             .fullScreenCover(item: $chooser) { which in
@@ -519,7 +524,7 @@ struct JamComposeSheet: View {
             if !article && editing == nil {
                 HStack(spacing: 8) {
                     chip("Write an article", system: "doc.text", id: "jam-write-article") { setArticle(true) }
-                    chip("Record", system: "waveform", id: "jam-record") { recordMode = 1 }
+                    chip("Record a podcast", system: "waveform", id: "jam-record") { recordMode = 1 }
                     Spacer()
                 }
                 .padding(.horizontal, 16).padding(.bottom, 4)
