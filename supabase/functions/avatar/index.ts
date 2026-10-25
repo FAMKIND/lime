@@ -1,5 +1,5 @@
 // POST avatar { action, ... }: a person's PUBLIC profile photo (LIME-98b, api-v2.md section 6).
-//   Every action takes an optional `slot`: "photo" (the default), "links" (a JSON list, at most 8 KB) or "background" (a JPEG, at most 1 MiB).
+//   Every action takes an optional `slot`: "photo" (the default), "links" (a JSON list, at most 8 KB), "background" (a JPEG, at most 1 MiB) or "background_video" (an MP4, at most 6 MiB).
 //   put        { size }          -> { url }: a signed upload URL for my photo (JPEG, at most 1 MiB).
 //   commit     {}                -> verifies the upload, makes the photo visible: { version }.
 //   get        { user_id }       -> { url, version }: a signed download URL for their public photo (404 if none).
@@ -20,6 +20,8 @@ const SLOTS: Record<string, Slot> = {
   photo: { path: (u) => `${u}.jpg`, version: "avatar_version", visibility: "photo_visibility", max: MAX_AVATAR_BYTES, label: "photo" },
   links: { path: (u) => `${u}-links.json`, version: "links_version", visibility: "links_visibility", max: 8 * 1024, label: "list of links" },
   background: { path: (u) => `${u}-background.jpg`, version: "background_version", visibility: "background_visibility", max: MAX_AVATAR_BYTES, label: "background" },
+  // LIME-226a: a short silent clip (the phone makes it at most 10 seconds, no audio); the still above is its poster.
+  background_video: { path: (u) => `${u}-background.mp4`, version: "background_video_version", visibility: "background_video_visibility", max: 6 * 1024 * 1024, label: "background video" },
 };
 
 Deno.serve(handler(async (req) => {
@@ -44,6 +46,11 @@ Deno.serve(handler(async (req) => {
     case "commit": {
       const size = await objectSize(AVATAR_BUCKET, pathOf(me));
       if (size === null || size < 1) throw new HttpError(409, "not_uploaded", "Upload the photo first.");
+      if (size > slot.max) {
+        // The bucket allows the largest slot; this one's own limit is enforced here.
+        await removeObject(AVATAR_BUCKET, pathOf(me));
+        throw new HttpError(413, "too_large", `Your ${slot.label} is too large.`);
+      }
       const version = Date.now();
       const { error } = await db.from("profiles").update({ [slot.version]: version, [slot.visibility]: "everyone" }).eq("user_id", me);
       if (error) throw new HttpError(500, "internal");

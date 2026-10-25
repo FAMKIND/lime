@@ -393,7 +393,7 @@ impl Transport for FakeServer {
                 let version = state.clock;
                 // The photo (no slot) and the links and background (LIME-214, LIME-217) each have their own object, version and visibility.
                 let slot = body.get("slot").and_then(Value::as_str).unwrap_or_default().to_owned();
-                let suffix = match slot.as_str() { "" => ".jpg".to_owned(), "links" => "-links.json".to_owned(), other => format!("-{other}.jpg") };
+                let suffix = match slot.as_str() { "" => ".jpg".to_owned(), "links" => "-links.json".to_owned(), "background_video" => "-background.mp4".to_owned(), other => format!("-{other}.jpg") };
                 let tag = |who: &str| if slot.is_empty() { who.to_owned() } else { format!("{who}:{slot}") };
                 match body.get("action").and_then(Value::as_str).unwrap_or_default() {
                     "put" => respond(200, json!({ "url": format!("/storage/v1/object/upload/sign/public-avatars/{user}{suffix}?token=t") })),

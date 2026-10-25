@@ -14,7 +14,11 @@ pub struct MyExtra {
 }
 
 fn content_type(slot: &str) -> &'static str {
-    if slot == extras::LINKS { "application/json" } else { "image/jpeg" }
+    match slot {
+        extras::LINKS => "application/json",
+        extras::BACKGROUND_VIDEO => "video/mp4",
+        _ => "image/jpeg",
+    }
 }
 
 #[uniffi::export]
@@ -41,6 +45,10 @@ impl LimeStore {
         if !extras::is_slot(&slot) || data.is_empty() || data.len() > extras::max_bytes(&slot) {
             return Err(StoreError::Rejected);
         }
+        // A video background always has its still (the poster), so the video cannot be set without one.
+        if slot == extras::BACKGROUND_VIDEO && self.with_conn(|conn| extras::mine(conn, extras::BACKGROUND))?.data.is_none() {
+            return Err(StoreError::Rejected);
+        }
         self.change_my_extra(&transport, &auth_token, &slot, |mine| mine.data = Some(data))
     }
 
@@ -48,6 +56,10 @@ impl LimeStore {
     pub fn remove_my_extra(&self, transport: Arc<dyn Transport>, auth_token: String, slot: String) -> Result<(), StoreError> {
         if !extras::is_slot(&slot) {
             return Err(StoreError::Rejected);
+        }
+        // Removing the still removes the video with it; removing only the video keeps the still.
+        if slot == extras::BACKGROUND {
+            self.change_my_extra(&transport, &auth_token, extras::BACKGROUND_VIDEO, |mine| mine.data = None)?;
         }
         self.change_my_extra(&transport, &auth_token, &slot, |mine| mine.data = None)
     }
@@ -128,7 +140,7 @@ impl LimeStore {
 
     /// After a block rotated my profile key, the contacts-only copies are under the old one: upload them again under the new. Best effort.
     pub(super) fn refresh_my_extras_if_stale(&self, transport: &Arc<dyn Transport>, token: &str) {
-        for slot in [extras::LINKS, extras::BACKGROUND] {
+        for slot in [extras::LINKS, extras::BACKGROUND, extras::BACKGROUND_VIDEO] {
             let stale = self.with_conn(|conn| {
                 let mine = extras::mine(conn, slot)?;
                 if mine.data.is_none() || mine.visibility != "contacts" {
@@ -151,7 +163,7 @@ impl LimeStore {
     /// One person's links and background: public first, then the contacts-only copy if I hold their profile key. `true` when anything changed.
     pub(super) fn refresh_extras_of_one(&self, transport: &Arc<dyn Transport>, token: &str, user: &str) -> Result<bool, StoreError> {
         let mut changed = false;
-        for slot in [extras::LINKS, extras::BACKGROUND] {
+        for slot in [extras::LINKS, extras::BACKGROUND, extras::BACKGROUND_VIDEO] {
             changed |= self.refresh_extra(transport, token, user, slot)?;
         }
         Ok(changed)

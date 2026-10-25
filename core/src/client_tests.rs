@@ -6074,3 +6074,53 @@ fn a_background_is_its_own_slot_and_a_block_re_uploads_it_under_the_new_key() {
     assert!(state.objects.contains_key(&format!("blobs/{}", extras::blob_id(LINKS, &second))));
     assert!(!state.objects.contains_key(&format!("blobs/{}", extras::blob_id(LINKS, &first))), "the old copy is deleted");
 }
+
+#[test]
+fn a_contacts_only_background_video_is_ciphertext_needs_its_still_and_removing_it_keeps_the_still() {
+    use crate::store::extras::{BACKGROUND, BACKGROUND_VIDEO};
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    befriend(&alice, &bob, &transport);
+    say(&alice, &carol, &transport, "hello stranger");
+    sync(&carol, &transport);
+    let clip: Vec<u8> = b"\x00\x00\x00\x18ftypmp42 a recognisable clip".repeat(400);
+
+    // No video without its still.
+    assert!(alice.store.set_my_extra(transport.clone(), alice.token.clone(), BACKGROUND_VIDEO.into(), clip.clone()).is_err(), "the still comes first");
+    alice.store.set_my_extra(transport.clone(), alice.token.clone(), BACKGROUND.into(), photo_bytes()).unwrap();
+    alice.store.set_my_extra(transport.clone(), alice.token.clone(), BACKGROUND_VIDEO.into(), clip.clone()).unwrap();
+    {
+        let state = server.state.lock().unwrap();
+        assert!(!state.objects.keys().any(|k| k.starts_with("public-avatars/")), "contacts only: nothing public");
+        let blobs: Vec<_> = state.objects.iter().filter(|(k, _)| k.starts_with("blobs/")).collect();
+        assert_eq!(blobs.len(), 2, "the still and the clip, one blob each");
+        assert!(!blobs.iter().any(|(_, b)| b.windows(24).any(|w| w == &clip[..24])), "no plaintext clip on the server");
+    }
+    assert_eq!(refresh(&bob, &transport), vec!["alice".to_string()]);
+    assert_eq!(bob.store.peer_extra("alice".into(), BACKGROUND_VIDEO.into()).unwrap(), Some(clip.clone()), "a contact reads the clip");
+    assert_eq!(bob.store.peer_extra("alice".into(), BACKGROUND.into()).unwrap(), Some(photo_bytes()));
+    refresh(&carol, &transport);
+    assert_eq!(carol.store.peer_extra("alice".into(), BACKGROUND_VIDEO.into()).unwrap(), None, "a non-contact sees none");
+
+    // Too big is refused (6 MiB), exactly 6 MiB is fine.
+    assert!(alice.store.set_my_extra(transport.clone(), alice.token.clone(), BACKGROUND_VIDEO.into(), vec![1; 6 * 1024 * 1024 + 1]).is_err());
+    assert!(alice.store.set_my_extra(transport.clone(), alice.token.clone(), BACKGROUND_VIDEO.into(), vec![1; 6 * 1024 * 1024]).is_ok());
+    alice.store.set_my_extra(transport.clone(), alice.token.clone(), BACKGROUND_VIDEO.into(), clip.clone()).unwrap();
+
+    // Everyone: a public clip a stranger sees.
+    alice.store.set_extra_visibility(transport.clone(), alice.token.clone(), BACKGROUND_VIDEO.into(), "everyone".into()).unwrap();
+    assert_eq!(server.state.lock().unwrap().objects.get("public-avatars/alice-background.mp4"), Some(&clip));
+    refresh(&carol, &transport);
+    assert_eq!(carol.store.peer_extra("alice".into(), BACKGROUND_VIDEO.into()).unwrap(), Some(clip.clone()));
+
+    // Removing the video keeps the still; removing the still takes the video with it.
+    alice.store.remove_my_extra(transport.clone(), alice.token.clone(), BACKGROUND_VIDEO.into()).unwrap();
+    assert!(alice.store.my_extra(BACKGROUND.into()).unwrap().data.is_some(), "the still stays");
+    assert_eq!(alice.store.my_extra(BACKGROUND_VIDEO.into()).unwrap().data, None);
+    alice.store.set_my_extra(transport.clone(), alice.token.clone(), BACKGROUND_VIDEO.into(), clip.clone()).unwrap();
+    alice.store.remove_my_extra(transport.clone(), alice.token.clone(), BACKGROUND.into()).unwrap();
+    assert_eq!(alice.store.my_extra(BACKGROUND_VIDEO.into()).unwrap().data, None, "no video without its still");
+    assert!(!server.state.lock().unwrap().objects.keys().any(|k| k.ends_with("background.mp4")));
+}

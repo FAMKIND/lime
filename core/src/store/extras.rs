@@ -15,15 +15,21 @@ use super::{db_err, StoreError};
 
 pub(crate) const LINKS: &str = "links";
 pub(crate) const BACKGROUND: &str = "background";
+/// A short silent clip behind the profile (LIME-226a); the still in `BACKGROUND` is its poster and is always there with it.
+pub(crate) const BACKGROUND_VIDEO: &str = "background_video";
 const NONCE_BYTES: usize = 12;
 
 pub(crate) fn is_slot(slot: &str) -> bool {
-    slot == LINKS || slot == BACKGROUND
+    slot == LINKS || slot == BACKGROUND || slot == BACKGROUND_VIDEO
 }
 
-/// The most a slot may hold: a short list of links, or a 1 MiB image.
+/// The most a slot may hold: a short list of links, a 1 MiB image, or a 6 MiB clip.
 pub(crate) fn max_bytes(slot: &str) -> usize {
-    if slot == LINKS { 8 * 1024 } else { 1024 * 1024 }
+    match slot {
+        LINKS => 8 * 1024,
+        BACKGROUND_VIDEO => 6 * 1024 * 1024,
+        _ => 1024 * 1024,
+    }
 }
 
 fn derive(key: &[u8], info: &str, out: &mut [u8]) {
