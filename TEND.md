@@ -8016,3 +8016,18 @@ Two commits: `f86faa9` (server, core, the Report flow) and this one (the Moderat
 
 - Installed: 13mini: yes · iPad: yes · Jean: yes
 - For plot: if the key re-share does not fix item 1, the DIAG lines will say which of {key missing, key present but cache says none, blob missing} it is. A longer-term fix is a "send me your profile key" request when a contact's slot is empty and we hold no key.
+
+## LIME-231 — the cause, read from the 13 mini (2026-10-25, after the DIAG231 build) — Jean's phone not yet read
+
+DIAG231 lines from Shem's 13 mini (user ids shortened; "632s" = seconds since that slot was last checked):
+
+```
+user=d967a1e4 (Jean)  their_profile_key=false my_key_shared_with_them=true photo=public/118467b/v1791589165144 links=none background=none background_video=none
+user=dff90f84 (FAM)   their_profile_key=false my_key_shared_with_them=true photo=public/35725b/...             links=none background=none background_video=none
+user=2ea7d04c (mary)  their_profile_key=true  my_key_shared_with_them=true photo=public/76254b/...             links=none background=none background_video=none
+refresh failure= (none)   changed=0
+```
+
+- **Which of the four, for Jean → Shem's phone: "their profile key missing."** The refresh itself did not fail (no error), the photo is the public one Jean has, and every contacts-only slot says `none` simply because Shem's phone holds **no profile key for Jean** (and none for FAM) and so never looks for the encrypted copy. It is not "key present but cache says none" (there is no key), not a failing fetch (no failure), not an opening failure (nothing was opened). Mary, who has a key on Shem's phone, is the control: her slots are checked the same way.
+- This confirms the reading in the entry above: contacts who exchanged keys before profile keys existed were never sent one. Migration 50 (installed on this phone) re-queues **Shem's** key to them; the missing piece is **Jean's phone sending hers**, which only happens when her phone runs this build and syncs.
+- **Not yet read:** Jean's 12 mini (it was locked or unreachable from the Mac every time; the 13 mini also locked itself again after one read). So I have not seen whether Jean's phone lacks Shem's key (expected: the same) or whether her re-share has gone out.
