@@ -38,6 +38,7 @@ pub(crate) mod profile;
 pub(crate) mod groups;
 pub(crate) mod jam;
 pub(crate) mod moderation;
+mod repair;
 pub(crate) mod message_ops;
 pub(crate) mod extras;
 pub(crate) mod photos;
@@ -46,6 +47,8 @@ pub(crate) mod photos;
 const DELIVERY_KEY_SHARE: &str = "delivery_key.share";
 /// The control op that tells a contact my profile photo changed, so they refresh it now (LIME-98b-fix).
 const PROFILE_CHANGED: &str = "profile.changed";
+/// "I do not hold your profile key: please share again" (LIME-231b).
+const PROFILE_KEY_REQUEST: &str = "profile_key.request";
 use crate::store::status::STATUS_CHANGED;
 use crate::store::usernames::USERNAME_SET;
 
@@ -229,7 +232,9 @@ impl LimeStore {
         // who hold it can send sealed. Both are best effort here; they are tried again next time.
         if self.ensure_delivery_access(&transport, &auth_token).is_ok() {
             self.deliver_shares(&transport, &auth_token, &mut state, &me);
+            self.heal_contacts(&transport, &auth_token, &mut state, &me);
             self.refresh_my_photo_if_stale(&transport, &auth_token);
+            self.reconcile_my_pictures(&transport, &auth_token);
             self.deliver_photo_notices(&transport, &auth_token, &mut state, &me);
             self.deliver_status_notices(&transport, &auth_token, &mut state, &me);
             self.deliver_username_notices(&transport, &auth_token, &mut state, &me);
@@ -359,6 +364,8 @@ impl LimeStore {
         // Turn what is waiting into messages (and retry what failed before). A new session can make
         // an earlier item readable, so go round again while anything makes progress.
         let received = self.retry_pending(&mut state, &me)?;
+        // Anything still unreadable after the retries may mean a session that stopped working: start a fresh one, and ask for missing profile keys.
+        self.heal_contacts(&transport, &auth_token, &mut state, &me);
         if received > 0 {
             self.refresh_names(&transport, &auth_token);
         }
@@ -792,6 +799,11 @@ impl LimeStore {
 
             // 2. A session per device; claim a one-time key only for the devices that have none.
             let mut existing = self.with_conn(|conn| load_sessions(conn, &self.pickle_key, recipient))?;
+            // A repair (LIME-231b): the old session stopped decrypting on their side, so this send starts a new one and prefers it from now on.
+            let fresh = self.fresh_session_for.lock().unwrap_or_else(|e| e.into_inner()).contains(recipient);
+            if fresh {
+                existing.clear();
+            }
             let mut sessions = Vec::new();
             let mut needs_claim = Vec::new();
             for device in &devices {
@@ -817,7 +829,7 @@ impl LimeStore {
                         .map_err(|_| StoreError::BadMessage)?;
                     // Kept at once: if this send turns out stale and is retried, the claimed key is not lost.
                     self.with_conn(|conn| {
-                        save_session(conn, &self.pickle_key, recipient, &device.device_id, &device.identity_key, &session, false, now)
+                        save_session(conn, &self.pickle_key, recipient, &device.device_id, &device.identity_key, &session, fresh, now)
                     })?;
                     sessions.push((device, session));
                 }
@@ -1540,11 +1552,12 @@ impl LimeStore {
         let sender = known_sender.clone().unwrap_or_else(|| inner.sender_user.clone());
         let is_share = inner.op.op_type == DELIVERY_KEY_SHARE;
         let is_changed = inner.op.op_type == PROFILE_CHANGED;
+        let is_key_request = inner.op.op_type == PROFILE_KEY_REQUEST;
         let is_status = inner.op.op_type == STATUS_CHANGED;
         let is_call = crate::store::calls::is_call_op(&inner.op.op_type);
         let is_username = inner.op.op_type == USERNAME_SET;
         let is_jam = crate::store::jam::is_jam_op(&inner.op.op_type);
-        let is_control = is_share || is_changed || is_status || is_username || is_call || is_jam;
+        let is_control = is_share || is_changed || is_key_request || is_status || is_username || is_call || is_jam;
         let is_message_op = crate::store::message_ops::is_message_op(&inner.op.op_type);
         let is_group_op = inner.op.op_type.starts_with("group.");
         let valid = sender != me
@@ -1686,6 +1699,18 @@ impl LimeStore {
                 // Someone I share a chat with told me their username (or `null`: forget it). Not a message.
                 if let Some(username) = crate::store::usernames::parse(&inner.op.payload) {
                     crate::store::usernames::store_received(conn, me, &sender, username.as_deref(), remote_hlc.wall)?;
+                }
+                return Ok(Some(Stored::Control));
+            }
+            if is_key_request {
+                // Someone asks for my profile key again: answered with a fresh key share, only for an accepted contact who is not blocked.
+                let accepted = conn
+                    .query_row("SELECT request_state = 'accepted' FROM conversations WHERE id = ?1", params![format!("dm:{sender}")], |r| r.get::<_, bool>(0))
+                    .optional()
+                    .map_err(db_err)?
+                    .unwrap_or(false);
+                if accepted {
+                    delivery::queue_share(conn, &sender, now)?;
                 }
                 return Ok(Some(Stored::Control));
             }

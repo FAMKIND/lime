@@ -133,9 +133,15 @@ extension ConversationStore {
     func diagnoseProfilePictures(failure: String, changed: [String]) {
         #if DEBUG
         guard let core else { return }
-        fputs("DIAG231 refresh failure=\(failure) changed=\(changed.count)\n", stderr)
+        // To the console and to Documents/diag231.log (so it can be copied off a phone with `devicectl device copy from`).
+        var text = "DIAG231 \(Date()) refresh failure=\(failure) changed=\(changed.count)\n"
         for id in Set(conversations.flatMap { $0.members.map(\.id) }) where id != meProvider().id {
-            fputs("DIAG231 \((try? core.profileDiagnostics(userId: id)) ?? "?")\n", stderr)
+            text += "DIAG231 \((try? core.profileDiagnostics(userId: id)) ?? "?")\n"
+        }
+        fputs(text, stderr)
+        if let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("diag231.log"),
+           let data = text.data(using: .utf8) {
+            if let handle = try? FileHandle(forWritingTo: url) { handle.seekToEndOfFile(); handle.write(data); try? handle.close() } else { try? data.write(to: url) }
         }
         #endif
     }

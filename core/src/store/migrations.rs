@@ -788,6 +788,16 @@ const MIGRATIONS: &[&str] = &[
          SELECT substr(id, 4), CAST(strftime('%s', 'now') AS INTEGER) * 1000 FROM conversations WHERE id LIKE 'dm:%' AND request_state = 'accepted';
      UPDATE photos SET checked_at = 0;
      UPDATE extras SET checked_at = 0;",
+    // 51 (LIME-231b): when a conversation's Olm session stopped decrypting, a fresh one is started (at most every 6 hours per person), and a
+    // contact whose profile key I lack is asked for it (at most once a day per person). These remember when.
+    "CREATE TABLE session_repairs (
+         peer_user_id TEXT PRIMARY KEY NOT NULL,
+         repaired_at  INTEGER NOT NULL
+     );
+     CREATE TABLE profile_key_requests (
+         peer_user_id TEXT PRIMARY KEY NOT NULL,
+         asked_at     INTEGER NOT NULL
+     );",
 ];
 
 /// The schema version this build writes.

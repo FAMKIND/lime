@@ -58,7 +58,68 @@ impl LimeStore {
                 .map_err(db_err)?
                 .map(|(source, len, version, at)| format!("{source}/{len}b/v{version}/{}", age(at)))
                 .unwrap_or_else(|| "none".into());
-            let mut out = format!("user={} their_profile_key={has_key} my_key_shared_with_them={they_have_mine} photo={photo}", &user_id[..user_id.len().min(8)]);
+            // Why a share might not have been kept (LIME-231b): is my share to them still queued, did I get their delivery key and when, is a key change
+            // of theirs waiting to be accepted, and what is stuck in the inbound queue from them.
+            let queued = conn.query_row("SELECT EXISTS (SELECT 1 FROM share_queue WHERE peer_user_id = ?1)", params![user_id], |r| r.get::<_, bool>(0)).map_err(db_err)?;
+            let their_delivery_key = conn
+                .query_row("SELECT received_at FROM contact_delivery_keys WHERE user_id = ?1", params![user_id], |r| r.get::<_, i64>(0))
+                .optional()
+                .map_err(db_err)?
+                .map(|at| age(at))
+                .unwrap_or_else(|| "none".into());
+            let key_change: bool = conn
+                .query_row("SELECT new_master_key IS NOT NULL FROM peers WHERE user_id = ?1", params![user_id], |r| r.get(0))
+                .optional()
+                .map_err(db_err)?
+                .unwrap_or(false);
+            let stuck: Vec<String> = {
+                let mut st = conn.prepare("SELECT reason, COUNT(*) FROM pending_inbound WHERE sender_user = ?1 GROUP BY reason").map_err(db_err)?;
+                let rows = st.query_map(params![user_id], |r| Ok(format!("{}:{}", r.get::<_, String>(0)?, r.get::<_, i64>(1)?))).map_err(db_err)?;
+                rows.collect::<Result<_, _>>().map_err(db_err)?
+            };
+            let state: String = conn
+                .query_row("SELECT request_state FROM conversations WHERE id = ?1", params![format!("dm:{user_id}")], |r| r.get::<_, Option<String>>(0))
+                .optional()
+                .map_err(db_err)?
+                .flatten()
+                .unwrap_or_else(|| "no-chat".into());
+            let all_stuck: Vec<String> = {
+                let mut st = conn.prepare("SELECT reason, COUNT(*) FROM pending_inbound GROUP BY reason").map_err(db_err)?;
+                let rows = st.query_map([], |r| Ok(format!("{}:{}", r.get::<_, String>(0)?, r.get::<_, i64>(1)?))).map_err(db_err)?;
+                rows.collect::<Result<_, _>>().map_err(db_err)?
+            };
+            // Each stuck inbound item: how it is held, how old, how often tried, whether it names its sender, and what kind of Olm message it is.
+            let rows: Vec<String> = {
+                let mut st = conn.prepare("SELECT reason, identified, attempts, first_seen, sender_user, substr(ciphertext, 1, 4), length(ciphertext) FROM pending_inbound ORDER BY first_seen LIMIT 60").map_err(db_err)?;
+                let it = st
+                    .query_map([], |r| {
+                        let head: String = r.get(5)?;
+                        // base64 of the wire byte: "AA" = 0 (pre-key), "AQ" = 1 (normal), "Ag" = 2 (group).
+                        let kind = match &head[..head.len().min(2)] { "AA" => "prekey", "AQ" => "normal", "Ag" => "group", _ => "?" };
+                        Ok(format!("{}/{}/try{}/{}/{}/{}/{}b", r.get::<_, String>(0)?, if r.get::<_, bool>(1)? { "id" } else { "sealed" }, r.get::<_, i64>(2)?, age(r.get::<_, i64>(3)?),
+                            r.get::<_, Option<String>>(4)?.map(|u| u[..u.len().min(4)].to_owned()).unwrap_or_else(|| "-".into()), kind, r.get::<_, i64>(6)?))
+                    })
+                    .map_err(db_err)?;
+                it.collect::<Result<_, _>>().map_err(db_err)?
+            };
+            let sessions: Vec<String> = {
+                let mut st = conn.prepare("SELECT peer_user_id, COUNT(*), MAX(last_received), MAX(updated_at) FROM olm_sessions GROUP BY peer_user_id").map_err(db_err)?;
+                let it = st
+                    .query_map([], |r| Ok(format!("{}:{}s recv {} upd {}", &r.get::<_, String>(0)?[..4], r.get::<_, i64>(1)?, age(r.get::<_, i64>(2)?), age(r.get::<_, i64>(3)?))))
+                    .map_err(db_err)?;
+                it.collect::<Result<_, _>>().map_err(db_err)?
+            };
+            // My own picture, to compare with what the server holds under my current key.
+            let mine = {
+                let m = photos::mine(conn)?;
+                let current = vodozemac::base64_encode(photos::current_key(conn, now)?);
+                format!("my_photo={}b/{}/uploaded_under_current_key={}", m.jpeg.as_ref().map(Vec::len).unwrap_or(0), m.visibility, m.uploaded_key.as_deref() == Some(current.as_str()))
+            };
+            let queue_len: i64 = conn.query_row("SELECT COUNT(*) FROM share_queue", [], |r| r.get(0)).map_err(db_err)?;
+            let mut out = format!(
+                "{mine} chat_state={state} all_pending_inbound=[{}] share_queue_len={queue_len} sessions=[{}] stuck_items=[{}] user={} their_profile_key={has_key} my_key_shared_with_them={they_have_mine} my_share_still_queued={queued} their_delivery_key_age={their_delivery_key} key_change_waiting={key_change} stuck_from_them=[{}] photo={photo}",
+                all_stuck.join(","), sessions.join("; "), rows.join(" "), &user_id[..user_id.len().min(8)], stuck.join(",")
+            );
             for slot in [crate::store::extras::LINKS, crate::store::extras::BACKGROUND, crate::store::extras::BACKGROUND_VIDEO] {
                 let row = conn
                     .query_row("SELECT source, length(bytes), version, checked_at FROM extras WHERE user_id = ?1 AND slot = ?2", params![user_id, slot], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?, r.get::<_, i64>(3)?)))
@@ -216,6 +277,67 @@ impl LimeStore {
     fn delete_encrypted_copy(&self, transport: &Arc<dyn Transport>, token: &str, key_b64: Option<String>) {
         let Some(key) = key_b64.and_then(|k| vodozemac::base64_decode(k).ok()) else { return };
         let _ = call(transport, Some(token), "blob", &json!({ "action": "delete", "blob_id": photos::blob_id(&key) }));
+    }
+
+    /// Once per launch: does the server really hold my photo, background and links in the form this phone believes (the public copy for Everyone, the
+    /// copy under my current key for contacts)? A change that failed halfway (offline, rate-limited) left this phone saying "Everyone" while the server
+    /// held nothing public; nobody saw the picture and nothing ever tried again. Anything missing is uploaded again. Best effort.
+    pub(super) fn reconcile_my_pictures(&self, transport: &Arc<dyn Transport>, token: &str) {
+        use std::sync::atomic::Ordering;
+        if self.own_pictures_checked.swap(true, Ordering::Relaxed) {
+            return;
+        }
+        let Ok(Some(me)) = self.with_conn(|conn| Ok(crate::store::account::load_account(conn, &self.pickle_key)?.and_then(|s| s.user_id))) else {
+            self.own_pictures_checked.store(false, Ordering::Relaxed);
+            return;
+        };
+        // Present on the server? `None` when it could not be asked (offline): then it is asked again next time.
+        let present = |public: bool, slot: Option<&str>, key: &[u8]| -> Option<bool> {
+            let (function, body) = if public {
+                let mut body = json!({ "action": "get", "user_id": me });
+                if let Some(slot) = slot {
+                    body["slot"] = json!(slot);
+                }
+                ("avatar", body)
+            } else {
+                let id = match slot {
+                    Some(slot) => crate::store::extras::blob_id(slot, key),
+                    None => photos::blob_id(key),
+                };
+                ("blob", json!({ "action": "get", "blob_id": id }))
+            };
+            match call(transport, Some(token), function, &body) {
+                Ok((200, _)) => Some(true),
+                Ok((404, _)) => Some(false),
+                _ => None,
+            }
+        };
+        let Ok(key) = self.with_conn(|conn| photos::current_key(conn, now_ms())) else { return };
+        let photo = self.with_conn(photos::mine).ok().filter(|m| m.jpeg.is_some());
+        if let Some(mine) = photo {
+            match present(mine.visibility == "everyone", None, &key) {
+                Some(false) => {
+                    let _ = self.sync_my_photo(transport, token);
+                    let _ = self.notify_contacts_of_photo_change();
+                }
+                None => self.own_pictures_checked.store(false, Ordering::Relaxed),
+                Some(true) => {}
+            }
+        }
+        for slot in [crate::store::extras::LINKS, crate::store::extras::BACKGROUND, crate::store::extras::BACKGROUND_VIDEO] {
+            let Ok(mine) = self.with_conn(|conn| crate::store::extras::mine(conn, slot)) else { continue };
+            if mine.data.is_none() {
+                continue;
+            }
+            match present(mine.visibility == "everyone", Some(slot), &key) {
+                Some(false) => {
+                    let _ = self.sync_my_extra(transport, token, slot);
+                    let _ = self.notify_contacts_of_photo_change();
+                }
+                None => self.own_pictures_checked.store(false, Ordering::Relaxed),
+                Some(true) => {}
+            }
+        }
     }
 
     /// After a block rotated my photo key, the contacts-only copy is under a key the remaining contacts will be

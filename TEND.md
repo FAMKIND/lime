@@ -8031,3 +8031,40 @@ refresh failure= (none)   changed=0
 - **Which of the four, for Jean → Shem's phone: "their profile key missing."** The refresh itself did not fail (no error), the photo is the public one Jean has, and every contacts-only slot says `none` simply because Shem's phone holds **no profile key for Jean** (and none for FAM) and so never looks for the encrypted copy. It is not "key present but cache says none" (there is no key), not a failing fetch (no failure), not an opening failure (nothing was opened). Mary, who has a key on Shem's phone, is the control: her slots are checked the same way.
 - This confirms the reading in the entry above: contacts who exchanged keys before profile keys existed were never sent one. Migration 50 (installed on this phone) re-queues **Shem's** key to them; the missing piece is **Jean's phone sending hers**, which only happens when her phone runs this build and syncs.
 - **Not yet read:** Jean's 12 mini (it was locked or unreachable from the Mac every time; the 13 mini also locked itself again after one read). So I have not seen whether Jean's phone lacks Shem's key (expected: the same) or whether her re-share has gone out.
+
+## LIME-231b — the cause: the Olm sessions between Shem's and Jean's phones stopped decrypting; plus a lost public photo — DONE
+
+**Suspects from the brief, answered by reading both phones (Jean's and the 13 mini, via `Documents/diag231.log` copied with `devicectl device copy from`, since the console did not stream on Jean's):**
+
+- (a) *The receiver drops the profile key when the delivery key is unchanged:* **no.** `store_contact_key` always runs on a valid share and replaces the profile key; nothing dedupes on the delivery key.
+- (b) *Migration 50's re-share is queued but never sent:* **no.** Both phones show `share_queue_len=0` and `my_key_shared_with_them=true`: they sent.
+- (c) *"shared" is set when queued, not delivered:* it is set when `send` returned OK, which is the right moment.
+
+**The cause (read from the devices before the fix):**
+
+```
+Jean's phone, Shem (a91a):  their_profile_key=false  their_delivery_key_age=1485980s (17 days: nothing from him has been stored since Oct 8)
+Shem's phone, Jean (d967):  their_profile_key=false  their_delivery_key_age=1496074s
+both:   key_change_waiting=false, chat_state=accepted, stuck_from_them=[]
+Jean:   all_pending_inbound=[invalid:2, no_session:34]   Shem: [invalid:18, no_session:15]
+Jean's session with Shem:  recv 63717s ago   Shem's session with Jean: recv 63308s ago
+the newest no_session items are ~63,300 s old (first_seen), then ~11 more since, each retried every sync (20 to 109 times), none ever readable
+```
+
+Everything sealed that Shem and Jean sent each other since about **03:37 UTC on Oct 25** (the last time either phone decrypted anything from the other) arrives as an Olm *normal* message that none of the receiver's sessions can read: the **sessions have diverged** (a ratchet that drifted after a lost or out-of-order message, or a session pickle that was saved from an older state; I could not tell which from the outside, and the old `no_session` items from Oct 15–16 with ~4000 retries show it has happened before). Nothing re-established a session, because a sender keeps using the session it believes in and a receiver has no way to say "I cannot read you" when the item is sealed. That is why *every* control op between them failed together: the key shares (so no profile key, so no contacts-only photo, background or links), the status, username and photo-change notices. It is not the four things in the user's list: the fetch works and nothing is opened wrongly; the key is missing because the message that carries it never decrypted.
+
+**A second, separate finding (Shem's photo):** Shem's phone said his photo was *Everyone's*, the server said *Contacts* with no public copy (no `avatar_version`, only an Oct 10 encrypted blob). A change had failed halfway at some point and nothing ever checked again, so Jean saw initials even with a working key.
+
+**The fixes (core):**
+1. **A fresh session when one stops working.** If sealed items keep failing (`no_session`, 3+ tries, within 3 days) every accepted contact we have not heard from since they began gets a **new Olm session** started with a key share; the new session is preferred for sending at once, and the contact's phone, reading our pre-key message, prefers it too. At most once per 6 hours per contact. Runs in `sync` and `deliver_queued`. Unreadable `no_session` items older than 7 days are dropped (they never will be readable; they were retried on every sync).
+2. **`profile_key.request` (the brief's self-heal).** A contact whose key share arrived (more than 10 minutes ago) *without* a profile key is asked for it, at most once a day per contact, with a small encrypted control op; their phone answers with a fresh key share, but only to an accepted contact who is not blocked (a blocked person's or a stranger's request is ignored). The request is never shown as a message.
+3. **Reconcile my own pictures once per launch.** My phone asks the server whether my photo, background, video and links are really there in the form it believes (public copy for Everyone, the copy under my current key for contacts) and uploads again what is missing, then notifies contacts. This is what brought Shem's public photo back (the server now has `avatar_version` 1792964398098).
+4. Migration 51 (`session_repairs`, `profile_key_requests`).
+5. `DIAG231` (Debug only) now also writes `Documents/diag231.log` and shows chat state, stuck inbound items, sessions and my own picture state. Remove with 113.
+
+**Result on the two phones (after installing this build):** both hold each other's profile key; Jean's phone fetched Shem's contacts-only background and video (`encrypted/483737b`, `/5715263b`), Shem's phone fetched Jean's (`encrypted/363452b`, `/5598049b`); the sessions are fresh (`recv 7s`, `recv 8s`); no_session items fell from 34→11 (Jean) and stopped growing. Shem's public photo is on the server again; Jean's phone picks it up at its next photo check (open Shem's chat or profile, or pull to refresh, because the last check was minutes ago; I did not force it).
+**Not fixed / not known:** *why* the sessions diverged at ~03:37 UTC. If it happens again the new `session_repairs` row and the DIAG line will show it and the repair will cover it. FAM (dff9) still has no profile key on either phone: FAM's phone has to run this build too (its delivery key is 17 days old, so it will be asked).
+
+**Tests (core, 345 pass):** a contact without a profile key asks once a day and is answered; a blocked person's and a stranger's request are ignored; a broken session (replaced by an unrelated one) gets a fresh session and Alice's later messages are read; a picture the server lost track of is uploaded again once per launch. The migration "rewind" tests drop the two new tables. iOS: logging only (no UI change).
+- Installed: 13mini: yes · iPad: yes · Jean: yes
+- For plot: FAM's phone and any other contact's phone need this build to heal their side; what made the sessions diverge is still open (worth a core test that sends and receives interleaved on two threads, 189/jam ops especially).

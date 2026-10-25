@@ -1479,7 +1479,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
              DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP INDEX olm_sessions_by_peer; DROP TABLE received_ciphertexts; DROP TABLE emergency_messages; DROP TABLE emergency_settings; DROP TABLE mesh_outbox; DROP TABLE mesh_packets; DROP TABLE mesh_seen; DROP TABLE mesh_uploaded; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
-             DROP TABLE my_extra; DROP TABLE extras; DROP TRIGGER jam_posts_fts_insert; DROP TRIGGER jam_posts_fts_update; DROP TRIGGER jam_posts_fts_delete; DROP TABLE jam_fts; DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_credits; DROP TABLE jam_credit_requests; DROP TABLE jam_credit_wires; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_blob_deletes; DROP TABLE jam_reactions; DROP TABLE jam_my_reactions; DROP TABLE jam_comments; DROP TABLE jam_counts; DROP TABLE jam_counts_out; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; PRAGMA user_version = 9;",
+             DROP TABLE session_repairs; DROP TABLE profile_key_requests; DROP TABLE my_extra; DROP TABLE extras; DROP TRIGGER jam_posts_fts_insert; DROP TRIGGER jam_posts_fts_update; DROP TRIGGER jam_posts_fts_delete; DROP TABLE jam_fts; DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_credits; DROP TABLE jam_credit_requests; DROP TABLE jam_credit_wires; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_blob_deletes; DROP TABLE jam_reactions; DROP TABLE jam_my_reactions; DROP TABLE jam_comments; DROP TABLE jam_counts; DROP TABLE jam_counts_out; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; PRAGMA user_version = 9;",
         )
         .unwrap();
     }
@@ -6237,4 +6237,120 @@ fn contacts_read_every_slot_of_each_other_both_ways_and_a_lost_profile_key_is_he
     refresh(&bob, &transport);
     assert!(bob.store.peer_photo("alice".into()).unwrap().is_some(), "the key came again: the photo is back");
     assert_eq!(bob.store.peer_extra("alice".into(), BACKGROUND.into()).unwrap(), Some(photo_bytes()), "and the background");
+}
+
+// LIME-231b: a contact without my profile key asks for it; a broken session is replaced by a fresh one.
+fn ask_count(p: &Party) -> i64 {
+    p.store.lock().query_row("SELECT COUNT(*) FROM profile_key_requests", [], |r| r.get(0)).unwrap()
+}
+
+#[test]
+fn a_contact_without_a_profile_key_asks_once_a_day_and_is_answered_with_a_fresh_share() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let key = profile_key_of(&alice);
+    assert_eq!(crate::store::photos::contact_key(&bob.store.lock(), "alice").unwrap(), Some(key.clone()));
+    // Bob loses it (and his record of asking).
+    bob.store.lock().execute("DELETE FROM contact_profile_keys WHERE user_id = 'alice'", []).unwrap();
+    bob.store.lock().execute("DELETE FROM profile_key_requests", []).unwrap();
+    deliver(&bob, &transport);
+    assert_eq!(ask_count(&bob), 0, "a fresh contact's share is still on its way: no asking yet");
+    bob.store.lock().execute("UPDATE contact_delivery_keys SET received_at = 1000", []).unwrap();   // their key came long ago, without a profile key
+    deliver(&bob, &transport);
+    assert_eq!(ask_count(&bob), 1, "Bob asked");
+    let asked_at: i64 = bob.store.lock().query_row("SELECT asked_at FROM profile_key_requests", [], |r| r.get(0)).unwrap();
+    // Alice reads the request (nothing shown) and answers at her next delivery; Bob then holds the key again.
+    sync(&alice, &transport);
+    assert!(!texts(&alice, &bob).iter().any(|t| t.contains("profile")), "the request is never a message");
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    assert_eq!(crate::store::photos::contact_key(&bob.store.lock(), "alice").unwrap(), Some(key), "answered");
+    // Asking again within a day does nothing (and once he has the key he does not ask at all).
+    bob.store.lock().execute("DELETE FROM contact_profile_keys WHERE user_id = 'alice'", []).unwrap();
+    deliver(&bob, &transport);
+    let again: i64 = bob.store.lock().query_row("SELECT asked_at FROM profile_key_requests", [], |r| r.get(0)).unwrap();
+    assert_eq!(again, asked_at, "at most once a day per contact");
+}
+
+#[test]
+fn a_request_from_someone_blocked_or_not_a_contact_is_not_answered() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    befriend(&alice, &bob, &transport);
+    // Carol only ever sent Alice a hello: a request, not a contact.
+    say(&carol, &alice, &transport, "hello, it's carol");
+    sync(&alice, &transport);
+    // Alice blocks Bob; Bob (who still thinks Alice is a contact) asks.
+    alice.store.block_sender(format!("dm:{}", bob.user)).unwrap();
+    bob.store.lock().execute("DELETE FROM contact_profile_keys WHERE user_id = 'alice'", []).unwrap();
+    bob.store.lock().execute("UPDATE contact_delivery_keys SET received_at = 1000", []).unwrap();
+    deliver(&bob, &transport);
+    sync(&alice, &transport);
+    let queued: Vec<String> = crate::store::delivery::queued_shares(&alice.store.lock()).unwrap();
+    assert!(!queued.contains(&bob.user), "a blocked person's request is ignored");
+    assert!(!queued.contains(&carol.user), "so is a stranger's");
+}
+
+#[test]
+fn sealed_items_that_stop_decrypting_get_a_fresh_session_and_messages_flow_again() {
+    use vodozemac::olm::{Account, SessionConfig};
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    say(&alice, &bob, &transport, "before");
+    sync(&bob, &transport);
+    assert!(texts(&bob, &alice).iter().any(|t| t == "before"));
+    // Bob's session with Alice is lost: he is left with one that is not hers (and old).
+    let identity: String = bob.store.lock().query_row("SELECT peer_identity_key FROM olm_sessions WHERE peer_user_id = 'alice' LIMIT 1", [], |r| r.get(0)).unwrap();
+    let device: String = bob.store.lock().query_row("SELECT peer_device_id FROM olm_sessions WHERE peer_user_id = 'alice' LIMIT 1", [], |r| r.get(0)).unwrap();
+    bob.store.lock().execute("DELETE FROM olm_sessions WHERE peer_user_id = 'alice'", []).unwrap();
+    {
+        let mut other = Account::new();
+        other.generate_one_time_keys(1);
+        let otk = *other.one_time_keys().values().next().unwrap();
+        let stray = Account::new().create_outbound_session(SessionConfig::version_1(), other.curve25519_key(), otk).unwrap();
+        crate::store::account::save_session(&bob.store.lock(), &bob.store.pickle_key, "alice", &device, &identity, &stray, true, 1000).unwrap();
+    }
+    for i in 0..4 {
+        say(&alice, &bob, &transport, &format!("lost {i}"));
+        sync(&bob, &transport);
+    }
+    assert!(!texts(&bob, &alice).iter().any(|t| t == "lost 3"), "Bob cannot read Alice any more");
+    assert!(bob.store.pending_summary().unwrap().contains("no_session"));
+    // Bob's next sync starts a fresh session (his key share goes in it), Alice reads it and answers in it, and Bob reads Alice again.
+    sync(&bob, &transport);
+    sync(&alice, &transport);
+    say(&alice, &bob, &transport, "after the repair");
+    sync(&bob, &transport);
+    assert!(texts(&bob, &alice).iter().any(|t| t == "after the repair"), "messages flow again: {:?}", texts(&bob, &alice));
+    let repaired: i64 = bob.store.lock().query_row("SELECT COUNT(*) FROM session_repairs WHERE peer_user_id = 'alice'", [], |r| r.get(0)).unwrap();
+    assert_eq!(repaired, 1);
+}
+
+#[test]
+fn a_picture_the_server_lost_track_of_is_uploaded_again_once_per_launch() {
+    use std::sync::atomic::Ordering;
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    alice.store.set_my_photo(transport.clone(), alice.token.clone(), photo_bytes()).unwrap();   // Everyone (the default)
+    assert_eq!(alice.store.my_photo().unwrap().visibility, "everyone");
+    // The server ends up with no public copy while the phone still says Everyone (a change that failed halfway).
+    {
+        let mut state = server.state.lock().unwrap();
+        state.objects.remove("public-avatars/alice.jpg");
+        state.avatar_versions.remove("alice");
+    }
+    assert!(refresh(&bob, &transport).is_empty(), "nothing to fetch: the server has no public copy");
+    assert_eq!(bob.store.peer_photo("alice".into()).unwrap(), None);
+    alice.store.own_pictures_checked.store(false, Ordering::Relaxed);   // a new launch
+    deliver(&alice, &transport);
+    assert_eq!(refresh(&bob, &transport), vec!["alice".to_string()], "uploaded again");
+    assert_eq!(bob.store.peer_photo("alice".into()).unwrap(), Some(photo_bytes()));
 }

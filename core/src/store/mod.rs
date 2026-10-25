@@ -234,6 +234,8 @@ pub struct LimeStore {
     pub(crate) pickle_key: [u8; 32],
     /// Serialises register, send and sync, so two of them never interleave their network calls.
     pub(crate) protocol_lock: Mutex<()>,
+    /// People the next send must start a brand-new Olm session with (LIME-231b: a session that stopped decrypting is replaced, not reused).
+    pub(crate) fresh_session_for: Mutex<std::collections::HashSet<String>>,
     /// Only one mailbox fetch at a time (the fetch itself runs outside `protocol_lock`).
     pub(crate) fetch_lock: Mutex<()>,
     /// The longest wait for `protocol_lock` since the app last asked, in ms (call diagnostics).
@@ -248,6 +250,8 @@ pub struct LimeStore {
     pub(crate) mesh_offline_neighbours: std::sync::atomic::AtomicUsize,
     /// My access public key was put on the server's file this run (LIME-142-fix2: re-asserted once per launch, so a server that lost it or never got it is repaired).
     pub(crate) access_confirmed: std::sync::atomic::AtomicBool,
+    /// My own photo, background and links were checked against the server once since launch (LIME-231b).
+    pub(crate) own_pictures_checked: std::sync::atomic::AtomicBool,
     /// Copies dropped as duplicates since the app last asked: (from the server, from the mesh).
     pub(crate) dup_dropped: std::sync::Mutex<(u32, u32)>,
     /// Unreadable items deleted at 30 days since the app last asked.
@@ -738,6 +742,7 @@ impl LimeStore {
             conn: Mutex::new(conn),
             pickle_key: crate::keys::derive_pickle_key(key),
             protocol_lock: Mutex::new(()),
+            fresh_session_for: Mutex::new(std::collections::HashSet::new()),
             fetch_lock: Mutex::new(()),
             lock_wait_ms: std::sync::atomic::AtomicU64::new(0),
             downloaded: std::sync::atomic::AtomicU32::new(0),
@@ -745,6 +750,7 @@ impl LimeStore {
             mesh_enabled: std::sync::atomic::AtomicBool::new(false),
             mesh_offline_neighbours: std::sync::atomic::AtomicUsize::new(0),
             access_confirmed: std::sync::atomic::AtomicBool::new(false),
+            own_pictures_checked: std::sync::atomic::AtomicBool::new(false),
             dup_dropped: std::sync::Mutex::new((0, 0)),
             pending_expired: std::sync::atomic::AtomicU32::new(0),
             last_send_parked: std::sync::atomic::AtomicBool::new(false),
