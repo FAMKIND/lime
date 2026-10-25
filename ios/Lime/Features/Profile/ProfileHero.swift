@@ -218,6 +218,16 @@ enum HeroDefault {
         return (made, key)
     }
 
+    /// An org with no picture of its own: its tile's colour (the accent) as a soft gradient to a darker shade, like a person's tone (LIME-216).
+    static func org(dark: Bool) -> (image: UIImage, key: String) {
+        let key = "org-tile-\(dark)"
+        if let hit = cache.object(forKey: key as NSString) { return (hit, key) }
+        let base = UIColor(Theme.accent).resolvedColor(with: UITraitCollection(userInterfaceStyle: dark ? .dark : .light))
+        let made = gradient(from: base)
+        cache.setObject(made, forKey: key as NSString)
+        return (made, key)
+    }
+
     /// The photo, aspect-filled into the frame, blurred (radius about 40 at the real size: here a fifth of it, as this copy is a fifth the size) and dimmed.
     static func blurred(_ photo: UIImage) -> UIImage {
         let format = UIGraphicsImageRendererFormat.default()
@@ -241,7 +251,10 @@ enum HeroDefault {
 
     /// A soft vertical gradient of the avatar's tone colour (the one behind their initials) to a darker shade of it.
     static func tone(_ tone: Int, dark: Bool) -> UIImage {
-        let base = UIColor(Theme.avatar(tone)).resolvedColor(with: UITraitCollection(userInterfaceStyle: dark ? .dark : .light))
+        gradient(from: UIColor(Theme.avatar(tone)).resolvedColor(with: UITraitCollection(userInterfaceStyle: dark ? .dark : .light)))
+    }
+
+    private static func gradient(from base: UIColor) -> UIImage {
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         base.getRed(&r, green: &g, blue: &b, alpha: &a)
         let deeper = UIColor(red: r * 0.55, green: g * 0.55, blue: b * 0.55, alpha: 1)

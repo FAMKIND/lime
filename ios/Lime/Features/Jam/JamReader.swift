@@ -490,40 +490,6 @@ struct JamProfilePosts: View {
     }
 }
 
-/// The Orgs tab: a row for each org the person writes as (name, subscribers, Subscribe); a tap opens the org's page.
-struct JamOrgsSection: View {
-    let orgs: [JamPageInfo]
-    let isMe: Bool
-    @Environment(ConversationStore.self) private var store
-    @State private var open: JamPageInfo?
-
-    var body: some View {
-        VStack(spacing: 0) {
-            ForEach(orgs, id: \.jamId) { org in
-                HStack(spacing: 12) {
-                    Button { open = org } label: {
-                        HStack(spacing: 12) {
-                            JamInitialTile(title: org.title, size: 44).accessibilityHidden(true)
-                            VStack(alignment: .leading, spacing: 0) {
-                                Text(org.title).font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text)
-                                Text(org.subscriberCount == 1 ? "1 subscriber" : "\(org.subscriberCount) subscribers").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
-                            }
-                            Spacer(minLength: 0)
-                        }
-                        .frame(minHeight: 56).contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("\(org.title), \(org.subscriberCount) subscribers").accessibilityHint("Opens its page")
-                    .accessibilityIdentifier("profile-org-\(org.jamId)")
-                    if !isMe { SubscribeLink(page: org, id: "profile-org-subscribe-\(org.jamId)") }
-                }
-            }
-        }
-        .padding(.top, 6)
-        .sheet(item: $open) { page in JamOrgPage(page: page, isMe: isMe) }
-    }
-}
-
 /// "Subscribe" as a lime-green text link; "Subscribed ✓" in the quiet colour once you follow, and a tap then asks before it unsubscribes.
 struct SubscribeLink: View {
     let page: JamPageInfo
@@ -547,81 +513,6 @@ struct SubscribeLink: View {
     }
 }
 
-/// An org's page (LIME-188x), opened from the Orgs tab: its head (title, topics, subscribers; Edit jam page, Subscribers and End jam on your own),
-/// then the posts shown as the org with All · Posts · Articles · Podcasts.
-struct JamOrgPage: View {
-    let page: JamPageInfo
-    let isMe: Bool
-    @Environment(ConversationStore.self) private var store
-    @Environment(\.dismiss) private var dismiss
-    @State private var segment: JamSegment = .all
-    @State private var reading: JamPostRoute?
-    @State private var editing: JamInfo?
-    @State private var viewingSubscribers = false
-    @State private var confirmingEnd = false
-
-    var body: some View {
-        let following = store.isFollowing(page.jamId)
-        let posts = store.posts(of: page.jamId).filter { $0.displayAs == "jam" && segment.includes(kind: $0.kind) }
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(page.title).font(Theme.font(.title3, weight: .bold)).foregroundStyle(Theme.text).accessibilityAddTraits(.isHeader).accessibilityIdentifier("profile-jam-row")
-                        if !page.topics.isEmpty { Text(page.topics.joined(separator: " \u{00B7} ")).font(Theme.secondary).foregroundStyle(Theme.textSecondary) }
-                        Text(page.subscriberCount == 1 ? "1 subscriber" : "\(page.subscriberCount) subscribers").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
-                            .accessibilityIdentifier("profile-jam-subscribers")
-                        if !page.about.isEmpty { Text(page.about).font(Theme.body).foregroundStyle(Theme.text).padding(.top, 4) }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    if isMe {
-                        HStack(spacing: 10) {
-                            pill("Edit jam page", id: "jam-edit-page") { editing = store.jamsMine.first }
-                            pill("Subscribers", id: "jam-subscribers") { store.loadJamSubscribers(page.jamId); viewingSubscribers = true }
-                            pill("End jam", id: "jam-end") { confirmingEnd = true }
-                        }
-                    } else {
-                        SubscribeLink(page: page, id: "profile-org-page-subscribe")
-                    }
-                    if isMe || following {
-                        Picker("Show", selection: $segment) { ForEach(JamSegment.allCases, id: \.self) { Text($0.title).tag($0) } }
-                            .pickerStyle(.segmented).accessibilityIdentifier("profile-org-segments")
-                        if posts.isEmpty { Text("Nothing here yet.").font(Theme.body).foregroundStyle(Theme.textSecondary) }
-                        VStack(spacing: 0) {
-                            ForEach(posts, id: \.postId) { post in
-                                JamPostCard(post: post, open: { reading = JamPostRoute(postID: $0) }, place: .orgPage(segment))
-                                Divider().overlay(Theme.hairline)
-                            }
-                        }
-                        .padding(.horizontal, -20)
-                    } else {
-                        Text("Subscribe to read their posts.").font(Theme.body).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("profile-jam-locked")
-                    }
-                }
-                .padding(.horizontal, 20).padding(.top, 6)
-            }
-            .background(Theme.canvas.ignoresSafeArea())
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() }.accessibilityIdentifier("profile-org-done") } }
-            .sheet(item: $reading) { route in NavigationStack { JamPostView(postID: route.postID).toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { reading = nil } } } } }
-            .sheet(item: $editing) { JamDetailsSheet(editing: $0) }
-            .sheet(isPresented: $viewingSubscribers) { NavigationStack { JamSubscribersView(jamID: page.jamId) } }
-            .confirmSheet("End this jam?", isPresented: $confirmingEnd) {
-                Button("End jam", role: .destructive) { Task { await store.endJam(page.jamId); dismiss() } }.accessibilityIdentifier("jam-end-confirm")
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("Subscribers keep what they have.")
-            }
-        }
-    }
-
-    private func pill(_ label: String, id: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(label).font(Theme.secondary).foregroundStyle(Theme.text).padding(.horizontal, 12).frame(minHeight: 44).background(Theme.surface, in: Capsule())
-        }
-        .buttonStyle(.plain).accessibilityIdentifier(id)
-    }
-}
 
 extension JamPageInfo: Identifiable { public var id: String { jamId } }
 

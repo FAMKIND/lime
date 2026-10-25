@@ -34,13 +34,13 @@ struct SettingsLaunch: Identifiable {
     let start: SettingsRoute?
 }
 
-private struct HeroInsetKey: PreferenceKey {
+struct HeroInsetKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
 /// The height of the window the profile is in (not the screen: a Split View or Stage Manager window is shorter).
-private struct HeroWindowKey: PreferenceKey {
+struct HeroWindowKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
@@ -96,7 +96,6 @@ struct ProfileView: View {
     @State private var topInset: CGFloat = 0
     @State private var windowHeight: CGFloat = 0
     @State private var sideInsets = EdgeInsets()
-    @State private var openOrg: JamPageInfo?
     /// Settings as a sheet, opened on the root or straight on a screen (Edit profile).
     @State private var settingsLaunch: SettingsLaunch?
     @State private var verifying = false
@@ -216,7 +215,6 @@ struct ProfileView: View {
         }
         .sheet(isPresented: $showStatus) { StatusSheet(openSettings: { showStatus = false; settingsLaunch = SettingsLaunch(start: nil) }) }
         .sheet(item: $settingsLaunch) { SettingsView(startAt: $0.start) }
-        .sheet(item: $openOrg) { JamOrgPage(page: $0, isMe: route.isMe) }
         .task(id: "\(route.userID)-\(store.extrasVersion)") {
             links = ProfileLinks.decode(await store.peerExtra(route.userID, .links))
             heroImage = await store.peerExtra(route.userID, .background).flatMap(UIImage.init(data:))
@@ -685,7 +683,7 @@ struct ProfileView: View {
             titledCard("Orgs") {
                 VStack(spacing: 0) {
                     ForEach(Array(orgs.enumerated()), id: \.element.jamId) { index, org in
-                        Button { openOrg = org } label: {
+                        Button { store.openOrg(org, isMe: route.isMe) } label: {
                             HStack(spacing: 12) {
                                 JamInitialTile(title: org.title, size: 36).accessibilityHidden(true)
                                 Text(org.title).font(Theme.body).foregroundStyle(Theme.text).lineLimit(1)

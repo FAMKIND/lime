@@ -79,7 +79,7 @@ final class Jam188vUITests: LimeUITestCase {
         any(app, "profile-org-demo-my-jam").tap()
         XCTAssertTrue(app.staticTexts["profile-jam-row"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["jam-edit-page"].exists)
-        XCTAssertTrue(app.segmentedControls["profile-org-segments"].exists)
+        XCTAssertTrue(any(app, "profile-org-segments").exists)
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Welcome from the circle'")).firstMatch.exists || app.staticTexts["Welcome from the circle"].exists, "the post shown as the org")
     }
 }

@@ -120,6 +120,7 @@ private struct SignedInView: View {
                         .toolbar(.hidden, for: .tabBar)
                 }
                 .navigationDestination(for: ProfileRoute.self) { ProfileView(route: $0).callMiniPlayerInset() }
+                .navigationDestination(for: OrgRoute.self) { OrgProfileView(route: $0).callMiniPlayerInset() }
                 .navigationDestination(for: SharedListRoute.self) { SharedListView(route: $0).callMiniPlayerInset() }
                 .navigationDestination(for: MessagesRoute.self) { route in
                     switch route {
@@ -143,6 +144,7 @@ private struct SignedInView: View {
                     GroupDetailsView(target: target).callMiniPlayerInset().toolbar(.hidden, for: .tabBar)
                 }
                 .navigationDestination(for: ProfileRoute.self) { ProfileView(route: $0).callMiniPlayerInset() }
+                .navigationDestination(for: OrgRoute.self) { OrgProfileView(route: $0).callMiniPlayerInset() }
                 .navigationDestination(for: SharedListRoute.self) { SharedListView(route: $0).callMiniPlayerInset() }
         }
     }

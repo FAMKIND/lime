@@ -978,6 +978,7 @@ final class ConversationStore {
         demoBlocked = [BlockedPerson(conversationId: "dm:pat", name: "Pat Doe", tone: UInt32(AvatarTone.tone(for: "pat")))]
         switch screen {
         case "profile-sam": path.append(ProfileRoute(userID: "sam", name: "Sam Park", conversationID: "dm:sam"))   // with his demo background (LIME-217b)
+        case "org-sam": if let page = demoJamPages["sam"] { section = .jam; jamPath.append(OrgRoute(page: page, isMe: false)) }   // an org profile (LIME-216)
         case "profile-lee": path.append(ProfileRoute(userID: "lee", name: "Lee Wong", conversationID: "dm:lee"))   // no background, no photo: the default hero (LIME-217d)
         case "profile-me":
             demoExtras["background"] = ProfilePhotoScreen.demoPicture.jpegData(compressionQuality: 0.6)

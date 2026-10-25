@@ -24,6 +24,7 @@ struct JamPage: View {
                 .rootHeader(searchID: "jam-search-button", overlays: true) { store.jamSearching = true }
                 .overlay { FloatingPlus(label: "New post", id: "new-jam-post") { composing = true } }
                 .navigationDestination(for: ProfileRoute.self) { ProfileView(route: $0) }
+                .navigationDestination(for: OrgRoute.self) { OrgProfileView(route: $0) }
                 .navigationDestination(for: SharedListRoute.self) { SharedListView(route: $0) }
                 .navigationDestination(for: JamPostRoute.self) { JamPostView(postID: $0.postID, toComments: $0.toComments) }
                 .navigationDestination(for: JamSubscribersRoute.self) { JamSubscribersView(jamID: $0.jamID) }
@@ -134,7 +135,6 @@ struct JamPostCard: View {
     /// A long quick post is cut at 8 lines; "more" opens it here.
     @State private var expanded = false
     @State private var cut = false
-    @State private var orgPage: JamPageInfo?
 
     var body: some View {
         let writer = store.teacher(post.author)
@@ -194,7 +194,7 @@ struct JamPostCard: View {
                 }
                 .buttonStyle(.plain).accessibilityLabel(asJam ? "\(name), by \(writer.name)" : name).accessibilityHint("Opens their profile").accessibilityIdentifier("jam-card-avatar-\(post.postId)")
                 VStack(alignment: .leading, spacing: 0) {
-                    Button { if asJam { Task { orgPage = await store.jamPageInfo(for: post) } } else { openWriter(writer) } } label: {
+                    Button { if asJam { Task { if let page = await store.jamPageInfo(for: post) { store.openOrg(page, isMe: store.isMyJamPost(post)) } } } else { openWriter(writer) } } label: {
                         Text(name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
                     }
                     .buttonStyle(.plain)
@@ -217,7 +217,6 @@ struct JamPostCard: View {
             }
             .contentShape(Rectangle())
             .onTapGesture { openPost() }
-            .sheet(item: $orgPage) { JamOrgPage(page: $0, isMe: store.isMyJamPost(post)) }
         } else {
             Text([store.byline(post), JamDates.short(post.created), post.editedAt > 0 ? "Edited" : nil].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
                 .accessibilityIdentifier("jam-card-byline-\(post.postId)")
