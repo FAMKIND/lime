@@ -6188,3 +6188,53 @@ fn an_edit_can_replace_a_recording_and_its_captions_and_a_subscribers_copy_follo
     // The old words are gone from the post's files: only one captions file, and it is the new one.
     assert_eq!(names.iter().filter(|n| n.ends_with(".vtt")).count(), 1);
 }
+
+// LIME-231: two phones' worth. Each contact reads the other's contacts-only photo, background, video and links; a contact who never got the profile
+// key (shared before profile keys existed, or lost it) reads them as soon as the key is sent again (what migration 50 queues once for everyone).
+#[test]
+fn contacts_read_every_slot_of_each_other_both_ways_and_a_lost_profile_key_is_healed_by_sharing_again() {
+    use crate::store::extras::{BACKGROUND, BACKGROUND_VIDEO, LINKS};
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    for (owner, other) in [(&alice, &bob), (&bob, &alice)] {
+        owner.store.set_photo_visibility(transport.clone(), owner.token.clone(), "contacts".into()).unwrap();
+        owner.store.set_my_photo(transport.clone(), owner.token.clone(), photo_bytes()).unwrap();
+        owner.store.set_my_extra(transport.clone(), owner.token.clone(), BACKGROUND.into(), photo_bytes()).unwrap();
+        owner.store.set_my_extra(transport.clone(), owner.token.clone(), BACKGROUND_VIDEO.into(), vec![7; 3000]).unwrap();
+        owner.store.set_my_extra(transport.clone(), owner.token.clone(), LINKS.into(), links_json()).unwrap();
+        deliver(owner, &transport);
+        sync(other, &transport);
+        refresh(other, &transport);
+        assert_eq!(other.store.peer_photo(owner.user.clone()).unwrap(), Some(photo_bytes()), "{} reads {}'s photo", other.user, owner.user);
+        assert_eq!(other.store.peer_extra(owner.user.clone(), BACKGROUND.into()).unwrap(), Some(photo_bytes()), "background");
+        assert_eq!(other.store.peer_extra(owner.user.clone(), BACKGROUND_VIDEO.into()).unwrap(), Some(vec![7; 3000]), "video");
+        assert_eq!(other.store.peer_extra(owner.user.clone(), LINKS.into()).unwrap(), Some(links_json()), "links");
+    }
+
+    // A change of the photo reaches the contact on the next sync.
+    let changed: Vec<u8> = photo_bytes().into_iter().rev().collect();
+    alice.store.set_my_photo(transport.clone(), alice.token.clone(), changed.clone()).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    refresh(&bob, &transport);
+    assert_eq!(bob.store.peer_photo("alice".into()).unwrap(), Some(changed));
+
+    // Bob loses Alice's profile key (and what he cached from it): he sees nothing, until Alice shares again.
+    {
+        let conn = bob.store.lock();
+        conn.execute("DELETE FROM contact_profile_keys WHERE user_id = 'alice'", []).unwrap();
+        conn.execute("DELETE FROM photos WHERE user_id = 'alice'", []).unwrap();
+        conn.execute("DELETE FROM extras WHERE user_id = 'alice'", []).unwrap();
+    }
+    refresh(&bob, &transport);
+    assert_eq!(bob.store.peer_photo("alice".into()).unwrap(), None, "no key, no photo");
+    assert_eq!(bob.store.peer_extra("alice".into(), BACKGROUND.into()).unwrap(), None);
+    crate::store::delivery::queue_share(&alice.store.lock(), "bob", crate::store::now_ms()).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    refresh(&bob, &transport);
+    assert!(bob.store.peer_photo("alice".into()).unwrap().is_some(), "the key came again: the photo is back");
+    assert_eq!(bob.store.peer_extra("alice".into(), BACKGROUND.into()).unwrap(), Some(photo_bytes()), "and the background");
+}

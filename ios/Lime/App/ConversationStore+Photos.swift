@@ -118,11 +118,25 @@ extension ConversationStore {
         #endif
         guard let core, let link else { return }
         guard let token = try? await link.token() else { return }
-        let changed = (try? await Task.detached(priority: .utility) {
-            try core.refreshPhotos(transport: link.transport, authToken: token, force: force)
-        }.value) ?? []
+        var failure = ""
+        let changed: [String]
+        do {
+            changed = try await Task.detached(priority: .utility) { try core.refreshPhotos(transport: link.transport, authToken: token, force: force) }.value
+        } catch { changed = []; failure = "\(error)" }
+        diagnoseProfilePictures(failure: failure, changed: changed)
         guard !changed.isEmpty else { return }
         let loaded = await Task.detached(priority: .utility) { changed.map { ($0, (try? core.peerPhoto(userId: $0)) ?? nil) } }.value
         for (id, data) in loaded { AvatarCache.shared.set(data, for: id) }
+    }
+
+    /// A log line per person about what this phone holds of their pictures (LIME-231; Xcode / `devicectl --console`). No keys, no bytes.
+    func diagnoseProfilePictures(failure: String, changed: [String]) {
+        #if DEBUG
+        guard let core else { return }
+        fputs("DIAG231 refresh failure=\(failure) changed=\(changed.count)\n", stderr)
+        for id in Set(conversations.flatMap { $0.members.map(\.id) }) where id != meProvider().id {
+            fputs("DIAG231 \((try? core.profileDiagnostics(userId: id)) ?? "?")\n", stderr)
+        }
+        #endif
     }
 }

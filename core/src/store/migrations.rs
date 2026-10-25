@@ -781,6 +781,13 @@ const MIGRATIONS: &[&str] = &[
          checked_at INTEGER NOT NULL,
          PRIMARY KEY (user_id, slot)
      );",
+    // 50 (LIME-231): every accepted contact is sent my current key once more, with the profile key that opens my contacts-only photo, background and
+    // links. A contact who shared before profile keys existed (or whose copy was lost) was never given it again, so their phone found nothing to open.
+    // Their cached "nothing here" answers are also made due for a new look.
+    "INSERT OR IGNORE INTO share_queue (peer_user_id, queued_at)
+         SELECT substr(id, 4), CAST(strftime('%s', 'now') AS INTEGER) * 1000 FROM conversations WHERE id LIKE 'dm:%' AND request_state = 'accepted';
+     UPDATE photos SET checked_at = 0;
+     UPDATE extras SET checked_at = 0;",
 ];
 
 /// The schema version this build writes.

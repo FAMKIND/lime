@@ -246,7 +246,7 @@ struct GroupDetailsView: View {
     @State private var editingAvatar = false
 
     var body: some View {
-        SettingsPage(title: "Group details") {
+        SettingsPage(title: "Details") {
             if let details {
                 header(details)
                 sharedCard
@@ -398,14 +398,20 @@ struct GroupDetailsView: View {
     }
 
     private func header(_ details: GroupDetails) -> some View {
-        VStack(spacing: 10) {
+        let showsMembers = AvatarCache.shared.image(for: target.conversationID) == nil && details.emoji == nil && store.conversation(target.conversationID) != nil
+        return VStack(spacing: 10) {
             Button { editingAvatar = true } label: {
                 ZStack(alignment: .bottomTrailing) {
                     Group {
                         if let photo = AvatarCache.shared.image(for: target.conversationID) {
                             Image(uiImage: photo).resizable().scaledToFill().frame(width: 88, height: 88).clipShape(Circle())
+                        } else if let emoji = details.emoji {
+                            Circle().fill(Theme.surface).frame(width: 88, height: 88).overlay(Text(emoji).font(.system(size: 44)))
+                        } else if let conversation = store.conversation(target.conversationID) {
+                            // No picture of its own: the members' circles, as in Messages and the chat's top bar (LIME-231).
+                            ConversationAvatar(conversation: conversation, size: 88)
                         } else {
-                            Circle().fill(Theme.surface).frame(width: 88, height: 88).overlay(Text(details.emoji ?? "👥").font(.system(size: 44)))
+                            Circle().fill(Theme.surface).frame(width: 88, height: 88)
                         }
                     }
                     if details.canRename {
@@ -441,6 +447,7 @@ struct GroupDetailsView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
+        .overlay(alignment: .topLeading) { if showsMembers { Color.clear.frame(width: 1, height: 1).accessibilityElement().accessibilityIdentifier("group-details-members-avatar") } }
     }
 
     /// Photos & videos, Files and Links shared in the whole group, with counts (each opens the full list).

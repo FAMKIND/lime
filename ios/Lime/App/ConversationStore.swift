@@ -1110,15 +1110,15 @@ final class ConversationStore {
             // `group-call-named-N`: the group's name was chosen by a person, so it names the call (otherwise the people do).
             let rest = String(name.dropFirst("group-call-".count))
             groupCalls.demoCall(people: Int(rest.replacingOccurrences(of: "named-", with: "")) ?? 3, conversationID: group, customName: rest.hasPrefix("named-"))
-        case "group", "group-details", "new-group", "new-group-name":
+        case "group", "group-details", "group-details-plain", "new-group", "new-group-name":
             loadDemoTeachers()
-            let id = demoMakeGroup(name: "Grade 4 Team", emoji: "🍎", memberIDs: ["lee", "sam", "priya.nair"], owner: true)
+            let id = demoMakeGroup(name: "Grade 4 Team", emoji: screen == "group-details-plain" ? nil : "🍎", memberIDs: ["lee", "sam", "priya.nair"], owner: true)
             demoSheet = screen == "new-group" || screen == "new-group-name" ? screen : nil
             if screen == "group" {
                 demoAddMessages(to: id, [("lee", "Can we plan the field trip on Friday?"), ("sam", "I can bring the permission forms")])
                 path.append(id)
             }
-            if screen == "group-details" { path.append(id); path.append(GroupTarget(conversationID: id)) }
+            if screen == "group-details" || screen == "group-details-plain" { path.append(id); path.append(GroupTarget(conversationID: id)) }
         case "groups-rows":
             // Two groups to swipe: one I own and one I am only a member of (next to the demo's one-to-one chats).
             loadDemoTeachers()

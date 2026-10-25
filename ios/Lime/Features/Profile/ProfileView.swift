@@ -944,7 +944,7 @@ struct ProfileTabs: View {
                         Button { selection = section } label: {
                             Text(section.rawValue).font(Theme.font(.subheadline, weight: on ? .semibold : .regular)).foregroundStyle(on ? Theme.text : Theme.textSecondary)
                                 .padding(.horizontal, 14).frame(minHeight: 44)
-                                .background { if on { Color.clear.limeGlass(in: Capsule()) } }
+                                .background { if on { Capsule().fill(.clear).limeGlass(in: Capsule()) } }
                                 .overlay(alignment: .topTrailing) { if badged.contains(section) { Circle().fill(Theme.accent).frame(width: 8, height: 8).padding(.top, 8).padding(.trailing, 6).accessibilityIdentifier("profile-tab-dot-\(section.rawValue)") } }
                         }
                         .buttonStyle(.plain).id(section)

@@ -7,6 +7,7 @@
 //! URLs from Storage) go through the platform's [`Transport`], so the core never opens a socket itself.
 
 use super::*;
+use rusqlite::OptionalExtension;
 use crate::store::photos::{self, Mine, MIN_GAP_MS, RECHECK_MS};
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -41,6 +42,34 @@ impl LimeStore {
     pub fn my_photo(&self) -> Result<MyPhoto, StoreError> {
         let mine = self.with_conn(photos::mine)?;
         Ok(MyPhoto { jpeg: mine.jpeg, visibility: mine.visibility })
+    }
+
+    /// What this phone holds about one person's profile pictures, as text for a log (LIME-231): whether I hold their profile key, whether they hold
+    /// mine, and each cached slot's source, size, version and age. Never a key or any picture bytes.
+    pub fn profile_diagnostics(&self, user_id: String) -> Result<String, StoreError> {
+        self.with_conn(|conn| {
+            let now = now_ms();
+            let has_key = photos::contact_key(conn, &user_id)?.is_some();
+            let they_have_mine = crate::store::delivery::is_shared(conn, &user_id)?;
+            let age = |ms: i64| if ms == 0 { "never".to_owned() } else { format!("{}s", (now - ms) / 1000) };
+            let photo = conn
+                .query_row("SELECT source, length(bytes), version, checked_at FROM photos WHERE user_id = ?1", params![user_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?, r.get::<_, i64>(3)?)))
+                .optional()
+                .map_err(db_err)?
+                .map(|(source, len, version, at)| format!("{source}/{len}b/v{version}/{}", age(at)))
+                .unwrap_or_else(|| "none".into());
+            let mut out = format!("user={} their_profile_key={has_key} my_key_shared_with_them={they_have_mine} photo={photo}", &user_id[..user_id.len().min(8)]);
+            for slot in [crate::store::extras::LINKS, crate::store::extras::BACKGROUND, crate::store::extras::BACKGROUND_VIDEO] {
+                let row = conn
+                    .query_row("SELECT source, length(bytes), version, checked_at FROM extras WHERE user_id = ?1 AND slot = ?2", params![user_id, slot], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?, r.get::<_, i64>(3)?)))
+                    .optional()
+                    .map_err(db_err)?
+                    .map(|(source, len, version, at)| format!("{source}/{len}b/v{version}/{}", age(at)))
+                    .unwrap_or_else(|| "none".into());
+                out.push_str(&format!(" {slot}={row}"));
+            }
+            Ok(out)
+        })
     }
 
     /// A cached photo of another person, if they have one we can see.
