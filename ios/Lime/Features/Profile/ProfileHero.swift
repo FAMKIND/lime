@@ -93,15 +93,40 @@ enum HeroPalette {
     }
 }
 
-/// The picture behind a profile's top (decorative: hidden from VoiceOver). It fills its frame from the top edge, not blurred. `fadeFromBottom` is where the tab
-/// pills start: the gradients bring the picture to the canvas by then.
+/// The hero's proportions, as a share of the screen's height (LIME-217c, from the user's mockups): the photo reaches the pills' centre at 58 %, the avatar is
+/// centred at 29 %, and the bottom blend runs from 44 % to 64 % (about 20 %, 160 pt on a 812 pt screen).
+enum HeroShape {
+    static let pillsCentre = 0.58
+    static let avatarCentre = 0.29
+    static let blendStart = 0.44
+    static let blendEnd = 0.64
+    static let topEnd = 0.25
+    /// The height of the tab pills row; the pills' centre is half of it above the row's bottom.
+    static let pillsRow: CGFloat = 52
+
+    /// The photo's height from the top of the screen: the pills' row bottom plus a little under it, at least to where the blend ends.
+    static func heroHeight(screen: CGFloat) -> CGFloat { max(screen * pillsCentre + pillsRow / 2 + 8, screen * blendEnd) }
+
+    /// How tall the profile's top block (under the header) must be so the pills' centre sits at 58 %.
+    static func blockHeight(screen: CGFloat, inset: CGFloat) -> CGFloat { max(0, screen * pillsCentre + pillsRow / 2 - inset) }
+
+    /// Space above the avatar so its centre sits at 29 % (never less than the usual 12 pt).
+    static func avatarTopPadding(screen: CGFloat, inset: CGFloat, avatar: CGFloat) -> CGFloat { max(12, screen * avatarCentre - avatar / 2 - inset) }
+
+    /// Smoothstep: 0 to 1 with no kink at either end, so a gradient built on it has no visible start or end.
+    static func smooth(_ t: Double) -> Double { let x = min(max(t, 0), 1); return x * x * (3 - 2 * x) }
+
+    /// The shape of this phone's hero, width : height of the area the photo fills (for the editor's preview).
+    static func aspect(screenWidth: CGFloat, screenHeight: CGFloat) -> CGFloat { screenWidth / heroHeight(screen: screenHeight) }
+}
+
+/// The picture behind a profile's top (decorative: hidden from VoiceOver). It fills its frame from the top edge, aspect-filled around the picture's centre and
+/// not blurred, under soft eased gradients: a faint long one at the top, a local one behind the name block, and the blend (photo, a little of its dark colour,
+/// the canvas) that the pills sit on.
 struct ProfileHeroBackground: View {
     let image: UIImage
-    /// The dark gradient holds until this far above the bottom (just above the pills, so the status line is still on it); the photo is on the canvas by `canvasFromBottom`.
-    var darkUntil: CGFloat = 135
-    var canvasFromBottom: CGFloat = 85
-    /// The height of the text block (name, handle, school, pill, status) the dark gradient sits behind.
-    var textZone: CGFloat = 170
+    /// The screen's height, which every proportion is a share of.
+    var screenHeight: CGFloat = UIScreen.main.bounds.height
     /// Demo runs (UI tests) expose it so a test can find it; for a person it is decorative and hidden from VoiceOver.
     var exposedForTests = false
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -118,45 +143,64 @@ struct ProfileHeroBackground: View {
 }
 
 extension ProfileHeroBackground {
+    /// Gradient stops sampled along an eased curve between two heights (in points from the top), as `opacity(y)` of `colour`.
+    private func eased(_ colour: Color, size h: CGFloat, from y0: CGFloat, to y1: CGFloat, steps: Int = 7, opacity: (Double) -> Double) -> [Gradient.Stop] {
+        (0...steps).map { i in
+            let t = Double(i) / Double(steps)
+            let y = y0 + (y1 - y0) * CGFloat(t)
+            return .init(color: colour.opacity(opacity(t)), location: min(max(y / h, 0), 1))
+        }
+    }
+
     @ViewBuilder
     func layers(size: CGSize, strength: Double, tint: Color) -> some View {
-        let h = max(size.height, 1)
-        let at = { (fromBottom: CGFloat) -> CGFloat in min(max((h - fromBottom) / h, 0), 1) }
+        let h = max(size.height, 1), s = screenHeight
+        let canvas = Theme.canvas
         ZStack {
             Image(uiImage: image).resizable().scaledToFill().frame(width: size.width, height: h).clipped()
-            // Under the status bar and the header buttons.
-            LinearGradient(stops: [.init(color: tint.opacity(0.6), location: 0), .init(color: tint.opacity(0), location: min(0.3, 150 / h))], startPoint: .top, endPoint: .bottom)
-            // Behind the white text, then the blend: the photo, its dark colour, the canvas, done where the pills start.
-            LinearGradient(stops: [
-                .init(color: tint.opacity(0), location: at(darkUntil + textZone + 70)),
-                .init(color: tint.opacity(strength), location: at(darkUntil + textZone)),
-                .init(color: tint.opacity(strength), location: at(darkUntil)),
-                .init(color: tint.opacity(min(strength + 0.1, 0.95)), location: at((darkUntil + canvasFromBottom) / 2 + 10)),
-                .init(color: Theme.canvas, location: at(canvasFromBottom)),
-                .init(color: Theme.canvas, location: 1),
-            ], startPoint: .top, endPoint: .bottom)
+            // Long and faint under the status bar and the header circles: up to 45 % at the very top, eased to nothing by a quarter of the screen.
+            LinearGradient(stops: eased(tint, size: h, from: 0, to: s * HeroShape.topEnd) { 0.45 * (1 - HeroShape.smooth($0)) }, startPoint: .top, endPoint: .bottom)
+            // Local, behind the name block only (so the photo is not darkened as a whole): in, held, out.
+            LinearGradient(stops: eased(tint, size: h, from: s * 0.31, to: s * 0.37) { strength * HeroShape.smooth($0) }
+                           + eased(tint, size: h, from: s * 0.37, to: s * 0.49, steps: 1) { _ in strength }
+                           + eased(tint, size: h, from: s * 0.49, to: s * 0.56) { strength * (1 - HeroShape.smooth($0)) }, startPoint: .top, endPoint: .bottom)
+            // The blend: a little of the photo's dark colour (at most 35 %) that comes and goes, under the canvas coming in; the pills sit on its lower half.
+            LinearGradient(stops: eased(tint, size: h, from: s * HeroShape.blendStart, to: s * HeroShape.blendEnd, steps: 9) { 0.35 * sin(Double.pi * $0) }, startPoint: .top, endPoint: .bottom)
+            LinearGradient(stops: eased(canvas, size: h, from: s * HeroShape.blendStart, to: s * HeroShape.blendEnd, steps: 9) { HeroShape.smooth($0) }
+                           + [.init(color: canvas, location: 1)], startPoint: .top, endPoint: .bottom)
         }
     }
 }
 
-/// The lime logomark's outline as the avatar's shape on a profile hero (the user's artwork, in the asset catalog as a vector).
+/// The lime logomark's outline as the avatar's shape on a profile hero (the user's artwork, in the asset catalog as a vector). The picture is the same square
+/// picture every other avatar uses, at its normal size and centre, filling the shape's bounding box; the outline only trims its edges (and gives it its tail).
 struct LimeShapedAvatar: View {
     let person: Person
     var size: CGFloat = 96
 
     var body: some View {
-        // The picture is drawn a good deal larger than the shape so it fills it right into the tail, then cut to the outline.
-        AvatarView(person: person, size: size * 1.5)
-            .frame(width: size, height: size)
-            .mask { Image("LimeMask").resizable().scaledToFit().frame(width: size, height: size) }
-            .shadow(color: .black.opacity(0.25), radius: 6, y: 2)
+        Group {
+            if let photo = AvatarCache.shared.image(for: person.id) {
+                Image(uiImage: photo).resizable().scaledToFill()
+            } else {
+                Theme.avatar(person.tone).overlay(
+                    Text(person.initials).font(.system(size: size * 0.36, weight: .medium)).minimumScaleFactor(0.6)
+                        .foregroundStyle(Color(red: 0.075, green: 0.106, blue: 0.09)))
+            }
+        }
+        .frame(width: size, height: size).clipped()
+        .mask { Image("LimeMask").resizable().scaledToFit().frame(width: size, height: size) }
+        .shadow(color: .black.opacity(0.25), radius: 6, y: 2)
+        .accessibilityHidden(true)
     }
 }
 
-/// Make a background from a picture: a wide frame (about 3 to 1) the person moves and scales to fit, at most 1 MiB, no metadata.
+/// Make a background from a picture (LIME-217c): a **4:5 portrait** frame the person moves and scales to fit, saved about 1080 × 1350, at most 1 MiB, no
+/// metadata. Every phone fills its hero from this around the centre, so a shorter hero trims only a little of the top and bottom.
 enum BackgroundProcessing {
-    static let ratio: CGFloat = 3
-    static let width: CGFloat = 1200
+    /// Width over height.
+    static let ratio: CGFloat = 0.8
+    static let width: CGFloat = 1080
     static let maxBytes = 1_000_000
 
     /// The part of `image` inside a viewport of `viewport` points wide (and a third as tall), drawn to cover it at `scale` and shifted by `offset`.

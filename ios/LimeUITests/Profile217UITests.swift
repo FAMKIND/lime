@@ -34,6 +34,7 @@ final class Profile217UITests: LimeUITestCase {
         XCTAssertLessThan(hero.frame.minY, 1, "full bleed from the very top, under the status bar")
         XCTAssertGreaterThan(app.buttons["profile-tab-Info"].frame.minY, app.staticTexts["profile-name"].frame.maxY, "the tabs are below the name")
         XCTAssertLessThan(app.buttons["profile-tab-Info"].frame.midY, hero.frame.maxY, "and sit on the photo's fade")
+        XCTAssertGreaterThanOrEqual(hero.frame.height, app.windows.firstMatch.frame.height * 0.58, "the photo is more than half the screen")
         XCTAssertTrue(app.staticTexts["profile-name"].exists)
     }
 

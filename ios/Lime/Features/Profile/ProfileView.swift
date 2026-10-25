@@ -121,17 +121,7 @@ struct ProfileView: View {
         let available = sections
         ScrollView {
             VStack(spacing: 18) {
-                VStack(spacing: 18) {
-                    top
-                    ProfileTabs(sections: available, selection: $section, badged: route.isMe && store.jamHasUnseen() ? [.activity] : [])
-                }
-                // The background photo, full bleed from the top edge to just below the pills, fading to the canvas there (LIME-217b).
-                .background(alignment: .top) {
-                    if let heroImage {
-                        ProfileHeroBackground(image: heroImage, exposedForTests: store.isDemo)
-                            .padding(.top, -(topInset > 0 ? topInset : 100)).padding(.bottom, -60).padding(.horizontal, -16)
-                    }
-                }
+                headBlock(available)
                 switch section {
                 case .info: info
                 case .posts: JamProfilePosts(posts: ownPosts.filter { $0.kind == "quick" }, locked: postsLocked)
@@ -216,6 +206,31 @@ struct ProfileView: View {
                 Text("Copied").font(Theme.font(.footnote, weight: .medium)).foregroundStyle(.white)
                     .padding(.horizontal, 14).padding(.vertical, 8).background(.black.opacity(0.7), in: Capsule())
                     .padding(.bottom, 30).accessibilityIdentifier("profile-copied")
+            }
+        }
+    }
+
+    /// The name block and the tabs. With a background photo (LIME-217c) the block is tall enough that the tab pills' centre sits at 58 % of the screen's
+    /// height, the avatar's centre at 29 %, and the photo fills from the top edge behind it all; without one it is the compact block it always was.
+    @ViewBuilder
+    private func headBlock(_ available: [Section]) -> some View {
+        let screen = UIScreen.main.bounds.height
+        let inset = topInset > 0 ? topInset : 100
+        if let heroImage {
+            VStack(spacing: 0) {
+                top.padding(.top, HeroShape.avatarTopPadding(screen: screen, inset: inset, avatar: 104) - 12)
+                Spacer(minLength: 18)
+                ProfileTabs(sections: available, selection: $section, badged: route.isMe && store.jamHasUnseen() ? [.activity] : [])
+            }
+            .frame(minHeight: HeroShape.blockHeight(screen: screen, inset: inset))
+            .background(alignment: .top) {
+                ProfileHeroBackground(image: heroImage, screenHeight: screen, exposedForTests: store.isDemo)
+                    .padding(.top, -inset).padding(.bottom, -(HeroShape.heroHeight(screen: screen) - HeroShape.blockHeight(screen: screen, inset: inset) - inset)).padding(.horizontal, -16)
+            }
+        } else {
+            VStack(spacing: 18) {
+                top
+                ProfileTabs(sections: available, selection: $section, badged: route.isMe && store.jamHasUnseen() ? [.activity] : [])
             }
         }
     }

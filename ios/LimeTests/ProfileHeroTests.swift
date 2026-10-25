@@ -50,12 +50,31 @@ final class ProfileHeroTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(HeroPalette.compute(white).cgColor.alpha, 1)
     }
 
-    func testTheCropIsWideAndSmallAndHasNoPersonalMetadata() throws {
+    func testTheHeroIsMoreThanHalfTheScreenOnEveryIPhoneAndTheBlendIsLongAndEased() {
+        for (width, height) in [(375.0, 667.0), (375.0, 812.0), (390.0, 844.0), (430.0, 932.0)] {
+            let hero = HeroShape.heroHeight(screen: height)
+            XCTAssertGreaterThanOrEqual(hero / height, 0.58, "\(width) x \(height)")
+            // The hero's shape always fits inside the 4:5 frame that was saved or is only trimmed a little: its ratio is about 1.0 to 1.35 tall over wide.
+            let tall = hero / width
+            XCTAssertTrue((0.9...1.45).contains(tall), "\(width) x \(height): \(tall)")
+            XCTAssertGreaterThanOrEqual((HeroShape.blendEnd - HeroShape.blendStart) * height, 0.19 * height, "the blend is about a fifth of the screen")
+        }
+        XCTAssertEqual(HeroShape.smooth(0), 0); XCTAssertEqual(HeroShape.smooth(1), 1); XCTAssertEqual(HeroShape.smooth(0.5), 0.5, accuracy: 1e-9)
+        XCTAssertLessThan(HeroShape.smooth(0.05), 0.01, "no kink at the start")
+        XCTAssertGreaterThan(HeroShape.smooth(0.95), 0.99, "none at the end")
+        // The avatar's centre at 29 % and the pills' centre at 58 % on a 812 pt screen with a 104 pt header.
+        let pad = HeroShape.avatarTopPadding(screen: 812, inset: 104, avatar: 104)
+        XCTAssertEqual(104 + pad + 52, 812 * 0.29, accuracy: 1)
+        XCTAssertEqual(104 + HeroShape.blockHeight(screen: 812, inset: 104) - HeroShape.pillsRow / 2, 812 * 0.58, accuracy: 1)
+    }
+
+    func testTheCropIsPortraitAndSmallAndHasNoPersonalMetadata() throws {
         let source = UIGraphicsImageRenderer(size: CGSize(width: 3000, height: 2000)).image { c in
             UIColor.systemTeal.setFill(); c.fill(CGRect(x: 0, y: 0, width: 3000, height: 2000))
         }
-        let cropped = BackgroundProcessing.crop(source, viewport: CGSize(width: 300, height: 100), scale: 1, offset: .zero)
-        XCTAssertEqual(cropped.size.width / cropped.size.height, 3, accuracy: 0.01)
+        let cropped = BackgroundProcessing.crop(source, viewport: CGSize(width: 300, height: 375), scale: 1, offset: .zero)
+        XCTAssertEqual(cropped.size.width / cropped.size.height, 0.8, accuracy: 0.01, "a 4:5 portrait")
+        XCTAssertEqual(cropped.size.width, 1080)
         let data = try XCTUnwrap(BackgroundProcessing.jpeg(cropped))
         XCTAssertLessThanOrEqual(data.count, BackgroundProcessing.maxBytes)
         XCTAssertTrue(PhotoProcessing.personalMetadata(in: data).isEmpty)

@@ -20,7 +20,9 @@ struct BackgroundScreen: View {
                     Theme.surface.overlay { Image(systemName: "photo").font(.system(size: 28)).foregroundStyle(Theme.textSecondary) }
                 }
             }
-            .aspectRatio(BackgroundProcessing.ratio, contentMode: .fit)
+            // The preview is this phone's hero shape: what the photo will fill (LIME-217c).
+            .aspectRatio(HeroShape.aspect(screenWidth: UIScreen.main.bounds.width, screenHeight: UIScreen.main.bounds.height), contentMode: .fit)
+            .frame(maxHeight: 300)
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .padding(.top, 8)
             .accessibilityLabel(current == nil ? "No background" : "Your background").accessibilityIdentifier("background-preview")
@@ -32,7 +34,7 @@ struct BackgroundScreen: View {
                 }
             }
             if busy { ProgressView().padding(.top, 4).accessibilityIdentifier("background-busy") }
-            SettingsFootnote(text: problem ?? "It sits softly behind your name and fades out. It's shrunk on this iPhone, and location and camera details are never uploaded.")
+            SettingsFootnote(text: problem ?? "It fills the top of your profile and fades out behind the tabs. It's shrunk on this iPhone, and location and camera details are never uploaded.")
             SettingsCard {
                 visibilityChoice(.everyone, "Everyone on lime", detail: "Any signed-in teacher who sees your profile can see it. lime's servers keep a copy of the picture.", id: "background-vis-everyone")
                 Divider().overlay(Theme.hairline).padding(.leading, 18)
@@ -154,7 +156,15 @@ struct BackgroundCropScreen: View {
                 Spacer(minLength: 0)
                 preview(viewport)
                     .frame(width: viewport.width, height: viewport.height).clipped()
-                    .overlay(RoundedRectangle(cornerRadius: 2).stroke(Color.white.opacity(0.9), lineWidth: 1.5))
+                    // This phone's hero shape sits over the 4:5 frame: what is outside it may be trimmed on this phone (other phones' heroes differ a little).
+                    .overlay {
+                        let hole = heroWindow(in: viewport)
+                        ZStack {
+                            Rectangle().fill(Color.black.opacity(0.45)).mask(HoleShape(hole: hole).fill(style: FillStyle(eoFill: true))).allowsHitTesting(false)
+                            Rectangle().stroke(Color.white.opacity(0.9), lineWidth: 1.5).frame(width: hole.width, height: hole.height).position(x: hole.midX, y: hole.midY).allowsHitTesting(false)
+                        }
+                    }
+                    .overlay(Rectangle().stroke(Color.white.opacity(0.5), lineWidth: 1))
                     .contentShape(Rectangle())
                     .gesture(SimultaneousGesture(
                         DragGesture().onChanged { drag = $0.translation }.onEnded { value in
@@ -169,12 +179,19 @@ struct BackgroundCropScreen: View {
                     ))
                     .accessibilityLabel("Background frame").accessibilityHint("Drag and pinch to choose how it is cropped")
                     .accessibilityIdentifier("background-crop-area")
-                Text("Drag and pinch to choose how your background is cropped.").font(Theme.secondary).foregroundStyle(Theme.textSecondary).padding(.top, 20)
+                Text("Drag and pinch. The bright frame is the top of your profile on this phone.").font(Theme.secondary).foregroundStyle(Theme.textSecondary).padding(.top, 20)
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity)
         }
         .background(Theme.canvas.ignoresSafeArea())
+    }
+
+    /// The part of the frame this phone's hero shows: the full width, centred, as tall as the hero's shape says (never more than the frame).
+    private func heroWindow(in viewport: CGSize) -> CGRect {
+        let aspect = HeroShape.aspect(screenWidth: UIScreen.main.bounds.width, screenHeight: UIScreen.main.bounds.height)
+        let height = min(viewport.height, viewport.width / aspect)
+        return CGRect(x: 0, y: (viewport.height - height) / 2, width: viewport.width, height: height)
     }
 
     private func clamped(_ value: CGSize, _ viewport: CGSize) -> CGSize {
@@ -189,5 +206,15 @@ struct BackgroundCropScreen: View {
         return Image(uiImage: image).resizable()
             .frame(width: image.size.width * cover, height: image.size.height * cover)
             .offset(liveOffset(viewport))
+    }
+}
+
+/// A rectangle with a rectangular hole (even-odd), to dim the part of the frame outside the hero window.
+private struct HoleShape: Shape {
+    let hole: CGRect
+    func path(in rect: CGRect) -> Path {
+        var path = Path(rect)
+        path.addRect(hole)
+        return path
     }
 }
