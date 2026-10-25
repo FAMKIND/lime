@@ -392,3 +392,13 @@ No new endpoint and no new op type: a status is an ordinary `message.send` (so i
 - `text` is the fallback an older client shows. `session` groups the statuses of one emergency; the first status's id is used, and later statuses join the conversation's active emergency. `kind: "end"` ends the session for everyone. (Drills were removed in LIME-143-fix: an older build's `drill` field is ignored on receipt and no longer sent.)
 - A receiver bounds every field (place 60 characters, note 200, students ≤ 9999, an unknown situation is dropped, a missing session or a bad status makes it an ordinary message). The roll-up counts the latest status of each sender (by send time), lists members who have not answered as `no_response`, and orders Need help, then no response, then Safe.
 - The server sees nothing new: the object is inside the ciphertext. Forwarding an emergency message is refused by the core.
+
+## 14. Reports and moderation (LIME-191)
+
+See `docs/moderation.md` for the flow and who learns what. All need a verified session (`requireUser`); a **suspended** account gets `403 suspended` ("This account is suspended") from every one of them and from `signin-password`.
+
+- `report { kind, reason, sealed }` -> `{ ok }`. `kind`: message, person, group, jam_post, comment, jam, org, profile_item. `reason`: harassment, spam, impersonation, inappropriate, child_safety, hate_violence, other. `sealed`: base64 of `key_id (1) || ephemeral X25519 public (32) || AES-256-GCM`, HKDF label `lime-report-v1`, sealed to the **moderation key** (`MODERATION_SECRET_KEY`, key id 1; not the mesh key). 50 bytes to 96 KiB; 10 a day per reporter (429 after).
+- `moderation-list { status? }` -> `{ reports: [{ id, kind, reason, urgent, status, created_at }] }` (moderators only, others 403; urgent and oldest first).
+- `moderation-open { id }` -> `{ report: { ..., reporter, payload, readable }, actions }`; logs the open.
+- `moderation-act { report_id?, action, target?, slot?, reason?, note? }` -> `{ ok }`; actions: `dismiss`, `hide_post` (target: blob id), `take_down_page` (jam id), `remove_public` (user id + slot photo|links|background|background_video), `suspend` (user id; never a moderator), `unsuspend`. Each is logged in `moderation_actions`.
+- Tables (RLS on, no client policy): `moderation_reports`, `moderators`, `moderation_actions`, `account_suspensions`; columns `blobs.hidden_at`, `jams.taken_down_at`. `jam-blob-get` refuses hidden blobs (404); `jam-page get` answers 410 for a taken-down page and `by_writer` skips it.

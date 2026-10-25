@@ -7959,3 +7959,34 @@ Only when the profile has a background; without one, today's canvas and dark tex
 - Tests: `Jam188oUITests` has its Transcript / Closed captions lines back (video recorded in the studio, opened from the feed: ⋯ → Transcript, Closed captions); with Profile217/225 and Org216: 19 pass.
 - Installed: 13mini: yes · iPad: yes · Jean: yes (one install for both briefs)
 - For plot: nothing.
+
+## LIME-191 — Report everything, a moderation queue, and takedowns — DONE (NOT deployed: waiting for your go)
+
+Two commits: `f86faa9` (server, core, the Report flow) and this one (the Moderation tool, docs).
+
+**Phase 1 table: where Report goes, what it carries, what the server can act on**
+
+| Place | Report entry | Carries (ids) | Server can act on |
+| --- | --- | --- | --- |
+| Chat message (long-press) | built (others' messages only) | message id, chat id, sender; text | the sender's account (suspend) |
+| Person's profile ⋯ | built | user id | account (suspend); their Everyone picture/links/background (remove) |
+| Jam post: card ⋯, article Options (the old inert row), player ⋯ | built | post id, jam id, author, **the blob id** | hide the blob; take the jam page down; suspend the author |
+| Comment ⋯ | built | comment id, post id, author | suspend the author |
+| Org / jam page ⋯ | built (not your own) | jam id, writer | take the page down; suspend |
+| A group as a whole; a profile's photo/links alone | not built | report a message in the group, or the person | n/a |
+
+- **Flow (1):** reason (7, incl. "A child's safety") → note (500) → "Include this …" with a preview and "lime's team sees … they won't know it was you" → "Also block <name>" (when there's a chat with them) → Send → "Thanks. lime's team will look at this."
+- **What travels (2):** core `send_report` seals `{id, kind, ids, reason, note, included, reporter, created}` to the **moderation key** (own key pair, id 1 = staging's, made 2026-10-25) and posts it to `report` (10 a day, 96 KiB). **What each party learns** is in `docs/moderation.md`: moderators, exactly what was included; the `report` function, only who/kind/reason; the reported person and others, nothing. `included` is what the app builds from the phone's copy; **signatures/certs are not attached yet** (messages carry none the phone keeps in a form I could attach in this brief).
+- **Queue (3) and takedowns (4):** migration `20261025120000_moderation.sql` (`moderation_reports`, `moderators`, `moderation_actions`, `account_suspensions`, `blobs.hidden_at`, `jams.taken_down_at`, RLS on with no client policy, `sweep_moderation` for the 180-day deletion, called by blob-sweep); functions `report`, `moderation-list`, `moderation-open`, `moderation-act`. Hide post (`jam-blob-get` 404), take page down (`jam-page` 410), remove public picture, suspend/unsuspend (every session call and `signin-password` refuse with "This account is suspended"). Limits are written in the tool and the doc: a signed send has no session, so it can't be tied to an account; an edit makes a new blob.
+- **Tool (5):** Settings → Moderation (only if the server says you're a moderator; asked once per launch): Open / Actioned / Dismissed, urgent on top; a report shows the reason, note, reporter, the included item and ids, history; Dismiss · Hide post · Take page down · Remove public picture (background) · Suspend account, each asks first, with a note.
+- **Email:** `report` emails `MODERATION_EMAIL` via Resend if `RESEND_API_KEY` is set (subject only; "URGENT:" for a child's safety). **Plot's decision needs one more thing from you:** a Resend (or other) key; none exists yet. Without it the queue works and nothing is emailed.
+- **Docs (6):** `docs/moderation.md` (new), `docs/api-v2.md` §14, `release-checklist.md`. The NCMEC process is marked "needs the lawyer".
+- **Tests:** server `moderation_test.ts` (4: sealed storage + auth + reasons + 10 a day; moderators only, urgent first, opening shows the payload, a report sealed to another key is unreadable; hide / take down / remove picture / suspend / lift, each logged; dismiss + the 180-day sweep) and `jam_test.ts` pass on the local stack; core 340 pass (new: only chosen parts are sealed, bad input refused, the moderation key isn't the mesh key); UI `Report191UITests` (4: message, own message has none, jam post, person with Also block) and `Moderation191UITests` (2: hidden for a normal account; a moderator sees urgent first, Dismiss asks first) pass, with MessageActions, Jam189c, Org216, Jam212 (39 in all). Not tested: the real email; the cross-language vector of a Rust-sealed report opened by the server (the construction is the mesh header's, which has one); a full server test run (only moderation + jam).
+- **Local stack note:** a new Edge function needs `supabase stop && supabase start` before the local runtime serves it.
+- Installed: 13mini: yes · iPad: yes · Jean: yes (the phones build against the staging server that does **not** have the report functions yet: Report will say "Couldn't send" there until you deploy).
+- **Deploy steps for you (I have not deployed):**
+  1. `sh supabase/deploy-staging.sh` (migration + the four new functions + the changed `jam-blob-get`, `jam-page`, `signin-password`, `blob-sweep`, `_shared/db.ts`).
+  2. `supabase secrets set --env-file ~/.lime/moderation-secret.env --project-ref <staging ref>` (file made for you, chmod 600, holds `MODERATION_SECRET_KEY`; its public half is pinned in the app). Keep it safe: the only copy.
+  3. Optional email: `supabase secrets set MODERATION_EMAIL=<address> RESEND_API_KEY=<key>`.
+  4. Make yourself a moderator, in the SQL editor: `insert into public.moderators (user_id) select id from auth.users where email = '<your email>';`
+- For plot: the email provider (Resend?) and the address; the lawyer and NCMEC; whether report signatures should be attached (needs core to keep per-message proofs); live needs its own moderation key (id 2 in the app) before launch; groups and single profile items as report subjects.

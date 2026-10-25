@@ -46,8 +46,10 @@ extension ConversationStore {
     func reportTarget(post: JamPostInfo) -> ReportTarget {
         let who = teacherName(post.author)
         let words = [post.title, post.subtitle, post.plain].filter { !$0.isEmpty }.joined(separator: "\n")
-        return ReportTarget(kind: "jam_post", ids: [post.postId, post.jamId, post.author], noun: "post", personName: who, blockConversationID: blockChat(for: post.author),
-                            included: jsonText(["post_id": post.postId, "jam_id": post.jamId, "author": post.author, "title": post.title, "subtitle": post.subtitle,
+        // The blob that holds the post now: "Hide post" in the moderators' tool hides that (an edit makes a new one).
+        let blob = ((try? core?.jamPostBlobId(postId: post.postId)) ?? nil) ?? ""
+        return ReportTarget(kind: "jam_post", ids: [post.postId, post.jamId, post.author] + (blob.isEmpty ? [] : [blob]), noun: "post", personName: who, blockConversationID: blockChat(for: post.author),
+                            included: jsonText(["post_id": post.postId, "blob_id": blob, "jam_id": post.jamId, "author": post.author, "title": post.title, "subtitle": post.subtitle,
                                                 "text": post.markdown, "created": post.created, "kind": post.kind]),
                             preview: String(words.prefix(160)))
     }
@@ -90,5 +92,108 @@ extension ConversationStore {
 
     #if DEBUG
     nonisolated(unsafe) static var demoReports: [(kind: String, reason: String, note: String, included: Bool)] = []
+    #endif
+}
+
+// MARK: The moderators' tool (LIME-191)
+
+/// One line of the queue.
+struct ModerationItem: Identifiable, Hashable {
+    let id: String
+    let kind: String
+    let reason: String
+    let urgent: Bool
+    let status: String
+    let created: Date
+}
+
+/// An opened report: what the reporter's phone sent, and what has been done since.
+struct ModerationDetail {
+    var item: ModerationItem
+    var reporter: String
+    var note: String
+    var subjectIDs: [String]
+    var included: String
+    var readable: Bool
+    var history: [(action: String, note: String, date: Date)]
+}
+
+extension ConversationStore {
+    /// Calls a moderation function; nil when the phone is offline or signed out. (403 = not on the server's allow-list.)
+    func moderationCall(_ function: String, _ body: [String: Any]) async -> (status: Int, json: [String: Any])? {
+        guard let core, let link, let token = try? await link.token(),
+              let data = try? JSONSerialization.data(withJSONObject: body), let text = String(data: data, encoding: .utf8) else { return nil }
+        guard let answer = try? await Task.detached(operation: { try core.moderationRequest(transport: link.transport, authToken: token, function: function, body: text) }).value else { return nil }
+        let parsed = (try? JSONSerialization.jsonObject(with: Data(answer.body.utf8))) as? [String: Any] ?? [:]
+        return (Int(answer.status), parsed)
+    }
+
+    /// Whether this account is on the server's moderator list (asked once when Settings opens). Demo: only with `-lime-demo-moderator`.
+    func isModerator() async -> Bool {
+        #if DEBUG
+        if isDemo { return ProcessInfo.processInfo.arguments.contains("-lime-demo-moderator") }
+        #endif
+        // Asked once per launch (not every time Settings opens): the server learns nothing more than it does from any other call.
+        if let known = Self.moderatorAnswer { return known }
+        let answer = await moderationCall("moderation-list", ["status": "open"])
+        if let status = answer?.status { Self.moderatorAnswer = (status == 200) }
+        return answer?.status == 200
+    }
+
+    nonisolated(unsafe) private static var moderatorAnswer: Bool?
+
+    private static func date(_ text: Any?) -> Date {
+        guard let text = text as? String else { return Date() }
+        let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f.date(from: text) ?? ISO8601DateFormatter().date(from: text) ?? Date()
+    }
+
+    private func item(_ row: [String: Any]) -> ModerationItem? {
+        guard let id = row["id"] as? String, let kind = row["kind"] as? String, let reason = row["reason"] as? String else { return nil }
+        return ModerationItem(id: id, kind: kind, reason: reason, urgent: row["urgent"] as? Bool ?? false, status: row["status"] as? String ?? "open", created: Self.date(row["created_at"]))
+    }
+
+    func moderationQueue(status: String) async -> [ModerationItem] {
+        #if DEBUG
+        if isDemo { return status == "open" ? Self.demoQueue.sorted { ($0.urgent ? 0 : 1, $0.created) < ($1.urgent ? 0 : 1, $1.created) } : [] }   // urgent first, as the server does
+        #endif
+        let answer = await moderationCall("moderation-list", ["status": status])
+        return (answer?.json["reports"] as? [[String: Any]] ?? []).compactMap(item)
+    }
+
+    func moderationOpen(_ id: String) async -> ModerationDetail? {
+        #if DEBUG
+        if isDemo { return Self.demoQueue.first { $0.id == id }.map { ModerationDetail(item: $0, reporter: "demo-reporter", note: "Selling things in the comments.", subjectIDs: ["demo-post", "demo-jam", "demo-writer", "demo-blob"], included: "{\"text\": \"Buy my worksheets!\"}", readable: true, history: []) } }
+        #endif
+        guard let answer = await moderationCall("moderation-open", ["id": id]), answer.status == 200, let report = answer.json["report"] as? [String: Any], let row = item(report) else { return nil }
+        let payload = report["payload"] as? [String: Any] ?? [:]
+        var included = ""
+        if let value = payload["included"], !(value is NSNull) {
+            if let text = value as? String { included = text }
+            else if let data = try? JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys]) { included = String(data: data, encoding: .utf8) ?? "" }
+        }
+        let history = (answer.json["actions"] as? [[String: Any]] ?? []).map { (action: $0["action"] as? String ?? "", note: $0["note"] as? String ?? "", date: Self.date($0["created_at"])) }
+        return ModerationDetail(item: row, reporter: report["reporter"] as? String ?? "", note: payload["note"] as? String ?? "", subjectIDs: payload["subject_ids"] as? [String] ?? [],
+                                included: included, readable: report["readable"] as? Bool ?? false, history: history)
+    }
+
+    /// Dismiss, Hide post, Take page down, Remove public picture, Suspend, Unsuspend. True when the server did it.
+    func moderationAct(reportID: String?, action: String, target: String? = nil, slot: String? = nil, reason: String? = nil, note: String = "") async -> Bool {
+        #if DEBUG
+        if isDemo { Self.demoQueue.removeAll { $0.id == reportID }; return true }
+        #endif
+        var body: [String: Any] = ["action": action, "note": note]
+        if let reportID { body["report_id"] = reportID }
+        if let target { body["target"] = target }
+        if let slot { body["slot"] = slot }
+        if let reason { body["reason"] = reason }
+        return await moderationCall("moderation-act", body)?.status == 200
+    }
+
+    #if DEBUG
+    nonisolated(unsafe) static var demoQueue: [ModerationItem] = [
+        ModerationItem(id: "demo-report-1", kind: "jam_post", reason: "spam", urgent: false, status: "open", created: Date().addingTimeInterval(-3600)),
+        ModerationItem(id: "demo-report-2", kind: "message", reason: "child_safety", urgent: true, status: "open", created: Date().addingTimeInterval(-600)),
+    ]
     #endif
 }

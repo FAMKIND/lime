@@ -79,6 +79,14 @@ impl LimeStore {
         check(status)
     }
 
+    /// The server blob that holds a post right now (what a report of it must carry: "hide this post" hides that blob; an edit makes a new one).
+    pub fn jam_post_blob_id(&self, post_id: String) -> Result<Option<String>, StoreError> {
+        self.with_conn(|conn| {
+            use rusqlite::OptionalExtension;
+            conn.query_row("SELECT blob_id FROM jam_posts WHERE post_id = ?1", params![post_id], |r| r.get::<_, Option<String>>(0)).optional().map(Option::flatten).map_err(db_err)
+        })
+    }
+
     /// One call to the moderators' functions (`moderation-list`, `moderation-open`, `moderation-act`): the body is JSON text; anyone not on the server's
     /// allow-list gets a 403. The answer's body is the JSON text the function returned.
     pub fn moderation_request(&self, transport: Arc<dyn Transport>, auth_token: String, function: String, body: String) -> Result<ModerationAnswer, StoreError> {

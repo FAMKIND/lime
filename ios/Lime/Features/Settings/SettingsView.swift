@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Where Settings can go.
 enum SettingsRoute: Hashable {
-    case account, privacy, blocked, keys, devices, notifications, calls, customize, textSize, about, acknowledgements, changePassword, myQR, photo, storage, workHours, emergency, links, background
+    case account, privacy, blocked, keys, devices, notifications, calls, customize, textSize, about, acknowledgements, changePassword, myQR, photo, storage, workHours, emergency, links, background, moderation
     case chatMedia(String)
 }
 
@@ -19,6 +19,8 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var path: [SettingsRoute]
     @State private var confirmingSignOut = false
+    /// On the server's moderator list (LIME-191): the Moderation row shows for them only.
+    @State private var isModerator = false
     /// Open straight on this screen (the profile's Edit profile).
     init(startAt: SettingsRoute? = nil) {
         _path = State(initialValue: startAt.map { [$0] } ?? [])
@@ -27,6 +29,7 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack(path: $path) {
             root
+                .task { isModerator = await store.isModerator() }
                 .navigationDestination(for: SettingsRoute.self) { route in
                     switch route {
                     case .account: AccountScreen(onClose: { dismiss() })
@@ -48,6 +51,7 @@ struct SettingsView: View {
                     case .storage: StorageScreen()
                     case .workHours: WorkHoursScreen()
                     case .emergency: EmergencySettingsScreen()
+                    case .moderation: ModerationScreen()
                     case .chatMedia(let id): ChatMediaScreen(conversationID: id)
                     }
                 }
@@ -64,7 +68,7 @@ struct SettingsView: View {
     static func route(from names: [String]) -> [SettingsRoute] {
         let table: [String: SettingsRoute] = [
             "account": .account, "privacy": .privacy, "blocked": .blocked, "keys": .keys, "devices": .devices,
-            "notifications": .notifications, "customize": .customize, "text-size": .textSize, "calls": .calls, "about": .about, "ack": .acknowledgements, "password": .changePassword, "my-qr": .myQR, "photo": .photo, "links": .links, "background": .background, "background-set": .background, "crop": .photo, "storage": .storage, "work-hours": .workHours,
+            "notifications": .notifications, "customize": .customize, "text-size": .textSize, "calls": .calls, "about": .about, "ack": .acknowledgements, "password": .changePassword, "my-qr": .myQR, "photo": .photo, "links": .links, "background": .background, "background-set": .background, "crop": .photo, "storage": .storage, "work-hours": .workHours, "moderation": .moderation,
         ]
         return names.compactMap { table[$0] }
     }
@@ -99,6 +103,9 @@ struct SettingsView: View {
                     SettingsRow(symbol: "clock", title: "Work hours", value: StatusSettings.shared.hours.enabled ? "On" : "Off", route: .workHours, id: "settings-work-hours")
                     SettingsRow(symbol: "phone", title: "Calls", route: .calls, id: "settings-calls")
                     SettingsRow(symbol: "paintpalette", title: "Customize", route: .customize, id: "settings-customize", showsDivider: false)
+                }
+                if isModerator {
+                    SettingsCard { SettingsRow(symbol: "shield", title: "Moderation", route: .moderation, id: "settings-moderation", showsDivider: false) }
                 }
                 SettingsCard {
                     SettingsRow(symbol: "info.circle", title: "About", route: .about, id: "settings-about", showsDivider: false)
