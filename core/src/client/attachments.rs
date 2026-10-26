@@ -128,7 +128,17 @@ impl LimeStore {
         if self.with_conn(|conn| Ok(files::is_removed_everywhere(conn, &attachment_id)))? {
             return Err(StoreError::NotFound);
         }
-        let (status, body) = call(&transport, Some(&auth_token), "attachment", &json!({ "action": "get", "attachment_id": descriptor.id }))?;
+        let plaintext = self.download_blob(&transport, &auth_token, &descriptor)?;
+        self.with_conn(|conn| files::set_data(conn, &descriptor.id, &plaintext))
+    }
+}
+
+
+impl LimeStore {
+    /// Downloads one encrypted file by its descriptor, decrypts and verifies it (digest and size), and returns it; nothing is kept here.
+    /// Chunks fetched by an interrupted attempt are not fetched again.
+    pub(super) fn download_blob(&self, transport: &Arc<dyn Transport>, auth_token: &str, descriptor: &Descriptor) -> Result<Vec<u8>, StoreError> {
+        let (status, body) = call(transport, Some(auth_token), "attachment", &json!({ "action": "get", "attachment_id": descriptor.id }))?;
         if status == 404 {
             return Err(StoreError::NotFound);
         }
@@ -156,7 +166,7 @@ impl LimeStore {
         let chunks = self.with_conn(|conn| files::parts(conn, &descriptor.id, total))?.ok_or(StoreError::BadMessage)?;
         let plaintext = files::open(&descriptor.key, &descriptor.id, &chunks);
         let verified = plaintext.as_ref().filter(|p| p.len() as u64 == descriptor.size && files::digest_hex(p) == descriptor.digest);
-        let Some(plaintext) = verified else {
+        let Some(plaintext) = verified.cloned() else {
             // Something fetched is wrong: forget it all, so a retry starts from the server's copy, and keep nothing.
             self.with_conn(|conn| {
                 files::drop_parts(conn, &descriptor.id)?;
@@ -168,7 +178,7 @@ impl LimeStore {
             files::drop_parts(conn, &descriptor.id)?;
             files::clear_progress(conn, &descriptor.id)
         })?;
-        self.with_conn(|conn| files::set_data(conn, &descriptor.id, plaintext))
+        Ok(plaintext)
     }
 }
 
@@ -198,7 +208,12 @@ impl LimeStore {
     /// Encrypts and uploads one attachment from the copy this phone holds (resuming if an earlier try was interrupted).
     fn upload_one(&self, transport: &Arc<dyn Transport>, token: &str, descriptor: &Descriptor, recipients: u32) -> Result<(), StoreError> {
         let Some(plaintext) = self.with_conn(|conn| files::data(conn, &descriptor.id))? else { return Err(StoreError::NotFound) };
-        let chunks = files::seal(&descriptor.key, &descriptor.id, &plaintext);
+        self.upload_blob(transport, token, descriptor, &plaintext, recipients)
+    }
+
+    /// Encrypts and uploads the given bytes under the descriptor's id and key (the same chunks every time, so a retry resumes).
+    pub(super) fn upload_blob(&self, transport: &Arc<dyn Transport>, token: &str, descriptor: &Descriptor, plaintext: &[u8], recipients: u32) -> Result<(), StoreError> {
+        let chunks = files::seal(&descriptor.key, &descriptor.id, plaintext);
         let total: usize = chunks.iter().map(Vec::len).sum();
         let (status, body) = call(
             transport,

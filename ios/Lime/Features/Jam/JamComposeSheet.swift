@@ -103,7 +103,10 @@ struct JamComposeSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { close() }.accessibilityIdentifier("jam-compose-cancel") }
                 ToolbarItem(placement: .confirmationAction) {
-                    if editing != nil {
+                    if openDraft != nil || coedit?.isCoAuthorOnly == true {
+                        // A co-author does not publish: the writer does (LIME-233e); "Ready" at the top tells them.
+                        Button("Done") { close() }.fontWeight(.semibold).accessibilityIdentifier("jam-coedit-done")
+                    } else if editing != nil {
                         Button("Update") { update() }.fontWeight(.semibold).disabled(!canPost).accessibilityIdentifier("jam-update")
                     } else {
                         Button("Post") { post() }.fontWeight(.semibold).disabled(!canPost).accessibilityIdentifier("jam-post")
@@ -195,7 +198,8 @@ struct JamComposeSheet: View {
                     if let session = store.coeditSession(existingID: openDraft, forPost: nil, title: "", subtitle: "", markdown: ""), let md = session.exportMarkdown(), let meta = store.coeditMeta(openDraft) {
                         coedit = session
                         title = meta.title; subtitle = meta.subtitle
-                        composer.textView?.attributedText = ComposerDocument.attributed(fromMarkdown: md, post: true); composer.didEdit()
+                        wireCoedit()
+                        composer.textView?.attributedText = session.render(markdown: md); composer.didEdit()
                         store.coeditSeen(openDraft)
                         coauthors = session.otherAuthors()
                     }
@@ -209,7 +213,8 @@ struct JamComposeSheet: View {
                 if article, let id = JamDraft.shared.draftID, let session = store.coeditSession(existingID: id, forPost: nil, title: "", subtitle: "", markdown: ""), let md = session.exportMarkdown(), let meta = store.coeditMeta(id) {
                     coedit = session
                     title = meta.title; subtitle = meta.subtitle
-                    composer.textView?.attributedText = ComposerDocument.attributed(fromMarkdown: md, post: true); composer.didEdit()
+                    wireCoedit()
+                    composer.textView?.attributedText = session.render(markdown: md); composer.didEdit()
                 }
                 wireCoedit()
                 if !article { composer.focus() }
@@ -762,6 +767,7 @@ struct JamComposeSheet: View {
         startCaptions(item, .article(articleFiles.count - 1))
         let width = max(120, view.bounds.width - 16)
         let small = preview.preparingThumbnail(of: CGSize(width: 900, height: 900)) ?? preview
+        coedit?.notePicture(local: articleFiles.count - 1, image: small)
         let caret = ComposerDocument.insertImage(small, index: articleFiles.count - 1, into: view.textStorage, at: view.selectedRange.location, width: width)
         view.selectedRange = NSRange(location: caret, length: 0)
         view.delegate?.textViewDidChange?(view)
@@ -825,7 +831,14 @@ struct JamComposeSheet: View {
             guard let composer else { return }
             Task { @MainActor in coedit?.sendPresence(composer) }
         }
-        if let coedit { coedit.start(composer: composer) }
+        if let coedit {
+            coedit.files = CoEditFiles(
+                file: { articleFiles.indices.contains($0) ? articleFiles[$0] : nil },
+                add: { articleFiles.append($0); return articleFiles.count - 1 },
+                fill: { if articleFiles.indices.contains($0) { articleFiles[$0] = $1 } },
+                width: { max(120, (composer.textView?.bounds.width ?? 320) - 16) })
+            coedit.start(composer: composer)
+        }
     }
 
     private func coeditChanged(_ composer: RichComposerModel) {
@@ -835,7 +848,8 @@ struct JamComposeSheet: View {
             guard !markdown().trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !title.isEmpty else { return }
             coedit = store.coeditSession(existingID: nil, forPost: nil, title: title, subtitle: subtitle, markdown: markdown())
             JamDraft.shared.draftID = coedit?.draftID
-            if let coedit { coedit.start(composer: composer); if !coauthors.isEmpty { store.coeditShare(coedit.draftID, with: coauthors.map(\.id)) } }
+            wireCoedit()
+            if let coedit { if !coauthors.isEmpty { store.coeditShare(coedit.draftID, with: coauthors.map(\.id)) } }
         }
         coedit?.editorChanged(title: title, subtitle: subtitle, composer: composer)
         #if DEBUG
@@ -852,11 +866,11 @@ struct JamComposeSheet: View {
 
     private func close() {
         coedit?.stop()
-        if editing != nil || openDraft != nil { if let coedit, let view = composer.textView { coedit.syncNow(title: title, subtitle: subtitle, markdown: ComposerDocument.markdown(from: view.textStorage, post: true)) }; dismiss(); return }
+        if editing != nil || openDraft != nil { if let coedit, let view = composer.textView { coedit.syncNow(title: title, subtitle: subtitle, markdown: coedit.draftMarkdown(from: view.textStorage)) }; dismiss(); return }
         let draft = JamDraft.shared
         let text = hasWords && !hasPictures ? composer.markdown() : ""
         draft.article = article; draft.title = title; draft.subtitle = subtitle; draft.markdown = text
-        if let coedit, let view = composer.textView { coedit.syncNow(title: title, subtitle: subtitle, markdown: ComposerDocument.markdown(from: view.textStorage, post: true)); draft.draftID = coedit.draftID }
+        if let coedit, let view = composer.textView { coedit.syncNow(title: title, subtitle: subtitle, markdown: coedit.draftMarkdown(from: view.textStorage)); draft.draftID = coedit.draftID }
         dismiss()
     }
 
@@ -873,7 +887,7 @@ struct JamComposeSheet: View {
             let result = await store.editJamPost(editing, title: title, subtitle: subtitle, markdown: markdown, added: added + (article ? articleCover.map { [$0] } ?? [] : []),
                                                  displayAs: postAsJam == nil ? "person" : "jam", removeCover: article && coverRemoved && articleCover == nil)
             posting = false
-            if result { dismiss() } else { problem = "Could not update the post." }
+            if result { coedit?.published(postID: editing.postId); dismiss() } else { problem = "Could not update the post." }
         }
     }
 
@@ -931,7 +945,7 @@ struct JamComposeSheet: View {
             posting = false
             switch result {
             case .success:
-                if let coedit { store.coeditFinish(coedit.draftID) }
+                if let coedit { coedit.published(postID: store.lastPublishedPostID); store.coeditFinish(coedit.draftID) }
                 JamDraft.shared.clear(); dismiss()
             case .failure(let failure): problem = failure.message   // the words, the photos and the title all stay
             }

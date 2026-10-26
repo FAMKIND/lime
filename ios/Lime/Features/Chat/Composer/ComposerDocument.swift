@@ -168,14 +168,7 @@ enum ComposerDocument {
     /// `index` is the file's place in the post's list.
     @discardableResult
     static func insertImage(_ image: UIImage, index: Int, into text: NSMutableAttributedString, at location: Int, width: CGFloat) -> Int {
-        let attachment = NSTextAttachment()
-        attachment.image = image
-        // The picture at its own proportions (left-aligned in the line), never wider than the column or taller than 320 pt.
-        let ratio = image.size.height / max(image.size.width, 1)
-        var drawnWidth = width, drawnHeight = width * ratio
-        if drawnHeight > 320 { drawnHeight = 320; drawnWidth = 320 / max(ratio, 0.01) }
-        attachment.bounds = CGRect(x: 0, y: 0, width: drawnWidth, height: drawnHeight)
-        let picture = NSMutableAttributedString(attachment: attachment)
+        let picture = NSMutableAttributedString(attachment: pictureAttachment(image, width: width))
         picture.addAttribute(.limeImage, value: index, range: NSRange(location: 0, length: picture.length))
         var at = min(max(location, 0), text.length)
         let string = text.string as NSString
@@ -185,6 +178,31 @@ enum ComposerDocument {
         let nextIsNewline = at < text.length && (text.string as NSString).character(at: at) == 0x0A
         if !nextIsNewline { text.insert(NSAttributedString(string: "\n"), at: at) }
         return at + 1
+    }
+
+    /// The picture at its own proportions (left-aligned in the line), never wider than the column or taller than 320 pt.
+    static func pictureAttachment(_ image: UIImage, width: CGFloat) -> NSTextAttachment {
+        let attachment = NSTextAttachment()
+        attachment.image = image
+        let ratio = image.size.height / max(image.size.width, 1)
+        var drawnWidth = width, drawnHeight = width * ratio
+        if drawnHeight > 320 { drawnHeight = 320; drawnWidth = 320 / max(ratio, 0.01) }
+        attachment.bounds = CGRect(x: 0, y: 0, width: drawnWidth, height: drawnHeight)
+        return attachment
+    }
+
+    /// Draws the pictures into a text made from Markdown (which carries only their numbers), or redraws them where they are: the text itself is not
+    /// changed, so the caret stays. `image` answers for a file's index; a file it does not know keeps what it has.
+    static func attachImages(in text: NSMutableAttributedString, width: CGFloat, image: (Int) -> UIImage?) {
+        var runs: [(NSRange, Int)] = []
+        text.enumerateAttribute(.limeImage, in: NSRange(location: 0, length: text.length)) { value, range, _ in if let index = value as? Int { runs.append((range, index)) } }
+        guard !runs.isEmpty else { return }
+        text.beginEditing()
+        for (range, index) in runs {
+            guard let picture = image(index) else { continue }
+            text.addAttribute(.attachment, value: pictureAttachment(picture, width: width), range: range)
+        }
+        text.endEditing()
     }
 
     /// The pictures of an article in the order they appear, as file indexes; used to keep only the files that are still in the text.

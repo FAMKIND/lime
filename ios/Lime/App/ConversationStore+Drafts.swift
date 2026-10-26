@@ -82,6 +82,25 @@ extension ConversationStore {
         return (try? core.draftReconcile(draftId: id, title: title, subtitle: subtitle, markdown: markdown)) != nil
     }
 
+    // Publishing and pictures (LIME-233e)
+
+    func coeditStatus(_ id: String) -> DraftStatus? { try? draftCore?.draftStatus(draftId: id) }
+    func coeditSetReady(_ id: String, _ ready: Bool) { try? draftCore?.draftSetReady(draftId: id, ready: ready); Task { await flushDrafts() } }
+    func coeditAddFile(_ id: String, _ file: OutgoingAttachment) -> UInt32? { try? draftCore?.draftAddFile(draftId: id, file: file) }
+    func coeditFiles(_ id: String) -> [DraftFileInfo] { (try? draftCore?.draftFiles(draftId: id)) ?? [] }
+
+    /// The bytes of a draft's picture, fetched from the server if this phone does not have them.
+    func coeditFileData(_ id: String, _ number: UInt32) async -> Data? {
+        guard let core = draftCore else { return nil }
+        if let link, let token = try? await link.token() {
+            return try? await Task.detached { try core.draftFileData(transport: link.transport, authToken: token, draftId: id, number: number) }.value
+        }
+        return nil
+    }
+
+    /// The writer's post is out (or updated): the other authors are told.
+    func coeditPublished(_ id: String, postID: String) { try? draftCore?.draftMarkPublished(draftId: id, postId: postID); Task { await flushDrafts() } }
+
     func coeditSeen(_ id: String) { try? draftCore?.markDraftSeen(draftId: id) }
     func coeditBlocks(_ id: String) -> [DraftBlock] { (try? draftCore?.draftBlocks(draftId: id)) ?? [] }
     /// The people (ids) who write the draft, me included, not those who left or were removed.

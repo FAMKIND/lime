@@ -845,6 +845,34 @@ const MIGRATIONS: &[&str] = &[
          payload    TEXT NOT NULL,
          created_at INTEGER NOT NULL
      );",
+
+    // 55 (LIME-233e): publishing a shared draft. `ready` is a co-author telling the writer they are done; `published_*` is what the writer's publish
+    // told every author; `draft_files` is the pictures and videos any author added (the file's key travels only inside the authors' sealed ops).
+    "ALTER TABLE draft_authors ADD COLUMN ready INTEGER NOT NULL DEFAULT 0;
+     ALTER TABLE drafts ADD COLUMN published_post TEXT;
+     ALTER TABLE drafts ADD COLUMN published_at INTEGER;
+     ALTER TABLE drafts ADD COLUMN published_by TEXT;
+     ALTER TABLE drafts ADD COLUMN published_heads TEXT NOT NULL DEFAULT '[]';
+     CREATE TABLE draft_files (
+         draft_id    TEXT NOT NULL,
+         number      INTEGER NOT NULL,
+         file_id     TEXT NOT NULL,
+         adder       TEXT NOT NULL,
+         key         BLOB NOT NULL,
+         digest      TEXT NOT NULL,
+         size        INTEGER NOT NULL,
+         mime        TEXT NOT NULL,
+         name        TEXT NOT NULL,
+         width       INTEGER,
+         height      INTEGER,
+         duration_ms INTEGER,
+         thumb       BLOB NOT NULL,
+         poster      BLOB NOT NULL,
+         bytes       BLOB,
+         uploaded    INTEGER NOT NULL DEFAULT 0,
+         announced   TEXT NOT NULL DEFAULT '[]',
+         PRIMARY KEY (draft_id, number)
+     );",
 ];
 
 /// The schema version this build writes.

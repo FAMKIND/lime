@@ -23,7 +23,7 @@ use sha2::Sha256;
 use super::*;
 use crate::drafts::DraftPatch;
 
-const MAX_AUTHORS: usize = 5;
+pub(super) const MAX_AUTHORS: usize = 5;
 const FLUSH_EVERY_MS: i64 = 5_000;
 const HELLO_EVERY_MS: i64 = 60_000;
 const LIVE_OP: &str = "draft.live";
@@ -94,7 +94,7 @@ pub(crate) fn active_authors(conn: &Connection, draft_id: &str) -> Result<Vec<St
     rows.collect::<Result<_, _>>().map_err(db_err)
 }
 
-fn enqueue(conn: &Connection, draft_id: &str, to: &str, op_type: &str, payload: Value, now: i64) -> Result<(), StoreError> {
+pub(super) fn enqueue(conn: &Connection, draft_id: &str, to: &str, op_type: &str, payload: Value, now: i64) -> Result<(), StoreError> {
     conn.execute(
         "INSERT INTO draft_outbox (draft_id, to_user, op_type, payload, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
         params![draft_id, to, op_type, payload.to_string(), now],
@@ -103,7 +103,7 @@ fn enqueue(conn: &Connection, draft_id: &str, to: &str, op_type: &str, payload: 
     Ok(())
 }
 
-fn row_keys(conn: &Connection, draft_id: &str) -> Result<Option<(String, Vec<u8>, String)>, StoreError> {
+pub(super) fn row_keys(conn: &Connection, draft_id: &str) -> Result<Option<(String, Vec<u8>, String)>, StoreError> {
     conn.query_row("SELECT channel_id, draft_key, writer FROM drafts WHERE draft_id = ?1 AND channel_id IS NOT NULL AND draft_key IS NOT NULL", params![draft_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .optional()
         .map_err(db_err)
@@ -393,6 +393,7 @@ impl LimeStore {
     /// Batches due changes and hellos into the outbox (at most one batch every 5 seconds per draft), then sends what is in it. Returns how many went.
     pub(crate) fn deliver_drafts(&self, transport: &Arc<dyn Transport>, token: &str, state: &mut AccountState, me: &str, now: i64) -> u32 {
         let _ = self.with_conn(|conn| self.flush_drafts_at(conn, me, now));
+        self.upload_draft_files(transport, token, me, now);
         let Ok(rows) = self.with_conn(|conn| {
             let mut st = conn.prepare("SELECT id, draft_id, to_user, op_type, payload FROM draft_outbox ORDER BY id LIMIT 200").map_err(db_err)?;
             let rows = st.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get::<_, String>(4)?))).map_err(db_err)?;
@@ -551,7 +552,7 @@ impl LimeStore {
                     conn.execute("DELETE FROM draft_outbox WHERE draft_id = ?1", params![draft_id]).map_err(db_err)?;
                 }
             }
-            _ => {}
+            _ => return self.apply_draft_publish_op(conn, me, sender, op_type, payload),
         }
         Ok(())
     }

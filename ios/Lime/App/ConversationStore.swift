@@ -85,6 +85,8 @@ final class ConversationStore {
     /// The instant path of drafts written with others (LIME-233b) and who wants its events (the open editor).
     var draftRealtime: DraftRealtime?
     var draftEventSink: ((DraftInstantEvent) -> Void)?
+    /// The post the last successful publish made (a shared draft is told which post it became).
+    var lastPublishedPostID: String?
     /// Counts remote draft changes, for views that redraw on it.
     var draftRevision = 0
     #if DEBUG

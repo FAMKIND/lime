@@ -189,7 +189,7 @@ extension ConversationStore {
         guard let core else { return .failure(.couldNotMake) }
         guard StorageGuard.shared.allows(items.reduce(0) { $0 + Int64($1.bytes.count) }) else { return .failure(.noSpace) }
         do {
-            _ = try await Task.detached(priority: .userInitiated) {
+            lastPublishedPostID = try await Task.detached(priority: .userInitiated) {
                 try core.publishJamPostAs(jamId: jamID, kind: kind, title: title, subtitle: subtitle, markdown: markdown, tier: "free", attachments: items, coauthors: coauthors, displayAs: displayAs)
             }.value
         } catch {

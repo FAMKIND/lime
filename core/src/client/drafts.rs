@@ -101,6 +101,9 @@ impl LimeStore {
         self.draft_cache.lock().unwrap_or_else(|e| e.into_inner()).remove(&draft_id);
         self.with_conn(|conn| {
             conn.execute("DELETE FROM draft_chunks WHERE draft_id = ?1", params![draft_id]).map_err(db_err)?;
+            conn.execute("DELETE FROM draft_files WHERE draft_id = ?1", params![draft_id]).map_err(db_err)?;
+            conn.execute("DELETE FROM draft_authors WHERE draft_id = ?1", params![draft_id]).map_err(db_err)?;
+            conn.execute("DELETE FROM draft_outbox WHERE draft_id = ?1", params![draft_id]).map_err(db_err)?;
             conn.execute("DELETE FROM drafts WHERE draft_id = ?1", params![draft_id]).map_err(db_err)?;
             Ok(())
         })

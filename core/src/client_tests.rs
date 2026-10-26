@@ -1479,7 +1479,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
              DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP INDEX olm_sessions_by_peer; DROP TABLE received_ciphertexts; DROP TABLE emergency_messages; DROP TABLE emergency_settings; DROP TABLE mesh_outbox; DROP TABLE mesh_packets; DROP TABLE mesh_seen; DROP TABLE mesh_uploaded; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
-             DROP TABLE draft_outbox; DROP TABLE draft_authors; DROP TABLE draft_chunks; DROP TABLE drafts; DROP TABLE deleted_peers; DROP TABLE session_repairs; DROP TABLE profile_key_requests; DROP TABLE my_extra; DROP TABLE extras; DROP TRIGGER jam_posts_fts_insert; DROP TRIGGER jam_posts_fts_update; DROP TRIGGER jam_posts_fts_delete; DROP TABLE jam_fts; DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_credits; DROP TABLE jam_credit_requests; DROP TABLE jam_credit_wires; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_blob_deletes; DROP TABLE jam_reactions; DROP TABLE jam_my_reactions; DROP TABLE jam_comments; DROP TABLE jam_counts; DROP TABLE jam_counts_out; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; PRAGMA user_version = 9;",
+             DROP TABLE draft_files; DROP TABLE draft_outbox; DROP TABLE draft_authors; DROP TABLE draft_chunks; DROP TABLE drafts; DROP TABLE deleted_peers; DROP TABLE session_repairs; DROP TABLE profile_key_requests; DROP TABLE my_extra; DROP TABLE extras; DROP TRIGGER jam_posts_fts_insert; DROP TRIGGER jam_posts_fts_update; DROP TRIGGER jam_posts_fts_delete; DROP TABLE jam_fts; DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_credits; DROP TABLE jam_credit_requests; DROP TABLE jam_credit_wires; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_blob_deletes; DROP TABLE jam_reactions; DROP TABLE jam_my_reactions; DROP TABLE jam_comments; DROP TABLE jam_counts; DROP TABLE jam_counts_out; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; PRAGMA user_version = 9;",
         )
         .unwrap();
     }
@@ -6843,4 +6843,71 @@ fn over_the_local_realtime_a_change_reaches_the_other_core_in_under_500_ms() {
     eprintln!("instant path over the local Realtime: worst of 5 = {worst:?}");
     assert!(worst < Duration::from_millis(500), "under 500 ms: {worst:?}");
     assert_eq!(alice.store.draft_markdown(id.clone()).unwrap(), bob.store.draft_markdown(id).unwrap());
+}
+
+// LIME-233e: only the writer publishes; "Ready"; the published banner; a picture from a co-author goes into the writer's post.
+#[test]
+fn only_the_writer_publishes_a_co_author_says_ready_and_everyone_learns_of_the_publish() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let jam = new_jam(&alice);
+    let id = shared_draft(&alice, &bob, &transport);
+    assert!(alice.store.draft_status(id.clone()).unwrap().is_writer);
+    let st = bob.store.draft_status(id.clone()).unwrap();
+    assert!(!st.is_writer && st.writer == alice.user && st.published_post.is_none());
+    // The writer cannot be "ready" for themselves; a co-author cannot publish.
+    assert!(alice.store.draft_set_ready(id.clone(), true).is_err());
+    assert!(bob.store.publish_draft(transport.clone(), bob.token.clone(), id.clone(), jam.clone(), vec![], "person".into()).is_err(), "only the writer publishes");
+    // Bob says he is ready; Alice sees it.
+    bob.store.draft_set_ready(id.clone(), true).unwrap();
+    deliver(&bob, &transport); sync(&alice, &transport);
+    assert_eq!(alice.store.draft_status(id.clone()).unwrap().ready, vec![bob.user.clone()]);
+    // Alice publishes: the post has the draft's words and title; Bob is told, and his ready is cleared.
+    let post = alice.store.publish_draft(transport.clone(), alice.token.clone(), id.clone(), jam.clone(), vec![], "person".into()).unwrap();
+    let published = alice.store.read_jam_post(post.clone()).unwrap().unwrap();
+    assert_eq!(published.title, "Plans");
+    assert!(published.markdown.contains("The intro paragraph."), "{:?}", published.markdown);
+    assert!(alice.store.draft_status(id.clone()).unwrap().ready.is_empty());
+    deliver(&alice, &transport); sync(&bob, &transport);
+    let st = bob.store.draft_status(id.clone()).unwrap();
+    assert_eq!(st.published_post.as_deref(), Some(post.as_str()));
+    assert_eq!(st.published_by.as_deref(), Some(alice.user.as_str()));
+    assert!(st.published_at.is_some());
+    assert!(!st.changed_since_publish, "nothing changed since");
+    // A change after the publish is marked, on both phones.
+    let block = first_block(&bob, &id);
+    bob.store.draft_insert_text(id.clone(), block, 0, "More. ".into()).unwrap();
+    assert!(bob.store.draft_status(id.clone()).unwrap().changed_since_publish);
+    allow_flush(&bob); deliver(&bob, &transport); sync(&alice, &transport);
+    assert!(alice.store.draft_status(id).unwrap().changed_since_publish);
+}
+
+#[test]
+fn a_picture_added_by_a_co_author_is_in_the_writers_published_post() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let jam = new_jam(&alice);
+    let id = shared_draft(&alice, &bob, &transport);
+    // Bob adds a picture and puts it in the text; it is uploaded once and its key goes to Alice.
+    let picture = pic(7, 20_000);
+    let number = bob.store.draft_add_file(id.clone(), picture.clone()).unwrap();
+    bob.store.draft_insert_block(id.clone(), 1, crate::drafts::DraftBlockInput { kind: "image".into(), level: 0, ordered: false, number: 0, attachment: number, caption: "Bob's picture".into(), url: String::new(), colour: String::new(), spans: vec![] }).unwrap();
+    allow_flush(&bob); deliver(&bob, &transport); sync(&alice, &transport);
+    let files = alice.store.draft_files(id.clone()).unwrap();
+    assert_eq!(files.len(), 1);
+    assert!(files[0].number == number && files[0].adder == bob.user && !files[0].held, "Alice knows of it, and has not fetched it yet");
+    assert!(alice.store.draft_markdown(id.clone()).unwrap().contains("Bob's picture"));
+    // Alice's phone fetches it (decrypted and verified), and her publish includes it as the post's first file.
+    assert_eq!(alice.store.draft_file_data(transport.clone(), alice.token.clone(), id.clone(), number).unwrap(), picture.bytes);
+    let post = alice.store.publish_draft(transport.clone(), alice.token.clone(), id.clone(), jam, vec![], "person".into()).unwrap();
+    let attached = alice.store.list_jam_attachments(post.clone()).unwrap();
+    assert_eq!(attached.len(), 1, "the picture is in the post");
+    assert_eq!(attached[0].mime, "image/jpeg");
+    let markdown = alice.store.read_jam_post(post).unwrap().unwrap().markdown;
+    assert!(markdown.contains("![Bob's picture](attachment:0)"), "the post's image block names file 0: {markdown:?}");
+    assert_eq!(bob.store.draft_files(id).unwrap().len(), 1);
 }

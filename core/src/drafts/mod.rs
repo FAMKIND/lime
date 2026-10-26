@@ -501,6 +501,22 @@ impl DraftDoc {
 
     /// The post's Markdown: the same text the editor makes today (consecutive list items are one list).
     pub fn export_markdown(&self) -> String {
+        self.export_markdown_numbered(&|n| n)
+    }
+
+    /// The attachment numbers of the image blocks, in the order they appear (a number once).
+    pub fn image_numbers(&self) -> Vec<u32> {
+        let mut out: Vec<u32> = Vec::new();
+        for b in self.blocks() {
+            if b.kind == "image" && !out.contains(&b.attachment) {
+                out.push(b.attachment);
+            }
+        }
+        out
+    }
+
+    /// `export_markdown`, with each picture's number run through `number` (a post numbers its files from 0).
+    pub fn export_markdown_numbered(&self, number: &dyn Fn(u32) -> u32) -> String {
         let mut blocks: Vec<Block> = Vec::new();
         for b in self.blocks() {
             match b.kind.as_str() {
@@ -514,7 +530,7 @@ impl DraftDoc {
                 }
                 "paragraph" => blocks.push(Block::Paragraph { spans: b.spans }),
                 "code" => blocks.push(Block::Code { text: b.spans.iter().map(|s| s.text.as_str()).collect() }),
-                "image" => blocks.push(Block::Image { caption: b.caption, attachment: b.attachment }),
+                "image" => blocks.push(Block::Image { caption: b.caption, attachment: number(b.attachment) }),
                 "quote" => blocks.push(Block::Quote { spans: b.spans }),
                 "indent" => blocks.push(Block::Indent { spans: b.spans }),
                 "divider" => blocks.push(Block::Divider),

@@ -40,6 +40,7 @@ pub(crate) mod jam;
 pub(crate) mod moderation;
 mod account;
 pub(crate) mod draft_sync;
+mod draft_publish;
 mod drafts;
 mod repair;
 pub(crate) mod message_ops;

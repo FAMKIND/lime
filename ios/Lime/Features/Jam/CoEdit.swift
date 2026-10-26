@@ -22,6 +22,18 @@ enum CaretAnchor {
     }
 }
 
+/// How a session reaches the sheet's list of files (the article's pictures by index) without owning it.
+struct CoEditFiles {
+    /// A file by its place in the sheet's list.
+    var file: (Int) -> OutgoingAttachment?
+    /// Puts a file at the end of the list; returns its place.
+    var add: (OutgoingAttachment) -> Int
+    /// Replaces the file at a place (the bytes arrived).
+    var fill: (Int, OutgoingAttachment) -> Void
+    /// The width pictures are drawn at.
+    var width: () -> CGFloat
+}
+
 /// The article editor's link to its shared draft (LIME-233c, DESIGN-22): every change in the editor is handed to LimeCore as the fewest operations, a
 /// remote author's changes come back and are drawn without moving the caret. Nothing here is a view.
 @MainActor
@@ -39,6 +51,16 @@ final class CoEditSession {
     private var lastTyped = Date.distantPast
     private var lastPresence = Date.distantPast
     private var lastFlush = Date.distantPast
+    private var lastStatus = Date.distantPast
+    /// The pictures: the editor's own numbers (places in the sheet's list) and the draft's (what every author calls the file).
+    var files: CoEditFiles?
+    private var draftNumber: [Int: UInt32] = [:]
+    private var localIndex: [UInt32: Int] = [:]
+    private var previews: [Int: UIImage] = [:]
+    private var fetching: Set<UInt32> = []
+    #if DEBUG
+    var simStatus: DraftStatus?
+    #endif
 
     init(draftID: String, store: ConversationStore) {
         self.draftID = draftID
@@ -54,7 +76,7 @@ final class CoEditSession {
         pending = Task { @MainActor [weak self, weak composer] in
             try? await Task.sleep(for: .milliseconds(120))
             guard !Task.isCancelled, let self, let view = composer?.textView else { return }
-            self.syncNow(title: title, subtitle: subtitle, markdown: ComposerDocument.markdown(from: view.textStorage, post: true))
+            self.syncNow(title: title, subtitle: subtitle, markdown: self.draftMarkdown(from: view.textStorage))
         }
     }
 
@@ -62,6 +84,81 @@ final class CoEditSession {
         pending?.cancel()
         guard store.coeditReconcile(draftID, title: title, subtitle: subtitle, markdown: markdown) else { return }
         store.sendDraftChangeInstantly(draftID)
+    }
+
+    /// The editor's text as the draft knows it: each picture goes by the number every author uses for the file (the file is added to the draft the
+    /// first time it is seen), not by its place in this phone's list.
+    func draftMarkdown(from storage: NSAttributedString) -> String {
+        let copy = NSMutableAttributedString(attributedString: storage)
+        copy.enumerateAttribute(.limeImage, in: NSRange(location: 0, length: copy.length)) { value, range, _ in
+            guard let local = value as? Int, let number = number(forLocal: local) else { return }
+            copy.addAttribute(.limeImage, value: Int(number), range: range)
+        }
+        return ComposerDocument.markdown(from: copy, post: true)
+    }
+
+    private func number(forLocal local: Int) -> UInt32? {
+        if let known = draftNumber[local] { return known }
+        guard let file = files?.file(local), !file.bytes.isEmpty, let number = store.coeditAddFile(draftID, file) else { return nil }
+        draftNumber[local] = number; localIndex[number] = local
+        return number
+    }
+
+    /// Keeps the pictures that are in the editor now, so a redraw can put them back.
+    func harvestPictures(from storage: NSAttributedString) {
+        storage.enumerateAttribute(.limeImage, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+            guard let local = value as? Int, let attachment = storage.attribute(.attachment, at: range.location, effectiveRange: nil) as? NSTextAttachment, let image = attachment.image else { return }
+            previews[local] = image
+        }
+    }
+
+    func notePicture(local: Int, image: UIImage) { previews[local] = image }
+
+    /// Post Markdown (the draft's) as editor text: pictures by this phone's numbers and drawn; pictures other authors added get a place in the list
+    /// and are fetched if this phone does not have them yet.
+    func render(markdown: String) -> NSMutableAttributedString {
+        let text = ComposerDocument.attributed(fromMarkdown: markdown, post: true)
+        var infos: [DraftFileInfo]?
+        text.enumerateAttribute(.limeImage, in: NSRange(location: 0, length: text.length)) { value, range, _ in
+            guard let number = (value as? Int).flatMap(UInt32.init(exactly:)) else { return }
+            if let local = localIndex[number] { text.addAttribute(.limeImage, value: local, range: range); return }
+            infos = infos ?? store.coeditFiles(draftID)
+            guard let info = infos?.first(where: { $0.number == number }), let files else { return }   // not a shared file: the number stands
+            let local = files.add(OutgoingAttachment(bytes: Data(), name: info.name, mime: info.mime, width: info.width, height: info.height, durationMs: info.durationMs, thumb: info.thumb, poster: info.poster))
+            draftNumber[local] = number; localIndex[number] = local
+            if let thumb = UIImage(data: info.thumb) { previews[local] = thumb }
+            fetch(number: number, local: local)
+            text.addAttribute(.limeImage, value: local, range: range)
+        }
+        ComposerDocument.attachImages(in: text, width: files?.width() ?? 300) { previews[$0] ?? Self.placeholder }
+        return text
+    }
+
+    private static let placeholder: UIImage = UIGraphicsImageRenderer(size: CGSize(width: 600, height: 360)).image { context in
+        UIColor.secondarySystemBackground.setFill()
+        UIBezierPath(roundedRect: CGRect(x: 0, y: 0, width: 600, height: 360), cornerRadius: 24).fill()
+    }
+
+    private func fetch(number: UInt32, local: Int) {
+        guard !fetching.contains(number) else { return }
+        fetching.insert(number)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { fetching.remove(number) }
+            guard let data = await store.coeditFileData(draftID, number) else { return }
+            let info = store.coeditFiles(draftID).first { $0.number == number }
+            files?.fill(local, OutgoingAttachment(bytes: data, name: info?.name ?? "", mime: info?.mime ?? "image/jpeg", width: info?.width, height: info?.height, durationMs: info?.durationMs, thumb: info?.thumb ?? Data(), poster: info?.poster ?? Data()))
+            if let image = UIImage(data: data) { previews[local] = image.preparingThumbnail(of: CGSize(width: 900, height: 900)) ?? image }
+            redrawPictures()
+        }
+    }
+
+    /// Draws the pictures again where they are (a file arrived); the text, the caret and the keyboard are not touched.
+    private func redrawPictures() {
+        guard let view = composer?.textView, view.markedTextRange == nil else { return }
+        let width = files?.width() ?? 300
+        ComposerDocument.attachImages(in: view.textStorage, width: width) { previews[$0] }
+        view.layoutManager.invalidateDisplay(forCharacterRange: NSRange(location: 0, length: view.textStorage.length))
     }
 
     /// The draft as post Markdown, after the editor's latest state was handed over.
@@ -73,13 +170,14 @@ final class CoEditSession {
         _ = store.coeditTakePatches(draftID)   // the editor is redrawn from the draft below; the patches only say it changed
         guard let markdown = store.coeditMarkdown(draftID), let meta = store.coeditMeta(draftID) else { return }
         // Nothing to draw when the editor already shows the draft (our own change coming back, a no-op).
-        guard markdown != ComposerDocument.markdown(from: view.textStorage, post: true) || meta.title != title || meta.subtitle != subtitle else { return }
+        guard markdown != draftMarkdown(from: view.textStorage) || meta.title != title || meta.subtitle != subtitle else { return }
         applyingRemote = true
         defer { applyingRemote = false }
         let before = view.text ?? ""
         let range = view.selectedRange
         let isFocused = view.isFirstResponder
-        view.attributedText = ComposerDocument.attributed(fromMarkdown: markdown, post: true)
+        harvestPictures(from: view.textStorage)
+        view.attributedText = render(markdown: markdown)
         let after = view.text ?? ""
         let start = CaretAnchor.relocate(range.location, in: before, to: after)
         let end = range.length > 0 ? CaretAnchor.relocate(range.location + range.length, in: before, to: after) : start
@@ -207,6 +305,11 @@ final class CoEditPeers {
     }
 
     private(set) var peers: [Peer] = []
+    /// Where the draft stands between its authors and the post (nil: nobody else writes it).
+    private(set) var status: DraftStatus?
+    /// A co-author's own "Ready" (so the button answers at once).
+    var iAmReady = false
+    func setStatus(_ new: DraftStatus?) { if new != status { status = new } }
     private(set) var tick = 0   // changes whenever something about the peers does, so views redraw
 
     /// The other authors, from the draft group (they are shown even before they have been seen live).
@@ -342,8 +445,12 @@ extension CoEditSession {
     /// The editor is on screen: cursors are drawn in it, my place is sent, the durable path is flushed. Safe to call again.
     func start(composer: RichComposerModel) {
         self.composer = composer
+        #if DEBUG
+        simulateRoleIfAsked()
+        #endif
         store.draftEventSink = { [weak self] event in self?.receive(event) }
         if !store.isDemo { reloadAuthors() }
+        refreshStatus()
         if let view = composer.textView, cursors == nil {
             let layer = PeerCursorLayer(frame: .zero)
             view.addSubview(layer)
@@ -371,11 +478,40 @@ extension CoEditSession {
         redrawCursors()
         let now = Date.now
         if now.timeIntervalSince(lastPresence) > 10 { sendPresence(composer, force: true) }   // a heartbeat: "I am here"
+        if now.timeIntervalSince(lastStatus) > 2 { lastStatus = now; refreshStatus() }
         if now.timeIntervalSince(lastFlush) > 5 {
             lastFlush = now
             Task { await store.flushDrafts() }
             if !store.isDemo { reloadAuthors() }
         }
+    }
+
+    /// Who publishes, who is ready, whether it was published.
+    func refreshStatus() {
+        #if DEBUG
+        if let sim = simStatus { peers.setStatus(sim); return }
+        #endif
+        guard store.coeditAuthors(draftID).count > 1 else { peers.setStatus(nil); return }
+        peers.setStatus(store.coeditStatus(draftID))
+    }
+
+    /// Co-author: "Ready" tells the writer; tapping again takes it back.
+    func toggleReady() {
+        peers.iAmReady.toggle()
+        #if DEBUG
+        if simStatus != nil { return }
+        #endif
+        store.coeditSetReady(draftID, peers.iAmReady)
+    }
+
+    /// The draft has more than one author and someone else is the writer: no Post or Update here.
+    var isCoAuthorOnly: Bool { peers.status.map { !$0.writer.isEmpty && !$0.isWriter } ?? false }
+    var isShared: Bool { peers.status.map { !$0.writer.isEmpty } ?? false }
+
+    /// The writer published or updated the post: the other authors are told.
+    func published(postID: String?) {
+        guard let postID, isShared else { return }
+        store.coeditPublished(draftID, postID: postID)
     }
 
     func redrawCursors() {
@@ -433,7 +569,7 @@ struct CoEditBar: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             let peers = session.peers.peers
-            if !peers.isEmpty {
+            if !peers.isEmpty || session.peers.status != nil {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 10) {
                         face(store.meProvider(), live: true, tone: nil, label: "You")
@@ -442,6 +578,7 @@ struct CoEditBar: View {
                         }
                         Spacer(minLength: 0)
                     }
+                    publishLine(context.date)
                     if let line = session.editingLine(now: context.date) {
                         Text(line.shown).font(Theme.caption).foregroundStyle(Theme.textSecondary)
                             .accessibilityLabel(line.spoken).accessibilityIdentifier("coedit-editing")
@@ -449,6 +586,41 @@ struct CoEditBar: View {
                 }
                 .padding(.bottom, 6)
                 .accessibilityElement(children: .contain).accessibilityIdentifier("coedit-faces")
+            }
+        }
+    }
+
+    /// Who publishes: a co-author sees "Shem publishes this article" and **Ready**; the writer sees who is ready; after a publish, who published and when,
+    /// and whether the draft has changed since.
+    @ViewBuilder private func publishLine(_ now: Date) -> some View {
+        if let status = session.peers.status, !status.writer.isEmpty {
+            let writerName = store.teacher(status.writer).name.split(separator: " ").first.map(String.init) ?? "the writer"
+            VStack(alignment: .leading, spacing: 4) {
+                if let at = status.publishedAt {
+                    let by = status.publishedBy.map { $0 == store.meProvider().id ? "you" : (store.teacher($0).name.split(separator: " ").first.map(String.init) ?? "the writer") } ?? writerName
+                    Text("Published by \(by) \u{00B7} \(Date(timeIntervalSince1970: Double(at) / 1000).formatted(.dateTime.month(.abbreviated).day().hour().minute()))").font(Theme.caption).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("coedit-published")
+                    if status.changedSincePublish {
+                        Text("Changes since the last publish").font(Theme.caption.weight(.semibold)).foregroundStyle(Theme.text).accessibilityIdentifier("coedit-changes")
+                    }
+                } else if status.isWriter {
+                    let names = status.ready.map { store.teacher($0).name.split(separator: " ").first.map(String.init) ?? "" }
+                    if !names.isEmpty {
+                        Text("\(names.joined(separator: " and ")) \(names.count == 1 ? "is" : "are") ready").font(Theme.caption.weight(.semibold)).foregroundStyle(Theme.text).accessibilityIdentifier("coedit-ready-list")
+                    }
+                }
+                if !status.isWriter && status.publishedAt == nil {
+                    HStack(spacing: 10) {
+                        Text("\(writerName) publishes this article").font(Theme.caption).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("coedit-publishes")
+                        Button { session.toggleReady() } label: {
+                            Text(session.peers.iAmReady ? "Ready \u{2713}" : "Ready").font(Theme.font(.footnote, weight: .semibold))
+                                .padding(.horizontal, 14).frame(minHeight: 44)
+                                .background(Capsule().strokeBorder(Theme.hairline, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain).foregroundStyle(Theme.text)
+                        .accessibilityLabel(session.peers.iAmReady ? "Ready, tell \(writerName) you are not" : "Ready").accessibilityHint("Tells \(writerName) you are done")
+                        .accessibilityIdentifier("coedit-ready")
+                    }
+                }
             }
         }
     }
@@ -471,6 +643,24 @@ struct CoEditBar: View {
 
 #if DEBUG
 extension CoEditSession {
+    /// Tests only (demo runs): `-lime-coedit-sim-coauthor` makes the draft Shem's, so this author is a co-author; `-lime-coedit-sim-published` has Shem publish
+    /// it a few seconds later.
+    func simulateRoleIfAsked() {
+        guard store.isDemo, simStatus == nil, ProcessInfo.processInfo.arguments.contains("-lime-coedit-sim-coauthor") else { return }
+        simStatus = DraftStatus(writer: "sim-shem", isWriter: false, ready: [], publishedPost: nil, publishedAt: nil, publishedBy: nil, changedSincePublish: false)
+        peers.setStatus(simStatus)
+        if ProcessInfo.processInfo.arguments.contains("-lime-coedit-sim-published") {
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(8))
+                self?.simStatus = DraftStatus(writer: "sim-shem", isWriter: false, ready: [], publishedPost: "p1", publishedAt: Int64(Date().timeIntervalSince1970 * 1000), publishedBy: "sim-shem", changedSincePublish: false)
+                self?.peers.setStatus(self?.simStatus)
+                try? await Task.sleep(for: .seconds(8))
+                self?.simStatus?.changedSincePublish = true
+                self?.peers.setStatus(self?.simStatus)
+            }
+        }
+    }
+
     /// Tests only (demo runs): another author, "Jean", is in the draft with her caret three letters into the first block, typing.
     func simulatePeer(step: Int = 0) {
         let jean = Person(id: "sim-jean", name: "Jean Park", tone: 4)
