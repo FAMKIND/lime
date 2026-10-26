@@ -171,7 +171,8 @@ final class ChatTests: XCTestCase {
         func startReset(identifier: String) async throws { throw unused }
         func finishReset(identifier: String, code: String, newPassword: String) async throws -> AuthTokens { throw unused }
         func startAccountDeletion(password: String, tokens: AuthTokens) async throws {}
-        func deleteAccount(password: String, code: String, tokens: AuthTokens) async throws {}
+        func deleteAccount(password: String, code: String, tokens: AuthTokens) async throws -> String { "" }
+        func confirmAccountDeletion(token: String, step: String, tokens: AuthTokens) async throws {}
         func startPasswordChange(current: String, tokens: AuthTokens) async throws { throw unused }
         func finishPasswordChange(code: String, newPassword: String, tokens: AuthTokens) async throws -> AuthTokens { throw unused }
         func saveProfile(_ draft: ProfileDraft, tokens: AuthTokens) async throws -> Profile { throw unused }

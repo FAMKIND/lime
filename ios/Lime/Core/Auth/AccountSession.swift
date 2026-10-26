@@ -317,13 +317,16 @@ final class AccountSession {
         try await auth.startAccountDeletion(password: password, tokens: try await currentTokens())
     }
 
-    /// Step two (LIME-113): the phone tells the people it can still reach (contacts, groups, subscribers), then the server deletes the account, then this
-    /// phone forgets everything and returns to the welcome screen.
+    /// Step two (LIME-113c): the server checks the password and the code and marks the account "deleting" (a refusal here sends nothing to anyone).
+    /// Then the phone sends the quiet notices, tells the server, and the server deletes. Whatever happens after the mark, this phone forgets everything
+    /// and returns to the welcome screen: the account can no longer sign in, and the server finishes the deletion by itself if a step is lost.
     func deleteAccount(password: String, code: String) async throws {
         guard let auth else { throw AuthError.network }
         let tokens = try await currentTokens()
-        await store.windDownAccount()
-        try await auth.deleteAccount(password: password, code: code, tokens: tokens)
+        let token = try await auth.deleteAccount(password: password, code: code, tokens: tokens)
+        await store.sendAccountDeletedNotices()
+        try? await auth.confirmAccountDeletion(token: token, step: "notices", tokens: tokens)
+        try? await auth.confirmAccountDeletion(token: token, step: "delete", tokens: tokens)
         await signOut()
     }
 

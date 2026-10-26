@@ -65,9 +65,22 @@ Deno.test("deleting an account removes everything of it, nothing of anyone else'
     assertEquals((await call("account-delete", a.token, { password: "nope", code })).status, 401);
     assertEquals((await call("account-delete", a.token, { password: a.password, code: "000000" })).status, 400);
     assertEquals(await rows("profiles", "user_id", a.id), 1, "nothing was deleted by the refusals");
+    assertEquals(await rows("account_suspensions", "user_id", a.id), 0, "and nothing was marked");
 
+    // Step two only MARKS the account and hands over a token (LIME-113c): nothing is deleted yet, every other call is refused.
     const done = await call("account-delete", a.token, { password: a.password, code });
     assertEquals(done.status, 200, JSON.stringify(done.body));
+    const token = done.body.token as string;
+    assert(token && token.length >= 32);
+    assertEquals(await rows("profiles", "user_id", a.id), 1, "not deleted yet");
+    const refused = await call("profile-get", a.token, {});
+    assertEquals([refused.status, refused.body.error], [403, "suspended"], "the account is refused while it is being deleted");
+    assertEquals((await call("account-delete-confirm", a.token, { token: "wrong", step: "delete" })).status, 403, "a wrong token does nothing");
+    assertEquals(await rows("profiles", "user_id", a.id), 1);
+    assertEquals((await call("account-delete-confirm", b.token, { token, step: "delete" })).status, 403, "someone else's token does nothing");
+    assertEquals((await call("account-delete-confirm", a.token, { token, step: "notices" })).status, 200);
+    assertEquals(await rows("profiles", "user_id", a.id), 1, "the notices step deletes nothing");
+    assertEquals((await call("account-delete-confirm", a.token, { token, step: "delete" })).status, 200);
 
     for (const [table, column] of [["profiles", "user_id"], ["devices", "user_id"], ["master_keys", "user_id"], ["blobs", "owner"], ["jams", "writer_id"], ["moderation_reports", "reporter"], ["auth_proofs", "user_id"]]) {
       assertEquals(await rows(table, column, a.id), 0, `${table} of the deleted account is gone`);
@@ -109,3 +122,40 @@ async function hash(text: string): Promise<string> {
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
   return Array.from(digest, (x) => x.toString(16).padStart(2, "0")).join("");
 }
+
+async function markDeleting(user: TestUser): Promise<string> {
+  const token = "t" + crypto.randomUUID();
+  await admin.from("account_suspensions").upsert({ user_id: user.id, reason: "deleting" });
+  await admin.from("account_deletions").upsert({ user_id: user.id, token_hash: await hash(token), started_at: new Date().toISOString(), notices_sent_at: null });
+  return token;
+}
+
+async function sweep() {
+  const { data } = await admin.from("sweep_target").select("secret").eq("id", 1).maybeSingle();
+  assert(data, "the local stack has a sweep secret");
+  const res = await fetch(API_URL + "/functions/v1/blob-sweep", { method: "POST", headers: { "x-sweep-secret": data!.secret, apikey: ANON_KEY } });
+  await res.body?.cancel();
+  assertEquals(res.status, 200);
+}
+
+Deno.test("an unconfirmed deletion is finished by the sweep: 10 minutes after the notices, or 24 hours after the start", opts, async () => {
+  const [fresh, noticed, old] = await Promise.all([userWithPassword(), userWithPassword(), userWithPassword()]);
+  try {
+    for (const u of [fresh, noticed, old]) {
+      await admin.from("profiles").insert({ user_id: u.id, display_name: "X" });
+      await markDeleting(u);
+    }
+    await admin.from("account_deletions").update({ notices_sent_at: new Date(Date.now() - 5 * 60_000).toISOString() }).eq("user_id", fresh.id);
+    await admin.from("account_deletions").update({ notices_sent_at: new Date(Date.now() - 11 * 60_000).toISOString() }).eq("user_id", noticed.id);
+    await admin.from("account_deletions").update({ started_at: new Date(Date.now() - 25 * 3600_000).toISOString() }).eq("user_id", old.id);
+    await sweep();
+    assertEquals(await rows("profiles", "user_id", fresh.id), 1, "5 minutes after the notices: not yet");
+    assertEquals(await rows("profiles", "user_id", noticed.id), 0, "11 minutes after the notices: finished");
+    assertEquals(await rows("profiles", "user_id", old.id), 0, "24 hours after the start, notices or not: finished");
+  } finally {
+    for (const u of [fresh, noticed, old]) {
+      await admin.auth.admin.deleteUser(u.id).catch(() => {});
+      await admin.from("deleted_accounts").delete().eq("id_hash", await hash(u.id));
+    }
+  }
+});

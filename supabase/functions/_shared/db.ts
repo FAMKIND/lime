@@ -52,20 +52,28 @@ export async function isVerified(sessionId: string): Promise<boolean> {
  * The signed-in user, from a **verified** session only (a password and an emailed code). A session
  * that passed only one of them can do nothing: this is how the server enforces the two steps.
  */
-export async function requireUser(req: Request): Promise<string> {
+export async function requireUser(req: Request, options: { allowDeleting?: boolean } = {}): Promise<string> {
   const session = await requireSession(req);
   if (!(await isVerified(session.sessionId))) {
     throw new HttpError(403, "not_verified", "Finish signing in: this session has not passed both steps.");
   }
-  await refuseIfSuspended(session.userId);
+  await refuseIfSuspended(session.userId, options.allowDeleting === true);
   return session.userId;
 }
 
-/** A suspended account (LIME-191) can do nothing with a session: "This account is suspended" (403, `suspended`). */
-export async function refuseIfSuspended(userId: string): Promise<void> {
-  const { data, error } = await admin().from("account_suspensions").select("user_id").eq("user_id", userId).maybeSingle();
+/**
+ * A suspended account (LIME-191) can do nothing with a session: "This account is suspended" (403, `suspended`). An account that is being deleted
+ * (LIME-113c, reason `deleting`) is refused the same way, except by `account-delete-confirm`, which passes `allowDeleting`.
+ */
+export async function refuseIfSuspended(userId: string, allowDeleting = false): Promise<void> {
+  const { data, error } = await admin().from("account_suspensions").select("reason").eq("user_id", userId).maybeSingle();
   if (error) throw new HttpError(500, "internal");
-  if (data) throw new HttpError(403, "suspended", "This account is suspended.");
+  if (!data) return;
+  if (data.reason === "deleting") {
+    if (allowDeleting) return;
+    throw new HttpError(403, "suspended", "This account is being deleted.");
+  }
+  throw new HttpError(403, "suspended", "This account is suspended.");
 }
 
 /** The caller's own, non-revoked device. */

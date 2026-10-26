@@ -728,13 +728,6 @@ struct ChatView: View {
                              onForward: { actions.requestForward(conversation.messages.filter { selection.contains($0.id) }, store: store) })
             } else if conversation.isRequest { requestBar(conversation) }
             else if let ended = conversation.groupEnded { endedBar(conversation, ended) }
-            else if !conversation.isGroup, let peer = conversation.members.first, store.deletedPeers.contains(peer.id) {
-                // They deleted their account (LIME-113): nothing can be sent.
-                Text("This account was deleted. You can\u{2019}t send messages here.")
-                    .font(Theme.secondary).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity, minHeight: 52).padding(.horizontal, 16)
-                    .accessibilityIdentifier("chat-deleted-account")
-            }
             else { composer(conversation) }
         }
     }

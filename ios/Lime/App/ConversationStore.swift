@@ -877,6 +877,8 @@ final class ConversationStore {
     func sendNow(_ text: String, in id: Conversation.ID) async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        // A person whose account was deleted just stops (LIME-113c): one quiet line, nothing is queued.
+        if id.hasPrefix("dm:"), deletedPeers.contains(String(id.dropFirst(3))) { showBanner("You can\u{2019}t message this person."); return }
         #if DEBUG
         if isDemo { demoSend(trimmed, in: id); return }
         #endif
@@ -992,8 +994,8 @@ final class ConversationStore {
         case "requests": path.append(MessagesRoute.requests)
         case "request-chat": path.append(MessagesRoute.requests); path.append("dm:ada")
         case "chat": path.append("dm:sam")
-        case "chat-deleted-account":
-            // Sam deleted his account (LIME-113): the chat says so and cannot be written in.
+        case "chat-deleted-person":
+            // Sam deleted his account (LIME-113c): the chat looks like any old chat; sending shows one quiet line.
             deletedPeers = ["sam"]
             path.append("dm:sam")
         case let name? where name == "chat-long" || name.hasPrefix("chat-long-"):

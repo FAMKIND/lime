@@ -6465,33 +6465,66 @@ fn a_send_whose_answer_was_lost_is_a_new_message_not_a_second_ciphertext_at_the_
     assert!(conversation_works(&alice, &bob, &transport, "after"), "messages flow afterwards: pending bob [{}] alice [{}]", bob.store.pending_summary().unwrap(), alice.store.pending_summary().unwrap());
 }
 
-// LIME-113: deleting an account.
+// LIME-113c: a deleted account goes quietly.
 #[test]
-fn a_deleted_account_tells_its_contacts_and_their_chat_becomes_read_only() {
+fn a_deleted_account_goes_quietly_from_chats_groups_jams_and_credits() {
     let server = FakeServer::new();
     let (alice, transport) = party(&server, "alice", 1);
     let (bob, _) = party(&server, "bob", 2);
     let (carol, _) = party(&server, "carol", 3);
     befriend(&alice, &bob, &transport);
     befriend(&alice, &carol, &transport);
-    alice.store.create_jam("Ann's jam".into(), "".into(), vec![]).unwrap();
+    befriend(&bob, &carol, &transport);
     say(&bob, &alice, &transport, "see you tomorrow");
     sync(&alice, &transport);
-    assert_eq!(alice.store.wind_down_account(transport.clone(), alice.token.clone()).unwrap(), 0, "everything could be done");
-    assert!(alice.store.list_my_jams().unwrap().iter().all(|j| j.ended), "her jam ended");
+    // A group of the three, and (on Bob's phone) what Alice left behind in jam: her jam and post, a post of Carol's she is credited on, a comment, a like.
+    bob.store.create_group("Grade 4 Team".into(), None, vec![alice.user.clone(), carol.user.clone()]).unwrap();
+    deliver(&bob, &transport);
+    sync(&alice, &transport);
+    sync(&carol, &transport);
+    {
+        let conn = bob.store.lock();
+        conn.execute_batch(
+            "INSERT INTO jams (jam_id, writer, title, status, created) VALUES ('j-alice', 'alice', 'Ann''s jam', 'active', 1), ('j-carol', 'carol', 'Cy''s jam', 'active', 1);
+             INSERT INTO jam_posts (post_id, jam_id, author, session_id, idx, tier, title, markdown, plain, created) VALUES
+               ('p-alice', 'j-alice', 'alice', 's', 0, 'free', 'Hers', 'x', 'x', 1),
+               ('p-co', 'j-carol', 'carol', 's', 0, 'free', 'Together', 'x', 'x', 2);
+             INSERT INTO jam_credits (post_id, user_id, state) VALUES ('p-co', 'alice', 'accepted'), ('p-co', 'bob', 'accepted');
+             INSERT INTO jam_comments (comment_id, post_id, jam_id, author, text, created) VALUES ('c1', 'p-co', 'j-carol', 'alice', 'nice', 3), ('c2', 'p-co', 'j-carol', 'carol', 'thanks', 4);
+             INSERT INTO jam_reactions (post_id, user_id, at) VALUES ('p-co', 'alice', 5), ('p-co', 'carol', 6);",
+        )
+        .unwrap();
+    }
+    let before_group: Vec<String> = bob.store.list_messages(group_chat(&bob).unwrap().id).unwrap().into_iter().map(|m| m.text).collect();
+    assert_eq!(alice.store.send_account_deleted_notices(transport.clone(), alice.token.clone()).unwrap(), 0, "everything could be done");
     for other in [&bob, &carol] {
         sync(other, &transport);
-        let shown = other.store.list_messages(format!("dm:{}", alice.user)).unwrap();
-        assert!(shown.iter().any(|m| m.local_state == "system" && m.text == "This account was deleted"), "{} sees the line: {:?}", other.user, shown.iter().map(|m| m.text.clone()).collect::<Vec<_>>());
         assert_eq!(other.store.deleted_peers().unwrap(), vec![alice.user.clone()]);
-        let sent = other.store.send_text_identified(transport.clone(), other.token.clone(), alice.user.clone(), "are you there?".into());
-        assert!(sent.is_err(), "sending to a deleted account is turned off");
     }
-    // Nothing else changed: Bob and Carol still talk to each other.
-    befriend(&bob, &carol, &transport);
-    say(&bob, &carol, &transport, "still fine");
-    sync(&carol, &transport);
-    assert!(texts(&carol, &bob).iter().any(|t| t == "still fine"));
-    // And no more keys are shared with the deleted account.
-    assert!(!crate::store::delivery::accepted_peers(&bob.store.lock()).unwrap().contains(&alice.user));
+    // The 1:1 chat stays, unchanged: no new line, nothing announced; sending is refused.
+    let shown = bob.store.list_messages(format!("dm:{}", alice.user)).unwrap();
+    assert!(shown.iter().all(|m| m.local_state != "system"), "no system line: {:?}", shown.iter().map(|m| m.text.clone()).collect::<Vec<_>>());
+    assert!(shown.iter().any(|m| m.text == "see you tomorrow"), "the old messages stay");
+    assert!(bob.store.send_text_identified(transport.clone(), bob.token.clone(), alice.user.clone(), "are you there?".into()).is_err(), "a send is refused");
+    // Groups: she is gone from the list, and no 'left' line is left behind.
+    let group = group_chat(&bob).unwrap();
+    assert!(bob.store.group_details(group.id.clone()).unwrap().members.iter().all(|m| m.user_id != alice.user), "gone from the member list");
+    let after_group: Vec<String> = bob.store.list_messages(group.id.clone()).unwrap().into_iter().map(|m| m.text).collect();
+    assert!(after_group.iter().all(|t| !t.contains("left") && !t.contains("deleted")), "no line about it: {after_group:?}");
+    assert!(after_group.len() <= before_group.len(), "and nothing was added");
+    // Jam: her jam and post are gone; the co-authored post stays with its other authors; her comment and like are gone, others' stay.
+    let conn = bob.store.lock();
+    let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
+    assert_eq!(count("SELECT COUNT(*) FROM jams WHERE writer = 'alice'"), 0);
+    assert_eq!(count("SELECT COUNT(*) FROM jam_posts WHERE author = 'alice'"), 0);
+    assert_eq!(count("SELECT COUNT(*) FROM jam_posts WHERE post_id = 'p-co'"), 1, "the co-authored post stays");
+    assert_eq!(count("SELECT COUNT(*) FROM jam_credits WHERE post_id = 'p-co' AND user_id = 'alice'"), 0, "her credit is removed");
+    assert_eq!(count("SELECT COUNT(*) FROM jam_credits WHERE post_id = 'p-co' AND user_id = 'bob'"), 1, "the other author shows alone");
+    assert_eq!(count("SELECT COUNT(*) FROM jam_comments WHERE author = 'alice'"), 0);
+    assert_eq!(count("SELECT COUNT(*) FROM jam_comments WHERE author = 'carol'"), 1);
+    assert_eq!(count("SELECT COUNT(*) FROM jam_reactions WHERE user_id = 'alice'"), 0);
+    assert_eq!(count("SELECT COUNT(*) FROM jam_reactions WHERE user_id = 'carol'"), 1);
+    // Her keys are dropped and nothing more is shared with her.
+    assert_eq!(count("SELECT COUNT(*) FROM contact_delivery_keys WHERE user_id = 'alice'") + count("SELECT COUNT(*) FROM olm_sessions WHERE peer_user_id = 'alice'"), 0);
+    assert!(!crate::store::delivery::accepted_peers(&conn).unwrap().contains(&alice.user));
 }

@@ -74,10 +74,13 @@ actor FakeAuthService: AuthService {
         attempts = 0
     }
 
-    func deleteAccount(password: String, code: String, tokens: AuthTokens) async throws {
+    func deleteAccount(password: String, code: String, tokens: AuthTokens) async throws -> String {
         guard password == Self.password else { throw AuthError.invalidCredentials }
         try check(code)
+        return "fake-deletion-token"
     }
+
+    func confirmAccountDeletion(token: String, step: String, tokens: AuthTokens) async throws {}
 
     func saveProfile(_ draft: ProfileDraft, tokens: AuthTokens) async throws -> Profile {
         if draft.username?.lowercased() == "taken" { throw AuthError.usernameTaken }

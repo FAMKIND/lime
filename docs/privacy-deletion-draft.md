@@ -13,7 +13,9 @@ You can delete your lime account at any time in the app: Settings, Account, Dele
 - Your username, for 30 days, so that nobody else can take it and pretend to be you. After that it is free.
 - Reports other people made about you, if any, for up to 180 days after they were handled (see *Reports and safety*). Where the law requires us to keep something (for example a report of child sexual abuse material made to the National Center for Missing & Exploited Children), we keep what the law requires. [LAWYER: confirm the wording and the retention period.]
 
-**What we cannot delete.** Messages, photos and files you sent are end-to-end encrypted and are stored on the phones of the people you sent them to, not on our servers. We cannot reach into their phones. They stay there unless those people delete them. We tell your contacts, privately, that you deleted your account, so their chat with you says so and they cannot send you messages.
+**What we cannot delete.** Messages, photos and files you sent are end-to-end encrypted and are stored on the phones of the people you sent them to, not on our servers. We cannot reach into their phones, so messages you already sent stay in their chats unless they delete them. When you delete your account the app sends your contacts, group members and jam subscribers one private, encrypted note; their apps then quietly remove you: your picture and details, your jam and its posts, your comments and likes, and your name on shared posts. Nothing is announced to them. A phone that is offline gets the note when it next connects; a phone that never connects again keeps what it has.
+
+**Order of events.** After you enter your password and the emailed code, your account is closed to sign-in at once; your app then sends the note, and our servers delete the account. If your app cannot finish, our servers finish the deletion by themselves within 24 hours.
 
 **Your email address** can be used to sign up again right away. It is not kept after deletion.
 

@@ -1,4 +1,5 @@
-// POST account-delete { password, code } -> { ok }: deletes the account (LIME-113, App Store rule 5.1.1(v)). Needs a verified session, the password
+// POST account-delete { password, code } -> { token }: step two of deleting the account (LIME-113, App Store rule 5.1.1(v)); it only MARKS it as "deleting"
+// (LIME-113c) and returns a one-time token for account-delete-confirm. Needs a verified session, the password
 // (checked with Supabase Auth) and the emailed code from account-delete-start (5 wrong tries, then locked).
 //
 // Deleted: the auth user and its sessions, the profile and its Everyone objects (photo, links, background, background video), contacts-only and
@@ -9,11 +10,7 @@
 // Nothing here logs the user id, the email or the password.
 import { admin, accountConfig, rateLimit, requireUser } from "../_shared/db.ts";
 import { CODE_PATTERN, authCall, MAX_CODE_ATTEMPTS, sha256Hex } from "../_shared/auth.ts";
-import { chunkPath, listChunks } from "../_shared/attachments.ts";
 import { handler, HttpError, json, readJson } from "../_shared/http.ts";
-import { AVATAR_BUCKET, BLOB_BUCKET, removeObject } from "../_shared/storage.ts";
-
-const AVATAR_OBJECTS = (u: string) => [`${u}.jpg`, `${u}-links.json`, `${u}-background.jpg`, `${u}-background.mp4`];
 
 Deno.serve(handler(async (req) => {
   const userId = await requireUser(req);
@@ -35,25 +32,12 @@ Deno.serve(handler(async (req) => {
   const checked = await authCall("/verify", { type: "email", email, token: body.code });
   if (checked.status !== 200) throw new HttpError(400, "bad_code", `That code is not right. ${MAX_CODE_ATTEMPTS - attempts} tries left.`);
 
-  // 1. Storage first (the rows that name the objects go with the auth user afterwards). Safe to repeat.
-  for (const name of AVATAR_OBJECTS(userId)) await removeObject(AVATAR_BUCKET, name);
-  for (let page = 0; page < 20; page++) {
-    const { data: blobs } = await db.from("blobs").select("id").eq("owner", userId).limit(500);
-    if (!blobs || blobs.length === 0) break;
-    for (const row of blobs) {
-      await removeObject(BLOB_BUCKET, row.id);
-      await db.from("blobs").delete().eq("id", row.id);
-    }
-  }
-  const { data: attachments } = await db.from("attachments").select("id").eq("owner", userId).limit(5000);
-  for (const row of attachments ?? []) {
-    for (const n of (await listChunks(row.id)).keys()) await removeObject(BLOB_BUCKET, chunkPath(row.id, n));
-  }
-  // 2. The username hold, the log row, what does not cascade.
-  const { error: rowsError } = await db.rpc("delete_account_rows", { p_user: userId, p_hash: await sha256Hex(userId) });
-  if (rowsError) throw new HttpError(500, "internal");
-  // 3. The account itself: its sessions end and its rows cascade.
-  const { error: deleteError } = await db.auth.admin.deleteUser(userId);
-  if (deleteError) throw new HttpError(500, "internal");
-  return json({ ok: true });
+  // The checks passed: the account is marked "deleting" (sign-in and every call but the confirm are refused) and the phone gets a one-time token.
+  // Nothing is deleted yet; the phone sends its quiet notices first (LIME-113c).
+  const token = Array.from(crypto.getRandomValues(new Uint8Array(24)), (b) => b.toString(16).padStart(2, "0")).join("");
+  const { error: markError } = await db.from("account_suspensions").upsert({ user_id: userId, reason: "deleting", created_by: null });
+  if (markError) throw new HttpError(500, "internal");
+  const { error: tokenError } = await db.from("account_deletions").upsert({ user_id: userId, token_hash: await sha256Hex(token), started_at: new Date().toISOString(), notices_sent_at: null });
+  if (tokenError) throw new HttpError(500, "internal");
+  return json({ token });
 }));

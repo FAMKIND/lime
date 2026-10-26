@@ -1732,19 +1732,8 @@ impl LimeStore {
                 return Ok(Some(Stored::Control));
             }
             if is_account_deleted {
-                // They deleted their account: this chat is read-only from now on, with a line saying so. Only for a chat that exists (a stranger's
-                // op does not create one) and never for a sealed sender we have not pinned (checked above).
-                let has_chat: bool = conn.query_row("SELECT EXISTS (SELECT 1 FROM conversations WHERE id = ?1)", params![format!("dm:{sender}")], |r| r.get(0)).map_err(db_err)?;
-                if has_chat {
-                    conn.execute("INSERT OR REPLACE INTO deleted_peers (user_id, deleted_at) VALUES (?1, ?2)", params![sender, now]).map_err(db_err)?;
-                    conn.execute(
-                        "INSERT OR REPLACE INTO messages (id, conversation_id, sender_id, body, sent_at, local_state, op_id, hlc, parents, plain)
-                         VALUES (?1, ?2, ?3, ?4, ?5, 'system', NULL, ?6, '[]', '')",
-                        params![format!("sys:deleted:{sender}"), format!("dm:{sender}"), sender, json!({ "e": "account_deleted", "by": sender }).to_string(), remote_hlc.wall, remote_hlc.render()],
-                    )
-                    .map_err(db_err)?;
-                    delivery::dequeue_share(conn, &sender)?;
-                }
+                // They deleted their account: it simply goes (LIME-113c). Nothing is announced or shown; what this phone holds of them is dropped.
+                crate::client::account::purge_deleted_person(conn, &sender, now)?;
                 return Ok(Some(Stored::Control));
             }
             if is_decryption_error {

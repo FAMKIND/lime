@@ -209,7 +209,8 @@ struct NoBackendAuthService: AuthService {
     func startPasswordChange(current: String, tokens: AuthTokens) async throws { throw unavailable }
     func finishPasswordChange(code: String, newPassword: String, tokens: AuthTokens) async throws -> AuthTokens { throw unavailable }
     func startAccountDeletion(password: String, tokens: AuthTokens) async throws { throw unavailable }
-    func deleteAccount(password: String, code: String, tokens: AuthTokens) async throws { throw unavailable }
+    func deleteAccount(password: String, code: String, tokens: AuthTokens) async throws -> String { throw unavailable }
+    func confirmAccountDeletion(token: String, step: String, tokens: AuthTokens) async throws { throw unavailable }
     func saveProfile(_ draft: ProfileDraft, tokens: AuthTokens) async throws -> Profile { throw unavailable }
     func loadProfile(tokens: AuthTokens) async throws -> Profile? { throw unavailable }
     func refresh(_ tokens: AuthTokens) async throws -> AuthTokens { throw unavailable }

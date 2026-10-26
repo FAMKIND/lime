@@ -6,6 +6,7 @@ import { admin } from "../_shared/db.ts";
 import { handler, HttpError, json } from "../_shared/http.ts";
 import { BLOB_BUCKET, removeObject } from "../_shared/storage.ts";
 import { chunkPath } from "../_shared/attachments.ts";
+import { deleteAccountNow } from "../_shared/accountDeletion.ts";
 
 function sameText(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -27,6 +28,15 @@ Deno.serve(handler(async (req) => {
   await db.rpc("sweep_moderation");
   // Deleted accounts' usernames are free again after their 30 days (LIME-113).
   await db.rpc("sweep_held_usernames");
+  // Accounts marked "deleting" whose confirm never came are finished here (LIME-113c).
+  const { data: due } = await db.rpc("deleting_accounts_due");
+  for (const row of (due ?? []) as { user_id: string }[]) {
+    try {
+      await deleteAccountNow(row.user_id);
+    } catch {
+      // Tried again at the next sweep.
+    }
+  }
 
   const now = new Date().toISOString();
   const dayAgo = new Date(Date.now() - 86_400_000).toISOString();

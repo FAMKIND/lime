@@ -40,11 +40,17 @@ final class Delete113UITests: LimeUITestCase {
         XCTAssertTrue(app.buttons["welcome-continue"].waitForExistence(timeout: 15), "back at the welcome screen")
     }
 
-    func testAChatWithADeletedAccountSaysSoAndHasNoComposer() {
+    func testAChatWithADeletedPersonLooksLikeAnyOldChatAndSendingShowsOneQuietLine() {
         let app = XCUIApplication()
-        app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-screen", "chat-deleted-account"]
+        app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-screen", "chat-deleted-person"]
         app.launch()
-        XCTAssertTrue(app.descendants(matching: .any)["chat-deleted-account"].waitForExistence(timeout: 10))
-        XCTAssertFalse(app.textViews["composer-field"].exists, "nothing can be written")
+        let field = app.textViews["composer-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "the composer stays")
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'deleted'")).firstMatch.exists, "nothing announces it")
+        XCTAssertFalse(app.descendants(matching: .any)["chat-deleted-account"].exists)
+        field.tap(); field.typeText("are you there?")
+        app.buttons["send-button"].tap()
+        XCTAssertTrue(app.staticTexts["You can\u{2019}t message this person."].waitForExistence(timeout: 5), "one quiet line")
+        XCTAssertFalse(app.staticTexts["are you there?"].exists, "nothing was sent")
     }
 }
