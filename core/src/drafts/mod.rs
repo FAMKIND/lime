@@ -527,6 +527,118 @@ impl DraftDoc {
         format::serialize_post(&blocks)
     }
 
+
+    // ------------------------------------------------------------------------------------------- the editor's view
+
+    fn list_start_of(&self, id: &str) -> bool {
+        self.index_of(id).and_then(|i| self.block_obj(i)).is_some_and(|o| self.get_bool(&o, "list_start"))
+    }
+
+    /// Makes the draft say what the editor now shows (as post Markdown), with the **fewest operations**: blocks that did not change are left alone, a
+    /// changed block gets only the characters, styles and settings that differ. This is how the article editor, which still works on its own text,
+    /// feeds the shared draft: one typed letter is one small insert, so other authors' edits to the same paragraph merge instead of being replaced.
+    pub fn reconcile(&mut self, markdown: &str) -> Result<(), StoreError> {
+        if markdown.len() > MAX_DRAFT_BYTES {
+            return Err(StoreError::Rejected);
+        }
+        let mut wanted: Vec<(DraftBlockInput, bool)> = Vec::new();
+        for block in format::parse_post(markdown) {
+            for (n, mut input) in inputs_of(block).into_iter().enumerate() {
+                input.spans = merge_spans(input.spans);
+                wanted.push((input, n == 0));
+            }
+        }
+        let old: Vec<(DraftBlock, bool)> = self.blocks().into_iter().map(|b| { let start = self.list_start_of(&b.id); (b, start) }).collect();
+        let same = |o: &(DraftBlock, bool), w: &(DraftBlockInput, bool)| {
+            let (ob, os, wb, ws) = (&o.0, o.1, &w.0, w.1);
+            (ob.kind.as_str(), ob.level, ob.ordered, ob.number, ob.attachment, ob.caption.as_str(), ob.url.as_str(), ob.colour.as_str(), &ob.spans)
+                == (wb.kind.as_str(), wb.level, wb.ordered, wb.number, wb.attachment, wb.caption.as_str(), wb.url.as_str(), wb.colour.as_str(), &wb.spans)
+                && (ob.kind != "item" || os == ws)
+        };
+        let mut prefix = 0;
+        while prefix < old.len() && prefix < wanted.len() && same(&old[prefix], &wanted[prefix]) {
+            prefix += 1;
+        }
+        let mut suffix = 0;
+        while suffix < old.len() - prefix && suffix < wanted.len() - prefix && same(&old[old.len() - 1 - suffix], &wanted[wanted.len() - 1 - suffix]) {
+            suffix += 1;
+        }
+        let old_mid: Vec<&(DraftBlock, bool)> = old[prefix..old.len() - suffix].iter().collect();
+        let new_mid: Vec<&(DraftBlockInput, bool)> = wanted[prefix..wanted.len() - suffix].iter().collect();
+        let paired = old_mid.len().min(new_mid.len());
+        for i in 0..paired {
+            self.update_block(&old_mid[i].0, old_mid[i].1, new_mid[i])?;
+        }
+        for extra in &old_mid[paired..] {
+            self.delete_block(&extra.0.id)?;
+        }
+        for (i, extra) in new_mid[paired..].iter().enumerate() {
+            let adding: usize = extra.0.spans.iter().map(|s| s.text.len()).sum();
+            self.check_room(adding)?;
+            let id = uuid::Uuid::new_v4().simple().to_string();
+            self.write_block(prefix + paired + i, &id, &extra.0, extra.1)?;
+        }
+        Ok(())
+    }
+
+    fn update_block(&mut self, old: &DraftBlock, old_start: bool, new: &(DraftBlockInput, bool)) -> Result<(), StoreError> {
+        let (input, start) = (&new.0, new.1);
+        let block = self.block_for(&old.id)?;
+        // Settings.
+        if (old.kind.as_str(), old.level, old.ordered, old.number) != (input.kind.as_str(), input.level, input.ordered, input.number) {
+            self.set_block_kind(&old.id, &input.kind, input.level, input.ordered, input.number)?;
+        }
+        if (old.attachment, old.caption.as_str(), old.url.as_str(), old.colour.as_str()) != (input.attachment, input.caption.as_str(), input.url.as_str(), input.colour.as_str()) {
+            self.set_block_attrs(&old.id, &input.url, &input.caption, &input.colour, input.attachment)?;
+        }
+        if old_start != start {
+            self.doc.put(&block, "list_start", start).map_err(bad)?;
+        }
+        // Characters: only the middle that differs.
+        let a: Vec<char> = old.spans.iter().flat_map(|s| s.text.chars()).collect();
+        let z: Vec<char> = input.spans.iter().flat_map(|s| s.text.chars()).collect();
+        if a != z {
+            let prefix = a.iter().zip(&z).take_while(|(x, y)| x == y).count();
+            let suffix = a[prefix..].iter().rev().zip(z[prefix..].iter().rev()).take_while(|(x, y)| x == y).count();
+            let removed = a.len() - prefix - suffix;
+            if removed > 0 {
+                self.delete_text(&old.id, prefix, removed)?;
+            }
+            let added: String = z[prefix..z.len() - suffix].iter().collect();
+            if !added.is_empty() {
+                self.insert_text(&old.id, prefix, &added)?;
+            }
+        }
+        // Styles: compare per character after the text is right, and fix only the runs that differ.
+        let now = self.block_for(&old.id).map(|b| self.read_block(&b)).map(|b| b.spans).unwrap_or_default();
+        if now != input.spans {
+            let have = per_char(&now);
+            let want = per_char(&input.spans);
+            for name in ["bold", "italic", "underline", "strike", "code", "link", "mention"] {
+                let mut i = 0;
+                while i < want.len().min(have.len()) {
+                    let (w, h) = (style_of(&want[i], name), style_of(&have[i], name));
+                    if w == h {
+                        i += 1;
+                        continue;
+                    }
+                    let mut j = i;
+                    while j < want.len().min(have.len()) && style_of(&want[j], name) != style_of(&have[j], name) && style_of(&want[j], name) == w {
+                        j += 1;
+                    }
+                    if h.is_some() {
+                        self.unmark(&old.id, i, j, name)?;
+                    }
+                    if let Some(value) = w {
+                        self.mark(&old.id, i, j, name, if value.is_empty() { None } else { Some(value.as_str()) })?;
+                    }
+                    i = j;
+                }
+            }
+        }
+        Ok(())
+    }
+
     // ------------------------------------------------------------------------------------------- sync
 
     /// The document's heads (the newest changes), as hex.
@@ -556,6 +668,37 @@ impl DraftDoc {
         let after = (self.blocks(), self.meta());
         self.approx_bytes = self.text_bytes();
         Ok(diff(&before.0, &before.1, &after.0, &after.1))
+    }
+}
+
+/// Adjacent runs with the same styles are one run.
+fn merge_spans(spans: Vec<Span>) -> Vec<Span> {
+    let mut out: Vec<Span> = Vec::new();
+    for span in spans.into_iter().filter(|s| !s.text.is_empty()) {
+        match out.last_mut() {
+            Some(last) if same_style(last, &span) => last.text.push_str(&span.text),
+            _ => out.push(span),
+        }
+    }
+    out
+}
+
+/// One style set per character.
+fn per_char(spans: &[Span]) -> Vec<Span> {
+    spans.iter().flat_map(|s| s.text.chars().map(move |c| Span { text: c.to_string(), ..s.clone() })).collect()
+}
+
+/// The value of one style on a span: `Some("")` for an on/off style that is on, `Some(value)` for a link or mention, `None` when off.
+fn style_of(span: &Span, name: &str) -> Option<String> {
+    match name {
+        "bold" => span.bold.then(String::new),
+        "italic" => span.italic.then(String::new),
+        "underline" => span.underline.then(String::new),
+        "strike" => span.strike.then(String::new),
+        "code" => span.code.then(String::new),
+        "link" => span.link.clone(),
+        "mention" => span.mention.clone(),
+        _ => None,
     }
 }
 

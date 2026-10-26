@@ -87,6 +87,10 @@ final class ConversationStore {
     var draftEventSink: ((DraftInstantEvent) -> Void)?
     /// Counts remote draft changes, for views that redraw on it.
     var draftRevision = 0
+    #if DEBUG
+    /// A throwaway core for drafts in demo runs.
+    var demoDraftCore: LimeStore?
+    #endif
     /// People who deleted their account (LIME-113): their chats are read-only.
     var deletedPeers: Set<String> = []
     /// Bumped when hearts, comments or counts change (LIME-189c): what shows them redraws.

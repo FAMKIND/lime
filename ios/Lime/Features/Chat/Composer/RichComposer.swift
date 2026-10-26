@@ -394,7 +394,11 @@ final class RichComposerModel {
         didEdit()
     }
 
+    /// Called after every edit of the text (typing, formatting, blocks): the article editor hands it to its shared draft (LIME-233c).
+    var onChange: (() -> Void)?
+
     func didEdit() {
+        defer { onChange?() }
         hasText = !(textView?.text.isEmpty ?? true)
         plainText = textView?.text ?? ""
         if let textView, textView.bounds.width > 0 {

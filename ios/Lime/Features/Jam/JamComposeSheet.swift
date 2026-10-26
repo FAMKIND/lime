@@ -9,8 +9,10 @@ final class JamDraft {
     var title = ""
     var subtitle = ""
     var markdown = ""
+    /// The shared draft behind this unfinished article (LIME-233c), so closing and reopening the sheet finds it again.
+    var draftID: String?
     var isEmpty: Bool { title.isEmpty && subtitle.isEmpty && markdown.isEmpty }
-    func clear() { article = false; title = ""; subtitle = ""; markdown = "" }
+    func clear() { article = false; title = ""; subtitle = ""; markdown = ""; draftID = nil }
 }
 
 /// New post (LIME-188b, laid out as pages in LIME-188e). A **quick post**: your name, "What's on your mind?" at the top and growing down, the photos in a
@@ -25,6 +27,8 @@ struct JamComposeSheet: View {
     @Environment(AccountSession.self) private var session
     @Environment(\.dismiss) private var dismiss
     @State private var composer = RichComposerModel()
+    /// The article's shared draft (LIME-233c): made on the first change of an article, or found for a post being edited.
+    @State private var coedit: CoEditSession?
     @State private var photos: [DraftAttachment] = []          // a quick post's row
     @State private var articleFiles: [OutgoingAttachment] = []  // an article's, in the text by number
     @State private var clips: [OutgoingAttachment] = []         // recordings (video, voice)
@@ -89,6 +93,9 @@ struct JamComposeSheet: View {
             }
             .background(Theme.canvas)
             .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
+            #if DEBUG
+            .overlay(alignment: .topTrailing) { coeditProbe }
+            #endif
             .navigationTitle(editing != nil ? "Edit" : article ? "Article" : "New post")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -159,6 +166,9 @@ struct JamComposeSheet: View {
                     DocumentPicker(onPick: { urls in chooser = nil; Task { await picked(files: urls) } }, onCancel: { chooser = nil }).ignoresSafeArea()
                 }
             }
+            .onChange(of: title) { _, _ in coeditChanged(composer) }
+            .onChange(of: subtitle) { _, _ in coeditChanged(composer) }
+            .onChange(of: store.draftRevision) { _, _ in coeditRemote() }
             .task {
                 if let editing {
                     // The post's own words, in its own layout (a recording shows its title, subtitle and description on the article page).
@@ -170,11 +180,20 @@ struct JamComposeSheet: View {
                     articleFiles = store.jamAttachments(editing.postId).map { _ in OutgoingAttachment(bytes: Data(), name: "", mime: "image/jpeg", width: nil, height: nil, durationMs: nil, thumb: Data(), poster: Data()) }
                     try? await Task.sleep(for: .milliseconds(300))
                     composer.textView?.attributedText = ComposerDocument.attributed(fromMarkdown: editing.markdown, post: true); composer.didEdit()
+                    if article { coedit = store.coeditSession(existingID: nil, forPost: editing, title: title, subtitle: subtitle, markdown: editing.markdown) }
+                    wireCoedit()
                     return
                 }
                 // The draft's words go back into the field once it exists.
                 try? await Task.sleep(for: .milliseconds(300))
                 if !JamDraft.shared.markdown.isEmpty { composer.textView?.attributedText = ComposerDocument.attributed(fromMarkdown: JamDraft.shared.markdown, post: true); composer.didEdit() }
+                // A draft that was started before (its words are in the core): it comes back, with everything the other authors wrote meanwhile.
+                if article, let id = JamDraft.shared.draftID, let session = store.coeditSession(existingID: id, forPost: nil, title: "", subtitle: "", markdown: ""), let md = session.exportMarkdown(), let meta = store.coeditMeta(id) {
+                    coedit = session
+                    title = meta.title; subtitle = meta.subtitle
+                    composer.textView?.attributedText = ComposerDocument.attributed(fromMarkdown: md, post: true); composer.didEdit()
+                }
+                wireCoedit()
                 if !article { composer.focus() }
             }
         }
@@ -743,6 +762,59 @@ struct JamComposeSheet: View {
         }
     }
 
+    // MARK: The shared draft (LIME-233c)
+
+    #if DEBUG
+    /// Tests only (demo runs): what the draft holds. With `-lime-coedit-sim-remote`, six seconds after the first words "another author" types at the
+    /// start of the draft once.
+    @ViewBuilder private var coeditProbe: some View {
+        if store.isDemo, FeatureFlags.coedit, let coedit {
+            TimelineView(.periodic(from: .now, by: 0.3)) { _ in
+                Color.clear.frame(width: 2, height: 2).accessibilityElement().accessibilityLabel(store.coeditMarkdown(coedit.draftID) ?? "").accessibilityIdentifier("coedit-probe")
+            }
+        }
+    }
+
+    private func simulateRemoteOnce(_ id: String) {
+        guard ProcessInfo.processInfo.arguments.contains("-lime-coedit-sim-remote"), !Self.simulated else { return }
+        Self.simulated = true
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(6))
+            store.coeditSimulateRemote(id) { "REMOTE " + $0 }
+        }
+    }
+
+    @MainActor private static var simulated = false
+    #endif
+
+    /// The editor's changes go to the draft. The draft is made on the first change of an article (an empty page makes none).
+    private func wireCoedit() {
+        guard FeatureFlags.coedit else { return }
+        composer.onChange = { [weak composer] in
+            guard let composer else { return }
+            Task { @MainActor in coeditChanged(composer) }
+        }
+    }
+
+    private func coeditChanged(_ composer: RichComposerModel) {
+        guard FeatureFlags.coedit, article, let view = composer.textView else { return }
+        let markdown = { ComposerDocument.markdown(from: view.textStorage, post: true) }
+        if coedit == nil {
+            guard !markdown().trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !title.isEmpty else { return }
+            coedit = store.coeditSession(existingID: nil, forPost: nil, title: title, subtitle: subtitle, markdown: markdown())
+            JamDraft.shared.draftID = coedit?.draftID
+        }
+        coedit?.editorChanged(title: title, subtitle: subtitle, composer: composer)
+        #if DEBUG
+        if store.isDemo, let id = coedit?.draftID, !markdown().trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { simulateRemoteOnce(id) }
+        #endif
+    }
+
+    /// Other authors' words arrived.
+    private func coeditRemote() {
+        coedit?.applyRemote(to: composer, title: &title, subtitle: &subtitle)
+    }
+
     // MARK: Closing and posting
 
     private func close() {
@@ -750,6 +822,7 @@ struct JamComposeSheet: View {
         let draft = JamDraft.shared
         let text = hasWords && !hasPictures ? composer.markdown() : ""
         draft.article = article; draft.title = title; draft.subtitle = subtitle; draft.markdown = text
+        if let coedit, let view = composer.textView { coedit.syncNow(title: title, subtitle: subtitle, markdown: ComposerDocument.markdown(from: view.textStorage, post: true)); draft.draftID = coedit.draftID }
         dismiss()
     }
 
@@ -823,7 +896,9 @@ struct JamComposeSheet: View {
             let result = await store.publishJamPost(kind: kind, title: headline, subtitle: article ? subtitle : hasClip ? recordSubtitle : "", markdown: markdown, items: files, coauthors: coauthors.map(\.id), displayAs: postAsJam == nil ? "person" : "jam", about: session.profile?.aboutText ?? "")
             posting = false
             switch result {
-            case .success: JamDraft.shared.clear(); dismiss()
+            case .success:
+                if let coedit { store.coeditFinish(coedit.draftID) }
+                JamDraft.shared.clear(); dismiss()
             case .failure(let failure): problem = failure.message   // the words, the photos and the title all stay
             }
         }

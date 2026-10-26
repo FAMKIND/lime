@@ -183,3 +183,43 @@ fn a_draft_is_saved_as_it_is_edited_survives_a_restart_and_is_folded_after_200_c
     assert!(store.list_drafts().unwrap().is_empty());
     assert!(store.draft_blocks(id).is_err());
 }
+
+#[test]
+fn reconcile_feeds_the_editor_into_the_draft_with_the_fewest_operations_and_other_authors_still_merge() {
+    let start = "# Plan\n\nFirst paragraph with **bold** words.\n\n- one\n- two\n\nLast paragraph.";
+    let mut shem = DraftDoc::from_markdown("T", "", start).unwrap();
+    let mut jean = DraftDoc::load(&shem.save()).unwrap();
+    let _ = shem.save_incremental();
+    // The editor says the document is the same: nothing changes.
+    shem.reconcile(&shem.export_markdown()).unwrap();
+    assert!(shem.save_incremental().is_empty(), "no operations for no change");
+    // One typed letter is a small change.
+    let typed = start.replace("First paragraph", "First paragraphs");
+    shem.reconcile(&typed).unwrap();
+    let small = shem.save_incremental();
+    assert!(!small.is_empty() && small.len() < 120, "one letter is a small change: {} bytes", small.len());
+    assert_eq!(shem.export_markdown(), format::normalise_post(&typed));
+    // Jean meanwhile typed in the same paragraph and added a block; Shem reconciles a further edit: both survive.
+    let first = jean.blocks()[1].id.clone();
+    jean.insert_text(&first, 0, "JEAN ").unwrap();
+    jean.insert_block(2, &input("quote", "Jean's quote")).unwrap();
+    let theirs = jean.save_incremental();
+    let more = typed.replace("Last paragraph.", "Last paragraph, edited.");
+    shem.reconcile(&more).unwrap();
+    shem.apply_changes(&theirs).unwrap();
+    let mine = shem.save_incremental();
+    jean.apply_changes(&small).unwrap();
+    jean.apply_changes(&mine).unwrap();
+    let (a, b) = (shem.export_markdown(), jean.export_markdown());
+    assert_eq!(a, b);
+    assert!(a.contains("JEAN First paragraphs") && a.contains("> Jean's quote") && a.contains("Last paragraph, edited."), "{a}");
+    // Styles: bold removed from a word, a link added, a list item turned into a paragraph, a block deleted, a block added.
+    let edited = "# Plan\n\nJEAN First paragraphs with bold [words](https://example.com).\n\n> Jean's quote\n\n- one\n\nA new paragraph.\n\nLast paragraph, edited.";
+    shem.reconcile(edited).unwrap();
+    assert_eq!(shem.export_markdown(), format::normalise_post(edited));
+    // Anything the editor can write comes back the same, and a refused size changes nothing.
+    shem.reconcile(EVERYTHING).unwrap();
+    assert_eq!(shem.export_markdown(), format::normalise_post(EVERYTHING));
+    assert_eq!(shem.reconcile(&"z".repeat(MAX_DRAFT_BYTES + 1)).unwrap_err(), StoreError::Rejected);
+    assert_eq!(shem.export_markdown(), format::normalise_post(EVERYTHING));
+}

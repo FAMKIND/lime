@@ -136,6 +136,20 @@ impl LimeStore {
         self.with_draft(&draft_id, |d| d.import_markdown(&markdown))
     }
 
+    /// Makes the draft say what the editor shows (post Markdown) with the fewest operations: a typed letter is one small insert.
+    pub fn draft_reconcile(&self, draft_id: String, title: String, subtitle: String, markdown: String) -> Result<(), StoreError> {
+        self.with_draft(&draft_id, |d| {
+            let meta = d.meta();
+            if meta.title != title {
+                d.set_title(&title)?;
+            }
+            if meta.subtitle != subtitle {
+                d.set_subtitle(&subtitle)?;
+            }
+            d.reconcile(&markdown)
+        })
+    }
+
     pub fn draft_set_title(&self, draft_id: String, title: String) -> Result<(), StoreError> {
         self.with_draft(&draft_id, |d| d.set_title(&title))
     }
