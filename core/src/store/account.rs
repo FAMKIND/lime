@@ -209,6 +209,16 @@ pub(crate) fn save_session(
     Ok(())
 }
 
+/// Writes a session's new state back to its own row (found by its id), marking it as the one that just decrypted. Nothing else changes.
+pub(crate) fn update_session(conn: &Connection, pickle_key: &[u8; 32], peer_user: &str, peer_identity_key: &str, session: &Session, now_ms: i64) -> Result<(), StoreError> {
+    conn.execute(
+        "UPDATE olm_sessions SET session_pickle = ?4, updated_at = ?5, last_received = ?5 WHERE peer_user_id = ?1 AND peer_identity_key = ?2 AND session_id = ?3",
+        params![peer_user, peer_identity_key, session.session_id(), session.pickle().encrypt(pickle_key), now_ms],
+    )
+    .map_err(db_err)?;
+    Ok(())
+}
+
 /// Trust on first use: remember a user's master key the first time it is seen, and refuse a
 /// different one later.
 pub(crate) fn pin_master_key(

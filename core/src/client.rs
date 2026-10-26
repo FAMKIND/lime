@@ -49,6 +49,10 @@ const DELIVERY_KEY_SHARE: &str = "delivery_key.share";
 const PROFILE_CHANGED: &str = "profile.changed";
 /// "I do not hold your profile key: please share again" (LIME-231b).
 const PROFILE_KEY_REQUEST: &str = "profile_key.request";
+/// "I could not read what you sent me since <time>: send it again" (LIME-232). Sent on the fresh session of a repair.
+const DECRYPTION_ERROR: &str = "decryption.error";
+/// How far back a message is sent again when a contact could not read it.
+const RESEND_WINDOW_MS: i64 = 7 * 24 * 3600 * 1000;
 use crate::store::status::STATUS_CHANGED;
 use crate::store::usernames::USERNAME_SET;
 
@@ -856,6 +860,10 @@ impl LimeStore {
             let mut stale = None;
             for (device, mut session) in sessions {
                 let encrypted = session.encrypt(&inner).map_err(|_| StoreError::BadMessage)?;
+                // Write ahead (LIME-232): the ratchet has moved, so it is saved BEFORE the request. If the answer is lost or the phone is killed
+                // after the server stored this ciphertext, the retry is a NEW message (the next index), never a second, different ciphertext at an
+                // index the receiver already used (which it could never read, and which broke the session after it).
+                self.with_conn(|conn| save_session(conn, &self.pickle_key, recipient, &device.device_id, &device.identity_key, &session, false, now_ms()))?;
                 let (kind, bytes) = encrypted.to_parts();
                 let mut wire = vec![kind as u8];
                 wire.extend_from_slice(&bytes);
@@ -1514,6 +1522,15 @@ impl LimeStore {
                     continue;
                 }
                 if let Ok(plaintext) = stored.session.decrypt(&message) {
+                    // At once, in one transaction: the session in its new state AND the plaintext on the item. A message key is spent by decrypting,
+                    // so whatever happens next (an item that turns out invalid, a kill before it is stored) must neither lose the ratchet step nor
+                    // leave the item unreadable (LIME-232).
+                    self.with_conn(|conn| {
+                        let tx = conn.unchecked_transaction().map_err(db_err)?;
+                        crate::store::account::update_session(&tx, &self.pickle_key, &owner, &stored.peer_identity_key, &stored.session, now)?;
+                        pending::stash_plaintext(&tx, row.id, &plaintext, &stored.peer_identity_key)?;
+                        tx.commit().map_err(db_err)
+                    })?;
                     session_owner = Some(owner);
                     break 'decrypt Some((plaintext, Some(stored.session), stored.peer_identity_key));
                 }
@@ -1553,11 +1570,12 @@ impl LimeStore {
         let is_share = inner.op.op_type == DELIVERY_KEY_SHARE;
         let is_changed = inner.op.op_type == PROFILE_CHANGED;
         let is_key_request = inner.op.op_type == PROFILE_KEY_REQUEST;
+        let is_decryption_error = inner.op.op_type == DECRYPTION_ERROR;
         let is_status = inner.op.op_type == STATUS_CHANGED;
         let is_call = crate::store::calls::is_call_op(&inner.op.op_type);
         let is_username = inner.op.op_type == USERNAME_SET;
         let is_jam = crate::store::jam::is_jam_op(&inner.op.op_type);
-        let is_control = is_share || is_changed || is_key_request || is_status || is_username || is_call || is_jam;
+        let is_control = is_share || is_changed || is_key_request || is_decryption_error || is_status || is_username || is_call || is_jam;
         let is_message_op = crate::store::message_ops::is_message_op(&inner.op.op_type);
         let is_group_op = inner.op.op_type.starts_with("group.");
         let valid = sender != me
@@ -1699,6 +1717,24 @@ impl LimeStore {
                 // Someone I share a chat with told me their username (or `null`: forget it). Not a message.
                 if let Some(username) = crate::store::usernames::parse(&inner.op.payload) {
                     crate::store::usernames::store_received(conn, me, &sender, username.as_deref(), remote_hlc.wall)?;
+                }
+                return Ok(Some(Stored::Control));
+            }
+            if is_decryption_error {
+                // A contact could not read what I sent since `since`: those of my messages in our chat (at most 7 days old) go again, as the same
+                // messages (same ids), so a copy they did get is dropped as a duplicate. Only for an accepted contact.
+                let accepted = conn
+                    .query_row("SELECT request_state = 'accepted' FROM conversations WHERE id = ?1", params![format!("dm:{sender}")], |r| r.get::<_, bool>(0))
+                    .optional()
+                    .map_err(db_err)?
+                    .unwrap_or(false);
+                if accepted {
+                    let since = inner.op.payload.get("since").and_then(Value::as_i64).unwrap_or(0).max(now - RESEND_WINDOW_MS) - 3_600_000;
+                    conn.execute(
+                        "UPDATE messages SET local_state = 'sending' WHERE conversation_id = ?1 AND sender_id = ?2 AND local_state = 'sent' AND op_id IS NOT NULL AND hlc IS NOT NULL AND sent_at >= ?3",
+                        params![format!("dm:{sender}"), ME_ID, since],
+                    )
+                    .map_err(db_err)?;
                 }
                 return Ok(Some(Stored::Control));
             }

@@ -363,6 +363,13 @@ struct ChatView: View {
                                 .padding(.bottom, 16)
                         }
                     }
+                    // I asked them to send again what I could not read (LIME-232): a quiet line until it arrives, then it is gone.
+                    if !conversation.isGroup, let peer = conversation.members.first, store.waitingPeers.contains(peer.id) {
+                        Text("Waiting for messages\u{2026}")
+                            .font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                            .frame(maxWidth: .infinity).padding(.vertical, 6)
+                            .accessibilityIdentifier("chat-waiting")
+                    }
                     Color.clear.frame(height: 1).id("bottom")
     }
 

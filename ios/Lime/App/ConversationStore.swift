@@ -80,6 +80,8 @@ final class ConversationStore {
     var jamFilter = JamFilter()
     /// Bumped when the posts hidden on this phone change, so the feed redraws.
     var jamHiddenChanged = 0
+    /// People I asked, a moment ago, to send again what I could not read (LIME-232): their chat shows "Waiting for messages…".
+    var waitingPeers: Set<String> = []
     /// Bumped when hearts, comments or counts change (LIME-189c): what shows them redraws.
     var jamEngagement = 0
     var demoEngagement = DemoEngagement()
@@ -747,6 +749,7 @@ final class ConversationStore {
         } catch {
             storageError = "Storage could not be read."
         }
+        waitingPeers = Set((try? core.peersWaitingForMessages()) ?? [])
         await loadCachedPhotos()
         isLoaded = true
     }

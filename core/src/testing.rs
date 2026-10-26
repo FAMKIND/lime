@@ -34,6 +34,8 @@ pub(crate) struct ServerState {
     pub calls: usize,
     /// Make every `send` fail with a 500 while true.
     pub fail_sends: bool,
+    /// Store the next `send` but lose its answer (the phone sees a network error after the server already has the item): a timeout at the worst moment.
+    pub lose_next_send_answer: bool,
     /// sender user to hashes of identified items that were deleted undelivered
     pub undelivered: HashMap<String, Vec<String>>,
     /// user to SHA-256(access_key) (hex): what `delivery-access-set` stored
@@ -126,7 +128,22 @@ fn respond(status: u16, body: Value) -> Result<TransportResponse, TransportError
 }
 
 impl Transport for FakeServer {
-    fn request(
+    fn request(&self, method: String, path: String, headers: Vec<HeaderPair>, body: Vec<u8>) -> Result<TransportResponse, TransportError> {
+        let is_send = path.ends_with("/send");
+        let answer = self.handle(method, path, headers, body);
+        if is_send {
+            let mut state = self.state.lock().unwrap();
+            if state.lose_next_send_answer && answer.as_ref().is_ok_and(|a| a.status == 200) {
+                state.lose_next_send_answer = false;
+                return Err(TransportError::Failed);
+            }
+        }
+        answer
+    }
+}
+
+impl FakeServer {
+    fn handle(
         &self,
         method: String,
         path: String,

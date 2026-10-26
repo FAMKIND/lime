@@ -22,6 +22,25 @@ const STUCK_RECENT_MS: i64 = 3 * 24 * 3600 * 1000;
 /// Sealed items that never became readable are dropped after this long (they never will).
 const STUCK_KEEP_MS: i64 = 7 * 24 * 3600 * 1000;
 
+#[uniffi::export]
+impl LimeStore {
+    /// The people I asked, in the last half hour, to send again what I could not read, and who have not sent anything readable since: the chat
+    /// shows a quiet "Waiting for messages\u{2026}" for them (LIME-232).
+    pub fn peers_waiting_for_messages(&self) -> Result<Vec<String>, StoreError> {
+        let now = now_ms();
+        self.with_conn(|conn| {
+            let mut st = conn
+                .prepare(
+                    "SELECT r.peer_user_id FROM session_repairs r WHERE r.repaired_at > ?1
+                       AND COALESCE((SELECT MAX(last_received) FROM olm_sessions s WHERE s.peer_user_id = r.peer_user_id), 0) <= r.repaired_at",
+                )
+                .map_err(db_err)?;
+            let rows = st.query_map(params![now - 30 * 60 * 1000], |r| r.get::<_, String>(0)).map_err(db_err)?;
+            rows.collect::<Result<_, _>>().map_err(db_err)
+        })
+    }
+}
+
 impl LimeStore {
     /// Runs with the protocol lock held, after the queued shares went out. Best effort: nothing waits on it.
     pub(super) fn heal_contacts(&self, transport: &Arc<dyn Transport>, token: &str, state: &mut AccountState, me: &str) {
@@ -66,9 +85,11 @@ impl LimeStore {
                 self.fresh_session_for.lock().unwrap_or_else(|e| e.into_inner()).remove(peer);
                 if sent.is_ok() {
                     let _ = self.with_conn(|conn| {
-                        conn.execute("INSERT OR REPLACE INTO session_repairs (peer_user_id, repaired_at) VALUES (?1, ?2)", params![peer, now]).map_err(db_err)?;
+                        conn.execute("INSERT OR REPLACE INTO session_repairs (peer_user_id, repaired_at) VALUES (?1, ?2)", params![peer, now_ms()]).map_err(db_err)?;
                         delivery::mark_shared(conn, peer, now)
                     });
+                    // And ask them to send again what I could not read (on the new session): "I couldn't read that" (LIME-232).
+                    let _ = self.send_control_op(transport, token, state, me, peer, DECRYPTION_ERROR, json!({ "since": since }));
                 }
             }
         }

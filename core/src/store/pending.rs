@@ -95,7 +95,7 @@ pub(crate) fn keep(
     now_ms: i64,
 ) -> Result<(), StoreError> {
     conn.execute(
-        "UPDATE pending_inbound SET reason = ?2, attempts = attempts + 1, last_attempt = ?3 WHERE id = ?1",
+        "UPDATE pending_inbound SET reason = ?2, attempts = attempts + 1, last_attempt = ?3, plaintext = CASE WHEN ?2 = 'invalid' THEN NULL ELSE plaintext END WHERE id = ?1",
         params![id, reason, now_ms],
     )
     .map_err(db_err)?;

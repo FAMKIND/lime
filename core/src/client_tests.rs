@@ -6321,13 +6321,26 @@ fn sealed_items_that_stop_decrypting_get_a_fresh_session_and_messages_flow_again
         sync(&bob, &transport);
     }
     assert!(!texts(&bob, &alice).iter().any(|t| t == "lost 3"), "Bob cannot read Alice any more");
+    let lost0_before = texts(&bob, &alice).iter().filter(|t| *t == "lost 0").count();
     assert!(bob.store.pending_summary().unwrap().contains("no_session"));
     // Bob's next sync starts a fresh session (his key share goes in it), Alice reads it and answers in it, and Bob reads Alice again.
     sync(&bob, &transport);
+    alice.store.lock().execute("UPDATE messages SET sent_at = sent_at - 8 * 24 * 3600 * 1000 WHERE body = 'lost 0'", []).unwrap();
     sync(&alice, &transport);
+    assert_eq!(bob.store.peers_waiting_for_messages().unwrap(), vec!["alice".to_string()], "Bob's chat with Alice says it is waiting");
+    // "I couldn't read that": Alice's phone sends again what she wrote since (not what is over a week old), as the same messages.
+    sync(&alice, &transport);
+    deliver(&alice, &transport);
     say(&alice, &bob, &transport, "after the repair");
     sync(&bob, &transport);
-    assert!(texts(&bob, &alice).iter().any(|t| t == "after the repair"), "messages flow again: {:?}", texts(&bob, &alice));
+    let got = texts(&bob, &alice);
+    assert!(got.iter().any(|t| t == "after the repair"), "messages flow again: {:?}", got);
+    for i in 1..4 {
+        assert_eq!(got.iter().filter(|t| **t == format!("lost {i}")).count(), 1, "'lost {i}' was sent again and shows once");
+    }
+    assert_eq!(got.iter().filter(|t| *t == "lost 0").count(), lost0_before, "a message over 7 days old is not sent again");
+    assert_eq!(got.iter().filter(|t| *t == "before").count(), 1, "what Bob already had is not shown twice");
+    assert!(bob.store.peers_waiting_for_messages().unwrap().is_empty(), "and the waiting row goes");
     let repaired: i64 = bob.store.lock().query_row("SELECT COUNT(*) FROM session_repairs WHERE peer_user_id = 'alice'", [], |r| r.get(0)).unwrap();
     assert_eq!(repaired, 1);
 }
@@ -6353,4 +6366,101 @@ fn a_picture_the_server_lost_track_of_is_uploaded_again_once_per_launch() {
     deliver(&alice, &transport);
     assert_eq!(refresh(&bob, &transport), vec!["alice".to_string()], "uploaded again");
     assert_eq!(bob.store.peer_photo("alice".into()).unwrap(), Some(photo_bytes()));
+}
+
+// LIME-232: what made two Olm sessions drift apart, and that they no longer do.
+fn conversation_works(a: &Party, b: &Party, transport: &Arc<dyn Transport>, label: &str) -> bool {
+    let mut ok = true;
+    for i in 0..6 {
+        let (from, to) = if i % 2 == 0 { (a, b) } else { (b, a) };
+        say(from, to, transport, &format!("{label} {i}"));
+        sync(to, transport);
+        ok &= texts(to, from).iter().any(|t| t == &format!("{label} {i}"));
+    }
+    ok
+}
+
+#[test]
+fn an_item_that_decrypts_but_is_invalid_does_not_break_the_session() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    assert!(conversation_works(&alice, &bob, &transport, "warm"));
+    // Bob replies once so Alice's next send carries a new ratchet key, then Alice sends an op Bob's build does not know.
+    say(&bob, &alice, &transport, "reply");
+    sync(&alice, &transport);
+    {
+        let mut state = alice.store.load_or_create_account().unwrap();
+        let _guard = alice.store.lock_protocol();
+        alice.store.send_control_op(&transport, &alice.token, &mut state, &alice.user, &bob.user, "future.op", serde_json::json!({})).unwrap();
+    }
+    sync(&bob, &transport);
+    assert!(conversation_works(&alice, &bob, &transport, "after"), "messages still flow: pending {}", bob.store.pending_summary().unwrap());
+}
+
+#[test]
+fn concurrent_syncs_and_sends_both_ways_keep_both_sessions_in_step_and_every_message_arrives_once() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let n = 40;
+    std::thread::scope(|scope| {
+        for (me, other) in [(&alice, &bob), (&bob, &alice)] {
+            let t = transport.clone();
+            // One thread sends, two keep syncing and delivering (as the app's foreground, background and push paths do).
+            scope.spawn(move || {
+                for i in 0..n {
+                    let _ = me.store.send_text_identified(t.clone(), me.token.clone(), other.user.clone(), format!("{} {i}", me.user));
+                }
+            });
+            for _ in 0..2 {
+                let t = transport.clone();
+                scope.spawn(move || {
+                    for _ in 0..30 {
+                        let _ = me.store.sync(t.clone(), me.token.clone());
+                        let _ = me.store.deliver_queued(t.clone(), me.token.clone());
+                    }
+                });
+            }
+        }
+    });
+    for _ in 0..4 {
+        sync(&alice, &transport);
+        sync(&bob, &transport);
+        deliver(&alice, &transport);
+        deliver(&bob, &transport);
+    }
+    let got_b = texts(&bob, &alice);
+    let got_a = texts(&alice, &bob);
+    assert_eq!((alice.store.pending_summary().unwrap(), bob.store.pending_summary().unwrap()), (String::new(), String::new()), "nothing is left unreadable");
+    for i in 0..n {
+        assert_eq!(got_b.iter().filter(|t| **t == format!("alice {i}")).count(), 1, "bob has alice {i} exactly once");
+        assert_eq!(got_a.iter().filter(|t| **t == format!("bob {i}")).count(), 1, "alice has bob {i} exactly once");
+    }
+}
+
+#[test]
+fn a_send_whose_answer_was_lost_is_a_new_message_not_a_second_ciphertext_at_the_same_index() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    assert!(conversation_works(&alice, &bob, &transport, "warm"));
+    for round in 0..4 {
+        // The first send after Bob's reply carries a new ratchet key; its answer is lost.
+        say(&bob, &alice, &transport, &format!("bob-{round}"));
+        sync(&alice, &transport);
+        server.state.lock().unwrap().lose_next_send_answer = true;
+        let _ = alice.store.send_text_identified(transport.clone(), alice.token.clone(), bob.user.clone(), format!("lost-answer-{round}"));
+        let _ = alice.store.deliver_queued(transport.clone(), alice.token.clone());   // the retry
+        sync(&bob, &transport);
+    }
+    for _ in 0..3 { deliver(&alice, &transport); sync(&bob, &transport); }
+    assert_eq!(bob.store.pending_summary().unwrap(), "", "nothing is left unreadable");
+    for round in 0..4 {
+        assert_eq!(texts(&bob, &alice).iter().filter(|t| **t == format!("lost-answer-{round}")).count(), 1, "lost-answer-{round} arrived once");
+    }
+    assert!(conversation_works(&alice, &bob, &transport, "after"), "messages flow afterwards: pending bob [{}] alice [{}]", bob.store.pending_summary().unwrap(), alice.store.pending_summary().unwrap());
 }
