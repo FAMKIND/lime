@@ -236,3 +236,7 @@ A **community** is a **group (`grp:`) linked to the jam**: the jam's state (`jam
 7. **210f Series** (M, 3 d): the picker in compose and Edit, the series page and local progress.
 8. **210g Community chat** (M, 4 d): `jam.update`'s `community`, `jam.community.join`, the writer's automatic add and removal, the public `has_community`, the app's Join, the Community/Channel choice (with 193c).
 **Order:** 191 → 210a → 210b → 210c → 210d → 210e → 210f → 210g (everything before TestFlight 1, per the decision; the Everyone option goes live only after 191 and 210d).
+
+## Writing an article together (LIME-233)
+
+Co-authors can write an article together in the editor, like Google Docs: a shared draft with each other's cursors, instant and encrypted, and only the writer (the jam's owner) publishes. Posts and their sealing are unchanged. See `docs/coedit.md` (the design as built, what each party learns, limits and Android notes) and `docs/api-v2.md` section 16 (the `draft.*` ops).

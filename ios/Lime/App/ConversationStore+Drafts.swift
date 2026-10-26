@@ -118,8 +118,12 @@ extension ConversationStore {
     }
 
     /// A shared draft the post was made from (for the post's ⋯ "Open draft"): one I write in.
-    func sharedDraft(forPost postID: String) -> String? {
-        guard let core = draftCore, let info = ((try? core.listDrafts()) ?? []).first(where: { $0.postId == postID }) else { return nil }
+    func sharedDraft(forPost post: JamPostInfo) -> String? {
+        // Cheap checks first: this runs while every card is drawn.
+        let me = meProvider().id
+        guard FeatureFlags.coedit, post.author == me || post.coauthors.contains(me), let core else { return nil }
+        let postID = post.postId
+        guard let info = ((try? core.listDrafts()) ?? []).first(where: { $0.postId == postID }) else { return nil }
         return ((try? core.draftChannels()) ?? []).contains(where: { $0.draftId == info.draftId }) ? info.draftId : nil
     }
 

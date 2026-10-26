@@ -2,6 +2,42 @@
 
 Record of work landed via the `tend` skill.
 
+# MORNING SUMMARY — the overnight co-editing run (2026-10-26)
+
+**Everything in the chain landed; nothing is skipped, nothing was deployed, no staging setting, secret or account was touched.** All of it is behind the app flag **`coedit`** (on in Debug builds, **off in Release** until you switch it on), so TestFlight/Release behaviour is unchanged.
+
+| brief | commit | what |
+|---|---|---|
+| (plot) | `9799ed5` | PLOT.md committed first, as asked |
+| 233a | `2ff2e4c` | core: the draft document (Automerge), Markdown round trip, SQLCipher storage |
+| 233b | `a174643` | core: the authors' sync, the **instant path** (public Realtime broadcast channel, signed + encrypted) and the durable path (sealed mailbox ops); iOS socket adapter |
+| 233c | `5329050` | the article editor writes into a draft (fewest operations, so two people typing in one paragraph merge); remote changes keep your caret |
+| 233d | `1a5cc9b` | co-authors in the editor: faces row, coloured cursors with photo + name, selection tint, "Jean is editing…", invitations in Activity and the post's ⋯ "Open draft" |
+| 233e | `a2aa498` | only the writer publishes; co-author **Ready**; "Published by…" and "Changes since the last publish"; pictures from any author |
+| 233f | (this commit) | `docs/coedit.md` as built, `docs/api-v2.md` §16 (`draft.*` ops), `docs/jam.md` pointer, this summary |
+
+**Staging's Realtime allows public broadcast channels with the anon key** (checked read-only, no setting needed; ~21 ms from the Mac). Core tests: **368 pass** (`check-android.sh` OK). iOS: the new unit and UI tests pass (Coedit233c/d/e, CoEdit233d/e).
+
+**Installed** (Debug, flag on) on the **13 mini and the iPad** (both installed; I did not install on Jean's phone, as you asked for two).
+
+**What failed, and why:**
+- The full jam UI suites (83 tests): **79 pass, 4 failed**. One was real and is **fixed**: `Jam203` (podcast title opens the player) timed out because my new "Open draft" item in the post ⋯ asked the core while every card was drawn; it now checks cheaply first and the test passes (136 s). `Jam188b…ArticleIsAPage…` failed under load and **passes alone** (flaky on its unwaited tap of "Write an article"). Two are **stale expectations from earlier briefs, not touched by this chain** (not re-run against the pre-chain commit): `Jam188b…QuickPost…` looks for a "like" label (189 changed the card) and `Jam188j…VideoCard…` asserts there is no "Report" item (191 added it).
+- Nothing was put behind the flag for failing tests: every brief's tests passed.
+
+**Decisions I made that you should know (all in the records below and in `docs/coedit.md` §12):** the durable path uses **pairwise sealed ops** instead of a Megolm draft group (≤ 5 authors); inviting sends the draft invitation **when you pick the co-author** (the old credit request at publish time is unchanged); "Changes since the last publish" is a **line at the top**, not a highlight on each changed paragraph; the editor redraws its text when another author's change arrives (your caret, selection and keyboard stay; that text view's undo stack resets); a picture's server copy lives only for the normal attachment retention.
+
+**Your two-phone check (Shem + Jean, both on the new build, both signed in, contacts with each other):**
+1. Shem: Jam → New post → Write an article. Type a title and a line. Tap the person-plus, add Jean, Done.
+2. Jean: open Profile → Activity: **"Shem invited you to write <title>"**. Tap it (needs a sync; pull to refresh or wait a few seconds).
+3. Both type **in the same paragraph at the same time**. Check: both see each other's letters within about a blink; each sees the other's coloured cursor with a photo/name tag (the tag fades to just the caret after 3 s); your own caret does not jump; "Jean is editing…" shows.
+4. Jean: add a picture. Shem should see it appear in his editor (a blur first, then the picture).
+5. Jean has **no Post button** (there is a Done) and sees "Shem publishes this article" with **Ready**; tap it: Shem sees "Jean is ready". Shem taps Post: Jean sees "Published by Shem · <time>", and the post has Jean's picture.
+6. Then try Airplane mode on one phone for a minute, keep typing on both, turn it back on: both end with the same text.
+If anything misbehaves, `-lime-no-coedit` as a launch argument turns the whole thing off in Debug.
+
+**Not covered by any test** (needs two real phones): the iOS invitation round trip, the picture fetch between phones, the Activity row. The core tests cover the invitation, sync, ready, publish and picture transfer between three fake phones.
+
+
 ## LIME-03a — Sidebar Polish
 
 - Logo: replaced the inline-JS SVG brand system (`LIME_MARK`/`LIME_WORDMARK` strings in `app.js`, broadcast via `innerHTML`) with static files loaded through `<img>`: `public/assets/logo-mark.svg` (plain lime-green circle) and `public/assets/logo-wordmark.svg` ("lime" text, fill baked in since `<img>` content can't take `currentColor`). Deleted the redundant unused `lime-mark.svg`/`lime-wordmark.svg` pair that predated this brief.
@@ -8248,3 +8284,10 @@ On other people's phones (not reachable): their chats with the account, jam post
 - **iOS:** the editor shows, under the faces, **"Shem publishes this article"** and a **Ready** button for a co-author (the button reads "Ready ✓", VoiceOver "Ready, tell Shem you are not"), **"Jean is ready"** for the writer, and after a publish **"Published by Shem · <date, time>"** and, when the draft changed since, **"Changes since the last publish"** (a line, not a mark on each changed paragraph: see below). A co-author's **Post/Update is replaced by Done** (so is the toolbar when a draft is opened from an invitation). The writer's Post and Update stay exactly as they were (the editor's own Markdown and file list, so covers, captions and links work as before); when they succeed on a shared draft the phone calls `draft_mark_published` with the new post's id (`ConversationStore.lastPublishedPostID` is new) and flushes, so the co-authors see the banner. **Pictures:** every picture in a shared article's editor is added to the draft the first time the editor syncs (`CoEditSession.draftMarkdown(from:)` swaps this phone's list index for the draft's file number in what it writes), a picture another author added gets a place in this phone's list, its tiny thumbnail at once and the full picture when fetched (`render(markdown:)`, `fetch`); the editor's text is redrawn with the pictures where they were (`ComposerDocument.attachImages`: this also fixes 233c's remote redraw dropping pictures), so the writer's ordinary publish includes them.
 - **Tests:** core (368 pass, including the two new; `check-android.sh` OK): `only_the_writer_publishes_a_co_author_says_ready_and_everyone_learns_of_the_publish` (co-author cannot publish, writer cannot be ready, ready arrives, publish clears it, the other author gets the banner, a later change is marked on both phones) and `a_picture_added_by_a_co_author_is_in_the_writers_published_post` (upload once, key to the writer, fetch and verify, the post has the file and its image block names file 0). iOS unit `CoEdit233eTests` (pictures drawn into Markdown-made text, words unchanged). UI (demo, simulated writer, `Coedit233eUITests`): a co-author has no Post/Update, sees "Shem publishes this article", Ready answers at once, and after the writer "publishes" sees the "Published by …" banner and then "Changes since the last publish". 233c/233d UI tests re-run.
 - **Not covered / known limits:** the iOS picture round trip between two real phones is not UI-tested (the demo has no second account; the core test covers the files, and the unit test the drawing); the "Changes since the last publish" mark is a line at the top, **not** a highlight on each changed paragraph (that needs a snapshot of the published text to diff against: a build of its own); a server blob is kept only for the retention of any attachment, so an author who opens a draft long after a picture was added may find it gone (the adder's phone could re-upload on demand: not built); an Update of a published article by the writer does not send co-authors' pictures that were added after the first publish unless they are in the editor's list (they are, once fetched).
+
+
+## LIME-233f — co-editing docs, the morning summary, install — DONE (overnight chain)
+
+- `docs/coedit.md` rewritten as built (the document, the two paths, authors and keys, presence, files, publishing, **what each party learns** including the new public-channel metadata, limits, Android notes, tests, and the differences from DESIGN-22); `docs/api-v2.md` §16 (the `draft.*` ops and the instant path); `docs/jam.md` pointer.
+- The jam UI suites ran once (rule 12b): 83 tests, 79 pass, 4 failed (see the morning summary at the top): one real regression from 233d found and fixed (post ⋯ queried the core while drawing every card), one flake, two stale tests.
+- **Installed:** the Debug build on the **13 mini** and the **iPad** (both: yes; both unlocked).

@@ -1,141 +1,80 @@
-# Live co-editing: the design (LIME-233, DESIGN-20)
+# Writing an article together (LIME-233, DESIGN-20, DESIGN-22): the design as built
 
-**Status: a design for the user's review. Nothing in this document is built.** The decision already made (DESIGN-20, the user): **B, live co-editing**. Co-authors join the article editor and write together, like Google Docs, for curriculums and lesson plans made by several teachers. This document answers how, with the trade-offs, and ends with what each party learns, the limits for v1, and the build split.
+**Status: built (LIME-233a to 233e, 2026-10-26), behind the app flag `coedit`** (on in Debug builds, off in Release until switched on). This replaces the first design draft; where that draft and DESIGN-22 differed, DESIGN-22 won, and where the build differed from DESIGN-22 the difference is listed in section 12.
 
-## 0. What exists today (the survey)
+The aim: teachers write a curriculum or lesson plan together, like Google Docs. Co-authors open the same article draft, see each other's coloured cursors with a photo and first name, and each other's keystrokes appear **instantly** ("in an emergency two seconds can be life or death"), all end-to-end encrypted. Only the writer (the jam's owner) publishes.
 
-- **The document.** The article editor keeps an `NSAttributedString` (`ComposerDocument.swift`) and converts it to and from a **Markdown subset** through LimeCore (`core/src/format.rs`, "the one place the grammar lives"). Inline: bold, italic, underline, strike, code, mentions. Blocks: paragraph, headings 1 to 6, quote, indent, bullet and numbered lists (with levels), code, **button** (https address, caption, palette colour), divider, **freewall** (the paywall marker, 188n), and **pictures, videos and audio as references to the post's n-th attachment** (`![](attachment:n)`), plus the cover (219). Drag to arrange blocks (188r). A post's Markdown is capped at **30,000 bytes** (`MAX_POST_BYTES`).
-- **A post is sealed once, by one person.** The writer's phone writes the Markdown and the attachments into one encrypted **blob** (a jam-class file on the server, AES key inside the jam's per-tier Megolm notice), signs a small notice with the writer's device key, and sends it to the subscribers in the writer's per-tier Megolm session. An **edit** (195) is a new version of the same post id: a new blob, a new notice. **Co-authors** (188f/g, 195b) are a *credit*: up to four of the writer's contacts are asked, accept, and then "with Jean Chung" shows; they receive the edits, but they cannot change the post. Nothing in the app lets two people write one document.
-- **Groups** (`protocol/group.rs`, `client/groups.rs`): an encrypted group is a conversation with a signed state log (owner/admin/member, up to 100), one **Megolm** outbound session per sender, rotated on membership change, 100 messages or 7 days; keys travel over Olm. 232/232b made the Olm and Megolm paths safe against lost answers and drift.
-- **Orgs** (`docs/orgs-and-channels.md` §3, 193d): several writers post as one org; a **writers' group** (the group machinery, capped at about 20) shares the subscriber roster; writers hold certificates from the org key.
-- **Two clocks, not one.** There is no shared clock between phones; ordering in groups uses a hybrid logical clock (`Hlc`).
+## 1. The document
 
-## 1. The CRDT
-
-**The need.** Several people type into one document at once, some offline; every phone must end with the same document, without a server that understands the content. Rich text (marks over a run), ordered blocks, per-block settings, references to files.
-
-| | **A. Automerge** (`automerge` 0.12, Rust) | **B. Yrs** (`yrs` 0.28, the Rust port of Yjs) | **C. Block-level last-writer-wins** (own, simple) |
-| --- | --- | --- | --- |
-| Fit | Rust, so it lives in LimeCore; iOS and Android reach it through our own UniFFI functions (we never expose its API) | Rust, same | Rust, a few hundred lines |
-| Rich text | Native text with **marks** (Peritext rules: a bold run survives concurrent edits at its edges) | Text with formatting attributes (the Yjs editors' model) | Whole blocks only: a paragraph's text is one value |
-| Concurrent typing in one paragraph | Merges per character | Merges per character | **One person's edit wins; the other's is lost.** Not acceptable for "writing together" |
-| History and size | Columnar and compressed: in my throwaway test, **2,000 single-character edits by two authors saved as 2.6 KB** (a document of 2,041 characters) | **43 KB** for the same edits (update format; garbage collection of deleted text keeps it from growing without bound) | n/a |
-| Sync | A built-in sync protocol and incremental changes (`get_changes`, `apply_changes`) | State vectors and diff updates; **awareness** (presence) protocol included | Our own |
-| Maturity | Newer than Yjs in editors; the Rust core is the reference implementation | The most deployed in editors (ProseMirror, Quill) | Ours to get right |
-| Static library | about 7.4 MB before linking and dead-stripping (the app's core is 53 MB the same way) | about 6.3 MB | negligible |
-| Cost of being wrong | A format change between versions needs care (documents are long-lived) | Same | We own every bug |
-
-I merged the same three concurrent edits (two at one spot, one at the start) in both libraries: **both converged to the identical string** (`"# Fractions that stick\n\n (draft)A lesson."`).
-
-**Recommendation: Automerge**, because (1) its compressed history is an order of magnitude smaller, which matters when a curriculum is edited for months and every change is an encrypted message, (2) marks give us bold/italic/underline/strike/code/mention as first-class, (3) one `save()` snapshot is a complete, compact thing to hand to a new author. Yrs is the credible alternative and would also work; its advantage (awareness, editor ecosystem) is mostly for web editors we do not use. Option C is rejected: it cannot do "Google Docs".
-
-**The mapping (one Automerge document per draft):**
+A draft is an **Automerge** document (Rust crate `automerge =0.12.0`, in LimeCore, so Android gets it through UniFFI). Shape:
 
 ```
-root
-  blocks: List of Map          # the order of blocks IS the list (concurrent inserts and moves converge)
-    { id: uuid, kind: "paragraph"|"h1".."h6"|"quote"|"indent"|"bullet"|"number"|"code"|"button"|"divider"|"freewall"|"file",
-      level: int,                # list nesting
-      text: Text (with marks)    # bold, italic, underline, strike, code, mention{user}
-      attrs: Map                 # button: url, caption, colour (each field last-writer-wins); file: file_id, caption; number list: start
-    }
-  files: Map of file_id -> { name, mime, kind, blob_id, key, sha256, size, width, height, duration, added_by }
-  meta: Map                      # title, subtitle (each a small Text), cover: file_id, topics
+root { title: Text, subtitle: Text, cover: str, blocks: List<Map> }
+block { id, kind, level, ordered, number, attachment, caption, url, colour, list_start, text: Text with marks }
 ```
 
-- **Rich text** is a `Text` with marks, one per block, so a Return splits a block (a new Map inserted after, the tail of the text moved) the way the editor does today.
-- **Block order and drag to arrange** are list operations (move = delete and insert of the same block id with its content copied; blocks are small, so copy-and-delete is acceptable whether or not the library offers a native list move, which I did not check).
-- **Images, videos, audio** are `file` blocks that point at a **stable `file_id`**, not at "the n-th attachment" (that index changes when files are added or removed). **At publish** the file blocks are turned back into today's `![](attachment:n)` with the attachments in document order; the cover is the first `cover.jpg` as now. Nothing downstream (the reader, the sealed post, subscribers) changes.
-- **Buttons and the freewall** are blocks (their address, caption and colour are `attrs`; two authors editing the same button field is last-writer-wins, which is what a person expects).
-- **The conversion** between the editor's attributed string and these blocks stays where the grammar already lives: LimeCore. The iOS editor sends **text deltas** (replace range r with string s, apply mark m over a range) and receives deltas for remote changes; Android will do the same with its own editor.
-- **Undo** is per author: your undo reverts your own latest changes, never someone else's. (Implemented by remembering the operations of the local actor; an Automerge actor id is per device.)
-- **Authorship colours** (who wrote this) are possible because each change carries its actor id; a signed `draft.actor` op in the draft room maps actor ids to users (§2). Not in the first build (§8).
+Kinds: `paragraph`, `h1` to `h6`, `quote`, `indent`, `item` (list item with level and numbered flag), `code`, `image` (a file by number), `button`, `divider`, `freewall`. Marks: bold, italic, underline, strike, code, link, mention. Positions are Unicode characters (the app converts from UTF-16). It imports from and exports to the **same post Markdown** the editor makes today (`format::parse_post` / `serialize_post`), so **publishing is unchanged**.
 
-## 2. The channel
+- **Persistence:** SQLCipher tables `drafts` (snapshot, post link, sync state) and `draft_chunks` (incremental saves); compaction to one snapshot after 200 changes.
+- **Merging:** two documents merge only if one began as a copy of the other, so a late joiner is given a **snapshot**, never a fresh document.
+- **The editor feeds the draft by reconcile** (`DraftDoc::reconcile`, call `draft_reconcile`): the editor still works on its own attributed text; after each change (120 ms debounce) its Markdown is compared with the draft and the **fewest operations** are applied (unchanged blocks untouched; a changed block gets only the differing characters and style runs). One typed letter is about 100 bytes, so another author's edit to the same paragraph **merges** instead of being replaced. Remote changes come back as patches; the editor redraws from the draft and relocates the caret by the characters around it (`CaretAnchor`), keeping focus.
+- **Limits:** about 200 KB of text and 2,000 blocks per draft, 5 authors, 10 files.
 
-**Recommendation: each draft has its own small encrypted room made from the existing group machinery**, so we reuse Megolm, signed state, rotation and the mailbox, and inherit 232/232b's guarantees.
+## 2. Two paths for one draft
 
-- **The room.** A conversation of a new kind (`dr:<draft id>`, hidden from Messages) with the group state log: the **writer** is the owner; each **accepted co-author** (the 188f request and accept, unchanged) is a member. Not shown as a chat anywhere; it surfaces only inside the article editor ("Drafting with Jean").
-- **Ops in the room** (each signed by the author's device, like a group message, sealed in the sender's Megolm session):
-  - `draft.change { changes }`: a batch of Automerge changes (a few hundred bytes; typing is coalesced to **at most one batch every 1.5 seconds** per author while typing).
-  - `draft.snapshot { doc, heads }`: a complete `save()` of the document, sent when someone joins, after a long offline gap, and every 200 changes or 24 hours so that old change messages can be forgotten.
-  - `draft.heads { heads }`: a small hello sent when a phone comes online, so peers can send what is missing (this is the Automerge sync idea carried on the room's messages, without a live connection).
-  - `draft.actor { actor_id }`: maps a device's actor id to a person (for authorship colours).
-- **Who is in it, adding and removing.** Adding an author = the writer adds them to the room's state log (they already accepted the credit request); the room's Megolm session rotates and the new member receives the key **and a snapshot** over Olm, so they see the whole draft. **Removing** an author rotates the session: they read nothing new. What they already wrote stays in the document (a CRDT cannot unwrite; the writer reverts by editing), and what they already read they keep on their phone (no one can take that back; the screen says so).
-- **Offline edits and merging.** Each phone keeps its replica and its pending changes. On reconnect it sends `draft.heads`; peers answer with the changes the sender lacks (or a snapshot if that is smaller). Because merges are commutative, order of arrival does not matter. A phone that was offline for a long time may receive a snapshot and many changes: it applies them all, then shows a brief "Updated with Jean's changes" line.
-- **History size and compaction.** Automerge keeps the whole history (that is what makes concurrent merges exact). A draft's `save()` is the compact form (2.6 KB for 2,000 edits in my test). Change messages sit in a device's server mailbox only until that device fetches and acknowledges them (and expire there like any mailbox item); the long-term copy is each phone's replica. A snapshot every 200 changes bounds what a new or long-absent device must fetch. After the post is published and the draft is archived, a snapshot is the last thing sent.
-- **Sessions and rotation reuse the group rules:** a new outbound Megolm session after a membership change, 100 messages or 7 days (typing batches are many messages, so rotation will be frequent; the cost is one small key message per author per rotation).
-- **Authentication.** Every op is signed by the author's device and checked against the pinned master key like any group message. A member cannot forge another's edit; any member can *make* an edit (that is the point).
+**(a) Instant.** A **public Supabase Realtime broadcast channel**, one per draft: topic `realtime:draft:<channel id>` (a random 128-bit id, 32 hex characters), joined with the **public API key only and no user token** (`private: false`, `self: false`), so the server cannot tie the channel to an account. Each message is `nonce(12) || AES-256-GCM` of a signed inner message, under a key derived from the draft key (`HKDF-SHA256(draft_key, "lime-draft-instant-v1")`) with the channel id as associated data. The inner message is the usual signed sealed-sender envelope: an op of type `draft.live` signed by the author's **device key**, with the device certificate chained to the author's pinned master key. A receiver drops anything that: does not decrypt, is not signed by a current active author's device (cert chain to the pinned key), is from itself, or names another draft. Nothing is stored by the relay. Payloads: `k:"c"` (Automerge changes since the last instant send) and `k:"p"` (presence). Reconnect with backoff; typical delay 1 to 20 ms on the stack tested (21 ms to the hosted staging project; the test asserts under 500 ms).
 
-## 3. Presence
+**(b) Durable.** The same changes go to each other author as **pairwise sealed control ops** through the ordinary mailbox, with 232's save-before-send outbox (`draft_outbox`): `draft.change {bytes}` batched **at most once per 5 s per draft** while typing (so at most 12 sends a minute per author per draft, well under the server's limit), and `draft.hello {heads}` every 60 s and on opening (the receiver sends back what the other lacks, so offline authors, late joiners and dropped sockets converge). **A deliberate difference from DESIGN-22's "draft group":** with at most 5 authors, pairwise Olm sealing reuses the best-tested path and avoids a new Megolm group per draft; it costs up to 4 sends per batch, still inside the limit.
 
-- **What is shown:** who is in the draft now (small circles at the top of the editor), a **remote caret and selection** in each author's colour with their first name when they move, and "Jean is typing".
-- **Mechanism:** ephemeral `draft.presence { anchor, head, typing }` ops in the same room. The anchors are **positions in the CRDT** (an element id plus offset), so a caret stays in place while others type before it.
-- **Traffic discipline (so the server sees a sane amount):** presence is sent **at most once a second** per author, **only while the editor is on screen and the author has moved or typed in the last 10 seconds**, and **only to authors who sent presence themselves in the last 60 seconds** (others are offline or not looking). It stops 10 seconds after the last movement. Presence is **not stored**: a small server change adds an `ephemeral` flag to `send` that gives the item a 60-second expiry (so a phone that was offline does not wake up to a pile of old carets). Without that server change presence would still work but would sit in mailboxes; it is cheap to add.
-- **Rate limits:** the existing per-address send limit applies; at 1 presence message per second per active author and 4 other authors it is far under it. Drafts are limited to **5 authors** (§8).
+## 3. Authors, keys, removal
 
-## 4. Files
+- **Invite** (`share_draft`): the writer adds accepted contacts (up to 4 besides themselves). Each gets `draft.invite {draft_id, channel_id, key, writer, authors, snapshot}` sealed to them: the channel, the key and the whole draft. In the app, picking a co-author in the editor's person-plus picker sends it at once; the invitee sees **"Shem invited you to write <title>"** in Activity (own profile) and **Open draft** on the post's ⋯, and opening it marks the invitation seen. (The publish-time credit request of LIME-188f is separate and unchanged.)
+- **Removal** (`remove_draft_author`): the writer takes someone out; the key changes and the others get it (`draft.key`); the removed phone gets `draft.removed`, drops the key and its outbox, and anything it sends later fails to verify. **Leave** (`leave_draft`) says `draft.leave`.
+- `draft.authors` tells existing authors about a new one.
 
-An image, video, audio or file one author adds while others are editing:
+## 4. Presence: what you see
 
-1. The author's phone encrypts it (the same chunked AES the attachments use) and uploads it **once** as a new **`draft` blob class** (owned by the uploader, counted against their quota, **30-day expiry that is renewed while the draft is edited**; abandoned drafts clean themselves up).
-2. It writes the file into the document (`files` map: id, name, mime, size, hash, dimensions, **blob id and key**), so the **key travels inside the encrypted room**, never to the server. Every author's phone then shows a placeholder and downloads the blob in the background; the CRDT carries only the small record.
-3. **At publish** the writer's phone has all the files (it downloaded them) and uploads them as ordinary **jam-class** blobs inside the post, exactly as for a post written alone. Draft blobs are deleted. So the published post and its files are indistinguishable from today's: no new trust on the server, no new reader code.
+Sent over the instant path, never stored. My place is a **block id plus a character offset** (and an end for a selection), not an editor position (those differ between phones). At most ten sends a second, on every move and change; a **10 s heartbeat**; **away** when the editor closes.
 
-Removing a file from the draft removes its block; the blob lapses at its expiry (or is deleted by the uploader's phone when no one references it).
+In the editor: an **authors' row** at the top (a dot in the author's colour on whoever was heard in the last 25 s), **"Jean is editing..."** while someone typed in the last 5 s (VoiceOver: "Jean is editing the third paragraph"), and in the page each other author's **caret in their colour with a small tag (photo or initial, first name)** above it; the tag **fades to just the caret after 3 s without a move** and returns when they move; their **selection is tinted** in their colour. The colour is their avatar tone, **darkened (light mode) or lightened (dark mode) until it reads at 3:1 against the page**. The cursor layer is drawn inside the text view (it scrolls with the page, takes no touches); `CoEditMap` maps draft blocks onto the editor's lines and back.
 
-## 5. Publishing
+## 5. Pictures and video from any author
 
-- **The draft and the post are different things.** The draft lives only in the authors' room. The **published post** is today's post: one sealed blob, signed by the writer's device, sent in the writer's jam session to the subscribers.
-- **Who may Publish and Update: the writer only (recommended for v1).** The writer's phone holds the jam's outbound sessions and signs the notice; letting a co-author publish would mean handing them the jam's session keys or a signing delegation, which weakens "this is the writer's jam" and has a long tail (revoking, per-tier sessions, rotation). Co-authors get a **"Ready" button** instead: it marks the draft ready (a small op in the room) and the writer sees "Jean marked it ready". The writer taps Publish.
-- **Publishing from a draft:** the writer's phone renders the current document to the Markdown subset (and the file list), checks the 30,000-byte cap and the free/subscribers audience as the editor does today, and publishes through the existing path. The post records the draft's **heads at the moment of publishing** (locally; not sent).
-- **After publishing:** the draft **stays open**. Further changes accumulate; the editor shows "12 changes since published" and **Update post** (the writer only) sends a new version through the existing edit path (195/195b: a new blob, the same post id). Co-authors' credits are the same as today.
-- **Series, covers, audience, topics, the Preview marker (210):** unchanged; they are the writer's choices at publish, not co-edited (the title and subtitle are co-edited).
+`draft_add_file` (any author): the file is kept on the adder's phone, **encrypted there and uploaded once** (the ordinary attachment upload, chunked and resumable), and the key and details go to every other author in the sealed op `draft.file {number, file descriptor}` (never to the server). The number is random (so two authors adding at once do not collide). Each author's phone fetches and verifies the bytes on demand (`draft_file_data`), showing the tiny thumbnail meanwhile. The editor swaps its own list index for the draft's file number whenever it writes to the draft, so every author's editor shows the picture and the writer's publish includes it.
 
-## 6. Org posts and podcasts
+## 6. Publishing
 
-- **Org posts (multi-writer orgs, 193d).** The org's writers' group is the natural member list: an org post's draft room has **the post's starter plus any org writers they invite** (up to the same 5, not all 20; large rooms are a typing-traffic problem). **Publish and Update** need the org certificate; every org writer holds one (193d), so **any org writer in the draft may publish as the org**, unlike a personal jam. This depends on 193d and is built after it; the draft room itself does not change.
-- **Podcasts (recordings).** The audio or video is one person's recording and is not co-edited. The **title, subtitle and description** are short text and could use the same room, but the value is small. **Recommendation: articles only in v1**; podcasts reuse the same machinery later if teachers ask for it.
-- **Quick posts and comments:** not co-edited.
+**Only the writer publishes** (DESIGN-22 section 6, the user: "ok"): the post lives in and is signed by the writer's jam. A co-author sees **"Shem publishes this article"** and a **Ready** button (`draft_set_ready`, sealed `draft.ready` to the writer only); the writer sees **"Jean is ready"**. After a publish the writer's phone sends `draft.published {post_id, at, heads}` to every author (`draft_mark_published`), which clears all Ready flags; everyone sees **"Published by Shem · <time>"**, and **"Changes since the last publish"** when the draft's heads differ from the heads sent. In the app the writer's Post and Update are unchanged (the editor's own Markdown and file list, so covers, captions and link cards work as before) and then call `draft_mark_published`; a co-author's toolbar button is **Done**. `publish_draft` (core-first, for Android and tests) publishes the draft directly: pictures from any author become the post's files numbered from 0 in order of appearance.
 
 ## 7. What each party learns
 
-| | Learns |
-| --- | --- |
-| **lime's server** | That these accounts exchange encrypted messages (as it already sees for any chat): **who** talks to whom, **sizes** (a few hundred bytes for a typing batch, a few KB for a snapshot), and **times**, including the **typing cadence**. Presence is flagged ephemeral and expires after 60 seconds. It stores draft file blobs as ciphertext for 30 days: their sizes and owners. It does not learn the content, that it is a draft rather than a chat, the title, or who is the writer. |
-| **Co-authors** | The whole draft, its history (Automerge keeps it) and who changed what if authorship colours are on; the files. After removal they keep what they had. |
-| **Subscribers** | Only **published versions**, exactly as today. They never see a draft, a co-author's unpublished words or presence. |
-| **Apple** | Nothing new (notifications for the room's messages are silent and generic, or off: drafts do not notify). |
+- **The server (Supabase):** for the **durable path**, the same as a busy group chat: that these accounts exchange sealed items, their sizes and times; nothing of the text. For the **instant path (new metadata):** that some network addresses are connected to one random channel at the same moment, and the sizes and times of encrypted messages on it; **not accounts** (no token is sent), not text. For **pictures:** one more encrypted blob and its size, like any attachment. The relay cannot read, forge or replay anything useful: it holds no key; forged or replayed messages fail the signature or the author check.
+- **Someone who learns a channel id** (it is never sent to the server in a form tied to an account, only used as a topic name) can join the topic and see ciphertext and sizes, or inject junk, which is dropped. They cannot read it.
+- **Co-authors:** the whole draft and its history, their colleagues' cursors, the pictures. A removed co-author keeps what they already had and gets nothing after the key change.
+- **Subscribers:** only published versions; nothing of the drafting, presence or Ready flags.
 
-## 8. Limits for v1, Android parity, and the build split
+## 8. Limits for v1
 
-**Limits (v1):**
-- **5 authors** per draft (the writer plus up to 4 accepted co-authors: the same number as the credit cap).
-- **Document: the 30,000-byte Markdown cap applies at publish**; the editor warns at 80 %. The Automerge replica itself is capped at **2 MB** (compacted); beyond that, "This draft is too large to edit together".
-- **25 files** per draft, each up to the jam file limit (24 MiB).
-- **Typing batches at most every 1.5 s, presence at most 1 per second** (§3).
-- **Articles only** (§6). **No suggestions or comments on drafts** (a later brief). **No authorship colours in the first build.**
+5 authors per draft; about 200 KB of text and 2,000 blocks; 10 files per draft; articles only (not quick posts, podcasts, or org posts by several writers); compaction after 200 changes; presence at most ten sends a second; durable batches at most one per 5 s per draft.
 
-**Android parity (core-first).** Everything above except the editor is LimeCore: the CRDT wrapper, the markdown conversion, the room ops, rotation, snapshots, file records, presence. UniFFI gives Swift and Kotlin the same narrow functions (`draft_open`, `draft_apply_local_delta`, `draft_take_remote_deltas`, `draft_publish_markdown`, `draft_presence`, ...). Only the text-view binding (the part that turns edits into deltas and draws remote carets) is written per platform.
+## 9. Android notes
 
-**The build split (estimates in working days; for plot):**
+Everything above except two adapters is in LimeCore (Rust through UniFFI) and `./core/check-android.sh` passes: the document, reconcile, the instant wire format and verification, the durable ops, files, status, `publish_draft`. Android needs: (1) a **Realtime WebSocket client** like iOS's `DraftRealtime` (the Phoenix protocol: `phx_join` with `private:false`, `broadcast` event `d` with payload `{w: base64}`, a heartbeat every 25 s, backoff on reconnect); (2) the editor and cursor rendering. The iOS editor feeds the draft by Markdown reconcile because its text view is the source of truth; an Android editor could call the block-level edit calls (`draft_insert_text`, `draft_mark`, ...) directly.
 
-| | Brief | Size |
-| --- | --- | --- |
-| 233a | **Core: the document.** The Automerge wrapper, the block/mark model, conversion to and from the Markdown subset and the file list, convergence tests (property tests: random concurrent edits on 2 to 5 replicas always converge; a round trip equals the original Markdown) | L, 5 d |
-| 233b | **Core: the draft room.** The `dr:` conversation kind, change/snapshot/heads/actor ops, join with snapshot, removal with rotation, offline merge, compaction, fault tests in the style of 232/232b | L, 6 d |
-| 233c | **Server and core: presence and files.** The `ephemeral` flag on `send` (60 s expiry) and the `draft` blob class (30-day sliding expiry), presence ops with the rate rules, file records and background download | M, 3 d |
-| 233d | **iOS: the editor binding.** Edits to deltas and back, remote carets and selections, "Jean is typing", local undo, placeholders for files arriving | XL, 8 d |
-| 233e | **iOS: the flow.** "Draft with…" from the co-author request, the Ready button, Publish and Update from a draft, "n changes since published", leaving a draft | M, 4 d |
-| 233f | **Hardening.** Three phones, bad networks, kills mid-sync, a 200-change offline merge, the size caps | M, 3 d |
-| | **Total** | **about 29 working days** (233a to 233c can start before the editor design is final; 233d is the long pole) |
+## 10. Operations
 
-**Dependencies:** 232/232b (done), 188f/195b (the co-author flow, done), 231b's requests for any missing keys (done). The org case (§6) waits for 193d.
+See `docs/api-v2.md` section 16 for the `draft.*` ops.
 
-## 9. Decisions for the user
+## 11. Tests
 
-1. **Automerge** (recommended) or Yrs?
-2. **Only the writer publishes** (recommended), with a "Ready" button for co-authors, or may any author publish?
-3. **Articles only in v1**, podcasts and org posts later?
-4. **5 authors** per draft?
-5. Is the **about 29 days** acceptable before TestFlight 1, or should a smaller first cut ship (for example: two authors, no presence, no files, then add them)? A reasonable first cut is **233a + 233b + 233d without carets, two authors, text only**: about 17 days.
+Core (`client_tests.rs`, `drafts/tests.rs`): two authors typing in one paragraph end equal (durable); a late joiner catches up from a snapshot and is then heard; a removed co-author gets nothing and what they send is dropped; offline edits merge; durable sends stay within 12 a minute while typing; a bad signature or a removed author's instant message is dropped; a lost send answer loses nothing; the instant path against the real Realtime stack (worst 12 ms); only the writer publishes, Ready, the published banner and "changes since"; a co-author's picture is in the writer's post. iOS: unit tests for colours (3:1, all 8 tones, both modes), the block-to-editor map, presence timing, pictures drawn without changing words; UI tests in the demo with simulated authors (faces, cursor tag, remote words in place, my caret stays, no Post button for a co-author, Ready, the published banner).
+
+## 12. Differences from DESIGN-22, and what is not built
+
+- The durable path is **pairwise sealed ops, not a Megolm "draft group"** (section 2).
+- Inviting sends `draft.invite` **when the co-author is picked**, not "once they accept", because the existing co-author ask happens at publish time; accepting is opening the invitation.
+- **"Changes since the last publish"** is a line at the top, **not a highlight on each changed paragraph** (that needs a copy of the published text to compare with).
+- A picture's server blob lives for the ordinary attachment retention; an author who opens a draft long after may find an old picture gone (the adder's phone could re-upload on demand: not built).
+- The editor redraws its text when another author's change arrives, which **resets that text view's undo stack**; the caret, selection and keyboard are kept.
+- Cursors are best-effort for blocks the editor draws differently from the draft's words (pictures, buttons and dividers have no cursor).
+- Org posts by several writers (193d) and podcast descriptions are later.

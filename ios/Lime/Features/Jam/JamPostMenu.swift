@@ -32,7 +32,7 @@ struct JamPostMenu: View {
         let playable = post.kind == "record" && post.state == "ready" && NowPlaying.shared.makeItem(for: post, store: store) != nil
         Menu {
             Section {
-                if let draft = store.sharedDraft(forPost: post.postId) { Button { openDraft = DraftRoute(id: draft) } label: { Label("Open draft", systemImage: "doc.text") }.accessibilityIdentifier("card-open-draft") }
+                if let draft = store.sharedDraft(forPost: post) { Button { openDraft = DraftRoute(id: draft) } label: { Label("Open draft", systemImage: "doc.text") }.accessibilityIdentifier("card-open-draft") }
                 if mine { Button { editing = post } label: { Label("Edit", systemImage: "pencil") }.accessibilityIdentifier("card-edit") }
                 Button { sharing = true } label: { Label("Share in lime\u{2026}", systemImage: "square.and.arrow.up") }.accessibilityIdentifier("card-share")
             }

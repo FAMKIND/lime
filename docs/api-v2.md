@@ -423,3 +423,28 @@ A contact who is offline gets the op at their next sync; one who never syncs aga
 **What is kept, and why.** The **deletion log** (`deleted_accounts`): a hash of the user id and the time, nothing else. The **username**, held for 30 days (`held_usernames`; `profile-set` refuses it; the sweep frees it) so nobody can take it to impersonate the person. **Reports about the account** (sealed; their 180 days apply; the subject cannot be marked deleted because it is inside the sealed payload). The **email** can sign up again at once.
 
 **What cannot be deleted.** Whatever other people already hold: messages, photos, files, jam posts they downloaded (except what the notice removes from their phone as above). Messages are end-to-end encrypted; lime cannot reach into a phone, and a phone that never receives the notice keeps everything.
+
+## 16. Shared drafts (LIME-233, `docs/coedit.md`)
+
+No server function is involved: shared drafts use the ordinary mailbox (sealed control ops between the authors' devices) and the existing attachment endpoint, plus a **public Realtime broadcast channel** that needs no function. Nothing was added to the server, the database or the project settings for it (the hosted staging project allows public broadcast channels with the anon key; checked read-only).
+
+**The durable ops** (pairwise sealed control ops, `core/src/client/draft_sync.rs` and `draft_publish.rs`; each is sent from the draft outbox with save-before-send and ignored unless the sender is the right kind of author):
+
+| op | from | payload | on receipt |
+|---|---|---|---|
+| `draft.invite` | writer | `draft_id, channel_id, key, writer, authors, snapshot` | only from an accepted contact who is the writer, for a draft I do not have: creates it from the snapshot |
+| `draft.change` | an author | `draft_id, bytes` (Automerge changes, base64) | applied; batched at most once per 5 s per draft |
+| `draft.hello` | an author | `draft_id, heads` | the receiver sends back the changes the sender lacks, and a hello if it lacks some |
+| `draft.authors` | writer | `draft_id, authors` | adds the people named |
+| `draft.key` | writer | `draft_id, key, authors` | a new draft key after a removal; authors not named are marked removed |
+| `draft.removed` | writer | `draft_id` | I am out: key and outbox dropped |
+| `draft.leave` | an author | `draft_id` | the sender is marked left |
+| `draft.ready` | a co-author | `draft_id, ready` | the writer sets that author's Ready flag |
+| `draft.published` | writer | `draft_id, post_id, at, heads` | records the publish for the banner; clears every Ready flag |
+| `draft.file` | an author | `draft_id, number, file` (an attachment descriptor: id, key, digest, size, mime, name, size hints, thumbnail) | records a picture or video; the bytes are fetched on demand |
+
+**The instant path** (`draft.live`): a Supabase Realtime **broadcast** topic `realtime:draft:<channel id>` (32 hex characters), `phx_join` with `config.private = false`, the anon key in the socket URL and **no user token**. A broadcast is event `d` with payload `{ "w": base64(nonce(12) || AES-256-GCM(HKDF(draft_key, "lime-draft-instant-v1"), aad = channel id, plaintext = a signed sealed-sender envelope whose op has type "draft.live")) }`. Payload kinds: `k:"c"` (`b`: changes) and `k:"p"` (`blk, off, eblk, eoff, typing, away`). Receivers drop what does not decrypt, is not signed by an active author's device (certificate chain to the pinned master key), is from themselves, or is for another draft.
+
+**Files:** a draft's picture or video is uploaded with the existing `attachment` function (`put` with `recipients` = the other authors, `commit`) and fetched with `get`; its key travels only in `draft.file`.
+
+**Tables (client, SQLCipher):** `drafts`, `draft_chunks`, `draft_authors`, `draft_outbox`, `draft_files` (migrations 53 to 55).
