@@ -8306,3 +8306,10 @@ On other people's phones (not reachable): their chats with the account, jam post
 - **Found on the way:** the selection indices from `TextField(selection:)` can be stale (a crash on `String.distance`); read by UTF-16 offset with a bounds guard.
 - **Not covered:** the two-real-phones feel the gate asks for (both typing in one sentence fast) — that is your check.
 - **Installed:** the Debug build on the 13 mini, the iPad and Jean's 12 mini (all three: yes).
+
+## LIME-234 — back from a reply thread keeps your place in the chat — DONE
+
+- **Cause (as plot read it):** the chat's open task (`.task(id: conversationID)`) scrolls to the newest message at 0/120/350 ms and restarts whenever the chat view reappears; opening a thread pushes onto the same stack, so popping back re-ran it.
+- **Fix:** `ChatView` remembers it has settled once (`settledOnce`); a reappearance after a pushed screen (a thread, a profile, group details, media) no longer re-runs the settle, so the scroll view, its rows window and the position stay as they were. A fresh open, a notification or a search jump still builds a new `ChatView` and lands as before. I did not add a separate "restore the top message + offset" step or touch the "new messages" pill: the scroll view is not recreated, so its position is kept as is (checked by the test below); say if on-device it still moves.
+- **Test:** `ChatOpensUITests.testBackFromAThreadKeepsThePlaceInTheChat` (demo, 200 messages, a thread on message 100): scroll up to it, open its thread, go back: it is still on screen within 12 pt of where it was and message 200 is not on screen. The other seven open-at-newest tests in that class still pass.
+- **Installed:** Debug build on the 13 mini, the iPad and Jean's 12 mini (all three: yes).

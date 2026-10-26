@@ -34,6 +34,9 @@ struct ChatView: View {
     @State private var scrollRequest: ScrollRequest?
     /// How many of the newest rows are laid out (LIME-164): the first page, growing as you scroll up.
     @State private var windowRows = ChatWindow.first
+    /// The chat has settled at its newest message once. Coming back from a screen pushed on top (a thread, a profile) re-runs the open task; it must
+    /// leave the scroll where it was (LIME-234).
+    @State private var settledOnce = false
     /// The opening scroll is done: only now does scrolling near the top load older rows.
     @State private var openSettled = false
     /// The list's content height and offset, kept in a plain box (no redraws), to keep your place when older rows are added.
@@ -204,7 +207,8 @@ struct ChatView: View {
                 // Opening a chat: once its rows have been laid out, settle at the newest message. `defaultScrollAnchor` alone is not
                 // enough on every iOS version (a chat pushed at launch opened at its top on iOS 18); this is a no-op when it worked.
                 // Not for a search result's jump to a message.
-                guard focusMessageID == nil else { return }
+                guard focusMessageID == nil, !settledOnce else { return }
+                settledOnce = true
                 #if DEBUG
                 openProbe.open(conversationID, messages: conversation.messages.count, loaded: store.isLoaded)
                 openProbe.log("window=\(windowRows) of \(ChatRow.rows(for: conversation).count) rows")

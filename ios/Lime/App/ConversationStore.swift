@@ -1028,6 +1028,11 @@ final class ConversationStore {
                 let text = "Message \(i): \(body)" + (i % 9 == 0 ? ". Could you also look at the long list of things for Friday, because it has a lot of lines and wraps over several rows." : "")
                 messages.append(Message(id: "m\(i)", senderID: i % 3 == 0 ? nil : "pat", text: text, date: Date().addingTimeInterval(Double(i - count - 1) * 1_800), state: i % 3 == 0 ? .sent : .received))
             }
+            // A thread on message 100 (LIME-234: back from it keeps your place).
+            if count >= 100 {
+                messages[99].thread = ThreadInfo(replyCount: 1, lastReplyAt: Date().addingTimeInterval(-3_600), repliers: [pat], unread: 0)
+                demoThreads = ["m100": [messages[99], Message(id: "m100a", senderID: "pat", text: "A reply in the thread", date: Date().addingTimeInterval(-3_600))]]
+            }
             conversations.insert(Conversation(id: "dm:long", title: pat.name, members: [pat], messages: messages), at: 0)
             path.append("dm:long")
         case "call-bubbles":

@@ -121,4 +121,24 @@ final class ChatOpensUITests: XCTestCase {
         XCTAssertFalse(any(app, "chat-earlier").exists, "nothing is hidden")
         XCTAssertTrue(message(app, containing: "Message 1:").waitForExistence(timeout: 3), "the first message is there")
     }
+
+    /// LIME-234: back from a reply thread, the chat is where it was (not at the newest message).
+    func testBackFromAThreadKeepsThePlaceInTheChat() {
+        let app = app(["-lime-demo-long=200"])
+        let scroll = any(app, "chat-scroll")
+        XCTAssertTrue(scroll.waitForExistence(timeout: 8))
+        let summary = any(app, "thread-summary-m100")
+        var tries = 0
+        while !(summary.exists && summary.isHittable) && tries < 40 { scroll.swipeDown(velocity: .fast); tries += 1 }
+        XCTAssertTrue(summary.isHittable, "message 100 is on screen after scrolling up")
+        let before = summary.frame.minY
+        summary.tap()
+        XCTAssertTrue(any(app, "thread-scroll").waitForExistence(timeout: 8), "the thread opened")
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(scroll.waitForExistence(timeout: 8))
+        sleep(2)   // the old open task would have scrolled to the newest by now
+        XCTAssertTrue(summary.exists && summary.isHittable, "message 100 is still on screen")
+        XCTAssertEqual(summary.frame.minY, before, accuracy: 12, "at the same place")
+        XCTAssertFalse(message(app, containing: "Message 200").isHittable, "not at the newest message")
+    }
 }
