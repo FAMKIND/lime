@@ -32,6 +32,13 @@ struct CoEditFiles {
     var fill: (Int, OutgoingAttachment) -> Void
     /// The width pictures are drawn at.
     var width: () -> CGFloat
+    /// The title and subtitle fields (the sheet's own state).
+    var title: () -> String = { "" }
+    var subtitle: () -> String = { "" }
+    var setTitle: (String) -> Void = { _ in }
+    var setSubtitle: (String) -> Void = { _ in }
+    /// Where this author's caret is when it is in the title or subtitle: the field, the caret and the other end of a selection, in characters.
+    var focusedField: () -> (field: String, caret: Int, end: Int)? = { nil }
 }
 
 /// The article editor's link to its shared draft (LIME-233c, DESIGN-22): every change in the editor is handed to LimeCore as the fewest operations, a
@@ -41,6 +48,11 @@ final class CoEditSession {
     let draftID: String
     private let store: ConversationStore
     private var pending: Task<Void, Never>?
+    /// The draft's heads when the editor last showed exactly the draft (before this author's edits since): edits are merged from there, so another author's
+    /// words that reached the draft first are kept and shown, never reverted.
+    private var baseHeads: [String] = []
+    private var pendingMerge = false
+    private var sendTask: Task<Void, Never>?
     /// While the editor itself is being rewritten with someone else's words, its changes are not the person's.
     private(set) var applyingRemote = false
     /// The other authors of this draft and where they are (LIME-233d).
@@ -65,25 +77,69 @@ final class CoEditSession {
     init(draftID: String, store: ConversationStore) {
         self.draftID = draftID
         self.store = store
+        baseHeads = store.coeditHeads(draftID)   // the editor is filled from the draft as it is now
     }
 
-    /// The editor changed: after a moment (so a burst of typing is a few calls), the draft says what the editor shows.
+    /// The editor has just been filled from the draft: edits count from here.
+    func rebase() { baseHeads = store.coeditHeads(draftID) }
+
+    /// The editor (or the title or subtitle) changed: at once, the change is merged into the draft from the point where the editor last matched it
+    /// (nothing to wait for, so no other author's words can be overwritten), and goes out on the instant path within 50 ms.
     func editorChanged(title: String, subtitle: String, composer: RichComposerModel) {
         guard !applyingRemote else { return }
         lastTyped = .now
+        merge(composer: composer)
         sendPresence(composer, force: true)
-        pending?.cancel()
-        pending = Task { @MainActor [weak self, weak composer] in
-            try? await Task.sleep(for: .milliseconds(120))
-            guard !Task.isCancelled, let self, let view = composer?.textView else { return }
-            self.syncNow(title: title, subtitle: subtitle, markdown: self.draftMarkdown(from: view.textStorage))
+    }
+
+    /// Hands the editor to the draft and takes back what others wrote. `true` when the editor showed something new.
+    @discardableResult
+    func merge(composer: RichComposerModel) -> Bool {
+        guard let view = composer.textView, let host = files else { return false }
+        if view.markedTextRange != nil { pendingMerge = true; return false }   // while a letter is being composed, later
+        pendingMerge = false
+        let title = host.title(), subtitle = host.subtitle()
+        let mine = draftMarkdown(from: view.textStorage)
+        guard let heads = store.coeditMerge(draftID, base: baseHeads, title: title, subtitle: subtitle, markdown: mine) else { return false }
+        let local = heads != baseHeads
+        baseHeads = heads
+        guard let merged = store.coeditMarkdown(draftID), let meta = store.coeditMeta(draftID) else { return false }
+        var changed = false
+        if merged != mine {
+            applyingRemote = true
+            defer { applyingRemote = false }
+            harvestPictures(from: view.textStorage)
+            CoEditSplice.apply(render(markdown: merged), into: view)
+            composer.didEdit()
+            changed = true
         }
+        if meta.title != title { host.setTitle(meta.title); changed = true }
+        if meta.subtitle != subtitle { host.setSubtitle(meta.subtitle); changed = true }
+        if local || changed { scheduleSend() }
+        return changed
+    }
+
+    /// Instant sends are at most one every 50 ms (a burst of typing is one small message).
+    private func scheduleSend() {
+        guard sendTask == nil else { return }
+        sendTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(50))
+            guard let self else { return }
+            sendTask = nil
+            store.sendDraftChangeInstantly(draftID)
+        }
+    }
+
+    /// Other authors' changes reached the draft (instant message, sync): the editor takes them in place.
+    func applyRemote() {
+        guard let composer else { return }
+        _ = store.coeditTakePatches(draftID)
+        merge(composer: composer)
     }
 
     func syncNow(title: String, subtitle: String, markdown: String) {
         pending?.cancel()
-        guard store.coeditReconcile(draftID, title: title, subtitle: subtitle, markdown: markdown) else { return }
-        store.sendDraftChangeInstantly(draftID)
+        if let composer { merge(composer: composer) }
     }
 
     /// The editor's text as the draft knows it: each picture goes by the number every author uses for the file (the file is added to the draft the
@@ -163,30 +219,6 @@ final class CoEditSession {
 
     /// The draft as post Markdown, after the editor's latest state was handed over.
     func exportMarkdown() -> String? { store.coeditMarkdown(draftID) }
-
-    /// Other authors' changes that arrived: the editor's text becomes the draft's, the caret stays where it was (by what surrounds it).
-    func applyRemote(to composer: RichComposerModel, title: inout String, subtitle: inout String) {
-        guard let view = composer.textView, view.markedTextRange == nil else { return }
-        _ = store.coeditTakePatches(draftID)   // the editor is redrawn from the draft below; the patches only say it changed
-        guard let markdown = store.coeditMarkdown(draftID), let meta = store.coeditMeta(draftID) else { return }
-        // Nothing to draw when the editor already shows the draft (our own change coming back, a no-op).
-        guard markdown != draftMarkdown(from: view.textStorage) || meta.title != title || meta.subtitle != subtitle else { return }
-        applyingRemote = true
-        defer { applyingRemote = false }
-        let before = view.text ?? ""
-        let range = view.selectedRange
-        let isFocused = view.isFirstResponder
-        harvestPictures(from: view.textStorage)
-        view.attributedText = render(markdown: markdown)
-        let after = view.text ?? ""
-        let start = CaretAnchor.relocate(range.location, in: before, to: after)
-        let end = range.length > 0 ? CaretAnchor.relocate(range.location + range.length, in: before, to: after) : start
-        view.selectedRange = NSRange(location: min(start, after.utf16.count), length: max(0, min(end, after.utf16.count) - min(start, after.utf16.count)))
-        if isFocused && !view.isFirstResponder { view.becomeFirstResponder() }
-        if title != meta.title { title = meta.title }
-        if subtitle != meta.subtitle { subtitle = meta.subtitle }
-        composer.didEdit()
-    }
 }
 
 // MARK: Writing together (LIME-233d)
@@ -324,7 +356,7 @@ final class CoEditPeers {
         peers[at].lastSeen = now
         if let presence {
             if presence.away { peers[at].presence = nil; peers[at].lastSeen = .distantPast } else {
-                let moved = peers[at].presence.map { $0.blockId != presence.blockId || $0.offset != presence.offset || $0.endOffset != presence.endOffset || $0.endBlockId != presence.endBlockId } ?? true
+                let moved = peers[at].presence.map { $0.field != presence.field || $0.blockId != presence.blockId || $0.offset != presence.offset || $0.endOffset != presence.endOffset || $0.endBlockId != presence.endBlockId } ?? true
                 if moved { peers[at].lastMoved = now }
                 if presence.typing { peers[at].lastTyped = now }
                 peers[at].presence = presence
@@ -359,7 +391,7 @@ final class PeerCursorLayer: UIView {
         let dark = textView.traitCollection.userInterfaceStyle == .dark
         var seen = Set<String>()
         for peer in peers {
-            guard let presence = peer.presence, now.timeIntervalSince(peer.lastSeen) < 25,
+            guard let presence = peer.presence, presence.field.isEmpty || presence.field == "body", now.timeIntervalSince(peer.lastSeen) < 25,
                   let at = CoEditMap.position(blockID: presence.blockId, offset: Int(presence.offset), in: slots),
                   let caretPos = textView.position(from: textView.beginningOfDocument, offset: at) else { continue }
             seen.insert(peer.id)
@@ -398,26 +430,26 @@ final class PeerCursorLayer: UIView {
 
     private func makeTag(for peer: CoEditPeers.Peer, colour: UIColor) -> UIView {
         let tag = UIView()
-        tag.layer.cornerRadius = 4; tag.clipsToBounds = true
+        tag.layer.cornerRadius = 6; tag.clipsToBounds = true
         tag.isUserInteractionEnabled = false
         tag.isAccessibilityElement = true
         let ink = PeerColor.ink(on: colour)
         let label = UILabel()
-        label.font = .systemFont(ofSize: 11, weight: .semibold)
+        label.font = .systemFont(ofSize: 13, weight: .semibold)
         label.textColor = ink
         label.text = peer.person.name.split(separator: " ").first.map(String.init) ?? peer.person.name
         let face = UIImageView()
-        face.layer.cornerRadius = 7; face.clipsToBounds = true; face.contentMode = .scaleAspectFill
+        face.layer.cornerRadius = 10; face.clipsToBounds = true; face.contentMode = .scaleAspectFill
         if let photo = AvatarCache.shared.image(for: peer.person.id) { face.image = photo } else {
             face.backgroundColor = ink.withAlphaComponent(0.25)
-            let initial = UILabel(); initial.text = String(peer.person.initials.prefix(1)); initial.font = .systemFont(ofSize: 8, weight: .bold); initial.textColor = ink; initial.textAlignment = .center
-            initial.frame = CGRect(x: 0, y: 0, width: 14, height: 14); face.addSubview(initial)
+            let initial = UILabel(); initial.text = String(peer.person.initials.prefix(1)); initial.font = .systemFont(ofSize: 11, weight: .bold); initial.textColor = ink; initial.textAlignment = .center
+            initial.frame = CGRect(x: 0, y: 0, width: 20, height: 20); face.addSubview(initial)
         }
         let stack = UIStackView(arrangedSubviews: [face, label])
-        stack.axis = .horizontal; stack.spacing = 4; stack.alignment = .center
-        stack.layoutMargins = UIEdgeInsets(top: 2, left: 3, bottom: 2, right: 5); stack.isLayoutMarginsRelativeArrangement = true
-        face.widthAnchor.constraint(equalToConstant: 14).isActive = true
-        face.heightAnchor.constraint(equalToConstant: 14).isActive = true
+        stack.axis = .horizontal; stack.spacing = 5; stack.alignment = .center
+        stack.layoutMargins = UIEdgeInsets(top: 3, left: 4, bottom: 3, right: 8); stack.isLayoutMarginsRelativeArrangement = true
+        face.widthAnchor.constraint(equalToConstant: 20).isActive = true
+        face.heightAnchor.constraint(equalToConstant: 20).isActive = true
         tag.addSubview(stack)
         stack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([stack.leadingAnchor.constraint(equalTo: tag.leadingAnchor), stack.trailingAnchor.constraint(equalTo: tag.trailingAnchor), stack.topAnchor.constraint(equalTo: tag.topAnchor), stack.bottomAnchor.constraint(equalTo: tag.bottomAnchor)])
@@ -475,6 +507,7 @@ extension CoEditSession {
 
     private func tick() {
         guard let composer else { return }
+        if pendingMerge { merge(composer: composer) }
         redrawCursors()
         let now = Date.now
         if now.timeIntervalSince(lastPresence) > 10 { sendPresence(composer, force: true) }   // a heartbeat: "I am here"
@@ -526,18 +559,26 @@ extension CoEditSession {
         let now = Date.now
         guard force || now.timeIntervalSince(lastPresence) > 0.1 else { return }
         lastPresence = now
+        let typing = now.timeIntervalSince(lastTyped) < 1.5
+        if !away, let field = files?.focusedField(), !view.isFirstResponder {
+            store.sendDraftPresence(draftID, DraftPresence(field: field.field, blockId: "", offset: UInt32(field.caret), endBlockId: "", endOffset: UInt32(field.end), typing: typing, away: false))
+            return
+        }
         let slots = CoEditMap.slots(blocks: store.coeditBlocks(draftID), in: view.textStorage)
         let range = view.selectedRange
         guard away || view.isFirstResponder, let start = CoEditMap.place(range.location, in: slots) ?? (away ? ("", 0) : nil) else { return }
         let end = range.length > 0 ? CoEditMap.place(range.location + range.length, in: slots) : nil
-        let presence = DraftPresence(blockId: start.0, offset: UInt32(start.1), endBlockId: end?.blockID ?? "", endOffset: UInt32(end?.offset ?? 0),
-                                     typing: now.timeIntervalSince(lastTyped) < 1.5, away: away)
+        let presence = DraftPresence(field: "body", blockId: start.0, offset: UInt32(start.1), endBlockId: end?.blockID ?? "", endOffset: UInt32(end?.offset ?? 0), typing: typing, away: away)
         store.sendDraftPresence(draftID, presence)
     }
+
+    /// The caret moved in the title or subtitle.
+    func fieldMoved() { if let composer { sendPresence(composer, force: true) } }
 
     /// An instant message from another author: their place, and (through the revision) their words.
     func receive(_ event: DraftInstantEvent) {
         guard event.draftId == draftID else { return }
+        if !event.patches.isEmpty { applyRemote() }   // their words first, then their caret
         peers.receive(from: event.fromUser, presence: event.presence)
         redrawCursors()
     }
@@ -560,34 +601,13 @@ extension CoEditSession {
 }
 
 
-/// The authors at the top of the page: their faces, a dot on whoever is in the draft now, and who is editing. (LIME-233d)
+/// The lines about publishing under the byline: who is ready (the writer's view), who published and when, and whether the draft changed since.
 struct CoEditBar: View {
     let session: CoEditSession
     @Environment(ConversationStore.self) private var store
-    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-            let peers = session.peers.peers
-            if !peers.isEmpty || session.peers.status != nil {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 10) {
-                        face(store.meProvider(), live: true, tone: nil, label: "You")
-                        ForEach(peers) { peer in
-                            face(peer.person, live: session.peers.isLive(peer, now: context.date), tone: peer.tone, label: peer.person.name)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    publishLine(context.date)
-                    if let line = session.editingLine(now: context.date) {
-                        Text(line.shown).font(Theme.caption).foregroundStyle(Theme.textSecondary)
-                            .accessibilityLabel(line.spoken).accessibilityIdentifier("coedit-editing")
-                    }
-                }
-                .padding(.bottom, 6)
-                .accessibilityElement(children: .contain).accessibilityIdentifier("coedit-faces")
-            }
-        }
+        publishLine(.now).padding(.bottom, 4)
     }
 
     /// Who publishes: a co-author sees "Shem publishes this article" and **Ready**; the writer sees who is ready; after a publish, who published and when,
@@ -608,38 +628,10 @@ struct CoEditBar: View {
                         Text("\(names.joined(separator: " and ")) \(names.count == 1 ? "is" : "are") ready").font(Theme.caption.weight(.semibold)).foregroundStyle(Theme.text).accessibilityIdentifier("coedit-ready-list")
                     }
                 }
-                if !status.isWriter && status.publishedAt == nil {
-                    HStack(spacing: 10) {
-                        Text("\(writerName) publishes this article").font(Theme.caption).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("coedit-publishes")
-                        Button { session.toggleReady() } label: {
-                            Text(session.peers.iAmReady ? "Ready \u{2713}" : "Ready").font(Theme.font(.footnote, weight: .semibold))
-                                .padding(.horizontal, 14).frame(minHeight: 44)
-                                .background(Capsule().strokeBorder(Theme.hairline, lineWidth: 1))
-                        }
-                        .buttonStyle(.plain).foregroundStyle(Theme.text)
-                        .accessibilityLabel(session.peers.iAmReady ? "Ready, tell \(writerName) you are not" : "Ready").accessibilityHint("Tells \(writerName) you are done")
-                        .accessibilityIdentifier("coedit-ready")
-                    }
-                }
             }
         }
     }
-
-    private func face(_ person: Person, live: Bool, tone: Int?, label: String) -> some View {
-        AvatarView(person: person, size: 30)
-            .overlay(alignment: .bottomTrailing) {
-                if live {
-                    Circle().fill(Color(uiColor: PeerColor.color(tone: tone ?? person.tone, dark: scheme == .dark))).frame(width: 10, height: 10)
-                        .overlay(Circle().strokeBorder(Theme.canvas, lineWidth: 2)).offset(x: 2, y: 2)
-                }
-            }
-            .frame(width: 34, height: 34)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(person.id == store.meProvider().id ? "You, writing this article" : "\(label)\(live ? ", here now" : "")")
-            .accessibilityIdentifier("coedit-face-\(person.id)")
-    }
 }
-
 
 #if DEBUG
 extension CoEditSession {
@@ -666,9 +658,239 @@ extension CoEditSession {
         let jean = Person(id: "sim-jean", name: "Jean Park", tone: 4)
         peers.setAuthors([jean])
         guard let first = store.coeditBlocks(draftID).first(where: { !$0.spans.isEmpty }) else { return }
-        let presence = DraftPresence(blockId: first.id, offset: UInt32(3 + step % 2), endBlockId: first.id, endOffset: 7, typing: true, away: false)
+        let inTitle = ProcessInfo.processInfo.arguments.contains("-lime-coedit-sim-peer-title")
+        let presence = inTitle ? DraftPresence(field: "title", blockId: "", offset: UInt32(3 + step % 2), endBlockId: "", endOffset: 0, typing: true, away: false)
+                               : DraftPresence(field: "body", blockId: first.id, offset: UInt32(3 + step % 2), endBlockId: first.id, endOffset: 7, typing: true, away: false)
         peers.receive(from: jean.id, presence: presence)
         redrawCursors()
     }
 }
 #endif
+
+// MARK: The top bar, title and subtitle carets (LIME-233g)
+
+/// The authors as overlapping circles for the top bar, like Google Docs: yours first, then the others'; a ring in the author's colour on whoever is in
+/// the draft now. Tapping lists them.
+struct CoEditAvatars: View {
+    let session: CoEditSession
+    let action: () -> Void
+    @Environment(ConversationStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let peers = session.peers.peers
+        if !peers.isEmpty {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                Button(action: action) {
+                    HStack(spacing: -9) {
+                        ForEach(peers.reversed()) { peer in ring(peer.person, live: session.peers.isLive(peer, now: context.date), tone: peer.tone) }
+                        ring(store.meProvider(), live: false, tone: nil)
+                    }
+                    .environment(\.layoutDirection, .rightToLeft)
+                    .frame(minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Authors: you, " + peers.map { $0.person.name + (session.peers.isLive($0, now: context.date) ? " (here now)" : "") }.joined(separator: ", "))
+                .accessibilityHint("Shows who is writing this article")
+                .accessibilityIdentifier("coedit-authors")
+            }
+        }
+    }
+
+    private func ring(_ person: Person, live: Bool, tone: Int?) -> some View {
+        AvatarView(person: person, size: 28)
+            .padding(2)
+            .background(Circle().fill(live ? Color(uiColor: PeerColor.color(tone: tone ?? person.tone, dark: scheme == .dark)) : Theme.canvas))
+            .environment(\.layoutDirection, .leftToRight)
+    }
+}
+
+/// Who is writing: names, and who is here now.
+struct CoEditAuthorsSheet: View {
+    let session: CoEditSession
+    @Environment(ConversationStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                row(store.meProvider(), detail: "You", live: true)
+                ForEach(session.peers.peers) { peer in
+                    row(peer.person, detail: session.peers.isLive(peer) ? "Here now" : "Not here now", live: session.peers.isLive(peer))
+                }
+            }
+            .navigationTitle("Authors").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        }
+        .presentationDetents([.medium])
+    }
+
+    private func row(_ person: Person, detail: String, live: Bool) -> some View {
+        HStack(spacing: 12) {
+            AvatarView(person: person, size: 40).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(person.name).font(Theme.body).foregroundStyle(Theme.text)
+                Text(detail).font(Theme.caption).foregroundStyle(Theme.textSecondary)
+            }
+        }
+        .frame(minHeight: 48)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("coedit-author-\(person.id)")
+    }
+}
+
+/// A title or subtitle field that tells the session where its caret is (iOS 18 and later; before that, the end of the text).
+struct CaretTextField: View {
+    @Binding var text: String
+    let title: String
+    let prompt: Text
+    let report: (_ caret: Int, _ end: Int) -> Void
+
+    var body: some View {
+        if #available(iOS 18, *) {
+            Selectable(text: $text, title: title, prompt: prompt, report: report)
+        } else {
+            TextField(title, text: $text, prompt: prompt, axis: .vertical).onChange(of: text) { _, now in report(now.count, now.count) }
+        }
+    }
+
+    @available(iOS 18, *)
+    private struct Selectable: View {
+        @Binding var text: String
+        let title: String
+        let prompt: Text
+        let report: (Int, Int) -> Void
+        @State private var selection: TextSelection?
+
+        var body: some View {
+            TextField(title, text: $text, selection: $selection, prompt: prompt, axis: .vertical)
+                .onChange(of: selection) { _, now in
+                    guard let now, case .selection(let range) = now.indices else { return }
+                    // The selection's indices belong to the text as it was a moment ago: count by UTF-16 offsets, clamped, never by index distance.
+                    let ns = text as NSString
+                    func characters(_ index: String.Index) -> Int {
+                        guard index <= text.endIndex else { return text.count }
+                        return ns.substring(to: min(max(index.utf16Offset(in: text), 0), ns.length)).count
+                    }
+                    report(characters(range.lowerBound), characters(range.upperBound))
+                }
+        }
+    }
+}
+
+/// Where a caret sits in a title or subtitle: laid out the way the field lays its text out.
+enum FieldCaret {
+    static func point(text: String, offset: Int, font: UIFont, width: CGFloat) -> (point: CGPoint, height: CGFloat) {
+        let lineHeight = font.lineHeight
+        guard !text.isEmpty, width > 1 else { return (.zero, lineHeight) }
+        let storage = NSTextStorage(string: text, attributes: [.font: font])
+        let manager = NSLayoutManager()
+        let container = NSTextContainer(size: CGSize(width: width, height: .greatestFiniteMagnitude))
+        container.lineFragmentPadding = 0
+        manager.addTextContainer(container); storage.addLayoutManager(manager)
+        let characters = Array(text)
+        let clamped = min(max(offset, 0), characters.count)
+        let utf16 = String(characters[0..<clamped]).utf16.count
+        let total = (text as NSString).length
+        if utf16 >= total {
+            let glyph = max(manager.numberOfGlyphs - 1, 0)
+            let rect = manager.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container)
+            return (CGPoint(x: rect.maxX, y: rect.minY), rect.height)
+        }
+        let glyph = manager.glyphIndexForCharacter(at: utf16)
+        let rect = manager.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container)
+        return (CGPoint(x: rect.minX, y: rect.minY), rect.height)
+    }
+}
+
+/// The other authors' carets and tags in the title or subtitle (drawn over the field as in the body).
+struct PeerFieldCursors: View {
+    let peers: CoEditPeers
+    let field: String
+    let text: String
+    let font: UIFont
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        GeometryReader { geo in
+            TimelineView(.periodic(from: .now, by: 0.3)) { context in
+                ForEach(peers.peers) { peer in
+                    if let presence = peer.presence, presence.field == field, context.date.timeIntervalSince(peer.lastSeen) < 25 {
+                        let spot = FieldCaret.point(text: text, offset: Int(presence.offset), font: font, width: geo.size.width)
+                        let colour = Color(uiColor: PeerColor.color(tone: peer.tone, dark: scheme == .dark))
+                        let first = peer.person.name.split(separator: " ").first.map(String.init) ?? peer.person.name
+                        ZStack(alignment: .topLeading) {
+                            Rectangle().fill(colour).frame(width: 2, height: spot.height)
+                            CursorTag(person: peer.person, colour: colour, ink: Color(uiColor: PeerColor.ink(on: PeerColor.color(tone: peer.tone, dark: scheme == .dark))))
+                                .opacity(context.date.timeIntervalSince(peer.lastMoved) > 3 ? 0 : 1)
+                                .animation(.easeInOut(duration: 0.25), value: context.date.timeIntervalSince(peer.lastMoved) > 3)
+                                .alignmentGuide(.top) { $0[.bottom] + 1 }
+                                .accessibilityElement(children: .ignore).accessibilityLabel("\(first)\u{2019}s cursor").accessibilityIdentifier("coedit-cursor-\(peer.id)")
+                        }
+                        .offset(x: spot.point.x - 1, y: spot.point.y)
+                    }
+                }
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+/// A 20 pt photo and the first name in 13 pt semibold, on the author's colour.
+struct CursorTag: View {
+    let person: Person
+    let colour: Color
+    let ink: Color
+
+    var body: some View {
+        HStack(spacing: 5) {
+            AvatarView(person: person, size: 20)
+            Text(person.name.split(separator: " ").first.map(String.init) ?? person.name).font(.system(size: 13, weight: .semibold)).foregroundStyle(ink).lineLimit(1)
+        }
+        .padding(.leading, 4).padding(.trailing, 8).padding(.vertical, 3)
+        .background(colour, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .fixedSize()
+    }
+}
+
+
+/// Puts someone else's change into the editor's text in place.
+enum CoEditSplice {
+    /// Replaces only the part of the text that differs, in place, and moves this author's caret and selection by the change (never a guess): the text view
+    /// is not reset, so focus, scrolling and the keyboard stay as they are.
+    static func apply(_ new: NSAttributedString, into view: UITextView) {
+        let storage = view.textStorage
+        let old = storage.string as NSString, fresh = new.string as NSString
+        var prefix = 0
+        let limit = min(old.length, fresh.length)
+        while prefix < limit, old.character(at: prefix) == fresh.character(at: prefix) { prefix += 1 }
+        while prefix > 0, UTF16.isLeadSurrogate(old.character(at: prefix - 1)) { prefix -= 1 }
+        var suffix = 0
+        while suffix < limit - prefix, old.character(at: old.length - 1 - suffix) == fresh.character(at: fresh.length - 1 - suffix) { suffix += 1 }
+        if suffix > 0, UTF16.isTrailSurrogate(old.character(at: old.length - suffix)) { suffix -= 1 }
+        var oldMid = NSRange(location: prefix, length: old.length - prefix - suffix)
+        var newMid = NSRange(location: prefix, length: fresh.length - prefix - suffix)
+        if oldMid.length == 0 && newMid.length == 0 {   // the same words, other styles: the whole text, still in place, and my caret where it was
+            let selection = view.selectedRange
+            view.textStorage.beginEditing()
+            view.textStorage.replaceCharacters(in: NSRange(location: 0, length: old.length), with: new)
+            view.textStorage.endEditing()
+            view.selectedRange = selection
+            return
+        }
+        let selection = view.selectedRange
+        func shifted(_ position: Int) -> Int {
+            if position <= oldMid.location { return position }
+            if position >= NSMaxRange(oldMid) { return position + newMid.length - oldMid.length }
+            return oldMid.location + newMid.length
+        }
+        let wasFocused = view.isFirstResponder
+        storage.beginEditing()
+        storage.replaceCharacters(in: oldMid, with: new.attributedSubstring(from: newMid))
+        storage.endEditing()
+        let start = shifted(selection.location), end = shifted(NSMaxRange(selection))
+        view.selectedRange = NSRange(location: min(start, storage.length), length: max(0, min(end, storage.length) - min(start, storage.length)))
+        if wasFocused && !view.isFirstResponder { view.becomeFirstResponder() }
+    }
+}

@@ -21,9 +21,7 @@ final class Coedit233eUITests: LimeUITestCase {
         waitForExpectations(timeout: 5)
         body.typeText("Hello world")
         // The writer is someone else: this author sees who publishes, with a Ready button, and no Post.
-        let publishes = any(app, "coedit-publishes")
-        XCTAssertTrue(publishes.waitForExistence(timeout: 8), "says who publishes")
-        XCTAssertTrue(publishes.label.hasSuffix("publishes this article"), publishes.label)
+        XCTAssertTrue(app.buttons["coedit-ready"].waitForExistence(timeout: 10), "a co-author gets Ready")
         XCTAssertFalse(app.buttons["jam-post"].exists, "a co-author has no Post button")
         XCTAssertFalse(app.buttons["jam-update"].exists)
         let ready = app.buttons["coedit-ready"]

@@ -31,6 +31,10 @@ struct JamComposeSheet: View {
     @State private var composer = RichComposerModel()
     /// The article's shared draft (LIME-233c): made on the first change of an article, or found for a post being edited.
     @State private var coedit: CoEditSession?
+    @State private var showingAuthors = false
+    /// Where this author's caret is in the title and subtitle (characters), for the other authors' screens.
+    @State private var titleCaret = (caret: 0, end: 0)
+    @State private var subtitleCaret = (caret: 0, end: 0)
     @State private var photos: [DraftAttachment] = []          // a quick post's row
     @State private var articleFiles: [OutgoingAttachment] = []  // an article's, in the text by number
     @State private var clips: [OutgoingAttachment] = []         // recordings (video, voice)
@@ -70,6 +74,12 @@ struct JamComposeSheet: View {
     @State private var linkTask: Task<Void, Never>?
 
     private enum Field { case title, subtitle }
+
+    /// The first name of the one who publishes this shared article.
+    private var coeditWriterName: String {
+        guard let writer = coedit?.peers.status?.writer, !writer.isEmpty else { return "The writer" }
+        return store.teacher(writer).name.split(separator: " ").first.map(String.init) ?? "The writer"
+    }
     /// Which media a set of captions is for: the recording (or video) of a quick post, or a file in an article's list.
     enum CaptionKey: Hashable, Identifiable {
         case clip(Int), article(Int)
@@ -98,21 +108,31 @@ struct JamComposeSheet: View {
             #if DEBUG
             .overlay(alignment: .topTrailing) { coeditProbe }
             #endif
-            .navigationTitle(editing != nil ? "Edit" : article ? "Article" : "New post")
+            .navigationTitle(editing != nil ? "Edit" : article ? "" : "New post")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { close() }.accessibilityIdentifier("jam-compose-cancel") }
                 ToolbarItem(placement: .confirmationAction) {
-                    if openDraft != nil || coedit?.isCoAuthorOnly == true {
-                        // A co-author does not publish: the writer does (LIME-233e); "Ready" at the top tells them.
-                        Button("Done") { close() }.fontWeight(.semibold).accessibilityIdentifier("jam-coedit-done")
-                    } else if editing != nil {
-                        Button("Update") { update() }.fontWeight(.semibold).disabled(!canPost).accessibilityIdentifier("jam-update")
-                    } else {
-                        Button("Post") { post() }.fontWeight(.semibold).disabled(!canPost).accessibilityIdentifier("jam-post")
+                    HStack(spacing: 8) {
+                        // The authors, like Google Docs, then what this author may do: the writer posts; a co-author says Ready, then Done (LIME-233g).
+                        if let coedit { CoEditAvatars(session: coedit) { showingAuthors = true } }
+                        if coedit?.isCoAuthorOnly == true {
+                            if let coedit, coedit.peers.status?.publishedAt == nil {
+                                Button { coedit.toggleReady() } label: { Text(coedit.peers.iAmReady ? "Ready \u{2713}" : "Ready") }
+                                    .accessibilityLabel(coedit.peers.iAmReady ? "Ready, tell the writer you are not" : "Ready")
+                                    .accessibilityHint("\(coeditWriterName) publishes this article. Tells them you are done")
+                                    .accessibilityIdentifier("coedit-ready")
+                            }
+                            Button("Done") { close() }.fontWeight(.semibold).accessibilityIdentifier("jam-coedit-done")
+                        } else if editing != nil {
+                            Button("Update") { update() }.fontWeight(.semibold).disabled(!canPost).accessibilityIdentifier("jam-update")
+                        } else {
+                            Button("Post") { post() }.fontWeight(.semibold).disabled(!canPost).accessibilityIdentifier("jam-post")
+                        }
                     }
                 }
             }
+            .sheet(isPresented: $showingAuthors) { if let coedit { CoEditAuthorsSheet(session: coedit) } }
             .onChange(of: composer.plainText) { refreshLink() }
             .onChange(of: previewsOn) { refreshLink() }
             .sheet(isPresented: $choosingCoauthors) { JamCoauthorPicker(selected: $coauthors) }
@@ -199,7 +219,7 @@ struct JamComposeSheet: View {
                         coedit = session
                         title = meta.title; subtitle = meta.subtitle
                         wireCoedit()
-                        composer.textView?.attributedText = session.render(markdown: md); composer.didEdit()
+                        composer.textView?.attributedText = session.render(markdown: md); composer.didEdit(); session.rebase()
                         store.coeditSeen(openDraft)
                         coauthors = session.otherAuthors()
                     }
@@ -214,7 +234,7 @@ struct JamComposeSheet: View {
                     coedit = session
                     title = meta.title; subtitle = meta.subtitle
                     wireCoedit()
-                    composer.textView?.attributedText = session.render(markdown: md); composer.didEdit()
+                    composer.textView?.attributedText = session.render(markdown: md); composer.didEdit(); session.rebase()
                 }
                 wireCoedit()
                 if !article { composer.focus() }
@@ -356,20 +376,24 @@ struct JamComposeSheet: View {
             postLine.padding(.bottom, 6)
             if let coedit { CoEditBar(session: coedit) }
             coverRow.padding(.bottom, 8)
-            TextField("Title", text: $title, prompt: Text("Title").foregroundColor(Theme.placeholderLarge), axis: .vertical).font(Theme.font(.title2, weight: .bold)).lineLimit(1...3)
+            CaretTextField(text: $title, title: "Title", prompt: Text("Title").foregroundColor(Theme.placeholderLarge)) { caret, end in titleCaret = (caret, end); coedit?.fieldMoved() }
+                .font(Theme.font(.title2, weight: .bold)).lineLimit(1...3)
                 .focused($focus, equals: .title).submitLabel(.next).onSubmit { focus = .subtitle }
                 .onChange(of: title) { _, now in
                     if now.contains("\n") { title = now.replacingOccurrences(of: "\n", with: ""); focus = .subtitle }
                     else if now.count > Self.maxTitle { title = String(now.prefix(Self.maxTitle)) }
                 }
                 .accessibilityLabel("Title").accessibilityIdentifier("jam-article-title")
-            TextField("Add a subtitle\u{2026}", text: $subtitle, prompt: Text("Add a subtitle\u{2026}").foregroundColor(Theme.placeholder), axis: .vertical).font(Theme.font(.body)).foregroundStyle(Theme.textSecondary).lineLimit(1...2)
+                .overlay(alignment: .topLeading) { if let coedit { PeerFieldCursors(peers: coedit.peers, field: "title", text: title, font: UIFont.systemFont(ofSize: 22, weight: .bold)) } }
+            CaretTextField(text: $subtitle, title: "Add a subtitle\u{2026}", prompt: Text("Add a subtitle\u{2026}").foregroundColor(Theme.placeholder)) { caret, end in subtitleCaret = (caret, end); coedit?.fieldMoved() }
+                .font(Theme.font(.body)).foregroundStyle(Theme.textSecondary).lineLimit(1...2)
                 .focused($focus, equals: .subtitle).submitLabel(.next).onSubmit { toBody() }
                 .onChange(of: subtitle) { _, now in
                     if now.contains("\n") { subtitle = now.replacingOccurrences(of: "\n", with: ""); toBody() }
                     else if now.count > Self.maxSubtitle { subtitle = String(now.prefix(Self.maxSubtitle)) }
                 }
                 .accessibilityLabel("Subtitle").accessibilityIdentifier("jam-article-subtitle")
+                .overlay(alignment: .topLeading) { if let coedit { PeerFieldCursors(peers: coedit.peers, field: "subtitle", text: subtitle, font: UIFont.systemFont(ofSize: 17)) } }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20).padding(.top, 12)
@@ -812,7 +836,8 @@ struct JamComposeSheet: View {
         Self.simulated = true
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(6))
-            store.coeditSimulateRemote(id) { "REMOTE " + $0 }
+            let mid = ProcessInfo.processInfo.arguments.contains("-lime-coedit-sim-remote-mid")
+            store.coeditSimulateRemote(id) { mid && $0.count > 3 ? String($0.prefix(3)) + "-X-" + String($0.dropFirst(3)) : "REMOTE " + $0 }
         }
     }
 
@@ -836,7 +861,15 @@ struct JamComposeSheet: View {
                 file: { articleFiles.indices.contains($0) ? articleFiles[$0] : nil },
                 add: { articleFiles.append($0); return articleFiles.count - 1 },
                 fill: { if articleFiles.indices.contains($0) { articleFiles[$0] = $1 } },
-                width: { max(120, (composer.textView?.bounds.width ?? 320) - 16) })
+                width: { max(120, (composer.textView?.bounds.width ?? 320) - 16) },
+                title: { title }, subtitle: { subtitle }, setTitle: { title = $0 }, setSubtitle: { subtitle = $0 },
+                focusedField: {
+                    switch focus {
+                    case .title: return ("title", titleCaret.caret, titleCaret.end)
+                    case .subtitle: return ("subtitle", subtitleCaret.caret, subtitleCaret.end)
+                    default: return nil
+                    }
+                })
             coedit.start(composer: composer)
         }
     }
@@ -859,7 +892,7 @@ struct JamComposeSheet: View {
 
     /// Other authors' words arrived.
     private func coeditRemote() {
-        coedit?.applyRemote(to: composer, title: &title, subtitle: &subtitle)
+        coedit?.applyRemote()
     }
 
     // MARK: Closing and posting

@@ -20,16 +20,14 @@ final class Coedit233dUITests: LimeUITestCase {
         expectation(for: NSPredicate(format: "hasKeyboardFocus == true"), evaluatedWith: body)
         waitForExpectations(timeout: 5)
         body.typeText("Hello world")
-        // The faces row lists both authors.
-        XCTAssertTrue(any(app, "coedit-face-sim-jean").waitForExistence(timeout: 10), "Jean is in the faces row")
-        let faces = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'coedit-face-'"))
-        XCTAssertEqual(faces.count, 2, "me and Jean")
-        XCTAssertEqual(any(app, "coedit-face-sim-jean").label, "Jean Park, here now")
-        // "Jean is editing…", spoken with her place.
-        let editing = any(app, "coedit-editing")
-        XCTAssertTrue(editing.waitForExistence(timeout: 6))
-        XCTAssertTrue(editing.label.hasPrefix("Jean is editing"), editing.label)
-        XCTAssertTrue(editing.label.contains("paragraph"), "VoiceOver hears where: \(editing.label)")
+        // The top bar has the authors' avatars (me and Jean) before Post, and no "Article" title.
+        let authors = any(app, "coedit-authors")
+        XCTAssertTrue(authors.waitForExistence(timeout: 10), "the authors are in the top bar")
+        XCTAssertTrue(authors.label.contains("Jean Park"), authors.label)
+        XCTAssertTrue(app.buttons["jam-post"].exists)
+        XCTAssertFalse(app.staticTexts["Article"].exists, "no nav title")
+        XCTAssertFalse(any(app, "coedit-editing").exists, "no \"is editing\" line: the cursor says it")
+        XCTAssertLessThan(authors.frame.minX, app.buttons["jam-post"].frame.minX, "the avatars sit left of Post")
         // Her cursor is in the page, with her name.
         XCTAssertTrue(any(app, "coedit-cursor-sim-jean").waitForExistence(timeout: 6), "her cursor shows")
         XCTAssertEqual(any(app, "coedit-cursor-sim-jean").label, "Jean\u{2019}s cursor")

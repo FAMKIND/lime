@@ -47,6 +47,8 @@ pub struct DraftChannel {
 /// Where an author's caret and selection are (positions in characters within their blocks).
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct DraftPresence {
+    /// Where the caret is: `title`, `subtitle` or `body` (empty means body). In the title and subtitle `offset` counts characters of that text.
+    pub field: String,
     pub block_id: String,
     pub offset: u32,
     /// The other end of a selection (empty: no selection).
@@ -296,7 +298,7 @@ impl LimeStore {
         let state = self.load_or_create_account()?;
         self.with_conn(|conn| {
             let Some((channel, key, _)) = row_keys(conn, &draft_id)? else { return Ok(None) };
-            let payload = json!({ "k": "p", "blk": presence.block_id, "off": presence.offset, "eblk": presence.end_block_id, "eoff": presence.end_offset, "typing": presence.typing, "away": presence.away });
+            let payload = json!({ "k": "p", "fld": presence.field, "blk": presence.block_id, "off": presence.offset, "eblk": presence.end_block_id, "eoff": presence.end_offset, "typing": presence.typing, "away": presence.away });
             Ok(Some(self.make_instant(&state, &draft_id, &channel, &key, payload)?))
         })
     }
@@ -345,7 +347,7 @@ impl LimeStore {
                     let text = |k: &str| p.get(k).and_then(Value::as_str).unwrap_or_default().to_owned();
                     let num = |k: &str| p.get(k).and_then(Value::as_u64).unwrap_or(0) as u32;
                     let flag = |k: &str| p.get(k).and_then(Value::as_bool).unwrap_or(false);
-                    let presence = DraftPresence { block_id: text("blk"), offset: num("off"), end_block_id: text("eblk"), end_offset: num("eoff"), typing: flag("typing"), away: flag("away") };
+                    let presence = DraftPresence { field: text("fld"), block_id: text("blk"), offset: num("off"), end_block_id: text("eblk"), end_offset: num("eoff"), typing: flag("typing"), away: flag("away") };
                     Ok(Some(DraftInstantEvent { draft_id, from_user: from, patches: Vec::new(), presence: Some(presence) }))
                 }
                 _ => Ok(None),

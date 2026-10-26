@@ -153,6 +153,15 @@ impl LimeStore {
         })
     }
 
+    /// The editor changed from the draft as it was at `base` (the heads returned last time): its edits are merged with whatever other authors wrote since,
+    /// and the draft's heads now are returned. The editor then shows the merged draft.
+    pub fn draft_merge_editor(&self, draft_id: String, base: Vec<String>, title: String, subtitle: String, markdown: String) -> Result<Vec<String>, StoreError> {
+        self.with_draft(&draft_id, |d| {
+            d.reconcile_from(&base, &title, &subtitle, &markdown)?;
+            Ok(d.heads())
+        })
+    }
+
     pub fn draft_set_title(&self, draft_id: String, title: String) -> Result<(), StoreError> {
         self.with_draft(&draft_id, |d| d.set_title(&title))
     }

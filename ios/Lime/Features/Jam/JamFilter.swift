@@ -3,10 +3,10 @@ import SwiftUI
 /// The jam feed's segments (LIME-188x): **All**, **Posts** (quick posts: words, photos, videos that are not recordings), **Articles** and
 /// **Podcasts** (recordings, audio or video).
 enum JamSegment: Int, CaseIterable {
-    case all, posts, articles, podcasts
-    var title: String { ["All", "Posts", "Articles", "Podcasts"][rawValue] }
+    case all, posts, articles, podcasts, drafts
+    var title: String { ["All", "Posts", "Articles", "Podcasts", "Drafts"][rawValue] }
     func includes(kind: String) -> Bool {
-        switch self { case .all: true; case .posts: kind == "quick"; case .articles: kind == "article"; case .podcasts: kind == "record" }
+        switch self { case .all: true; case .posts: kind == "quick"; case .articles: kind == "article"; case .podcasts: kind == "record"; case .drafts: false }
     }
 }
 

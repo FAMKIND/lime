@@ -37,12 +37,12 @@ final class CoEdit233dTests: XCTestCase {
         peers.setAuthors([jean])
         let now = Date(timeIntervalSince1970: 1000)
         XCTAssertFalse(peers.isLive(peers.peers[0], now: now))
-        peers.receive(from: "j", presence: DraftPresence(blockId: "a", offset: 1, endBlockId: "", endOffset: 0, typing: true, away: false), now: now)
+        peers.receive(from: "j", presence: DraftPresence(field: "body", blockId: "a", offset: 1, endBlockId: "", endOffset: 0, typing: true, away: false), now: now)
         XCTAssertTrue(peers.isLive(peers.peers[0], now: now.addingTimeInterval(20)))
         XCTAssertFalse(peers.isLive(peers.peers[0], now: now.addingTimeInterval(30)))
         XCTAssertTrue(peers.isEditing(peers.peers[0], now: now.addingTimeInterval(4)))
         XCTAssertFalse(peers.isEditing(peers.peers[0], now: now.addingTimeInterval(6)))
-        peers.receive(from: "j", presence: DraftPresence(blockId: "", offset: 0, endBlockId: "", endOffset: 0, typing: false, away: true), now: now.addingTimeInterval(7))
+        peers.receive(from: "j", presence: DraftPresence(field: "body", blockId: "", offset: 0, endBlockId: "", endOffset: 0, typing: false, away: true), now: now.addingTimeInterval(7))
         XCTAssertFalse(peers.isLive(peers.peers[0], now: now.addingTimeInterval(8)), "leaving the editor takes the dot away")
     }
 }

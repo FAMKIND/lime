@@ -306,8 +306,51 @@ impl DraftDoc {
 
     fn set_text(&mut self, text: &ObjId, to: &str) -> Result<(), StoreError> {
         self.approx_bytes += to.len();
-        let len = self.doc.text(text).map_err(bad)?.chars().count();
-        self.doc.splice_text(text, 0, len as isize, to).map_err(bad)
+        // Only the characters that differ are replaced, so two people typing in the same title merge.
+        let old: Vec<char> = self.doc.text(text).map_err(bad)?.chars().collect();
+        let new: Vec<char> = to.chars().collect();
+        let mut prefix = 0;
+        while prefix < old.len() && prefix < new.len() && old[prefix] == new[prefix] {
+            prefix += 1;
+        }
+        let mut suffix = 0;
+        while suffix < old.len() - prefix && suffix < new.len() - prefix && old[old.len() - 1 - suffix] == new[new.len() - 1 - suffix] {
+            suffix += 1;
+        }
+        let insert: String = new[prefix..new.len() - suffix].iter().collect();
+        self.doc.splice_text(text, prefix, (old.len() - prefix - suffix) as isize, &insert).map_err(bad)
+    }
+
+    /// Makes the draft say what the editor shows, where the editor was last the same as the draft at `base` (the heads then): the editor's edits are made
+    /// on a copy of the draft as it was at `base` and merged back, so what other authors wrote since is kept (never reverted) and the editor's own edits land
+    /// where they were made. With no usable `base` (or none newer than the draft) it is a plain reconcile.
+    pub fn reconcile_from(&mut self, base: &[String], title: &str, subtitle: &str, markdown: &str) -> Result<(), StoreError> {
+        let known = self.parse_heads(base);
+        let now = self.heads();
+        let mut current: Vec<String> = now.clone();
+        current.sort();
+        let mut asked: Vec<String> = known.iter().map(|h| h.to_string()).collect();
+        asked.sort();
+        if known.is_empty() || asked == current {
+            return self.reconcile_all(title, subtitle, markdown);
+        }
+        let mut fork = Self::attach(self.doc.fork_at(&known).map_err(bad)?)?;
+        fork.reconcile_all(title, subtitle, markdown)?;
+        let bytes = fork.doc.save_after(&known);
+        self.doc.load_incremental(&bytes).map_err(bad)?;
+        self.approx_bytes = self.text_bytes();
+        Ok(())
+    }
+
+    fn reconcile_all(&mut self, title: &str, subtitle: &str, markdown: &str) -> Result<(), StoreError> {
+        let meta = self.meta();
+        if meta.title != title {
+            self.set_title(title)?;
+        }
+        if meta.subtitle != subtitle {
+            self.set_subtitle(subtitle)?;
+        }
+        self.reconcile(markdown)
     }
 
     fn check_room(&mut self, adding: usize) -> Result<(), StoreError> {

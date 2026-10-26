@@ -37,7 +37,12 @@ struct JamPage: View {
                     MessageSearchScreen(jamFirst: true)
                 }
                 .fullScreenCover(isPresented: $composing) { JamComposeSheet() }
-                .onAppear { store.refreshJams() }
+                .onAppear {
+            store.refreshJams()
+            #if DEBUG
+            store.simulateDraftInviteIfAsked()
+            #endif
+        }
         }
     }
 
@@ -89,7 +94,7 @@ struct JamPage: View {
     private func feedBody(_ posts: [JamPostInfo], topMargin: CGFloat) -> some View {
         @Bindable var store = store
         let list = shown(posts)
-        let nothingYet = posts.isEmpty
+        let nothingYet = posts.isEmpty && store.draftRows().isEmpty
         return ScrollView {
             LazyVStack(spacing: 0) {
                 requests
@@ -100,7 +105,9 @@ struct JamPage: View {
                         .accessibilityIdentifier("jam-feed-empty")
                 } else {
                     JamFilterRow(segment: $store.jamSegment, filter: $store.jamFilter).padding(.top, 4)
-                    if list.isEmpty {
+                    if store.jamSegment == .drafts {
+                        JamDraftsList()
+                    } else if list.isEmpty {
                         if store.jamSegment == .all && store.jamFilter == JamFilter(saved: true) {
                             Text("Nothing saved yet.").font(Theme.body).foregroundStyle(Theme.textSecondary).padding(.top, 60)
                                 .accessibilityIdentifier("jam-saved-empty")
@@ -108,7 +115,7 @@ struct JamPage: View {
                             FilteredEmpty(text: store.jamSegment == .articles ? "No articles match" : store.jamSegment == .podcasts ? "No podcasts match" : "No posts match") { store.jamFilter = JamFilter(); store.jamSegment = .all }
                         }
                     }
-                    ForEach(list, id: \.postId) { post in
+                    ForEach(store.jamSegment == .drafts ? [] : list, id: \.postId) { post in
                         JamPostCard(post: post, place: .feed(store.jamSegment))
                         Divider().overlay(Theme.hairline)
                     }

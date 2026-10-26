@@ -6768,9 +6768,13 @@ fn the_instant_path_applies_a_change_at_once_drops_forgeries_and_a_lost_send_los
     assert!(bob.store.draft_markdown(id.clone()).unwrap().starts_with("live "));
     assert!(alice.store.draft_instant_change(id.clone()).unwrap().is_none(), "nothing new to send");
     // Presence arrives as a caret, not as text.
-    let p = crate::client::draft_sync::DraftPresence { block_id: block.clone(), offset: 3, end_block_id: String::new(), end_offset: 0, typing: true, away: false };
+    let p = crate::client::draft_sync::DraftPresence { field: "body".into(), block_id: block.clone(), offset: 3, end_block_id: String::new(), end_offset: 0, typing: true, away: false };
     let caret = alice.store.draft_instant_presence(id.clone(), p.clone()).unwrap().unwrap();
     assert_eq!(bob.store.draft_instant_receive(channel.clone(), caret).unwrap().unwrap().presence, Some(p));
+    // A caret in the title travels with its field.
+    let in_title = crate::client::draft_sync::DraftPresence { field: "title".into(), block_id: String::new(), offset: 4, end_block_id: String::new(), end_offset: 0, typing: false, away: false };
+    let wire_title = alice.store.draft_instant_presence(id.clone(), in_title.clone()).unwrap().unwrap();
+    assert_eq!(bob.store.draft_instant_receive(channel.clone(), wire_title).unwrap().unwrap().presence, Some(in_title));
     // Forgeries: a flipped byte, the wrong channel, and Carol (a contact, not an author) using the real key are all dropped.
     let mut flipped = wire.clone();
     *flipped.last_mut().unwrap() ^= 1;

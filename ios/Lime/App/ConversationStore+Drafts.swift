@@ -23,6 +23,7 @@ extension ConversationStore {
 
     private func receiveInstant(channel: String, wire: Data) {
         guard let core, let event = (try? core.draftInstantReceive(channelId: channel, wire: wire)) ?? nil else { return }
+        if event.presence?.away != true { draftLive[event.draftId] = .now }
         draftRevision += 1
         draftEventSink?(event)
     }
@@ -134,6 +135,12 @@ extension ConversationStore {
         refreshDraftChannels()
     }
 
+    /// The editor's text goes into the draft from where the editor last matched it; returns the draft's heads now.
+    func coeditMerge(_ id: String, base: [String], title: String, subtitle: String, markdown: String) -> [String]? {
+        try? draftCore?.draftMergeEditor(draftId: id, base: base, title: title, subtitle: subtitle, markdown: markdown)
+    }
+
+    func coeditHeads(_ id: String) -> [String] { (try? draftCore?.draftHeads(draftId: id)) ?? [] }
     func coeditMarkdown(_ id: String) -> String? { try? draftCore?.draftMarkdown(draftId: id) }
     func coeditMeta(_ id: String) -> DraftMeta? { try? draftCore?.draftMeta(draftId: id) }
     func coeditTakePatches(_ id: String) -> [DraftPatch] { (try? draftCore?.draftTakePatches(draftId: id)) ?? [] }
@@ -174,3 +181,63 @@ struct DraftInvite: Identifiable {
     let title: String
     var id: String { draftID }
 }
+
+
+// MARK: Drafts in jam, and the invitation banner (LIME-233g)
+
+/// One line of jam's Drafts.
+struct DraftRow: Identifiable {
+    let draftID: String
+    let title: String
+    let authors: [Person]
+    let updatedAt: Int64
+    let live: Bool
+    var id: String { draftID }
+}
+
+extension ConversationStore {
+    /// Your drafts and the drafts you are invited to, newest first: unfinished articles, and anything shared. A draft made to edit a published post that
+    /// nobody else writes in is not listed.
+    func draftRows(now: Date = .now) -> [DraftRow] {
+        _ = draftRevision
+        guard let core = draftCore else { return [] }
+        let channels = Set(((try? core.draftChannels()) ?? []).map(\.draftId))
+        let me = meProvider().id
+        return ((try? core.listDrafts()) ?? [])
+            .filter { $0.postId == nil || channels.contains($0.draftId) }
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .map { info in
+                let authors = ((try? core.draftAuthors(draftId: info.draftId)) ?? []).filter { $0.status == "active" }.map(\.userId)
+                let people = ([me] + authors.filter { $0 != me }).map { teacher($0) }
+                let live = draftLive[info.draftId].map { now.timeIntervalSince($0) < 25 } ?? false
+                return DraftRow(draftID: info.draftId, title: info.title, authors: authors.isEmpty ? [meProvider()] : people, updatedAt: info.updatedAt, live: live)
+            }
+    }
+
+    /// After a sync: an invitation I have not been told about is announced once, in the app's glass banner.
+    func announceNewDraftInvites() {
+        let told = Set(UserDefaults.standard.stringArray(forKey: "lime.draft.invites.announced") ?? [])
+        let fresh = draftInvites().filter { !told.contains($0.draftID) }
+        guard let first = fresh.first else { return }
+        UserDefaults.standard.set(Array(told.union(fresh.map(\.draftID))), forKey: "lime.draft.invites.announced")
+        draftInviteBanner = first
+    }
+
+    func openDraftFromBanner() {
+        guard let banner = draftInviteBanner else { return }
+        draftInviteBanner = nil
+        openDraftRoute = DraftRoute(id: banner.draftID)
+    }
+}
+
+#if DEBUG
+extension ConversationStore {
+    /// Tests only: `-lime-coedit-sim-invite` makes a shared draft appear as if Jean had just invited this account to write it.
+    func simulateDraftInviteIfAsked() {
+        guard isDemo, ProcessInfo.processInfo.arguments.contains("-lime-coedit-sim-invite"), draftInviteBanner == nil, !simulatedInvite, let core = draftCore else { return }
+        simulatedInvite = true
+        guard let id = try? core.createDraft(title: "The roots of the lime tree", subtitle: "", markdown: "Hello from Jean.") else { return }
+        draftInviteBanner = DraftInvite(draftID: id, writer: "sim-jean", title: "The roots of the lime tree")
+    }
+}
+#endif

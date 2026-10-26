@@ -89,6 +89,12 @@ final class ConversationStore {
     var lastPublishedPostID: String?
     /// Counts remote draft changes, for views that redraw on it.
     var draftRevision = 0
+    /// When each shared draft last showed a sign of someone writing in it (for the live dot in Drafts).
+    var draftLive: [String: Date] = [:]
+    /// An invitation to write that just arrived (the glass banner), and the draft a tap opens.
+    var draftInviteBanner: DraftInvite?
+    var openDraftRoute: DraftRoute?
+    var simulatedInvite = false
     #if DEBUG
     /// A throwaway core for drafts in demo runs.
     var demoDraftCore: LimeStore?
@@ -424,7 +430,7 @@ final class ConversationStore {
                     try core.sync(transport: link.transport, authToken: token)
                 }.value
                 logDuplicates(core)
-                refreshDraftChannels(); draftRevision += 1   // invitations and the other authors' durable changes (LIME-233d)
+                refreshDraftChannels(); draftRevision += 1; announceNewDraftInvites()   // invitations and the other authors' durable changes (LIME-233d)
                 let downloaded = core.takeDownloaded()
                 if downloaded > 0 || report.pending > 0 {
                     CallDiagnostics.shared.log("sync: downloaded \(downloaded), stored \(report.received), pending [\((try? core.pendingSummary()) ?? "?")]")

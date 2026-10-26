@@ -223,3 +223,27 @@ fn reconcile_feeds_the_editor_into_the_draft_with_the_fewest_operations_and_othe
     assert_eq!(shem.reconcile(&"z".repeat(MAX_DRAFT_BYTES + 1)).unwrap_err(), StoreError::Rejected);
     assert_eq!(shem.export_markdown(), format::normalise_post(EVERYTHING));
 }
+
+#[test]
+fn an_editor_that_has_not_seen_the_other_authors_words_yet_merges_instead_of_reverting_them() {
+    let start = "First paragraph here.\n\nSecond one.";
+    let mut shem = DraftDoc::from_markdown("Plan", "", start).unwrap();
+    let mut jean = DraftDoc::load(&shem.save()).unwrap();
+    let base = shem.heads();
+    // Jean types at the start of the paragraph and in the title; it reaches Shem's draft before Shem's editor shows it.
+    let first = jean.blocks()[0].id.clone();
+    jean.insert_text(&first, 0, "JEAN ").unwrap();
+    jean.set_title("Plan B").unwrap();
+    let theirs = jean.changes_since(&base);
+    shem.apply_changes(&theirs).unwrap();
+    // Shem's editor (still the old text) has a letter typed in the same paragraph and in the title.
+    let mine = "First paragraphs here.\n\nSecond one.";
+    shem.reconcile_from(&base, "Plan 1", "", mine).unwrap();
+    let merged = shem.export_markdown();
+    assert_eq!(merged, "JEAN First paragraphs here.\n\nSecond one.", "both survive, nothing reverted");
+    assert!(shem.meta().title.contains("B") && shem.meta().title.contains('1'), "{:?}", shem.meta().title);
+    // With the base equal to now it is an ordinary reconcile.
+    let now = shem.heads();
+    shem.reconcile_from(&now, "Plan 1", "", &format!("{merged}\n\nAdded.")).unwrap();
+    assert!(shem.export_markdown().ends_with("Added."));
+}

@@ -22,6 +22,8 @@ struct RootView: View {
         .overlay(alignment: .top) { ComingSoonBanner() }
         .overlay(alignment: .top) { IncomingBannerView() }
         .overlay(alignment: .top) { GroupIncomingBanner() }
+        .overlay(alignment: .top) { DraftInviteBanner() }
+        .fullScreenCover(item: Binding(get: { store.openDraftRoute }, set: { store.openDraftRoute = $0 })) { JamComposeSheet(openDraft: $0.id) }
         .sheet(isPresented: Binding(get: { store.groupCalls.invite != nil && !store.groupCalls.inCall }, set: { if !$0 { store.groupCalls.dismissInvite() } })) { GroupInviteSheet() }
         .alert("Group call", isPresented: Binding(get: { store.groupCalls.notice != nil }, set: { if !$0 { store.groupCalls.notice = nil } })) {
             Button("OK", role: .cancel) {}
