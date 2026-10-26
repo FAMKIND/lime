@@ -234,6 +234,8 @@ pub struct LimeStore {
     pub(crate) pickle_key: [u8; 32],
     /// Serialises register, send and sync, so two of them never interleave their network calls.
     pub(crate) protocol_lock: Mutex<()>,
+    /// Open drafts (LIME-233a): the documents in memory, so a keystroke does not reload one.
+    pub(crate) draft_cache: Mutex<std::collections::HashMap<String, crate::drafts::DraftDoc>>,
     /// People the next send must start a brand-new Olm session with (LIME-231b: a session that stopped decrypting is replaced, not reused).
     pub(crate) fresh_session_for: Mutex<std::collections::HashSet<String>>,
     /// Only one mailbox fetch at a time (the fetch itself runs outside `protocol_lock`).
@@ -742,6 +744,7 @@ impl LimeStore {
             conn: Mutex::new(conn),
             pickle_key: crate::keys::derive_pickle_key(key),
             protocol_lock: Mutex::new(()),
+            draft_cache: Mutex::new(std::collections::HashMap::new()),
             fresh_session_for: Mutex::new(std::collections::HashSet::new()),
             fetch_lock: Mutex::new(()),
             lock_wait_ms: std::sync::atomic::AtomicU64::new(0),

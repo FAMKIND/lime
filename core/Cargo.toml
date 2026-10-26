@@ -40,6 +40,7 @@ aes-gcm = "0.10"
 sha2 = "0.11"
 hmac = "0.13"
 lime_mesh = { path = "mesh" }
+automerge = "=0.12.0"
 
 [profile.release]
 lto = true

@@ -39,6 +39,7 @@ pub(crate) mod groups;
 pub(crate) mod jam;
 pub(crate) mod moderation;
 mod account;
+mod drafts;
 mod repair;
 pub(crate) mod message_ops;
 pub(crate) mod extras;

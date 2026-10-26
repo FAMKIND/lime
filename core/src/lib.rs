@@ -7,6 +7,7 @@
 //! local store [`LimeStore`] (LIME-90). No secret material crosses the FFI or is logged.
 
 mod call_emoji;
+pub mod drafts;
 mod captions;
 mod client;
 mod format;

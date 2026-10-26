@@ -803,6 +803,22 @@ const MIGRATIONS: &[&str] = &[
          user_id    TEXT PRIMARY KEY NOT NULL,
          deleted_at INTEGER NOT NULL
      );",
+    // 53 (LIME-233a): drafts of articles written with others (Automerge documents). `snapshot` is a whole saved document; `draft_chunks` are the
+    // incremental saves made since (appended on every edit, folded into a new snapshot after 200 changes).
+    "CREATE TABLE drafts (
+         draft_id   TEXT PRIMARY KEY NOT NULL,
+         snapshot   BLOB NOT NULL,
+         post_id    TEXT,
+         changes    INTEGER NOT NULL DEFAULT 0,
+         created_at INTEGER NOT NULL,
+         updated_at INTEGER NOT NULL
+     );
+     CREATE TABLE draft_chunks (
+         draft_id TEXT NOT NULL,
+         seq      INTEGER NOT NULL,
+         bytes    BLOB NOT NULL,
+         PRIMARY KEY (draft_id, seq)
+     );",
 ];
 
 /// The schema version this build writes.
