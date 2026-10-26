@@ -396,6 +396,8 @@ final class RichComposerModel {
 
     /// Called after every edit of the text (typing, formatting, blocks): the article editor hands it to its shared draft (LIME-233c).
     var onChange: (() -> Void)?
+    /// The caret or selection moved (co-editing sends it as presence, LIME-233d).
+    var onSelect: (() -> Void)?
 
     func didEdit() {
         defer { onChange?() }
@@ -758,6 +760,7 @@ struct RichComposerField: UIViewRepresentable {
                 updating = false
             }
             model.updateMention()
+            model.onSelect?()
             // The caret never sits inside a list marker.
             let selection = textView.selectedRange
             if selection.length == 0 {

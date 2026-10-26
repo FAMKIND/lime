@@ -82,6 +82,35 @@ extension ConversationStore {
         return (try? core.draftReconcile(draftId: id, title: title, subtitle: subtitle, markdown: markdown)) != nil
     }
 
+    func coeditSeen(_ id: String) { try? draftCore?.markDraftSeen(draftId: id) }
+    func coeditBlocks(_ id: String) -> [DraftBlock] { (try? draftCore?.draftBlocks(draftId: id)) ?? [] }
+    /// The people (ids) who write the draft, me included, not those who left or were removed.
+    func coeditAuthors(_ id: String) -> [String] { ((try? draftCore?.draftAuthors(draftId: id)) ?? []).filter { $0.status == "active" }.map(\.userId) }
+
+    /// Draft invitations that have not been opened: "Shem invited you to write <title>" in Activity.
+    func draftInvites() -> [DraftInvite] {
+        _ = draftRevision
+        guard let core = draftCore else { return [] }
+        return ((try? core.unseenDraftInvites()) ?? []).compactMap { id in
+            guard let meta = try? core.draftMeta(draftId: id) else { return nil }
+            let writer = ((try? core.draftAuthors(draftId: id)) ?? []).first(where: \.isWriter)?.userId ?? ""
+            return DraftInvite(draftID: id, writer: writer, title: meta.title)
+        }
+    }
+
+    /// A shared draft the post was made from (for the post's ⋯ "Open draft"): one I write in.
+    func sharedDraft(forPost postID: String) -> String? {
+        guard let core = draftCore, let info = ((try? core.listDrafts()) ?? []).first(where: { $0.postId == postID }) else { return nil }
+        return ((try? core.draftChannels()) ?? []).contains(where: { $0.draftId == info.draftId }) ? info.draftId : nil
+    }
+
+    /// The co-authors I picked write the draft too: each is invited (the invitation is sealed to them like a message).
+    func coeditShare(_ id: String, with people: [String]) {
+        guard let core = draftCore, !people.isEmpty else { return }
+        try? core.shareDraft(draftId: id, authors: people)
+        refreshDraftChannels()
+    }
+
     func coeditMarkdown(_ id: String) -> String? { try? draftCore?.draftMarkdown(draftId: id) }
     func coeditMeta(_ id: String) -> DraftMeta? { try? draftCore?.draftMeta(draftId: id) }
     func coeditTakePatches(_ id: String) -> [DraftPatch] { (try? draftCore?.draftTakePatches(draftId: id)) ?? [] }
@@ -112,4 +141,13 @@ extension ConversationStore {
         }
     }
     #endif
+}
+
+
+/// "Shem invited you to write <title>".
+struct DraftInvite: Identifiable {
+    let draftID: String
+    let writer: String
+    let title: String
+    var id: String { draftID }
 }

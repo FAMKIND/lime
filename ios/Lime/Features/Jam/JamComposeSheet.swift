@@ -23,6 +23,8 @@ struct JamComposeSheet: View {
     /// A post of mine being edited (LIME-195): the screen opens filled in and **Update** replaces the post in place. Its pictures and files stay as
     /// they are; its words, title and subtitle change.
     var editing: JamPostInfo? = nil
+    /// A shared draft to write in (LIME-233d): an invitation accepted, or the post's ⋯ "Open draft".
+    var openDraft: String? = nil
     @Environment(ConversationStore.self) private var store
     @Environment(AccountSession.self) private var session
     @Environment(\.dismiss) private var dismiss
@@ -169,6 +171,8 @@ struct JamComposeSheet: View {
             .onChange(of: title) { _, _ in coeditChanged(composer) }
             .onChange(of: subtitle) { _, _ in coeditChanged(composer) }
             .onChange(of: store.draftRevision) { _, _ in coeditRemote() }
+            .onChange(of: coauthors) { _, now in if let coedit { store.coeditShare(coedit.draftID, with: now.map(\.id)); coedit.reloadAuthors() } }
+            .onDisappear { coedit?.stop() }
             .task {
                 if let editing {
                     // The post's own words, in its own layout (a recording shows its title, subtitle and description on the article page).
@@ -181,6 +185,20 @@ struct JamComposeSheet: View {
                     try? await Task.sleep(for: .milliseconds(300))
                     composer.textView?.attributedText = ComposerDocument.attributed(fromMarkdown: editing.markdown, post: true); composer.didEdit()
                     if article { coedit = store.coeditSession(existingID: nil, forPost: editing, title: title, subtitle: subtitle, markdown: editing.markdown) }
+                    wireCoedit()
+                    return
+                }
+                // A shared draft opened from an invitation or a post's ⋯: its words, with everyone's changes so far.
+                if let openDraft {
+                    article = true
+                    try? await Task.sleep(for: .milliseconds(300))
+                    if let session = store.coeditSession(existingID: openDraft, forPost: nil, title: "", subtitle: "", markdown: ""), let md = session.exportMarkdown(), let meta = store.coeditMeta(openDraft) {
+                        coedit = session
+                        title = meta.title; subtitle = meta.subtitle
+                        composer.textView?.attributedText = ComposerDocument.attributed(fromMarkdown: md, post: true); composer.didEdit()
+                        store.coeditSeen(openDraft)
+                        coauthors = session.otherAuthors()
+                    }
                     wireCoedit()
                     return
                 }
@@ -331,6 +349,7 @@ struct JamComposeSheet: View {
     private var articleHead: some View {
         VStack(alignment: .leading, spacing: 4) {
             postLine.padding(.bottom, 6)
+            if let coedit { CoEditBar(session: coedit) }
             coverRow.padding(.bottom, 8)
             TextField("Title", text: $title, prompt: Text("Title").foregroundColor(Theme.placeholderLarge), axis: .vertical).font(Theme.font(.title2, weight: .bold)).lineLimit(1...3)
                 .focused($focus, equals: .title).submitLabel(.next).onSubmit { focus = .subtitle }
@@ -776,6 +795,13 @@ struct JamComposeSheet: View {
     }
 
     private func simulateRemoteOnce(_ id: String) {
+        if ProcessInfo.processInfo.arguments.contains("-lime-coedit-sim-peer"), !Self.peerSimulated, let coedit {
+            Self.peerSimulated = true
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(2))
+                for step in 0..<12 { coedit.simulatePeer(step: step); try? await Task.sleep(for: .seconds(2)) }   // she stays in the draft, moving her cursor
+            }
+        }
         guard ProcessInfo.processInfo.arguments.contains("-lime-coedit-sim-remote"), !Self.simulated else { return }
         Self.simulated = true
         Task { @MainActor in
@@ -785,6 +811,7 @@ struct JamComposeSheet: View {
     }
 
     @MainActor private static var simulated = false
+    @MainActor private static var peerSimulated = false
     #endif
 
     /// The editor's changes go to the draft. The draft is made on the first change of an article (an empty page makes none).
@@ -794,6 +821,11 @@ struct JamComposeSheet: View {
             guard let composer else { return }
             Task { @MainActor in coeditChanged(composer) }
         }
+        composer.onSelect = { [weak composer] in
+            guard let composer else { return }
+            Task { @MainActor in coedit?.sendPresence(composer) }
+        }
+        if let coedit { coedit.start(composer: composer) }
     }
 
     private func coeditChanged(_ composer: RichComposerModel) {
@@ -803,6 +835,7 @@ struct JamComposeSheet: View {
             guard !markdown().trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !title.isEmpty else { return }
             coedit = store.coeditSession(existingID: nil, forPost: nil, title: title, subtitle: subtitle, markdown: markdown())
             JamDraft.shared.draftID = coedit?.draftID
+            if let coedit { coedit.start(composer: composer); if !coauthors.isEmpty { store.coeditShare(coedit.draftID, with: coauthors.map(\.id)) } }
         }
         coedit?.editorChanged(title: title, subtitle: subtitle, composer: composer)
         #if DEBUG
@@ -818,7 +851,8 @@ struct JamComposeSheet: View {
     // MARK: Closing and posting
 
     private func close() {
-        if editing != nil { dismiss(); return }
+        coedit?.stop()
+        if editing != nil || openDraft != nil { if let coedit, let view = composer.textView { coedit.syncNow(title: title, subtitle: subtitle, markdown: ComposerDocument.markdown(from: view.textStorage, post: true)) }; dismiss(); return }
         let draft = JamDraft.shared
         let text = hasWords && !hasPictures ? composer.markdown() : ""
         draft.article = article; draft.title = title; draft.subtitle = subtitle; draft.markdown = text

@@ -20,6 +20,7 @@ struct JamPostMenu: View {
     @AppStorage(JamSaved.key) private var savedList = ""
     @AppStorage(JamPlayed.key) private var playedList = ""
     @State private var editing: JamPostInfo?
+    @State private var openDraft: DraftRoute?
     @State private var confirmingDelete = false
     @State private var sharing = false
     @State private var reporting: ReportTarget?
@@ -31,6 +32,7 @@ struct JamPostMenu: View {
         let playable = post.kind == "record" && post.state == "ready" && NowPlaying.shared.makeItem(for: post, store: store) != nil
         Menu {
             Section {
+                if let draft = store.sharedDraft(forPost: post.postId) { Button { openDraft = DraftRoute(id: draft) } label: { Label("Open draft", systemImage: "doc.text") }.accessibilityIdentifier("card-open-draft") }
                 if mine { Button { editing = post } label: { Label("Edit", systemImage: "pencil") }.accessibilityIdentifier("card-edit") }
                 Button { sharing = true } label: { Label("Share in lime\u{2026}", systemImage: "square.and.arrow.up") }.accessibilityIdentifier("card-share")
             }
@@ -64,6 +66,7 @@ struct JamPostMenu: View {
         }
         .accessibilityLabel("More").accessibilityIdentifier("card-more-\(post.postId)")
         .fullScreenCover(item: $editing) { JamEditSheet(post: $0) }
+        .fullScreenCover(item: $openDraft) { JamComposeSheet(openDraft: $0.id) }
         .sheet(isPresented: $sharing) { JamShareSheet(post: post) }
         .reportSheet($reporting)
         .confirmationDialog("Delete this post for everyone?", isPresented: $confirmingDelete, titleVisibility: .visible) {

@@ -201,10 +201,29 @@ struct JamActivityList: View {
     let isMe: Bool
     @Environment(ConversationStore.self) private var store
     @State private var reading: JamPostRoute?
+    @State private var writing: String?
 
     var body: some View {
         let items = store.jamActivity(of: userID)
+        let invites = isMe ? store.draftInvites() : []
         VStack(alignment: .leading, spacing: 0) {
+            ForEach(invites) { invite in
+                let who = store.teacher(invite.writer)
+                let title = invite.title.isEmpty ? "an article" : "\u{201C}\(invite.title)\u{201D}"
+                Button { writing = invite.draftID } label: {
+                    HStack(alignment: .top, spacing: 10) {
+                        AvatarView(person: who, size: 36).accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(who.name.split(separator: " ").first.map(String.init) ?? who.name) invited you to write \(title)").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).multilineTextAlignment(.leading)
+                            Text("Open draft").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.vertical, 10).frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).accessibilityIdentifier("draft-invite-\(invite.draftID)")
+                Divider().overlay(Theme.hairline)
+            }
             if items.isEmpty {
                 Text(isMe ? "Your likes and comments will show here." : "Nothing you can see yet.").font(Theme.body).foregroundStyle(Theme.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6).accessibilityIdentifier("profile-empty-activity")
@@ -238,8 +257,15 @@ struct JamActivityList: View {
             }
         }
         .sheet(item: $reading) { route in NavigationStack { JamPostView(postID: route.postID).toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { reading = nil } } } } }
+        .fullScreenCover(item: writingRoute) { route in JamComposeSheet(openDraft: route.id) }
+    }
+
+    private var writingRoute: Binding<DraftRoute?> {
+        Binding(get: { writing.map(DraftRoute.init) }, set: { writing = $0?.id })
     }
 }
+
+struct DraftRoute: Identifiable { let id: String }
 
 
 /// The row at the foot of every card (LIME-212b): ♥ · 💬 · remix · share in four equal columns, the same on posts, articles and podcasts. Remix and

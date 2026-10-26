@@ -102,6 +102,13 @@ enum Theme {
     private static let avatarLight: [UInt32] = [0xFEB2BF, 0xFED2CA, 0xF3BF91, 0xEFDF91, 0x92D4FF, 0xD1DEFE, 0xD9BAFF, 0x99EEFF]
     private static let avatarDark: [UInt32] = [0xDF8193, 0xEF9B8D, 0xC59770, 0xC3B571, 0x51ABE2, 0x98B2F7, 0xB091D6, 0x78C2D1]
 
+    /// The avatar pastel as a plain colour, for one appearance.
+    static func avatarUIColor(_ tone: Int, dark: Bool) -> UIColor {
+        let i = ((tone % 8) + 8) % 8
+        let hex = (dark ? avatarDark : avatarLight)[i]
+        return UIColor(red: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255, blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
+    }
+
     static func avatar(_ tone: Int) -> Color {
         let i = ((tone % 8) + 8) % 8
         func ui(_ hex: UInt32) -> UIColor {

@@ -422,6 +422,7 @@ final class ConversationStore {
                     try core.sync(transport: link.transport, authToken: token)
                 }.value
                 logDuplicates(core)
+                refreshDraftChannels(); draftRevision += 1   // invitations and the other authors' durable changes (LIME-233d)
                 let downloaded = core.takeDownloaded()
                 if downloaded > 0 || report.pending > 0 {
                     CallDiagnostics.shared.log("sync: downloaded \(downloaded), stored \(report.received), pending [\((try? core.pendingSummary()) ?? "?")]")
