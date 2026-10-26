@@ -25,6 +25,8 @@ Deno.serve(handler(async (req) => {
 
   // Resolved reports are deleted 180 days after they were resolved (LIME-191).
   await db.rpc("sweep_moderation");
+  // Deleted accounts' usernames are free again after their 30 days (LIME-113).
+  await db.rpc("sweep_held_usernames");
 
   const now = new Date().toISOString();
   const dayAgo = new Date(Date.now() - 86_400_000).toISOString();

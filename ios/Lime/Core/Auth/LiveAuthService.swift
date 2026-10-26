@@ -81,6 +81,16 @@ final class LiveAuthService: AuthService, @unchecked Sendable {
         return try self.tokens(from: result.json)
     }
 
+    func startAccountDeletion(password: String, tokens: AuthTokens) async throws {
+        let result = try await function("account-delete-start", ["password": password], token: tokens.accessToken)
+        guard result.status == 200 else { throw error(for: result) }
+    }
+
+    func deleteAccount(password: String, code: String, tokens: AuthTokens) async throws {
+        let result = try await function("account-delete", ["password": password, "code": code], token: tokens.accessToken)
+        guard result.status == 200 else { throw error(for: result) }
+    }
+
     func saveProfile(_ draft: ProfileDraft, tokens: AuthTokens) async throws -> Profile {
         var body: [String: Any] = ["display_name": draft.displayName]
         if let username = draft.username { body["username"] = username }

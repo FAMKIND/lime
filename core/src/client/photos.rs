@@ -7,7 +7,6 @@
 //! URLs from Storage) go through the platform's [`Transport`], so the core never opens a socket itself.
 
 use super::*;
-use rusqlite::OptionalExtension;
 use crate::store::photos::{self, Mine, MIN_GAP_MS, RECHECK_MS};
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -42,95 +41,6 @@ impl LimeStore {
     pub fn my_photo(&self) -> Result<MyPhoto, StoreError> {
         let mine = self.with_conn(photos::mine)?;
         Ok(MyPhoto { jpeg: mine.jpeg, visibility: mine.visibility })
-    }
-
-    /// What this phone holds about one person's profile pictures, as text for a log (LIME-231): whether I hold their profile key, whether they hold
-    /// mine, and each cached slot's source, size, version and age. Never a key or any picture bytes.
-    pub fn profile_diagnostics(&self, user_id: String) -> Result<String, StoreError> {
-        self.with_conn(|conn| {
-            let now = now_ms();
-            let has_key = photos::contact_key(conn, &user_id)?.is_some();
-            let they_have_mine = crate::store::delivery::is_shared(conn, &user_id)?;
-            let age = |ms: i64| if ms == 0 { "never".to_owned() } else { format!("{}s", (now - ms) / 1000) };
-            let photo = conn
-                .query_row("SELECT source, length(bytes), version, checked_at FROM photos WHERE user_id = ?1", params![user_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?, r.get::<_, i64>(3)?)))
-                .optional()
-                .map_err(db_err)?
-                .map(|(source, len, version, at)| format!("{source}/{len}b/v{version}/{}", age(at)))
-                .unwrap_or_else(|| "none".into());
-            // Why a share might not have been kept (LIME-231b): is my share to them still queued, did I get their delivery key and when, is a key change
-            // of theirs waiting to be accepted, and what is stuck in the inbound queue from them.
-            let queued = conn.query_row("SELECT EXISTS (SELECT 1 FROM share_queue WHERE peer_user_id = ?1)", params![user_id], |r| r.get::<_, bool>(0)).map_err(db_err)?;
-            let their_delivery_key = conn
-                .query_row("SELECT received_at FROM contact_delivery_keys WHERE user_id = ?1", params![user_id], |r| r.get::<_, i64>(0))
-                .optional()
-                .map_err(db_err)?
-                .map(|at| age(at))
-                .unwrap_or_else(|| "none".into());
-            let key_change: bool = conn
-                .query_row("SELECT new_master_key IS NOT NULL FROM peers WHERE user_id = ?1", params![user_id], |r| r.get(0))
-                .optional()
-                .map_err(db_err)?
-                .unwrap_or(false);
-            let stuck: Vec<String> = {
-                let mut st = conn.prepare("SELECT reason, COUNT(*) FROM pending_inbound WHERE sender_user = ?1 GROUP BY reason").map_err(db_err)?;
-                let rows = st.query_map(params![user_id], |r| Ok(format!("{}:{}", r.get::<_, String>(0)?, r.get::<_, i64>(1)?))).map_err(db_err)?;
-                rows.collect::<Result<_, _>>().map_err(db_err)?
-            };
-            let state: String = conn
-                .query_row("SELECT request_state FROM conversations WHERE id = ?1", params![format!("dm:{user_id}")], |r| r.get::<_, Option<String>>(0))
-                .optional()
-                .map_err(db_err)?
-                .flatten()
-                .unwrap_or_else(|| "no-chat".into());
-            let all_stuck: Vec<String> = {
-                let mut st = conn.prepare("SELECT reason, COUNT(*) FROM pending_inbound GROUP BY reason").map_err(db_err)?;
-                let rows = st.query_map([], |r| Ok(format!("{}:{}", r.get::<_, String>(0)?, r.get::<_, i64>(1)?))).map_err(db_err)?;
-                rows.collect::<Result<_, _>>().map_err(db_err)?
-            };
-            // Each stuck inbound item: how it is held, how old, how often tried, whether it names its sender, and what kind of Olm message it is.
-            let rows: Vec<String> = {
-                let mut st = conn.prepare("SELECT reason, identified, attempts, first_seen, sender_user, substr(ciphertext, 1, 4), length(ciphertext) FROM pending_inbound ORDER BY first_seen LIMIT 60").map_err(db_err)?;
-                let it = st
-                    .query_map([], |r| {
-                        let head: String = r.get(5)?;
-                        // base64 of the wire byte: "AA" = 0 (pre-key), "AQ" = 1 (normal), "Ag" = 2 (group).
-                        let kind = match &head[..head.len().min(2)] { "AA" => "prekey", "AQ" => "normal", "Ag" => "group", _ => "?" };
-                        Ok(format!("{}/{}/try{}/{}/{}/{}/{}b", r.get::<_, String>(0)?, if r.get::<_, bool>(1)? { "id" } else { "sealed" }, r.get::<_, i64>(2)?, age(r.get::<_, i64>(3)?),
-                            r.get::<_, Option<String>>(4)?.map(|u| u[..u.len().min(4)].to_owned()).unwrap_or_else(|| "-".into()), kind, r.get::<_, i64>(6)?))
-                    })
-                    .map_err(db_err)?;
-                it.collect::<Result<_, _>>().map_err(db_err)?
-            };
-            let sessions: Vec<String> = {
-                let mut st = conn.prepare("SELECT peer_user_id, COUNT(*), MAX(last_received), MAX(updated_at) FROM olm_sessions GROUP BY peer_user_id").map_err(db_err)?;
-                let it = st
-                    .query_map([], |r| Ok(format!("{}:{}s recv {} upd {}", &r.get::<_, String>(0)?[..4], r.get::<_, i64>(1)?, age(r.get::<_, i64>(2)?), age(r.get::<_, i64>(3)?))))
-                    .map_err(db_err)?;
-                it.collect::<Result<_, _>>().map_err(db_err)?
-            };
-            // My own picture, to compare with what the server holds under my current key.
-            let mine = {
-                let m = photos::mine(conn)?;
-                let current = vodozemac::base64_encode(photos::current_key(conn, now)?);
-                format!("my_photo={}b/{}/uploaded_under_current_key={}", m.jpeg.as_ref().map(Vec::len).unwrap_or(0), m.visibility, m.uploaded_key.as_deref() == Some(current.as_str()))
-            };
-            let queue_len: i64 = conn.query_row("SELECT COUNT(*) FROM share_queue", [], |r| r.get(0)).map_err(db_err)?;
-            let mut out = format!(
-                "{mine} chat_state={state} all_pending_inbound=[{}] share_queue_len={queue_len} sessions=[{}] stuck_items=[{}] user={} their_profile_key={has_key} my_key_shared_with_them={they_have_mine} my_share_still_queued={queued} their_delivery_key_age={their_delivery_key} key_change_waiting={key_change} stuck_from_them=[{}] photo={photo}",
-                all_stuck.join(","), sessions.join("; "), rows.join(" "), &user_id[..user_id.len().min(8)], stuck.join(",")
-            );
-            for slot in [crate::store::extras::LINKS, crate::store::extras::BACKGROUND, crate::store::extras::BACKGROUND_VIDEO] {
-                let row = conn
-                    .query_row("SELECT source, length(bytes), version, checked_at FROM extras WHERE user_id = ?1 AND slot = ?2", params![user_id, slot], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?, r.get::<_, i64>(3)?)))
-                    .optional()
-                    .map_err(db_err)?
-                    .map(|(source, len, version, at)| format!("{source}/{len}b/v{version}/{}", age(at)))
-                    .unwrap_or_else(|| "none".into());
-                out.push_str(&format!(" {slot}={row}"));
-            }
-            Ok(out)
-        })
     }
 
     /// A cached photo of another person, if they have one we can see.

@@ -95,6 +95,27 @@ extension ConversationStore {
     #endif
 }
 
+// MARK: Deleting my account (LIME-113)
+
+extension ConversationStore {
+    /// Before the server step: contacts are told, groups left, jams ended, queued ops sent. Best effort (a failure never stops the deletion).
+    func windDownAccount() async {
+        #if DEBUG
+        if isDemo { return }
+        #endif
+        guard let core, let link, let token = try? await link.token() else { return }
+        _ = try? await Task.detached { try core.windDownAccount(transport: link.transport, authToken: token) }.value
+    }
+
+    /// Reads the people who deleted their account (their chats are read-only).
+    func refreshDeletedPeers() {
+        #if DEBUG
+        if isDemo { return }
+        #endif
+        deletedPeers = Set((try? core?.deletedPeers()) ?? [])
+    }
+}
+
 // MARK: The moderators' tool (LIME-191)
 
 /// One line of the queue.

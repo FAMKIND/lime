@@ -25,6 +25,9 @@ protocol AuthService: Sendable {
     // Change the password from Settings: the current one (an emailed code follows), then the code and the new one.
     func startPasswordChange(current: String, tokens: AuthTokens) async throws
     func finishPasswordChange(code: String, newPassword: String, tokens: AuthTokens) async throws -> AuthTokens
+    // Delete the account (LIME-113): the password (an emailed code follows), then the password and the code.
+    func startAccountDeletion(password: String, tokens: AuthTokens) async throws
+    func deleteAccount(password: String, code: String, tokens: AuthTokens) async throws
     func saveProfile(_ draft: ProfileDraft, tokens: AuthTokens) async throws -> Profile
     func loadProfile(tokens: AuthTokens) async throws -> Profile?
 

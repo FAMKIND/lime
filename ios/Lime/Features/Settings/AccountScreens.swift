@@ -28,6 +28,8 @@ struct AccountScreen: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("account-sign-out")
+                Divider().overlay(Theme.hairline).padding(.leading, 60)
+                SettingsRow(symbol: "trash", title: "Delete Account", route: .deleteAccount, id: "account-delete", showsDivider: false)
             }
         }
         .confirmSheet("Sign out of lime?", isPresented: $confirmingSignOut) {

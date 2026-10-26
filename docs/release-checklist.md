@@ -114,3 +114,5 @@ Things that must be done before Lime goes to testers or the App Store. Later bri
 - [ ] **The security review** of the whole mesh: the packet, the tag, the sealed header, signed access, `mesh-drop`, the retry policy.
 
 - [ ] **Moderation (LIME-191) before launch:** deploy to staging and live (migration, 4 functions, `MODERATION_SECRET_KEY` for each, `MODERATION_EMAIL`/`RESEND_API_KEY`), add the founders to `moderators`, pin the live moderation public key (key id 2) if it differs from staging's, publish the **content policy page** and the **abuse contact** (Settings → About), and settle the **NCMEC CyberTipline process with the lawyer** (`docs/moderation.md`).
+
+- [x] **Account deletion in the app (App Store rule 5.1.1(v), LIME-113).** Built: Settings → Account → Delete Account (DELETE, password, emailed code); the server function and what it deletes are in `docs/api-v2.md` section 15; draft policy text in `docs/privacy-deletion-draft.md`. Still to do: deploy to staging and live, the lawyer's review of the policy text (retention of reports, database backups), and the same screen on Android.

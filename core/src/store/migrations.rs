@@ -798,6 +798,11 @@ const MIGRATIONS: &[&str] = &[
          peer_user_id TEXT PRIMARY KEY NOT NULL,
          asked_at     INTEGER NOT NULL
      );",
+    // 52 (LIME-113): contacts whose account was deleted (they told us before they went): their chat is read-only and says so.
+    "CREATE TABLE deleted_peers (
+         user_id    TEXT PRIMARY KEY NOT NULL,
+         deleted_at INTEGER NOT NULL
+     );",
 ];
 
 /// The schema version this build writes.

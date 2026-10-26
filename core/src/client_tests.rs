@@ -1479,7 +1479,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
              DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP INDEX olm_sessions_by_peer; DROP TABLE received_ciphertexts; DROP TABLE emergency_messages; DROP TABLE emergency_settings; DROP TABLE mesh_outbox; DROP TABLE mesh_packets; DROP TABLE mesh_seen; DROP TABLE mesh_uploaded; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
-             DROP TABLE session_repairs; DROP TABLE profile_key_requests; DROP TABLE my_extra; DROP TABLE extras; DROP TRIGGER jam_posts_fts_insert; DROP TRIGGER jam_posts_fts_update; DROP TRIGGER jam_posts_fts_delete; DROP TABLE jam_fts; DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_credits; DROP TABLE jam_credit_requests; DROP TABLE jam_credit_wires; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_blob_deletes; DROP TABLE jam_reactions; DROP TABLE jam_my_reactions; DROP TABLE jam_comments; DROP TABLE jam_counts; DROP TABLE jam_counts_out; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; PRAGMA user_version = 9;",
+             DROP TABLE deleted_peers; DROP TABLE session_repairs; DROP TABLE profile_key_requests; DROP TABLE my_extra; DROP TABLE extras; DROP TRIGGER jam_posts_fts_insert; DROP TRIGGER jam_posts_fts_update; DROP TRIGGER jam_posts_fts_delete; DROP TABLE jam_fts; DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_credits; DROP TABLE jam_credit_requests; DROP TABLE jam_credit_wires; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_blob_deletes; DROP TABLE jam_reactions; DROP TABLE jam_my_reactions; DROP TABLE jam_comments; DROP TABLE jam_counts; DROP TABLE jam_counts_out; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; PRAGMA user_version = 9;",
         )
         .unwrap();
     }
@@ -6463,4 +6463,35 @@ fn a_send_whose_answer_was_lost_is_a_new_message_not_a_second_ciphertext_at_the_
         assert_eq!(texts(&bob, &alice).iter().filter(|t| **t == format!("lost-answer-{round}")).count(), 1, "lost-answer-{round} arrived once");
     }
     assert!(conversation_works(&alice, &bob, &transport, "after"), "messages flow afterwards: pending bob [{}] alice [{}]", bob.store.pending_summary().unwrap(), alice.store.pending_summary().unwrap());
+}
+
+// LIME-113: deleting an account.
+#[test]
+fn a_deleted_account_tells_its_contacts_and_their_chat_becomes_read_only() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    befriend(&alice, &bob, &transport);
+    befriend(&alice, &carol, &transport);
+    alice.store.create_jam("Ann's jam".into(), "".into(), vec![]).unwrap();
+    say(&bob, &alice, &transport, "see you tomorrow");
+    sync(&alice, &transport);
+    assert_eq!(alice.store.wind_down_account(transport.clone(), alice.token.clone()).unwrap(), 0, "everything could be done");
+    assert!(alice.store.list_my_jams().unwrap().iter().all(|j| j.ended), "her jam ended");
+    for other in [&bob, &carol] {
+        sync(other, &transport);
+        let shown = other.store.list_messages(format!("dm:{}", alice.user)).unwrap();
+        assert!(shown.iter().any(|m| m.local_state == "system" && m.text == "This account was deleted"), "{} sees the line: {:?}", other.user, shown.iter().map(|m| m.text.clone()).collect::<Vec<_>>());
+        assert_eq!(other.store.deleted_peers().unwrap(), vec![alice.user.clone()]);
+        let sent = other.store.send_text_identified(transport.clone(), other.token.clone(), alice.user.clone(), "are you there?".into());
+        assert!(sent.is_err(), "sending to a deleted account is turned off");
+    }
+    // Nothing else changed: Bob and Carol still talk to each other.
+    befriend(&bob, &carol, &transport);
+    say(&bob, &carol, &transport, "still fine");
+    sync(&carol, &transport);
+    assert!(texts(&carol, &bob).iter().any(|t| t == "still fine"));
+    // And no more keys are shared with the deleted account.
+    assert!(!crate::store::delivery::accepted_peers(&bob.store.lock()).unwrap().contains(&alice.user));
 }

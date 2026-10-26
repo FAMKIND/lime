@@ -38,6 +38,7 @@ pub(crate) mod profile;
 pub(crate) mod groups;
 pub(crate) mod jam;
 pub(crate) mod moderation;
+mod account;
 mod repair;
 pub(crate) mod message_ops;
 pub(crate) mod extras;
@@ -51,6 +52,8 @@ const PROFILE_CHANGED: &str = "profile.changed";
 const PROFILE_KEY_REQUEST: &str = "profile_key.request";
 /// "I could not read what you sent me since <time>: send it again" (LIME-232). Sent on the fresh session of a repair.
 const DECRYPTION_ERROR: &str = "decryption.error";
+/// "I deleted my account" (LIME-113): the chat becomes read-only and says so.
+const ACCOUNT_DELETED: &str = "account.deleted";
 /// How far back a message is sent again when a contact could not read it.
 const RESEND_WINDOW_MS: i64 = 7 * 24 * 3600 * 1000;
 use crate::store::status::STATUS_CHANGED;
@@ -634,6 +637,13 @@ impl LimeStore {
                 .map_err(db_err)?;
             if !visible {
                 return Err(StoreError::NotFound);
+            }
+            // A chat with a deleted account is read-only (LIME-113).
+            if let Some(peer) = conversation_id.strip_prefix("dm:") {
+                let gone: bool = conn.query_row("SELECT EXISTS (SELECT 1 FROM deleted_peers WHERE user_id = ?1)", params![peer], |r| r.get(0)).map_err(db_err)?;
+                if gone {
+                    return Err(StoreError::Rejected);
+                }
             }
             // A reply hangs from a message of this conversation that is not itself a reply.
             let root = match &reply_to {
@@ -1571,11 +1581,12 @@ impl LimeStore {
         let is_changed = inner.op.op_type == PROFILE_CHANGED;
         let is_key_request = inner.op.op_type == PROFILE_KEY_REQUEST;
         let is_decryption_error = inner.op.op_type == DECRYPTION_ERROR;
+        let is_account_deleted = inner.op.op_type == ACCOUNT_DELETED;
         let is_status = inner.op.op_type == STATUS_CHANGED;
         let is_call = crate::store::calls::is_call_op(&inner.op.op_type);
         let is_username = inner.op.op_type == USERNAME_SET;
         let is_jam = crate::store::jam::is_jam_op(&inner.op.op_type);
-        let is_control = is_share || is_changed || is_key_request || is_decryption_error || is_status || is_username || is_call || is_jam;
+        let is_control = is_share || is_changed || is_key_request || is_decryption_error || is_account_deleted || is_status || is_username || is_call || is_jam;
         let is_message_op = crate::store::message_ops::is_message_op(&inner.op.op_type);
         let is_group_op = inner.op.op_type.starts_with("group.");
         let valid = sender != me
@@ -1717,6 +1728,22 @@ impl LimeStore {
                 // Someone I share a chat with told me their username (or `null`: forget it). Not a message.
                 if let Some(username) = crate::store::usernames::parse(&inner.op.payload) {
                     crate::store::usernames::store_received(conn, me, &sender, username.as_deref(), remote_hlc.wall)?;
+                }
+                return Ok(Some(Stored::Control));
+            }
+            if is_account_deleted {
+                // They deleted their account: this chat is read-only from now on, with a line saying so. Only for a chat that exists (a stranger's
+                // op does not create one) and never for a sealed sender we have not pinned (checked above).
+                let has_chat: bool = conn.query_row("SELECT EXISTS (SELECT 1 FROM conversations WHERE id = ?1)", params![format!("dm:{sender}")], |r| r.get(0)).map_err(db_err)?;
+                if has_chat {
+                    conn.execute("INSERT OR REPLACE INTO deleted_peers (user_id, deleted_at) VALUES (?1, ?2)", params![sender, now]).map_err(db_err)?;
+                    conn.execute(
+                        "INSERT OR REPLACE INTO messages (id, conversation_id, sender_id, body, sent_at, local_state, op_id, hlc, parents, plain)
+                         VALUES (?1, ?2, ?3, ?4, ?5, 'system', NULL, ?6, '[]', '')",
+                        params![format!("sys:deleted:{sender}"), format!("dm:{sender}"), sender, json!({ "e": "account_deleted", "by": sender }).to_string(), remote_hlc.wall, remote_hlc.render()],
+                    )
+                    .map_err(db_err)?;
+                    delivery::dequeue_share(conn, &sender)?;
                 }
                 return Ok(Some(Stored::Control));
             }

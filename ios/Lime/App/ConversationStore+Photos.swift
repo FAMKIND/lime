@@ -118,31 +118,11 @@ extension ConversationStore {
         #endif
         guard let core, let link else { return }
         guard let token = try? await link.token() else { return }
-        var failure = ""
-        let changed: [String]
-        do {
-            changed = try await Task.detached(priority: .utility) { try core.refreshPhotos(transport: link.transport, authToken: token, force: force) }.value
-        } catch { changed = []; failure = "\(error)" }
-        diagnoseProfilePictures(failure: failure, changed: changed)
+        let changed = (try? await Task.detached(priority: .utility) {
+            try core.refreshPhotos(transport: link.transport, authToken: token, force: force)
+        }.value) ?? []
         guard !changed.isEmpty else { return }
         let loaded = await Task.detached(priority: .utility) { changed.map { ($0, (try? core.peerPhoto(userId: $0)) ?? nil) } }.value
         for (id, data) in loaded { AvatarCache.shared.set(data, for: id) }
-    }
-
-    /// A log line per person about what this phone holds of their pictures (LIME-231; Xcode / `devicectl --console`). No keys, no bytes.
-    func diagnoseProfilePictures(failure: String, changed: [String]) {
-        #if DEBUG
-        guard let core else { return }
-        // To the console and to Documents/diag231.log (so it can be copied off a phone with `devicectl device copy from`).
-        var text = "DIAG231 \(Date()) refresh failure=\(failure) changed=\(changed.count)\n"
-        for id in Set(conversations.flatMap { $0.members.map(\.id) }) where id != meProvider().id {
-            text += "DIAG231 \((try? core.profileDiagnostics(userId: id)) ?? "?")\n"
-        }
-        fputs(text, stderr)
-        if let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("diag231.log"),
-           let data = text.data(using: .utf8) {
-            if let handle = try? FileHandle(forWritingTo: url) { handle.seekToEndOfFile(); handle.write(data); try? handle.close() } else { try? data.write(to: url) }
-        }
-        #endif
     }
 }

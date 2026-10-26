@@ -311,6 +311,22 @@ final class AccountSession {
         try? SessionKeychain.save(fresh, service: sessionService)
     }
 
+    /// Step one of deleting the account: the password is checked and a code is emailed.
+    func startAccountDeletion(password: String) async throws {
+        guard let auth else { throw AuthError.network }
+        try await auth.startAccountDeletion(password: password, tokens: try await currentTokens())
+    }
+
+    /// Step two (LIME-113): the phone tells the people it can still reach (contacts, groups, subscribers), then the server deletes the account, then this
+    /// phone forgets everything and returns to the welcome screen.
+    func deleteAccount(password: String, code: String) async throws {
+        guard let auth else { throw AuthError.network }
+        let tokens = try await currentTokens()
+        await store.windDownAccount()
+        try await auth.deleteAccount(password: password, code: code, tokens: tokens)
+        await signOut()
+    }
+
     /// The tokens, refreshed first when they are about to expire.
     private func currentTokens() async throws -> AuthTokens {
         _ = try await accessToken()

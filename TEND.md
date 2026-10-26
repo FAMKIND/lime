@@ -8089,3 +8089,45 @@ Everything sealed that Shem and Jean sent each other since about **03:37 UTC on 
 - **Not tested:** the gate on the two phones (20 messages each way, locking, toggling Wi-Fi/Bluetooth) is yours; app kills mid-sync were covered by the lost-answer test (the same state), not by killing a process. The ratchet-skip limit (40) was not exercised.
 - Installed: 13mini: yes · iPad: yes · Jean: yes
 - For plot: Android needs the same write-ahead and atomic-receive rules (they live in the core, so it gets them with LimeCore); the group (Megolm) path was not reviewed for the same flaw.
+
+## LIME-113 — delete your account — DONE in code, NOT deployed (waiting for your go)
+
+**Phase 1: what ties to an account today**
+
+| Where | What | Deleted by |
+| --- | --- | --- |
+| `auth.users` + sessions | the account, its sessions | `auth.admin.deleteUser` (last step) |
+| `profiles` (incl. 214's extras columns) | name, username, school, About, photo/links/background/video versions | cascade |
+| Storage `public-avatars` | `<id>.jpg`, `-links.json`, `-background.jpg`, `-background.mp4` | the function (before the user) |
+| `blobs` (+ Storage `blobs`) | contacts-only photo/links/background/video, **jam posts**, other blobs | the function (objects), cascade (rows) |
+| `attachments` (+ chunks `a/<id>/<n>`) | files sent | the function (chunks), cascade |
+| `devices`, `master_keys`, `one_time_keys`, `delivery_access` | all keys | cascade |
+| `mailbox_items` | to their devices: cascade; **from** them (`sender_user`) | cascade / `delete_account_rows` |
+| `jams` | jam and org pages (a jam's posts are blobs) | cascade |
+| `undelivered_notices`, `attachment_fetches`, `auth_proofs` | housekeeping | cascade |
+| `code_challenges`, `rate_limits` | codes and counters keyed by their id | `delete_account_rows` |
+| `moderation_reports` | filed **by** them: cascade; **about** them: sealed, kept 180 days, cannot be marked "deleted" (the subject is inside the sealed payload) | cascade / stays |
+| `moderators`, `account_suspensions` | cascade | cascade |
+| `mesh_fetch_nonces` | no account link (nonce only) | n/a |
+| LiveKit / TURN | stateless credentials | n/a |
+| **New:** `deleted_accounts` | hash of the id + time | — (the log) |
+| **New:** `held_usernames` | the username, 30 days | freed by the blob sweep |
+
+On other people's phones (not reachable): their chats with the account, jam posts they downloaded, co-author copies, group rosters. Co-authors' credits are not rewritten ("deleted account" labelling is not done).
+
+**What was built**
+- **Settings → Account → Delete Account** (red, last in the Account screen): what happens in plain words → type **DELETE** + password → emailed code → **Delete my account** (red; lime stays for everyday actions) → the phone wipes (store, keys, Keychain, caches) and shows the welcome screen.
+- **Before the server step** (core `wind_down_account`): `account.deleted` to every accepted contact (their chat gets the line "This account was deleted", the composer is replaced by "This account was deleted. You can't send messages here.", core refuses sends), groups are left (owner role passes as for Leave), my jams are ended; failures never block the deletion.
+- **Server:** migration `20261026000000_account_deletion.sql` (`deleted_accounts`, `held_usernames`, `delete_account_rows`, `sweep_held_usernames`); functions `account-delete-start` (password check + emailed code) and `account-delete` (password + code, then Storage objects, the transaction, the auth user); `profile-set` refuses a held username (409 `username_taken`); `blob-sweep` frees expired holds.
+- **Docs:** `docs/api-v2.md` §15, `docs/privacy-deletion-draft.md` (for the lawyer), `release-checklist.md`.
+- **DIAG231** (the Debug logging from 231/231b) is removed, as planned.
+- Core migration 52 (`deleted_peers`).
+
+**Tests:** server `account_delete_test.ts` on the local stack (passes): a wrong password / wrong code deletes nothing; after deletion the account's profile, devices, keys, blobs (jam post fetch 404), jam page, reports filed are gone, **another user's data is untouched**, the account can't sign in or call, the log row holds only a hash and a time, the username can't be taken for 30 days and is free after, the email can sign up again at once. Core (349 pass): `a_deleted_account_tells_its_contacts_and_their_chat_becomes_read_only` (two contacts see the line, sending is refused, her jam ended, other chats unaffected, no more key shares to her). UI (demo): the Delete Account screens through DELETE, wrong/right password, wrong/right code, back to the welcome screen; a chat with a deleted account says so and has no composer. With Moderation191, Report191 and MessageActions: 22 UI tests pass.
+- **Not tested:** the end-to-end on two real accounts (the gate below is yours after the deploy); Storage object removal is exercised only through the rows (the test cannot list the bucket); a contact who is offline learns on their next sync.
+- **Not done:** other signed-in devices wipe themselves (they are only signed out at their next contact; one device per account is all there is today); co-author credits for a deleted account; marking reports about the account as "deleted".
+- Installed: 13mini: yes · iPad: yes · Jean: yes (**do not try Delete Account on the real accounts: the staging server does not have the functions yet, and a failed server step after the notices would tell your contacts you were gone**: the phone tells contacts *before* the server step, as briefed)
+
+**Deploy steps for you (I have not deployed):**
+1. `sh supabase/deploy-staging.sh` (the migration, the two new functions, and the changed `profile-set` and `blob-sweep`).
+2. Gate on the **iPad's test account only**: Delete account → DELETE → password → code → the welcome screen; on the 13 mini the chat with that account says "This account was deleted" and can't send; the account's username can't be taken by a new sign-up for now.

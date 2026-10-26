@@ -43,6 +43,11 @@ Deno.serve(handler(async (req) => {
     updated_at: new Date().toISOString(),
   };
   if (typeof body.hide_from_search === "boolean") row.hide_from_search = body.hide_from_search;
+  if (username) {
+    // A deleted account's username is held for 30 days (LIME-113): nobody else can take it to impersonate them.
+    const { data: held } = await admin().from("held_usernames").select("username").eq("username", username.toLowerCase()).gt("held_until", new Date().toISOString()).maybeSingle();
+    if (held) throw new HttpError(409, "username_taken", "That username is taken. Try another.");
+  }
   const { data, error } = await admin().from("profiles").upsert(row, { onConflict: "user_id" })
     .select("user_id, display_name, username, school, about_emoji, about_text, hide_from_search, photo_visibility, avatar_version").single();
   if (error) {

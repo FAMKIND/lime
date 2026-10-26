@@ -296,6 +296,7 @@ pub(crate) fn render_system(conn: &Connection, body: &str, me_is: &str) -> Strin
         "removed" => format!("{by} removed {}", object(&text("user"))),
         "left" => format!("{by} {}", if you { "left the group" } else { "left" }),
         "deleted" => format!("{by} deleted this group"),
+        "account_deleted" => "This account was deleted".to_owned(),
         "renamed" => format!("{by} renamed the group to “{}”", text("name")),
         "avatar" => format!("{by} changed the group picture"),
         "photo" => format!("{by} changed the group photo"),

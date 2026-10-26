@@ -82,6 +82,8 @@ final class ConversationStore {
     var jamHiddenChanged = 0
     /// People I asked, a moment ago, to send again what I could not read (LIME-232): their chat shows "Waiting for messages…".
     var waitingPeers: Set<String> = []
+    /// People who deleted their account (LIME-113): their chats are read-only.
+    var deletedPeers: Set<String> = []
     /// Bumped when hearts, comments or counts change (LIME-189c): what shows them redraws.
     var jamEngagement = 0
     var demoEngagement = DemoEngagement()
@@ -750,6 +752,7 @@ final class ConversationStore {
             storageError = "Storage could not be read."
         }
         waitingPeers = Set((try? core.peersWaitingForMessages()) ?? [])
+        deletedPeers = Set((try? core.deletedPeers()) ?? [])
         await loadCachedPhotos()
         isLoaded = true
     }
@@ -989,6 +992,10 @@ final class ConversationStore {
         case "requests": path.append(MessagesRoute.requests)
         case "request-chat": path.append(MessagesRoute.requests); path.append("dm:ada")
         case "chat": path.append("dm:sam")
+        case "chat-deleted-account":
+            // Sam deleted his account (LIME-113): the chat says so and cannot be written in.
+            deletedPeers = ["sam"]
+            path.append("dm:sam")
         case let name? where name == "chat-long" || name.hasPrefix("chat-long-"):
             // A long chat (LIME-134): messages of every height, for opening it again and again.
             let pat = Person(id: "pat", name: "Pat Doe")
