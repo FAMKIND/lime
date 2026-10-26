@@ -1479,7 +1479,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
              DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP INDEX olm_sessions_by_peer; DROP TABLE received_ciphertexts; DROP TABLE emergency_messages; DROP TABLE emergency_settings; DROP TABLE mesh_outbox; DROP TABLE mesh_packets; DROP TABLE mesh_seen; DROP TABLE mesh_uploaded; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
-             DROP TABLE draft_chunks; DROP TABLE drafts; DROP TABLE deleted_peers; DROP TABLE session_repairs; DROP TABLE profile_key_requests; DROP TABLE my_extra; DROP TABLE extras; DROP TRIGGER jam_posts_fts_insert; DROP TRIGGER jam_posts_fts_update; DROP TRIGGER jam_posts_fts_delete; DROP TABLE jam_fts; DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_credits; DROP TABLE jam_credit_requests; DROP TABLE jam_credit_wires; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_blob_deletes; DROP TABLE jam_reactions; DROP TABLE jam_my_reactions; DROP TABLE jam_comments; DROP TABLE jam_counts; DROP TABLE jam_counts_out; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; PRAGMA user_version = 9;",
+             DROP TABLE draft_outbox; DROP TABLE draft_authors; DROP TABLE draft_chunks; DROP TABLE drafts; DROP TABLE deleted_peers; DROP TABLE session_repairs; DROP TABLE profile_key_requests; DROP TABLE my_extra; DROP TABLE extras; DROP TRIGGER jam_posts_fts_insert; DROP TRIGGER jam_posts_fts_update; DROP TRIGGER jam_posts_fts_delete; DROP TABLE jam_fts; DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_credits; DROP TABLE jam_credit_requests; DROP TABLE jam_credit_wires; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_blob_deletes; DROP TABLE jam_reactions; DROP TABLE jam_my_reactions; DROP TABLE jam_comments; DROP TABLE jam_counts; DROP TABLE jam_counts_out; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; PRAGMA user_version = 9;",
         )
         .unwrap();
     }
@@ -6587,4 +6587,260 @@ fn a_jam_post_whose_answer_was_lost_reaches_every_subscriber_once_and_nothing_is
         }
         assert_eq!(p.store.pending_summary().unwrap(), "", "nothing left pending for {}", p.user);
     }
+}
+
+// LIME-233b: the authors' draft: durable path (the mailbox) and instant path (the wire messages the adapter broadcasts).
+fn shared_draft(alice: &Party, bob: &Party, transport: &Arc<dyn Transport>) -> String {
+    let id = alice.store.create_draft("Plans".into(), "".into(), "The intro paragraph.\n\nSecond one.".into()).unwrap();
+    alice.store.share_draft(id.clone(), vec![bob.user.clone()]).unwrap();
+    deliver(alice, transport);
+    sync(bob, transport);
+    id
+}
+
+fn allow_flush(p: &Party) {
+    p.store.lock().execute("UPDATE drafts SET last_flush_at = 0", []).unwrap();
+}
+
+fn first_block(p: &Party, id: &str) -> String {
+    p.store.draft_blocks(id.to_owned()).unwrap()[0].id.clone()
+}
+
+#[test]
+fn two_authors_typing_in_the_same_paragraph_at_once_end_equal_on_the_durable_path() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let id = shared_draft(&alice, &bob, &transport);
+    assert_eq!(bob.store.draft_markdown(id.clone()).unwrap(), "The intro paragraph.\n\nSecond one.", "the invitation brought the whole draft");
+    assert_eq!(bob.store.unseen_draft_invites().unwrap(), vec![id.clone()], "an invitation to show");
+    assert_eq!(bob.store.draft_authors(id.clone()).unwrap().iter().filter(|a| a.status == "active").count(), 2);
+    let block = first_block(&alice, &id);
+    alice.store.draft_insert_text(id.clone(), block.clone(), 4, "ALICE ".into()).unwrap();
+    bob.store.draft_insert_text(id.clone(), block.clone(), 4, "BOB ".into()).unwrap();
+    for p in [&alice, &bob] { allow_flush(p); deliver(p, &transport); }
+    for p in [&alice, &bob] { sync(p, &transport); }
+    let (a, b) = (alice.store.draft_markdown(id.clone()).unwrap(), bob.store.draft_markdown(id.clone()).unwrap());
+    assert_eq!(a, b, "equal");
+    assert!(a.contains("ALICE ") && a.contains("BOB "), "nothing lost: {a:?}");
+    // The other author's words come to the editor as a patch, once.
+    let patches = bob.store.draft_take_patches(id.clone()).unwrap();
+    assert!(patches.iter().any(|p| matches!(p, crate::drafts::DraftPatch::Text { inserted, .. } if inserted == "ALICE ")), "{patches:?}");
+    assert!(bob.store.draft_take_patches(id).unwrap().is_empty());
+}
+
+#[test]
+fn a_late_joiner_catches_up_from_a_snapshot_and_then_everyone_hears_them() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (lee, _) = party(&server, "lee", 3);
+    befriend(&alice, &bob, &transport);
+    befriend(&alice, &lee, &transport);
+    let id = shared_draft(&alice, &bob, &transport);
+    let block = first_block(&alice, &id);
+    alice.store.draft_insert_text(id.clone(), block.clone(), 0, "Before Lee. ".into()).unwrap();
+    allow_flush(&alice); deliver(&alice, &transport); sync(&bob, &transport);
+    alice.store.share_draft(id.clone(), vec![bob.user.clone(), lee.user.clone()]).unwrap();
+    deliver(&alice, &transport);
+    sync(&lee, &transport);
+    sync(&bob, &transport);
+    assert_eq!(lee.store.draft_markdown(id.clone()).unwrap(), alice.store.draft_markdown(id.clone()).unwrap(), "Lee has the draft as it is");
+    assert!(lee.store.draft_markdown(id.clone()).unwrap().contains("Before Lee. "));
+    // Lee types; Alice and Bob (who learned of Lee from the writer) get it.
+    lee.store.draft_insert_text(id.clone(), block, 0, "Lee says hi. ".into()).unwrap();
+    allow_flush(&lee); deliver(&lee, &transport);
+    sync(&alice, &transport); sync(&bob, &transport);
+    assert!(alice.store.draft_markdown(id.clone()).unwrap().contains("Lee says hi. "));
+    assert!(bob.store.draft_markdown(id.clone()).unwrap().contains("Lee says hi. "));
+    // A sixth author is refused (five at most).
+    let others: Vec<String> = ["c1", "c2", "c3"].iter().map(|s| s.to_string()).collect();
+    assert!(alice.store.share_draft(id, others).is_err());
+}
+
+#[test]
+fn a_removed_co_author_gets_nothing_after_removal_and_what_they_send_is_dropped() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (lee, _) = party(&server, "lee", 3);
+    befriend(&alice, &bob, &transport);
+    befriend(&alice, &lee, &transport);
+    let id = shared_draft(&alice, &bob, &transport);
+    alice.store.share_draft(id.clone(), vec![bob.user.clone(), lee.user.clone()]).unwrap();
+    deliver(&alice, &transport); sync(&lee, &transport); sync(&bob, &transport);
+    let channel = alice.store.draft_channels().unwrap()[0].channel_id.clone();
+    let old_wire = {
+        let block = first_block(&bob, &id);
+        bob.store.draft_insert_text(id.clone(), block, 0, "old-key ".into()).unwrap();
+        bob.store.draft_instant_change(id.clone()).unwrap().unwrap()
+    };
+    assert!(alice.store.draft_instant_receive(channel.clone(), old_wire.clone()).unwrap().is_some(), "an author's instant message is applied");
+    // Alice removes Bob.
+    alice.store.remove_draft_author(id.clone(), bob.user.clone()).unwrap();
+    deliver(&alice, &transport); sync(&bob, &transport); sync(&lee, &transport);
+    let block = first_block(&alice, &id);
+    alice.store.draft_insert_text(id.clone(), block.clone(), 0, "after removal. ".into()).unwrap();
+    allow_flush(&alice); deliver(&alice, &transport);
+    for p in [&bob, &lee] { sync(p, &transport); }
+    assert!(!bob.store.draft_markdown(id.clone()).unwrap().contains("after removal."), "Bob gets nothing after removal");
+    assert!(lee.store.draft_markdown(id.clone()).unwrap().contains("after removal."), "Lee still does");
+    assert!(bob.store.draft_channels().unwrap().is_empty(), "Bob stops listening");
+    // Bob's old-key message, and a message from a stranger who knows the key, are dropped by Alice.
+    let bob_more = {
+        // Bob has no key now; use the old wire again: it no longer decrypts with the new key.
+        old_wire
+    };
+    assert!(alice.store.draft_instant_receive(channel.clone(), bob_more).unwrap().is_none(), "dropped: not the current key");
+    // The instant path to the others still works with the new key.
+    alice.store.draft_insert_text(id.clone(), block, 0, "instant. ".into()).unwrap();
+    let wire = alice.store.draft_instant_change(id.clone()).unwrap().unwrap();
+    assert!(lee.store.draft_instant_receive(channel.clone(), wire.clone()).unwrap().is_some());
+    assert!(bob.store.draft_instant_receive(channel, wire).unwrap().is_none(), "Bob cannot read it");
+}
+
+#[test]
+fn an_author_who_missed_changes_gets_them_from_a_hello_and_an_offline_author_merges_later() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let id = shared_draft(&alice, &bob, &transport);
+    let block = first_block(&alice, &id);
+    // Both edit while the other is unreachable; every durable message in flight is lost.
+    alice.store.draft_insert_text(id.clone(), block.clone(), 0, "Alice offline. ".into()).unwrap();
+    bob.store.draft_insert_text(id.clone(), block, 0, "Bob offline. ".into()).unwrap();
+    for p in [&alice, &bob] { allow_flush(p); deliver(p, &transport); }
+    server.state.lock().unwrap().mailbox.clear();
+    assert_ne!(alice.store.draft_markdown(id.clone()).unwrap(), bob.store.draft_markdown(id.clone()).unwrap());
+    // Bob opens the draft: his hello makes Alice send him what he lacks, and she asks for what she lacks.
+    bob.store.draft_hello(id.clone()).unwrap();
+    deliver(&bob, &transport);
+    sync(&alice, &transport); deliver(&alice, &transport);
+    sync(&bob, &transport); deliver(&bob, &transport);
+    sync(&alice, &transport);
+    let (a, b) = (alice.store.draft_markdown(id.clone()).unwrap(), bob.store.draft_markdown(id).unwrap());
+    assert_eq!(a, b, "merged");
+    assert!(a.contains("Alice offline. ") && a.contains("Bob offline. "));
+}
+
+#[test]
+fn the_durable_path_sends_at_most_twelve_batches_a_minute_while_typing_continuously() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let id = shared_draft(&alice, &bob, &transport);
+    let block = first_block(&alice, &id);
+    alice.store.lock().execute("DELETE FROM draft_outbox", []).unwrap();
+    alice.store.lock().execute("UPDATE drafts SET last_flush_at = 0, last_hello_at = ?1", params![1_000_000_i64]).unwrap();
+    // Sixty virtual seconds of typing, a key every 100 ms, the batcher asked every 100 ms.
+    for step in 0..600 {
+        let now = 1_000_000 + step * 100;
+        alice.store.draft_insert_text(id.clone(), block.clone(), 0, "x".into()).unwrap();
+        let conn = alice.store.lock();
+        alice.store.flush_drafts_at(&conn, &alice.user, now).unwrap();
+    }
+    let batches: i64 = alice.store.lock().query_row("SELECT COUNT(*) FROM draft_outbox WHERE op_type = 'draft.change'", [], |r| r.get(0)).unwrap();
+    assert!((11..=12).contains(&batches), "about one batch every 5 s, never more than 12 a minute: {batches}");
+    // And what was batched is the whole of it: Bob ends with all 600 letters.
+    for _ in 0..3 { allow_flush(&alice); deliver(&alice, &transport); sync(&bob, &transport); }
+    assert_eq!(bob.store.draft_markdown(id.clone()).unwrap(), alice.store.draft_markdown(id).unwrap());
+}
+
+#[test]
+fn the_instant_path_applies_a_change_at_once_drops_forgeries_and_a_lost_send_loses_nothing() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    befriend(&alice, &bob, &transport);
+    befriend(&alice, &carol, &transport);
+    befriend(&bob, &carol, &transport);
+    let id = shared_draft(&alice, &bob, &transport);
+    let channel = bob.store.draft_channels().unwrap()[0].channel_id.clone();
+    let block = first_block(&alice, &id);
+    alice.store.draft_insert_text(id.clone(), block.clone(), 0, "live ".into()).unwrap();
+    let wire = alice.store.draft_instant_change(id.clone()).unwrap().unwrap();
+    let event = bob.store.draft_instant_receive(channel.clone(), wire.clone()).unwrap().unwrap();
+    assert_eq!((event.from_user.as_str(), event.patches.is_empty()), ("alice", false));
+    assert!(bob.store.draft_markdown(id.clone()).unwrap().starts_with("live "));
+    assert!(alice.store.draft_instant_change(id.clone()).unwrap().is_none(), "nothing new to send");
+    // Presence arrives as a caret, not as text.
+    let p = crate::client::draft_sync::DraftPresence { block_id: block.clone(), offset: 3, end_block_id: String::new(), end_offset: 0, typing: true, away: false };
+    let caret = alice.store.draft_instant_presence(id.clone(), p.clone()).unwrap().unwrap();
+    assert_eq!(bob.store.draft_instant_receive(channel.clone(), caret).unwrap().unwrap().presence, Some(p));
+    // Forgeries: a flipped byte, the wrong channel, and Carol (a contact, not an author) using the real key are all dropped.
+    let mut flipped = wire.clone();
+    *flipped.last_mut().unwrap() ^= 1;
+    assert!(bob.store.draft_instant_receive(channel.clone(), flipped).unwrap().is_none());
+    assert!(bob.store.draft_instant_receive("00000000000000000000000000000000".into(), wire.clone()).unwrap().is_none());
+    let key: Vec<u8> = alice.store.lock().query_row("SELECT draft_key FROM drafts WHERE draft_id = ?1", params![id], |r| r.get(0)).unwrap();
+    let forged = carol.store.make_instant(&carol.store.load_or_create_account().unwrap(), &id, &channel, &key, serde_json::json!({ "k": "c", "b": "AAAA" })).unwrap();
+    assert!(bob.store.draft_instant_receive(channel, forged).unwrap().is_none(), "Carol is not an author");
+    // A lost answer on the durable path (232's fault) loses nothing: the retry is the same change, applied once.
+    bob.store.draft_insert_text(id.clone(), block, 0, "durable ".into()).unwrap();
+    allow_flush(&bob);
+    server.state.lock().unwrap().lose_next_send_answer = true;
+    let _ = bob.store.deliver_queued(transport.clone(), bob.token.clone());
+    allow_flush(&bob);
+    let _ = bob.store.deliver_queued(transport.clone(), bob.token.clone());
+    sync(&alice, &transport);
+    assert!(alice.store.draft_markdown(id.clone()).unwrap().contains("durable "));
+    assert_eq!(alice.store.draft_markdown(id.clone()).unwrap(), bob.store.draft_markdown(id).unwrap());
+    assert_eq!(alice.store.pending_summary().unwrap(), "");
+}
+
+#[test]
+fn over_the_local_realtime_a_change_reaches_the_other_core_in_under_500_ms() {
+    // Needs the local Supabase stack (LIME_REALTIME_URL=ws://127.0.0.1:54321, LIME_ANON_KEY=...); without it this only says so.
+    let (Ok(base), Ok(anon)) = (std::env::var("LIME_REALTIME_URL"), std::env::var("LIME_ANON_KEY")) else {
+        eprintln!("skipped: LIME_REALTIME_URL / LIME_ANON_KEY are not set (needs the local stack)");
+        return;
+    };
+    use std::time::{Duration, Instant};
+    use tungstenite::{connect, Message};
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let id = shared_draft(&alice, &bob, &transport);
+    let channel = bob.store.draft_channels().unwrap()[0].channel_id.clone();
+    let topic = format!("realtime:draft:{channel}");
+    let join = |name: &str| {
+        let (mut socket, _) = connect(format!("{base}/realtime/v1/websocket?apikey={anon}&vsn=1.0.0")).expect("connect");
+        socket.send(Message::text(serde_json::json!({ "topic": topic, "event": "phx_join", "payload": { "config": { "broadcast": { "self": false, "ack": false }, "presence": { "key": "" }, "private": false } }, "ref": name }).to_string())).unwrap();
+        loop {
+            let Message::Text(text) = socket.read().unwrap() else { continue };
+            let m: serde_json::Value = serde_json::from_str(&text).unwrap();
+            if m["event"] == "phx_reply" && m["ref"] == name {
+                assert_eq!(m["payload"]["status"], "ok", "the public broadcast channel was accepted: {m}");
+                return socket;
+            }
+        }
+    };
+    let mut sender = join("a");
+    let mut receiver = join("b");
+    let block = first_block(&alice, &id);
+    let mut worst = Duration::ZERO;
+    for round in 0..5 {
+        alice.store.draft_insert_text(id.clone(), block.clone(), 0, format!("{round}")).unwrap();
+        let wire = alice.store.draft_instant_change(id.clone()).unwrap().unwrap();
+        let started = Instant::now();
+        sender.send(Message::text(serde_json::json!({ "topic": topic, "event": "broadcast", "payload": { "type": "broadcast", "event": "d", "payload": { "w": vodozemac::base64_encode(&wire) } }, "ref": format!("s{round}") }).to_string())).unwrap();
+        let got = loop {
+            let Message::Text(text) = receiver.read().unwrap() else { continue };
+            let m: serde_json::Value = serde_json::from_str(&text).unwrap();
+            if m["event"] == "broadcast" {
+                break vodozemac::base64_decode(m["payload"]["payload"]["w"].as_str().unwrap()).unwrap();
+            }
+        };
+        let event = bob.store.draft_instant_receive(channel.clone(), got).unwrap().expect("applied");
+        assert!(!event.patches.is_empty());
+        worst = worst.max(started.elapsed());
+    }
+    eprintln!("instant path over the local Realtime: worst of 5 = {worst:?}");
+    assert!(worst < Duration::from_millis(500), "under 500 ms: {worst:?}");
+    assert_eq!(alice.store.draft_markdown(id.clone()).unwrap(), bob.store.draft_markdown(id).unwrap());
 }

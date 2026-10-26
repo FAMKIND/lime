@@ -82,6 +82,11 @@ final class ConversationStore {
     var jamHiddenChanged = 0
     /// People I asked, a moment ago, to send again what I could not read (LIME-232): their chat shows "Waiting for messages…".
     var waitingPeers: Set<String> = []
+    /// The instant path of drafts written with others (LIME-233b) and who wants its events (the open editor).
+    var draftRealtime: DraftRealtime?
+    var draftEventSink: ((DraftInstantEvent) -> Void)?
+    /// Counts remote draft changes, for views that redraw on it.
+    var draftRevision = 0
     /// People who deleted their account (LIME-113): their chats are read-only.
     var deletedPeers: Set<String> = []
     /// Bumped when hearts, comments or counts change (LIME-189c): what shows them redraws.

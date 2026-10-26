@@ -14,61 +14,62 @@ pub struct DraftInfo {
     pub updated_at: i64,
 }
 
-impl LimeStore {
-    fn load_draft(&self, draft_id: &str) -> Result<DraftDoc, StoreError> {
-        let (snapshot, chunks): (Vec<u8>, Vec<Vec<u8>>) = self.with_conn(|conn| {
-            let snapshot: Vec<u8> = conn.query_row("SELECT snapshot FROM drafts WHERE draft_id = ?1", params![draft_id], |r| r.get(0)).optional().map_err(db_err)?.ok_or(StoreError::NotFound)?;
-            let mut st = conn.prepare("SELECT bytes FROM draft_chunks WHERE draft_id = ?1 ORDER BY seq").map_err(db_err)?;
-            let rows = st.query_map(params![draft_id], |r| r.get::<_, Vec<u8>>(0)).map_err(db_err)?;
-            Ok((snapshot, rows.collect::<Result<_, _>>().map_err(db_err)?))
-        })?;
-        let mut doc = DraftDoc::load(&snapshot)?;
-        for chunk in chunks {
-            doc.apply_changes(&chunk)?;
-        }
-        Ok(doc)
+fn load_draft_conn(conn: &Connection, draft_id: &str) -> Result<DraftDoc, StoreError> {
+    let snapshot: Vec<u8> = conn.query_row("SELECT snapshot FROM drafts WHERE draft_id = ?1", params![draft_id], |r| r.get(0)).optional().map_err(db_err)?.ok_or(StoreError::NotFound)?;
+    let mut st = conn.prepare("SELECT bytes FROM draft_chunks WHERE draft_id = ?1 ORDER BY seq").map_err(db_err)?;
+    let chunks: Vec<Vec<u8>> = st.query_map(params![draft_id], |r| r.get::<_, Vec<u8>>(0)).map_err(db_err)?.collect::<Result<_, _>>().map_err(db_err)?;
+    let mut doc = DraftDoc::load(&snapshot)?;
+    for chunk in chunks {
+        doc.apply_changes(&chunk)?;
     }
+    doc.mark_seen();
+    Ok(doc)
+}
 
-    /// Runs `work` on the open draft (loaded on first use); what it changed is saved before this returns.
-    pub(crate) fn with_draft<T>(&self, draft_id: &str, work: impl FnOnce(&mut DraftDoc) -> Result<T, StoreError>) -> Result<T, StoreError> {
+impl LimeStore {
+    /// Runs `work` on the open draft (loaded on first use); what it changed is saved before this returns. `local`: the edit came from the editor, which
+    /// has drawn it already (so it is not a patch to apply); remote changes stay patches until [`draft_take_patches`] hands them over.
+    pub(crate) fn with_draft_conn<T>(&self, conn: &Connection, draft_id: &str, local: bool, work: impl FnOnce(&mut DraftDoc) -> Result<T, StoreError>) -> Result<T, StoreError> {
         let mut cache = self.draft_cache.lock().unwrap_or_else(|e| e.into_inner());
         if !cache.contains_key(draft_id) {
-            let doc = self.load_draft(draft_id)?;
+            let doc = load_draft_conn(conn, draft_id)?;
             cache.insert(draft_id.to_owned(), doc);
         }
         let doc = cache.get_mut(draft_id).expect("just inserted");
         let result = work(doc);
         let bytes = doc.save_incremental();
         if !bytes.is_empty() {
+            if local {
+                doc.mark_seen();
+            }
             let now = now_ms();
-            let compact = self.with_conn(|conn| {
-                let changes: u32 = conn.query_row("SELECT changes FROM drafts WHERE draft_id = ?1", params![draft_id], |r| r.get(0)).map_err(db_err)?;
-                Ok(changes + 1 >= COMPACT_AFTER_CHANGES)
-            })?;
-            if compact {
+            let changes: u32 = conn.query_row("SELECT changes FROM drafts WHERE draft_id = ?1", params![draft_id], |r| r.get(0)).map_err(db_err)?;
+            if changes + 1 >= COMPACT_AFTER_CHANGES {
                 let whole = doc.save();
-                self.with_conn(|conn| {
-                    let tx = conn.unchecked_transaction().map_err(db_err)?;
-                    tx.execute("UPDATE drafts SET snapshot = ?2, changes = 0, updated_at = ?3 WHERE draft_id = ?1", params![draft_id, whole, now]).map_err(db_err)?;
-                    tx.execute("DELETE FROM draft_chunks WHERE draft_id = ?1", params![draft_id]).map_err(db_err)?;
-                    tx.commit().map_err(db_err)
-                })?;
+                let tx = conn.unchecked_transaction().map_err(db_err)?;
+                tx.execute("UPDATE drafts SET snapshot = ?2, changes = 0, updated_at = ?3 WHERE draft_id = ?1", params![draft_id, whole, now]).map_err(db_err)?;
+                tx.execute("DELETE FROM draft_chunks WHERE draft_id = ?1", params![draft_id]).map_err(db_err)?;
+                tx.commit().map_err(db_err)?;
             } else {
-                self.with_conn(|conn| {
-                    let tx = conn.unchecked_transaction().map_err(db_err)?;
-                    let seq: i64 = tx.query_row("SELECT COALESCE(MAX(seq), 0) + 1 FROM draft_chunks WHERE draft_id = ?1", params![draft_id], |r| r.get(0)).map_err(db_err)?;
-                    tx.execute("INSERT INTO draft_chunks (draft_id, seq, bytes) VALUES (?1, ?2, ?3)", params![draft_id, seq, bytes]).map_err(db_err)?;
-                    tx.execute("UPDATE drafts SET changes = changes + 1, updated_at = ?2 WHERE draft_id = ?1", params![draft_id, now]).map_err(db_err)?;
-                    tx.commit().map_err(db_err)
-                })?;
+                let tx = conn.unchecked_transaction().map_err(db_err)?;
+                let seq: i64 = tx.query_row("SELECT COALESCE(MAX(seq), 0) + 1 FROM draft_chunks WHERE draft_id = ?1", params![draft_id], |r| r.get(0)).map_err(db_err)?;
+                tx.execute("INSERT INTO draft_chunks (draft_id, seq, bytes) VALUES (?1, ?2, ?3)", params![draft_id, seq, bytes]).map_err(db_err)?;
+                tx.execute("UPDATE drafts SET changes = changes + 1, updated_at = ?2 WHERE draft_id = ?1", params![draft_id, now]).map_err(db_err)?;
+                tx.commit().map_err(db_err)?;
             }
         }
         result
     }
 
+    /// A local edit.
+    pub(crate) fn with_draft<T>(&self, draft_id: &str, work: impl FnOnce(&mut DraftDoc) -> Result<T, StoreError>) -> Result<T, StoreError> {
+        self.with_conn(|conn| self.with_draft_conn(conn, draft_id, true, work))
+    }
+
     fn insert_draft(&self, draft_id: &str, doc: &mut DraftDoc) -> Result<(), StoreError> {
         let now = now_ms();
         let snapshot = doc.save();
+        doc.mark_seen();
         self.with_conn(|conn| {
             conn.execute("INSERT OR REPLACE INTO drafts (draft_id, snapshot, post_id, changes, created_at, updated_at) VALUES (?1, ?2, NULL, 0, ?3, ?3)", params![draft_id, snapshot, now]).map_err(db_err)?;
             conn.execute("DELETE FROM draft_chunks WHERE draft_id = ?1", params![draft_id]).map_err(db_err)?;
@@ -197,7 +198,12 @@ impl LimeStore {
 
     /// Applies another author's changes (or a snapshot) and returns what the editor must apply.
     pub fn draft_apply_changes(&self, draft_id: String, bytes: Vec<u8>) -> Result<Vec<DraftPatch>, StoreError> {
-        self.with_draft(&draft_id, |d| d.apply_changes(&bytes))
+        self.with_conn(|conn| self.with_draft_conn(conn, &draft_id, false, |d| { d.apply_changes(&bytes)?; Ok(d.take_patches()) }))
+    }
+
+    /// What changed in the draft since the editor last looked (changes that arrived from other authors meanwhile), in the order to apply.
+    pub fn draft_take_patches(&self, draft_id: String) -> Result<Vec<DraftPatch>, StoreError> {
+        self.with_conn(|conn| self.with_draft_conn(conn, &draft_id, false, |d| Ok(d.take_patches())))
     }
 
     /// The whole draft as one document.

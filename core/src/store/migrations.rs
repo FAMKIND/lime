@@ -819,6 +819,32 @@ const MIGRATIONS: &[&str] = &[
          bytes    BLOB NOT NULL,
          PRIMARY KEY (draft_id, seq)
      );",
+    // 54 (LIME-233b): a draft shared with others. `channel_id` names the instant (public broadcast) channel and `draft_key` encrypts what goes over
+    // it; `writer` is the jam's owner (the only one who publishes). `durable_heads`/`instant_heads` are the heads at the last send on each path.
+    // `draft_authors` is who may write; `draft_outbox` is what still has to be sent to them over the durable (mailbox) path.
+    "ALTER TABLE drafts ADD COLUMN channel_id TEXT;
+     ALTER TABLE drafts ADD COLUMN draft_key BLOB;
+     ALTER TABLE drafts ADD COLUMN writer TEXT;
+     ALTER TABLE drafts ADD COLUMN durable_heads TEXT NOT NULL DEFAULT '[]';
+     ALTER TABLE drafts ADD COLUMN instant_heads TEXT NOT NULL DEFAULT '[]';
+     ALTER TABLE drafts ADD COLUMN last_flush_at INTEGER NOT NULL DEFAULT 0;
+     ALTER TABLE drafts ADD COLUMN last_hello_at INTEGER NOT NULL DEFAULT 0;
+     ALTER TABLE drafts ADD COLUMN invited_at INTEGER;
+     ALTER TABLE drafts ADD COLUMN seen INTEGER NOT NULL DEFAULT 1;
+     CREATE TABLE draft_authors (
+         draft_id TEXT NOT NULL,
+         user_id  TEXT NOT NULL,
+         status   TEXT NOT NULL DEFAULT 'active',
+         PRIMARY KEY (draft_id, user_id)
+     );
+     CREATE TABLE draft_outbox (
+         id         INTEGER PRIMARY KEY AUTOINCREMENT,
+         draft_id   TEXT NOT NULL,
+         to_user    TEXT NOT NULL,
+         op_type    TEXT NOT NULL,
+         payload    TEXT NOT NULL,
+         created_at INTEGER NOT NULL
+     );",
 ];
 
 /// The schema version this build writes.

@@ -101,6 +101,8 @@ pub struct DraftDoc {
     subtitle: ObjId,
     /// An upper bound on the bytes of text, kept up to date cheaply; the exact count is worked out only when this says the limit may be near.
     approx_bytes: usize,
+    /// What the editor has already drawn (set by [`DraftDoc::mark_seen`]); [`DraftDoc::take_patches`] is what changed since.
+    ui_seen: Option<(Vec<DraftBlock>, DraftMeta)>,
 }
 
 impl DraftDoc {
@@ -111,7 +113,7 @@ impl DraftDoc {
         let subtitle = doc.put_object(ROOT, "subtitle", ObjType::Text).map_err(bad)?;
         let blocks = doc.put_object(ROOT, "blocks", ObjType::List).map_err(bad)?;
         doc.put(ROOT, "cover", "").map_err(bad)?;
-        Ok(Self { doc, blocks, title, subtitle, approx_bytes: 0 })
+        Ok(Self { doc, blocks, title, subtitle, approx_bytes: 0, ui_seen: None })
     }
 
     /// A draft from a post's Markdown (an existing article being edited together, or a new one with text already in it).
@@ -136,9 +138,25 @@ impl DraftDoc {
             }
         };
         let (blocks, title, subtitle) = (obj("blocks")?, obj("title")?, obj("subtitle")?);
-        let mut me = Self { doc, blocks, title, subtitle, approx_bytes: 0 };
+        let mut me = Self { doc, blocks, title, subtitle, approx_bytes: 0, ui_seen: None };
         me.approx_bytes = me.text_bytes();
         Ok(me)
+    }
+
+    /// The editor now shows the document as it is (after its own edit, or after applying patches).
+    pub fn mark_seen(&mut self) {
+        self.ui_seen = Some((self.blocks(), self.meta()));
+    }
+
+    /// What changed since the editor last saw the document (remote changes that arrived meanwhile), and marks it seen.
+    pub fn take_patches(&mut self) -> Vec<DraftPatch> {
+        let now = (self.blocks(), self.meta());
+        let patches = match &self.ui_seen {
+            Some((blocks, meta)) => diff(blocks, meta, &now.0, &now.1),
+            None => Vec::new(),
+        };
+        self.ui_seen = Some(now);
+        patches
     }
 
     /// The whole document as one compact byte string.

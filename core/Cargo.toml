@@ -50,6 +50,7 @@ strip = true
 
 [dev-dependencies]
 tempfile = "3"
+tungstenite = "0.27"
 ureq = { version = "2", default-features = false, features = ["json", "tls"] }
 
 # SQLCipher needs a crypto library: Apple uses CommonCrypto, Android has none, so it builds OpenSSL from source.

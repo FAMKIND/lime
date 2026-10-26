@@ -39,6 +39,7 @@ pub(crate) mod groups;
 pub(crate) mod jam;
 pub(crate) mod moderation;
 mod account;
+pub(crate) mod draft_sync;
 mod drafts;
 mod repair;
 pub(crate) mod message_ops;
@@ -245,6 +246,7 @@ impl LimeStore {
             self.reconcile_my_pictures(&transport, &auth_token);
             self.deliver_photo_notices(&transport, &auth_token, &mut state, &me);
             self.deliver_status_notices(&transport, &auth_token, &mut state, &me);
+            self.deliver_drafts(&transport, &auth_token, &mut state, &me, now_ms());
             self.deliver_username_notices(&transport, &auth_token, &mut state, &me);
             // What was kept for the mesh while offline goes now, as it was made.
             let _ = self.flush_mesh_outbox_locked(&transport, &auth_token);
@@ -374,6 +376,7 @@ impl LimeStore {
         let received = self.retry_pending(&mut state, &me)?;
         // Anything still unreadable after the retries may mean a session that stopped working: start a fresh one, and ask for missing profile keys.
         self.heal_contacts(&transport, &auth_token, &mut state, &me);
+        self.deliver_drafts(&transport, &auth_token, &mut state, &me, now_ms());
         if received > 0 {
             self.refresh_names(&transport, &auth_token);
         }
@@ -1583,11 +1586,12 @@ impl LimeStore {
         let is_key_request = inner.op.op_type == PROFILE_KEY_REQUEST;
         let is_decryption_error = inner.op.op_type == DECRYPTION_ERROR;
         let is_account_deleted = inner.op.op_type == ACCOUNT_DELETED;
+        let is_draft = inner.op.op_type.starts_with("draft.") && inner.op.op_type != "draft.live";
         let is_status = inner.op.op_type == STATUS_CHANGED;
         let is_call = crate::store::calls::is_call_op(&inner.op.op_type);
         let is_username = inner.op.op_type == USERNAME_SET;
         let is_jam = crate::store::jam::is_jam_op(&inner.op.op_type);
-        let is_control = is_share || is_changed || is_key_request || is_decryption_error || is_account_deleted || is_status || is_username || is_call || is_jam;
+        let is_control = is_share || is_changed || is_key_request || is_decryption_error || is_account_deleted || is_draft || is_status || is_username || is_call || is_jam;
         let is_message_op = crate::store::message_ops::is_message_op(&inner.op.op_type);
         let is_group_op = inner.op.op_type.starts_with("group.");
         let valid = sender != me
@@ -1730,6 +1734,11 @@ impl LimeStore {
                 if let Some(username) = crate::store::usernames::parse(&inner.op.payload) {
                     crate::store::usernames::store_received(conn, me, &sender, username.as_deref(), remote_hlc.wall)?;
                 }
+                return Ok(Some(Stored::Control));
+            }
+            if is_draft {
+                // A draft written with others (LIME-233b): from an accepted contact or a current author, checked in the handler.
+                self.apply_draft_op(conn, me, &sender, &inner.op.op_type, &inner.op.payload, now)?;
                 return Ok(Some(Stored::Control));
             }
             if is_account_deleted {

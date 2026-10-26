@@ -183,6 +183,7 @@ final class AccountSession {
             onNudge: { Task { @MainActor in await store.syncNow() } })
         nudges = live
         await live.start()
+        store.startDraftRealtime(config)
         await store.syncNow()
     }
 
