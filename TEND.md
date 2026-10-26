@@ -8157,3 +8157,23 @@ On other people's phones (not reachable): their chats with the account, jam post
 - **After the test:** the real accounts (shem, jean, FAM, mary) are all still there; no suspension, deletion or log rows are left on staging.
 - **Not exercised on staging:** the password + emailed-code step (the code goes to a real mailbox; the throwaway users' addresses can't receive it), so the "mark" in the smoke test is made through the service role. That step ran in the local-stack test. And the phone side (the quiet notices on receipt) is covered by the core test, not on staging.
 - **For your check (the iPad's test account ONLY; never yours or Jean's):** Delete account → DELETE → password → code → welcome screen. On the 13 mini its chat is still there, unchanged, with no announcement; sending shows "You can't message this person."; a post it co-authored shows only you; its comments are gone; its username can't be taken by a new sign-up for now. The phones' installed build has the new screens and the quiet handling.
+
+## LIME-232b — the same check for groups and jam (Megolm) — DONE (no code change was needed; two regression tests added)
+
+**Phase 1: every Megolm outbound use, read against 232's two rules.**
+
+| Use | Saved before the request leaves? | A retry | Receiver |
+| --- | --- | --- | --- |
+| Group message / edit / delete / reaction (`send_group_op`) | **Yes**: `outbound.session.encrypt`, then `save_outbound`, then `send_group_wire` | **Re-encrypts at the next index** (a new ciphertext, same op id) | decrypts both; the op id de-duplicates, so it shows once |
+| Jam post (`publish_jam_post`) | **Yes**, inside one `atomically` transaction with the post row and the wire's queue rows | **Never re-encrypts**: the finished wire sits in `jam_wire_outbox` and exactly those bytes are sent again | the server de-duplicates per device by hash; the recipient by op id |
+| Jam credit / post ops / edits (`announce_credit`, `announce_post_op`) | **Yes** (encrypt → `save_outbound` → wire stored in `jam_credit_wires` + queue) | same wire resent | same |
+| Jam notices to individuals (welcome, session key) | over **Olm** (fixed in 232) | n/a | n/a |
+| Group-call sender keys | separate (not reviewed here, per the brief) | | |
+
+**Why Megolm cannot drift the way Olm did.** Olm's ratchet moves on *every* message in both directions, so a send that was not saved leaves two ciphertexts at one index and the receiver can read only one. A Megolm outbound session only ratchets forward on the sender's side and the inbound session keeps its **initial** ratchet as well as the latest: any index from the first one the device was given can be decrypted, in any order and more than once (vodozemac does not refuse a repeated index; it leaves replay handling to the app, and the app drops repeats by op id). So (a) a send that was not saved would at worst reuse a *message key* for a different plaintext (a confidentiality nicety, not a break), and here it is saved first anyway; (b) **inbound sessions need not be saved atomically with the plaintext**: losing the advanced inbound ratchet loses nothing because decryption starts again from the initial one, and an item decrypted but not stored is simply decrypted again on the retry. The inbound session is saved in the same transaction as the stored message on the paths that store one (`save_inbound` inside the closure), which is a cheap optimisation and no more.
+
+**Rule 1 and 2 where missing:** nowhere on the Megolm paths. **No production code changed.**
+
+**Tests added (core, 351 pass):** `a_group_message_whose_answer_was_lost_is_read_once_by_every_member_and_nothing_is_left_pending` (three phones; four rounds, each with the answer to Alice's `send` lost after the server stored it, then a retry: Bob and Carol read each message exactly once, nothing pending; the test asserts the fault really fired each round) and `a_jam_post_whose_answer_was_lost_reaches_every_subscriber_once_and_nothing_is_left_pending` (the same for jam posts to two subscribers).
+**Not covered:** group-call sender keys; a Megolm session shared with a member whose Olm key-share was lost (that is the Olm path, fixed by 232 and healed by 231b).
+- Installed: 13mini: yes · iPad: yes · Jean: yes (with the 233 step below; the app build is identical, only tests changed)

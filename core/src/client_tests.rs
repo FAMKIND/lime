@@ -6528,3 +6528,63 @@ fn a_deleted_account_goes_quietly_from_chats_groups_jams_and_credits() {
     assert_eq!(count("SELECT COUNT(*) FROM contact_delivery_keys WHERE user_id = 'alice'") + count("SELECT COUNT(*) FROM olm_sessions WHERE peer_user_id = 'alice'"), 0);
     assert!(!crate::store::delivery::accepted_peers(&conn).unwrap().contains(&alice.user));
 }
+
+// LIME-232b: the same fault (the answer to a send is lost after the server stored it) on the Megolm paths.
+#[test]
+fn a_group_message_whose_answer_was_lost_is_read_once_by_every_member_and_nothing_is_left_pending() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    befriend(&alice, &bob, &transport);
+    befriend(&alice, &carol, &transport);
+    befriend(&bob, &carol, &transport);
+    alice.store.create_group("Grade 4 Team".into(), None, vec![bob.user.clone(), carol.user.clone()]).unwrap();
+    deliver(&alice, &transport);
+    for p in [&bob, &carol] { sync(p, &transport); }
+    let chat = group_chat(&alice).unwrap().id;
+    for round in 0..4 {
+        server.state.lock().unwrap().lose_next_send_answer = true;
+        alice.store.queue_text(chat.clone(), format!("group-{round}")).unwrap();
+        let _ = alice.store.deliver_queued(transport.clone(), alice.token.clone());   // the answer is lost
+        assert!(!server.state.lock().unwrap().lose_next_send_answer, "the fault was injected in round {round}");
+        let _ = alice.store.deliver_queued(transport.clone(), alice.token.clone());   // the retry
+        for p in [&bob, &carol] { sync(p, &transport); }
+    }
+    for _ in 0..3 { deliver(&alice, &transport); for p in [&bob, &carol] { sync(p, &transport); } }
+    for p in [&bob, &carol] {
+        let id = group_chat(p).unwrap().id;
+        let got: Vec<String> = p.store.list_messages(id).unwrap().into_iter().map(|m| m.text).collect();
+        for round in 0..4 {
+            assert_eq!(got.iter().filter(|t| **t == format!("group-{round}")).count(), 1, "{} read group-{round} once: {got:?}", p.user);
+        }
+        assert_eq!(p.store.pending_summary().unwrap(), "", "nothing left pending for {}", p.user);
+    }
+}
+
+#[test]
+fn a_jam_post_whose_answer_was_lost_reaches_every_subscriber_once_and_nothing_is_left_pending() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    let jam = new_jam(&alice);
+    join_jam(&alice, &bob, &jam, &transport);
+    join_jam(&alice, &carol, &jam, &transport);
+    for round in 0..4 {
+        publish(&alice, &jam, &format!("post-{round}"), "free");
+        server.state.lock().unwrap().lose_next_send_answer = true;
+        let _ = alice.store.deliver_queued(transport.clone(), alice.token.clone());
+        assert!(!server.state.lock().unwrap().lose_next_send_answer, "the fault was injected in round {round}");
+        deliver(&alice, &transport);   // the retry sends the same wire again
+        catch_up(&alice, &[&bob, &carol], &transport);
+    }
+    for _ in 0..3 { catch_up(&alice, &[&bob, &carol], &transport); }
+    for p in [&bob, &carol] {
+        let posts = jam_posts_of(p, &jam);
+        for round in 0..4 {
+            assert_eq!(posts.iter().filter(|t| **t == format!("post-{round}")).count(), 1, "{} has post-{round} once: {posts:?}", p.user);
+        }
+        assert_eq!(p.store.pending_summary().unwrap(), "", "nothing left pending for {}", p.user);
+    }
+}
