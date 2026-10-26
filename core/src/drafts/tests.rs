@@ -247,3 +247,22 @@ fn an_editor_that_has_not_seen_the_other_authors_words_yet_merges_instead_of_rev
     shem.reconcile_from(&now, "Plan 1", "", &format!("{merged}\n\nAdded.")).unwrap();
     assert!(shem.export_markdown().ends_with("Added."));
 }
+
+#[test]
+fn two_authors_typing_in_the_title_and_subtitle_at_once_keep_every_letter() {
+    let mut shem = DraftDoc::from_markdown("The roots", "A tree", "Words.").unwrap();
+    let mut jean = DraftDoc::load(&shem.save()).unwrap();
+    let base = shem.heads();
+    // Shem types at the start of the title and the end of the subtitle; Jean at the end of the title, and a letter in the middle of the subtitle.
+    shem.set_title("Big The roots").unwrap();
+    shem.set_subtitle("A tree, old").unwrap();
+    jean.set_title("The roots of lime").unwrap();
+    jean.set_subtitle("A trXee").unwrap();
+    let (a, b) = (shem.changes_since(&base), jean.changes_since(&base));
+    shem.apply_changes(&b).unwrap();
+    jean.apply_changes(&a).unwrap();
+    assert_eq!(shem.meta().title, jean.meta().title);
+    assert_eq!(shem.meta().subtitle, jean.meta().subtitle);
+    assert_eq!(shem.meta().title, "Big The roots of lime", "both authors' letters in the title");
+    assert!(shem.meta().subtitle.contains('X') && shem.meta().subtitle.ends_with(", old"), "{:?}", shem.meta().subtitle);
+}

@@ -367,6 +367,12 @@ final class CoEditPeers {
         tick += 1
     }
 
+    /// The others for the top bar: the draft group's, and the writer even before the group list has arrived (a co-author always sees who invited them).
+    func avatarPeers(writer: String?, me: String, person: (String) -> Person) -> [Peer] {
+        guard peers.isEmpty, let writer, !writer.isEmpty, writer != me else { return peers }
+        return [Peer(person: person(writer), presence: nil, lastSeen: .distantPast, lastMoved: .distantPast, lastTyped: nil)]
+    }
+
     func isLive(_ peer: Peer, now: Date = .now) -> Bool { now.timeIntervalSince(peer.lastSeen) < 25 }
     func isEditing(_ peer: Peer, now: Date = .now) -> Bool { peer.lastTyped.map { now.timeIntervalSince($0) < 5 } ?? false }
 }
@@ -658,8 +664,9 @@ extension CoEditSession {
         let jean = Person(id: "sim-jean", name: "Jean Park", tone: 4)
         peers.setAuthors([jean])
         guard let first = store.coeditBlocks(draftID).first(where: { !$0.spans.isEmpty }) else { return }
-        let inTitle = ProcessInfo.processInfo.arguments.contains("-lime-coedit-sim-peer-title")
-        let presence = inTitle ? DraftPresence(field: "title", blockId: "", offset: UInt32(3 + step % 2), endBlockId: "", endOffset: 0, typing: true, away: false)
+        let args = ProcessInfo.processInfo.arguments
+        let field = args.contains("-lime-coedit-sim-peer-subtitle") ? "subtitle" : args.contains("-lime-coedit-sim-peer-title") ? "title" : "body"
+        let presence = field != "body" ? DraftPresence(field: field, blockId: "", offset: UInt32(3 + step % 2), endBlockId: "", endOffset: 0, typing: true, away: false)
                                : DraftPresence(field: "body", blockId: first.id, offset: UInt32(3 + step % 2), endBlockId: first.id, endOffset: 7, typing: true, away: false)
         peers.receive(from: jean.id, presence: presence)
         redrawCursors()
@@ -678,7 +685,7 @@ struct CoEditAvatars: View {
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        let peers = session.peers.peers
+        let peers = session.peers.avatarPeers(writer: session.peers.status?.writer, me: store.meProvider().id, person: { store.teacher($0) })
         if !peers.isEmpty {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 Button(action: action) {
@@ -779,6 +786,17 @@ struct CaretTextField: View {
     }
 }
 
+extension TextPreferences {
+    /// The UIKit font of a text style in the chosen typeface, scaled with the text size, for laying out text the way a SwiftUI field does.
+    func uiFont(_ style: Font.TextStyle, weight: Font.Weight, textStyle: UIFont.TextStyle) -> UIFont {
+        let uiWeight: UIFont.Weight = [.bold: .bold, .semibold: .semibold, .medium: .medium].first { $0.key == weight }?.value ?? .regular
+        guard let name = typeface.postScriptName(for: weight), let custom = UIFont(name: name, size: style.basePointSize) else {
+            return UIFont.systemFont(ofSize: UIFont.preferredFont(forTextStyle: textStyle).pointSize, weight: uiWeight)
+        }
+        return UIFontMetrics(forTextStyle: textStyle).scaledFont(for: custom)
+    }
+}
+
 /// Where a caret sits in a title or subtitle: laid out the way the field lays its text out.
 enum FieldCaret {
     static func point(text: String, offset: Int, font: UIFont, width: CGFloat) -> (point: CGPoint, height: CGFloat) {
@@ -820,14 +838,18 @@ struct PeerFieldCursors: View {
                         let spot = FieldCaret.point(text: text, offset: Int(presence.offset), font: font, width: geo.size.width)
                         let colour = Color(uiColor: PeerColor.color(tone: peer.tone, dark: scheme == .dark))
                         let first = peer.person.name.split(separator: " ").first.map(String.init) ?? peer.person.name
+                        let faded = context.date.timeIntervalSince(peer.lastMoved) > 3
+                        // Offsets move things without changing the size the group takes, so the caret stays on its line and the tag sits just above it.
                         ZStack(alignment: .topLeading) {
                             Rectangle().fill(colour).frame(width: 2, height: spot.height)
+                                .accessibilityElement(children: .ignore).accessibilityLabel("\(first)\u{2019}s caret").accessibilityIdentifier("coedit-caret-\(peer.id)")
                             CursorTag(person: peer.person, colour: colour, ink: Color(uiColor: PeerColor.ink(on: PeerColor.color(tone: peer.tone, dark: scheme == .dark))))
-                                .opacity(context.date.timeIntervalSince(peer.lastMoved) > 3 ? 0 : 1)
-                                .animation(.easeInOut(duration: 0.25), value: context.date.timeIntervalSince(peer.lastMoved) > 3)
-                                .alignmentGuide(.top) { $0[.bottom] + 1 }
+                                .opacity(faded ? 0 : 1)
+                                .animation(.easeInOut(duration: 0.25), value: faded)
+                                .offset(y: -(CursorTag.height + 1))
                                 .accessibilityElement(children: .ignore).accessibilityLabel("\(first)\u{2019}s cursor").accessibilityIdentifier("coedit-cursor-\(peer.id)")
                         }
+                        .frame(width: 2, height: spot.height, alignment: .topLeading)
                         .offset(x: spot.point.x - 1, y: spot.point.y)
                     }
                 }
@@ -839,6 +861,8 @@ struct PeerFieldCursors: View {
 
 /// A 20 pt photo and the first name in 13 pt semibold, on the author's colour.
 struct CursorTag: View {
+    /// 20 pt photo + 3 pt above and below.
+    static let height: CGFloat = 26
     let person: Person
     let colour: Color
     let ink: Color
@@ -850,7 +874,7 @@ struct CursorTag: View {
         }
         .padding(.leading, 4).padding(.trailing, 8).padding(.vertical, 3)
         .background(colour, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .fixedSize()
+        .fixedSize().frame(height: Self.height)
     }
 }
 

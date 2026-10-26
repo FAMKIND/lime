@@ -384,7 +384,7 @@ struct JamComposeSheet: View {
                     else if now.count > Self.maxTitle { title = String(now.prefix(Self.maxTitle)) }
                 }
                 .accessibilityLabel("Title").accessibilityIdentifier("jam-article-title")
-                .overlay(alignment: .topLeading) { if let coedit { PeerFieldCursors(peers: coedit.peers, field: "title", text: title, font: UIFont.systemFont(ofSize: 22, weight: .bold)) } }
+                .overlay(alignment: .topLeading) { if let coedit { PeerFieldCursors(peers: coedit.peers, field: "title", text: title, font: TextPreferences.shared.uiFont(.title2, weight: .bold, textStyle: .title2)) } }
             CaretTextField(text: $subtitle, title: "Add a subtitle\u{2026}", prompt: Text("Add a subtitle\u{2026}").foregroundColor(Theme.placeholder)) { caret, end in subtitleCaret = (caret, end); coedit?.fieldMoved() }
                 .font(Theme.font(.body)).foregroundStyle(Theme.textSecondary).lineLimit(1...2)
                 .focused($focus, equals: .subtitle).submitLabel(.next).onSubmit { toBody() }
@@ -393,7 +393,7 @@ struct JamComposeSheet: View {
                     else if now.count > Self.maxSubtitle { subtitle = String(now.prefix(Self.maxSubtitle)) }
                 }
                 .accessibilityLabel("Subtitle").accessibilityIdentifier("jam-article-subtitle")
-                .overlay(alignment: .topLeading) { if let coedit { PeerFieldCursors(peers: coedit.peers, field: "subtitle", text: subtitle, font: UIFont.systemFont(ofSize: 17)) } }
+                .overlay(alignment: .topLeading) { if let coedit { PeerFieldCursors(peers: coedit.peers, field: "subtitle", text: subtitle, font: TextPreferences.shared.uiFont(.body, weight: .regular, textStyle: .body)) } }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20).padding(.top, 12)
