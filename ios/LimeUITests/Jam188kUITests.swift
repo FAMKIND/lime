@@ -27,8 +27,8 @@ final class Jam188kUITests: LimeUITestCase {
         XCTAssertTrue(any(app, "jam-audio-cover").exists)
         let elapsed = any(app, "jam-video-elapsed")
         let before = elapsed.label
-        app.buttons["jam-video-fwd10"].tap()
-        XCTAssertNotEqual(elapsed.label, before, "+10 s moves the position")
+        app.buttons["jam-video-fwd30"].tap()
+        XCTAssertNotEqual(elapsed.label, before, "+30 s moves the position")
         app.buttons["jam-video-back10"].tap()
         app.buttons["jam-video-speed"].tap()
         app.buttons["jam-video-close"].tap()

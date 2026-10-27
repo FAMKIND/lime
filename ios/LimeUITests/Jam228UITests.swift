@@ -10,7 +10,7 @@ final class Jam228UITests: LimeUITestCase {
         app.descendants(matching: .any).matching(identifier: "jam-filter-segments").firstMatch.buttons["Podcasts"].tap()
         let pill = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'jam-audio-play-'")).firstMatch
         XCTAssertTrue(pill.waitForExistence(timeout: 10)); pill.tap()
-        let comments = app.buttons["jam-player-comments"]
+        let comments = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'jam-comment-' AND NOT identifier BEGINSWITH 'jam-comment-field' AND NOT identifier BEGINSWITH 'jam-comment-send' AND NOT identifier BEGINSWITH 'jam-comment-date'")).firstMatch
         XCTAssertTrue(comments.waitForExistence(timeout: 8)); comments.tap()
         let field = app.textViews["jam-comment-field"].exists ? app.textViews["jam-comment-field"] : app.textFields["jam-comment-field"]
         XCTAssertTrue(field.waitForExistence(timeout: 8))
