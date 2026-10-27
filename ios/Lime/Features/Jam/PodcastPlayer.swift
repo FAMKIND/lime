@@ -42,6 +42,12 @@ final class PodcastController {
         self.isVideo = isVideo
     }
 
+    /// Listen: the picture is switched off (its frames are not decoded or drawn; the sound goes on); Watch switches it on again. (The file is one
+    /// encrypted blob, so what is downloaded does not change.)
+    func setPicture(_ on: Bool) {
+        for track in player?.currentItem?.tracks ?? [] where track.assetTrack?.mediaType == .video { track.isEnabled = on }
+    }
+
     var hasStarted: Bool { player != nil || (simulated && (isPlaying || position > 0)) }
     var remaining: Double { max(duration - position, 0) }
     var fraction: Double { duration > 0 ? min(max(position / duration, 0), 1) : 0 }

@@ -24,7 +24,8 @@ enum JamCardChoice {
     /// filter and a profile's Podcasts tab, where a compact list is easier to scan. Anything else is a regular card.
     static func style(isRecording: Bool, ready: Bool, hasAudio: Bool, hasVideo: Bool, place: JamCardPlace) -> JamCardStyle {
         guard isRecording, ready, hasAudio || hasVideo else { return .regular }
-        if hasVideo && !hasAudio { return place.segment == .podcasts ? .smallPodcast : .videoPodcast }
+        // The big video card everywhere, under Podcasts too (the user's answer A, 2026-10-27).
+        if hasVideo && !hasAudio { return .videoPodcast }
         return .smallPodcast
     }
 }

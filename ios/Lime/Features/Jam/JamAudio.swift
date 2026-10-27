@@ -227,6 +227,7 @@ struct CoverArt: View {
 /// A tap on the rest opens the now-playing screen. It stays across tabs; Background playback and the lock screen come from the player.
 struct AudioMiniPlayer: View {
     @Environment(ConversationStore.self) private var store
+    @State private var dock: CGRect?
 
     var body: some View {
         let now = NowPlaying.shared
@@ -281,7 +282,21 @@ struct AudioMiniPlayer: View {
             }
             .padding(.leading, 12).padding(.trailing, 4).frame(minHeight: 56)
             .limeGlass(in: Capsule())
-            .padding(.horizontal, 16).padding(.bottom, 4)
+            // As wide as the dock below it, centred over it (and the same capsule shape).
+            .frame(width: dock?.width)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, dock == nil ? 16 : 0).padding(.bottom, 4)
+            .accessibilityElement(children: .contain).accessibilityIdentifier("audio-mini-player")
+            #if DEBUG
+            .accessibilityValue("dock \(Int((dock?.width ?? 0).rounded()))")
+            #endif
+            .task {
+                while !Task.isCancelled {
+                    let now = DockMetrics.measure()
+                    if now?.width != dock?.width { dock = now }
+                    try? await Task.sleep(for: .milliseconds(400))
+                }
+            }
             // An edit shows at once on the lock screen too (LIME-212).
             .onChange(of: store.playerTitle(item.postID) + "|" + store.authorName(store.jamPost(item.postID))) { _, _ in
                 item.controller.updateInfo(title: store.jamPost(item.postID)?.title ?? "", artist: store.authorName(store.jamPost(item.postID)))
@@ -296,5 +311,37 @@ struct AudioMiniPlayer: View {
                 }
             }
         }
+    }
+}
+
+
+/// Where the tab bar's glass dock is on screen (LIME-235b), so the mini player can be exactly as wide as it and centred over it. The dock is the system's
+/// (a floating capsule on iOS 26, narrower than the screen), so it is found in the view hierarchy: the widest roughly-capsule-sized view in the tab bar
+/// that is centred on it. Nil when none is found (the mini player then keeps its 16 pt margins).
+@MainActor
+enum DockMetrics {
+    static func measure() -> CGRect? {
+        guard let window = UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first,
+              let bar = tabBar(in: window), !bar.isHidden else { return nil }
+        let barFrame = bar.convert(bar.bounds, to: window)
+        var best: CGRect?
+        func walk(_ view: UIView) {
+            for sub in view.subviews {
+                let f = sub.convert(sub.bounds, to: window)
+                if !sub.isHidden, sub.alpha > 0.01, f.height >= 48, f.height <= 100, f.width > 120, f.width < barFrame.width - 4, abs(f.midX - barFrame.midX) < 2,
+                   best == nil || f.width > best!.width {
+                    best = f
+                }
+                walk(sub)
+            }
+        }
+        walk(bar)
+        return best
+    }
+
+    private static func tabBar(in view: UIView) -> UITabBar? {
+        if let bar = view as? UITabBar { return bar }
+        for sub in view.subviews { if let found = tabBar(in: sub) { return found } }
+        return nil
     }
 }

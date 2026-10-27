@@ -308,6 +308,7 @@ struct JamVideoScreen: View {
             if NowPlaying.shared.opensComments { NowPlaying.shared.opensComments = false; commenting = true }
         }
         .onChange(of: active.controller.atEnd) { _, ended in if ended, !isAudio { advance() } }
+        .onChange(of: watch) { _, on in active.controller.setPicture(on) }
         .sheet(isPresented: $sharing) { if let post { JamShareSheet(post: post) } }
         .reportSheet($reporting)
         .sheet(isPresented: $transcript) { TranscriptSheet(cues: shownCues) }

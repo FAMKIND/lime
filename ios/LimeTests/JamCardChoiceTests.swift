@@ -10,8 +10,8 @@ final class JamCardChoiceTests: XCTestCase {
     func testAVideoRecordingIsABigCardInTheMainFeedAndASmallOneInTheCompactLists() {
         XCTAssertEqual(style(video: true, .feed(.all)), .videoPodcast)
         XCTAssertEqual(style(video: true, .orgPage(.all)), .videoPodcast)
-        XCTAssertEqual(style(video: true, .feed(.podcasts)), .smallPodcast)
-        XCTAssertEqual(style(video: true, .profileTab(.podcasts)), .smallPodcast)
+        XCTAssertEqual(style(video: true, .feed(.podcasts)), .videoPodcast, "the big card under Podcasts too (answer A)")
+        XCTAssertEqual(style(video: true, .profileTab(.podcasts)), .videoPodcast)
     }
 
     func testAnAudioRecordingIsAlwaysTheSmallCardAndOthersAreRegular() {
