@@ -590,7 +590,7 @@ struct JamComposeSheet: View {
             }
             if !article && editing == nil {
                 HStack(spacing: 8) {
-                    chip("Write an article", system: "doc.text", id: "jam-write-article") { setArticle(true) }
+                    chip("Write an article", system: "square.and.pencil", id: "jam-write-article") { setArticle(true) }
                     chip("Record a podcast", system: "waveform", id: "jam-record") { recordMode = 1 }
                     Spacer()
                 }
@@ -627,8 +627,12 @@ struct JamComposeSheet: View {
     /// Aa opens the strip of text styles (B I U S link code lists quote indent): it also appears under a selection.
     private func formattingButton(width: CGFloat) -> some View {
         Button { composer.formattingTapped() } label: {
-            Text("Aa").font(.system(size: 17, weight: composer.toolbarVisible ? .bold : .medium)).foregroundStyle(Theme.text).frame(width: width, height: 44)
-                .background(composer.toolbarVisible ? Theme.surface : .clear, in: Circle())
+            HStack(spacing: 1) {
+                Text("Aa").font(.system(size: 17, weight: composer.toolbarVisible ? .bold : .medium))
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).accessibilityHidden(true)
+            }
+            .foregroundStyle(Theme.text).frame(width: width, height: 44)
+            .background(composer.toolbarVisible ? Theme.surface : .clear, in: Capsule())
         }
         .accessibilityLabel("Formatting").accessibilityIdentifier("jam-format").accessibilityAddTraits(composer.toolbarVisible ? [.isSelected] : [])
     }
@@ -638,8 +642,12 @@ struct JamComposeSheet: View {
     private func headingButton(width: CGFloat) -> some View {
         let level = composer.format.heading
         return Button { headingOpen = true } label: {
-            Text(level == 0 ? "H" : "H\(level)").font(.system(size: 17, weight: .bold)).foregroundStyle(Theme.text).frame(width: width, height: 44)
-                .background(level == 0 ? .clear : Theme.surface, in: Circle())
+            HStack(spacing: 1) {
+                Text(level == 0 ? "H" : "H\(level)").font(.system(size: 17, weight: .bold))
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).accessibilityHidden(true)
+            }
+            .foregroundStyle(Theme.text).frame(width: width, height: 44)
+            .background(level == 0 ? .clear : Theme.surface, in: Capsule())
         }
         .accessibilityLabel(level == 0 ? "Heading, currently normal text" : "Heading, currently Heading \(level)").accessibilityIdentifier("jam-heading")
         .popover(isPresented: $headingOpen, arrowEdge: .bottom) {
@@ -703,12 +711,13 @@ struct JamComposeSheet: View {
         .accessibilityLabel(label).accessibilityIdentifier(id).accessibilityAddTraits(on ? [.isSelected] : [])
     }
 
+    /// A glass pill above the keyboard bar (LIME-236): the icon, then the words.
     private func chip(_ label: String, system: String, id: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Label(label, systemImage: system).font(Theme.secondary).foregroundStyle(Theme.text)
-                .padding(.horizontal, 12).frame(minHeight: 40).background(Theme.surface, in: Capsule())
+            Label(label, systemImage: system).font(Theme.font(.subheadline, weight: .medium)).foregroundStyle(Theme.text)
+                .padding(.horizontal, 14).frame(minHeight: 44).limeGlass(in: Capsule()).contentShape(Capsule())
         }
-        .buttonStyle(.plain).accessibilityIdentifier(id)
+        .buttonStyle(.plain).accessibilityLabel(label).accessibilityIdentifier(id)
     }
 
     private func chipPlain(_ label: String, id: String, action: @escaping () -> Void) -> some View {
