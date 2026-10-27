@@ -8334,3 +8334,5 @@ On other people's phones (not reachable): their chats with the account, jam post
 
 - The two pills **"Write an article"** (pen icon) and **"Record a podcast"** (waveform) were already above the keyboard bar; they are now **Liquid Glass capsules** (44 pt, labelled buttons). The bar's order is as listed (photo library · camera · **Aa ⌄** · **H ⌄** · undo · redo … hide keyboard): Aa and H now show a small ⌄ (they open their menus as today). Cancel and Post are the navigation bar's own buttons, which are glass capsules on iOS 26 (I did not add a second capsule on top); Post stays disabled until there is something to post (unchanged).
 - **Tests:** `Composer236UITests` (demo, both pass): the pills are above the bar, left to right, labelled; the bar's buttons are in order with hide keyboard at the right end; Post is disabled when empty; "Record a podcast" opens the studio and "Write an article" the article editor. The look against the mockup is the user's check.
+
+- **Installed (235 and 236):** Debug build on the 13 mini, the iPad and Jean's 12 mini (all three: yes; the iPad needed a second try).
