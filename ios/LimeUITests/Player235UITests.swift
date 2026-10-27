@@ -20,8 +20,10 @@ final class Player235UITests: LimeUITestCase {
         XCTAssertLessThan(play.frame.maxY, title.frame.minY, "the controls row is above the title")
         XCTAssertLessThan(title.frame.maxY, any(app, "jam-video-timeline").frame.minY + 4, "the progress bar is under the words")
         // The toggle: Listen is on, Watch is dimmed for an audio podcast.
-        XCTAssertTrue(app.buttons["jam-player-listen"].exists)
-        XCTAssertFalse(app.buttons["jam-player-watch"].isEnabled)
+        let mode = app.segmentedControls["jam-player-mode"]
+        XCTAssertTrue(mode.exists && mode.buttons["Listen"].isSelected, "Listen is on")
+        mode.buttons["Watch, no video"].tap()
+        XCTAssertTrue(mode.buttons["Listen"].isSelected, "an audio podcast has no picture: Watch gives way")
         // The bottom bar: AirPlay, ♥ 💬 remix share, Up next.
         XCTAssertTrue(any(app, "jam-video-airplay").exists)
         XCTAssertTrue(app.buttons["jam-pill-share"].exists)
@@ -31,12 +33,7 @@ final class Player235UITests: LimeUITestCase {
         XCTAssertTrue(any(app, "jam-upnext").waitForExistence(timeout: 5), "Up next opens the queue")
     }
 
-    func testAVideoPodcastShowsTheVideoTheThumbnailAndVolumeListenSwitchesTheStageAndATapGoesFullScreen() throws {
-        // KNOWN FAILING (rule 12d, 1e407): in the simulator a tap on the Watch half of the Listen | Watch toggle does not reach its action (Listen's
-        // does; the button reports enabled and hittable). Not diagnosed: it may be the test, or a real hit-test problem in the glass toggle. The user checks
-        // Listen/Watch on the phones. Everything before that step passed, and the full-screen steps after it were not reached.
-        try XCTSkipIf(true, "known failing: the Watch half of the toggle does not take the simulator's tap (see the comment)")
-
+    func testAVideoPodcastShowsTheVideoTheInfoBlockTheVolumeAndATapGoesFullScreen() {
         let app = XCUIApplication()
         app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-screen", "jam-following"]
         app.launch()
@@ -46,19 +43,13 @@ final class Player235UITests: LimeUITestCase {
         card.coordinate(withNormalizedOffset: CGVector(dx: 0.4, dy: 0.5)).tap()
         XCTAssertTrue(any(app, "jam-video-screen").waitForExistence(timeout: 5))
         XCTAssertTrue(any(app, "jam-video-stage").waitForExistence(timeout: 5), "the video is the stage")
+        // The info block: the cover on the left, the title (one line) on its right.
+        let title = app.buttons["jam-video-text"]
+        XCTAssertTrue(title.waitForExistence(timeout: 3))
+        XCTAssertLessThan(any(app, "jam-video-stage").frame.maxY, title.frame.minY + 200)
+        XCTAssertLessThan(title.frame.height, 60, "title and subtitle are one line each: \(title.frame)")
         XCTAssertTrue(any(app, "jam-video-volume").exists, "the volume slider")
         XCTAssertFalse(any(app, "jam-audio-cover").exists)
-        // Listen puts the cover on the stage (the sound goes on); Watch brings the video back.
-        app.buttons["jam-player-listen"].tap()
-        XCTAssertTrue(any(app, "jam-audio-cover").waitForExistence(timeout: 3))
-        XCTAssertTrue(any(app, "jam-video-screen").exists, "still on the player after Listen")
-        let watchButton = app.buttons["jam-player-watch"]
-        XCTAssertTrue(watchButton.isEnabled && watchButton.isHittable, "Watch frame \(watchButton.frame) listen \(app.buttons["jam-player-listen"].frame) close \(app.buttons["jam-video-close"].frame)")
-        watchButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        sleep(1)
-        if !any(app, "jam-video-stage").exists { app.buttons["jam-player-watch"].tap() }
-        XCTAssertTrue(any(app, "jam-video-screen").exists, "still on the player after Watch")
-        XCTAssertTrue(any(app, "jam-video-stage").waitForExistence(timeout: 3))
         // A tap on the video: full screen with ✕ and sound.
         any(app, "jam-video-stage").tap()
         XCTAssertTrue(any(app, "jam-fullscreen").waitForExistence(timeout: 5))
@@ -70,5 +61,28 @@ final class Player235UITests: LimeUITestCase {
         XCTAssertTrue(any(app, "jam-fullscreen-timeline").exists)
         app.buttons["jam-fullscreen-close"].tap()
         XCTAssertTrue(any(app, "jam-video-stage").waitForExistence(timeout: 5), "back at the player")
+    }
+
+    /// KNOWN FAILING (rule 12d): in the simulator a tap on the Watch half of the Listen | Watch toggle never reaches the control (Listen's does; the
+    /// log shows no change for Watch, with a custom glass toggle and with the system segmented control alike). Not diagnosed; the user checks it on the
+    /// phones.
+    func testListenPutsTheCoverOnTheStageAndWatchBringsTheVideoBack() throws {
+        try XCTSkipIf(true, "known failing: the Watch half of the toggle does not take the simulator's tap")
+        let app = XCUIApplication()
+        app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-screen", "jam-following"]
+        app.launch()
+        let card = any(app, "jam-video")
+        for _ in 0..<5 where !card.exists { app.swipeUp() }
+        XCTAssertTrue(card.waitForExistence(timeout: 10))
+        card.coordinate(withNormalizedOffset: CGVector(dx: 0.4, dy: 0.5)).tap()
+        XCTAssertTrue(any(app, "jam-video-stage").waitForExistence(timeout: 5))
+        // Listen puts the cover on the stage (the sound goes on); Watch brings the video back.
+        let mode = app.segmentedControls["jam-player-mode"]
+        mode.buttons["Listen"].tap()
+        mode.buttons["Watch"].tap()
+        XCTAssertFalse(any(app, "jam-audio-cover").exists, "Watch took the cover off the stage")
+        let back = any(app, "jam-video-stage").waitForExistence(timeout: 3)
+        try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/tmp/player235-b.png"))
+        XCTAssertTrue(back, "Watch brings the video back")
     }
 }

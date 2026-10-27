@@ -244,6 +244,7 @@ struct JamVideoScreen: View {
     @State private var watching: Bool?
     @State private var fullScreen = false
     @State private var upNext = false
+    @State private var noVideoHint = false
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var current: (postID: String, file: JamAttachmentInfo, controller: PodcastController)?
 
@@ -369,23 +370,13 @@ struct JamVideoScreen: View {
     /// A glass segmented toggle, waveform | video: Listen keeps the sound with the cover on the stage; Watch shows the picture. An audio-only podcast has
     /// no picture, so its Watch half is dimmed.
     private var modeToggle: some View {
-        HStack(spacing: 2) {
-            segment("waveform", label: "Listen", id: "jam-player-listen", on: !watch, enabled: true) { watching = false }
-            segment("video", label: "Watch", id: "jam-player-watch", on: watch, enabled: !isAudio) { watching = true }
+        // The system's segmented control (glass on iOS 26; a segmented control for VoiceOver). An audio podcast has no picture: Watch gives way to Listen.
+        Picker("Listen or watch", selection: Binding(get: { watch }, set: { if $0 && isAudio { noVideoHint = true } else { watching = $0 } })) {
+            Image(systemName: "waveform").accessibilityLabel("Listen").tag(false)
+            Image(systemName: "video").accessibilityLabel(isAudio ? "Watch, no video" : "Watch").tag(true)
         }
-        .padding(3).limeGlass(in: Capsule())
-        .accessibilityElement(children: .contain).accessibilityLabel("Listen or watch").accessibilityIdentifier("jam-player-mode")
-    }
-
-    private func segment(_ symbol: String, label: String, id: String, on: Bool, enabled: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 16, weight: .semibold)).foregroundStyle(.white.opacity(enabled ? 1 : 0.35))
-                .frame(width: 52, height: 38).background { if on { Capsule().fill(.white.opacity(0.24)) } }
-                .frame(minHeight: 44).contentShape(Capsule())
-        }
-        .buttonStyle(.plain).disabled(!enabled)
-        .accessibilityLabel(label).accessibilityHint(enabled ? "" : "No video").accessibilityAddTraits(on ? .isSelected : [])
-        .accessibilityIdentifier(id)
+        .pickerStyle(.segmented).frame(width: 128)
+        .accessibilityIdentifier("jam-player-mode")
     }
 
     private func glassCircle(_ symbol: String, label: String, id: String, action: @escaping () -> Void) -> some View {
@@ -451,10 +442,13 @@ struct JamVideoScreen: View {
                 timeline(item.controller)
             } else {
                 if let post {
-                    writerRow(post, withDate: true)
+                    // One block: the cover on the left; the writer and date, a one-line title and a one-line subtitle on the right.
                     HStack(alignment: .top, spacing: 12) {
-                        PostCover(postID: post.postId).frame(width: 56, height: 56).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)).accessibilityHidden(true)
-                        titleBlock(post)
+                        PostCover(postID: post.postId).frame(width: 110, height: 110).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous)).accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 4) {
+                            writerRow(post, withDate: true)
+                            titleBlock(post, lines: 1)
+                        }
                     }
                 }
                 timeline(item.controller)
@@ -519,12 +513,12 @@ struct JamVideoScreen: View {
     }
 
     /// The title (bold) and the subtitle; a tap reads the whole post over the player.
-    private func titleBlock(_ post: JamPostInfo) -> some View {
+    private func titleBlock(_ post: JamPostInfo, lines: Int = 2) -> some View {
         let subtitle = store.playerSubtitle(post.postId)
         return Button { withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) { textOpen = true } } label: {
             VStack(alignment: .leading, spacing: 2) {
-                if !post.title.isEmpty { Text(post.title).font(Theme.font(.title3, weight: .bold)).foregroundStyle(.white).lineLimit(2) }
-                if !subtitle.isEmpty { Text(subtitle).font(Theme.body).foregroundStyle(.white.opacity(0.75)).lineLimit(2) }
+                if !post.title.isEmpty { Text(post.title).font(Theme.font(.title3, weight: .bold)).foregroundStyle(.white).lineLimit(lines) }
+                if !subtitle.isEmpty { Text(subtitle).font(Theme.body).foregroundStyle(.white.opacity(0.75)).lineLimit(lines) }
             }
             .multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -851,23 +845,23 @@ struct JamVideoFullScreen: View {
         }
     }
 
+    /// The same block as under the stage: the cover on the left; the writer and date, a one-line title and a one-line subtitle on the right.
     private func info(_ post: JamPostInfo) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                AvatarView(person: store.teacher(post.author), size: 32).accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(store.authorName(post)).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(.white)
-                    Text(JamDates.text(post.created)).font(Theme.caption).foregroundStyle(.white.opacity(0.7))
+        HStack(alignment: .top, spacing: 12) {
+            PostCover(postID: post.postId).frame(width: 84, height: 84).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous)).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) {
+                    AvatarView(person: store.teacher(post.author), size: 28).accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(store.authorName(post)).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
+                        Text(JamDates.text(post.created)).font(Theme.caption).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
+                    }
                 }
+                if !post.title.isEmpty { Text(post.title).font(Theme.font(.subheadline, weight: .bold)).foregroundStyle(.white).lineLimit(1) }
+                let subtitle = store.playerSubtitle(post.postId)
+                if !subtitle.isEmpty { Text(subtitle).font(Theme.caption).foregroundStyle(.white.opacity(0.75)).lineLimit(1) }
             }
-            HStack(alignment: .top, spacing: 10) {
-                PostCover(postID: post.postId).frame(width: 44, height: 44).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous)).accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 0) {
-                    if !post.title.isEmpty { Text(post.title).font(Theme.font(.subheadline, weight: .bold)).foregroundStyle(.white).lineLimit(1) }
-                    let subtitle = store.playerSubtitle(post.postId)
-                    if !subtitle.isEmpty { Text(subtitle).font(Theme.caption).foregroundStyle(.white.opacity(0.75)).lineLimit(1) }
-                }
-            }
+            Spacer(minLength: 0)
         }
     }
 
