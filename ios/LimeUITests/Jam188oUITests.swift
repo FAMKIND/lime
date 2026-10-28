@@ -11,11 +11,10 @@ final class Jam188oUITests: LimeUITestCase {
         app.launch()
         app.buttons["new-jam-post"].tap()
         app.buttons["jam-record"].tap()
-        app.buttons["podcast-camera"].tap()
         app.buttons["podcast-record"].tap()
         app.buttons["podcast-stop"].tap()
-        app.textFields["podcast-title"].tap(); app.textFields["podcast-title"].typeText("Fraction wall")
-        app.buttons["podcast-post"].tap()   // the studio's Post posts it with the captions made on the phone (editing them is out for now, LIME-227)
+        let name = app.descendants(matching: .any)["podcast-title"]; name.tap(); name.typeText("Fraction wall")
+        publishPodcast(app)   // the studio's Post posts it with the captions made on the phone (editing them is out for now, LIME-227)
         let cc = app.buttons["jam-video-cc"]
         for _ in 0..<4 where !cc.exists { app.swipeUp() }
         XCTAssertTrue(cc.waitForExistence(timeout: 10), "CC shows when the video has captions")

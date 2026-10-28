@@ -15,7 +15,7 @@ final class Studio239bUITests: LimeUITestCase {
         sleep(2)
         app.buttons["podcast-stop"].tap()
         XCTAssertTrue(app.buttons["podcast-play"].waitForExistence(timeout: 8), "the preview")
-        for id in ["podcast-trim-start", "podcast-trim-end", "podcast-post-as", "podcast-add-cover", "podcast-title", "podcast-subtitle", "podcast-description", "podcast-back", "podcast-post"] {
+        for id in ["podcast-trim-start", "podcast-trim-end", "podcast-post-as", "podcast-add-cover", "podcast-title", "podcast-subtitle", "podcast-description", "podcast-back", "podcast-next"] {
             XCTAssertTrue(any(app, id).waitForExistence(timeout: 3), id)
         }
         XCTAssertEqual(app.buttons["podcast-add-cover"].label, "Add cover")
@@ -39,7 +39,7 @@ final class Studio239bUITests: LimeUITestCase {
         XCTAssertTrue(more.waitForExistence(timeout: 10)); more.tap()
         app.buttons["Edit"].tap()
         XCTAssertTrue(any(app, "podcast-title").waitForExistence(timeout: 8))
-        XCTAssertTrue(app.buttons["podcast-update"].exists)
+        XCTAssertTrue(app.buttons["podcast-next"].exists)
         XCTAssertTrue(any(app, "podcast-trim-start").waitForExistence(timeout: 5), "the trim bar is on the edit page too")
         XCTAssertTrue(any(app, "podcast-add-cover").exists)
     }

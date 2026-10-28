@@ -53,7 +53,7 @@ final class Studio227UITests: LimeUITestCase {
         XCTAssertTrue(app.buttons["podcast-play"].exists, "kept")
         let title = field(app, "podcast-title")
         title.tap(); title.typeText("Pine walk")
-        app.buttons["podcast-post"].tap()
+        publishPodcast(app)
         XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'jam-audio-card-' OR identifier == 'jam-video'")).firstMatch.waitForExistence(timeout: 12), "the podcast is posted")
     }
 }

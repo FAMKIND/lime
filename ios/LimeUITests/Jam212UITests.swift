@@ -26,7 +26,7 @@ final class Jam212UITests: LimeUITestCase {
         // LIME-239b: the details page in edit mode: Update on top, who it is from, Record again in the ⋯ (it asks first).
         XCTAssertEqual(app.descendants(matching: .any)["podcast-title"].value as? String, "Songs for the circle")
         XCTAssertEqual(app.descendants(matching: .any)["podcast-subtitle"].value as? String, "Korean children's songs")
-        XCTAssertTrue(app.buttons["podcast-update"].exists, "Update on top")
+        XCTAssertTrue(app.buttons["podcast-next"].exists, "Next on top")
         XCTAssertTrue(app.buttons["jam-post-as"].exists == false, "the article editor's bar is gone")
         XCTAssertTrue(app.buttons["podcast-post-as"].exists, "who it is from")
         app.buttons["podcast-more"].tap()
@@ -50,7 +50,7 @@ final class Jam212UITests: LimeUITestCase {
         let title = app.descendants(matching: .any)["podcast-title"]
         XCTAssertTrue(title.waitForExistence(timeout: 8))
         title.tap(); title.typeText(" again")
-        app.buttons["podcast-update"].tap()
+        publishPodcast(app, id: "podcast-update")
         app.buttons["jam-video-close"].tap()
         let mini = app.buttons["audio-mini-open"]
         XCTAssertTrue(mini.waitForExistence(timeout: 5))

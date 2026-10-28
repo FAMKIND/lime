@@ -4,6 +4,15 @@ import XCTest
 /// time: one big class cannot run in parallel.
 @MainActor
 class LimeUITestCase: XCTestCase {
+    /// A podcast's details page is step 1; Next, then the button on "Before you publish" (`podcast-post`, or `podcast-update` when editing) (LIME-241).
+    func publishPodcast(_ app: XCUIApplication, id: String = "podcast-post") {
+        let next = app.buttons["podcast-next"]
+        if next.waitForExistence(timeout: 3) { next.tap() }
+        let button = app.buttons[id]
+        XCTAssertTrue(button.waitForExistence(timeout: 8), "step 2 has \(id)")
+        button.tap()
+    }
+
     /// Writing is step 1, "Before you post / publish" step 2 (LIME-240): Next, then the button there (Post, Publish or, with `id: "jam-update"`, Update).
     func postNow(_ app: XCUIApplication, id: String = "jam-post") {
         let next = app.buttons["jam-next"]

@@ -18,8 +18,10 @@ struct PodcastStudioEdit: View {
     @State private var coauthors: [Person] = []
     @State private var postAsJam: String?
     @State private var series: SeriesInfo?
+    @State private var audience = "subscribers"
+    @State private var topics: [String] = []
 
     var body: some View {
-        PodcastRecorder(title: $title, coauthors: $coauthors, camera: false, subtitle: $subtitle, details: $details, cover: $cover, postAsJam: $postAsJam, series: $series, editing: post)
+        PodcastRecorder(title: $title, coauthors: $coauthors, camera: false, subtitle: $subtitle, details: $details, cover: $cover, postAsJam: $postAsJam, series: $series, audience: $audience, topics: $topics, editing: post)
     }
 }

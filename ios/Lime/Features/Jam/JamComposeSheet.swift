@@ -182,7 +182,7 @@ struct JamComposeSheet: View {
                         insertIntoArticle(clip, preview: Self.fileCard(named: "Audio recording \(VoiceFormat.clock(Double(clip.durationMs ?? 0) / 1000))"))
                     }
                 } else {
-                    PodcastRecorder(title: $recordTitle, coauthors: $coauthors, camera: mode.mode == 0, subtitle: $recordSubtitle, details: $recordDetails, cover: $recordCover, postAsJam: $postAsJam, series: $series,
+                    PodcastRecorder(title: $recordTitle, coauthors: $coauthors, camera: mode.mode == 0, subtitle: $recordSubtitle, details: $recordDetails, cover: $recordCover, postAsJam: $postAsJam, series: $series, audience: $audience, topics: $topics,
                                     // The studio's Post (LIME-227): the take goes in, the studio closes and the post is made.
                                     post: { clip in
                         clips = [clip]; captions = captions.filter { if case .clip = $0.key { false } else { true } }; startCaptions(clip, .clip(0))
