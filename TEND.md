@@ -8432,3 +8432,8 @@ On other people's phones (not reachable): their chats with the account, jam post
 ## LIME-235e follow-up — more room above the bottom bar
 
 - The player's bottom bar (AirPlay · ♥💬 remix share · Up next) now has **16 pt above it (was 8)**: ~8 pt more between the controls row and the bar, in every layout that uses it (portrait audio and video, landscape columns). Not run on its own: it is a padding change; the next builds compile it, and the visual check is yours.
+
+## LIME-238 follow-up — default heroes keep their colours
+
+- A **default hero** (no background chosen or visible: a person's blurred photo, their avatar's tone gradient, an org's tile gradient; every person and org profile goes through the one `ProfileHeroBackground`) now gets **only the overlay white text needs for 4.5:1** over the picture's bright end (the lower 70 %, where the name and tabs sit; `HeroScrim.defaultStrength`, never above the old strength, which stays for a chosen background and for Reduce Transparency / Increase Contrast as the cap). The blurred photo's grey dimming became a **soft tint from the photo's own dominant colour** (22 %). So the colours show instead of reading flat grey.
+- **Test:** `HeroDefaultTests`: for all 8 tones the contrast stays ≥ 4.5 (within 0.15 of float rounding in the existing check), at least some get a lighter overlay, a white picture stays within the cap; the existing `ProfileHeroTests` pass. The look on Jean's profile is the visual check.

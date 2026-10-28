@@ -26,6 +26,18 @@ enum HeroScrim {
         return UIColor(red: rgb.0, green: rgb.1, blue: rgb.2, alpha: 1)
     }
 
+    /// The overlay for a **default** hero (LIME-238): only as strong as white text needs for 4.5:1 over the picture's brightest part (where the name sits is
+    /// the lower part), never more than `cap`, so a soft blurred photo or tone gradient keeps its colours instead of reading flat grey.
+    static func defaultStrength(image: UIImage, key: String, cap: Double, tint: UIColor) -> Double {
+        let brightest = HeroPalette.brightColor(of: image, key: key)
+        var s = 0.2
+        while s < cap {
+            if contrast(text: .white, tint: tint, image: brightest, scrim: s) >= 4.6 { return s }
+            s += 0.02
+        }
+        return cap
+    }
+
     static func luminance(_ c: (Double, Double, Double)) -> Double {
         func lin(_ v: Double) -> Double { v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }
         return 0.2126 * lin(c.0) + 0.7152 * lin(c.1) + 0.0722 * lin(c.2)
@@ -56,6 +68,33 @@ enum HeroPalette {
         if let hit = cache.object(forKey: id) { return hit }
         let result = compute(image)
         cache.setObject(result, forKey: id)
+        return result
+    }
+
+    nonisolated(unsafe) private static let brightCache = NSCache<NSString, UIColor>()
+
+    /// The bright end of a picture's lower 70 % (where the name and the tabs sit): the mean of its brightest 15 % of pixels on a tiny copy.
+    static func brightColor(of image: UIImage, key: String) -> UIColor {
+        let id = key as NSString
+        if let hit = brightCache.object(forKey: id) { return hit }
+        let side = 16
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = true
+        let small = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).image { _ in image.draw(in: CGRect(x: 0, y: 0, width: side, height: side)) }
+        var result = UIColor.white
+        if let cg = small.cgImage, let data = cg.dataProvider?.data, let bytes = CFDataGetBytePtr(data) {
+            let stride = cg.bytesPerRow, bpp = cg.bitsPerPixel / 8
+            var pixels: [(Double, Double, Double)] = []
+            for y in Int(Double(side) * 0.3)..<side { for x in 0..<side {
+                let o = y * stride + x * bpp
+                pixels.append((Double(bytes[o]) / 255, Double(bytes[o + 1]) / 255, Double(bytes[o + 2]) / 255))
+            } }
+            let top = pixels.sorted { HeroScrim.luminance($0) > HeroScrim.luminance($1) }.prefix(max(1, pixels.count * 15 / 100))
+            let n = Double(top.count)
+            result = UIColor(red: top.map(\.0).reduce(0, +) / n, green: top.map(\.1).reduce(0, +) / n, blue: top.map(\.2).reduce(0, +) / n, alpha: 1)
+        }
+        brightCache.setObject(result, forKey: id)
         return result
     }
 
@@ -156,8 +195,11 @@ struct ProfileHeroBackground: View {
     @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
-        let strength = HeroScrim.opacity(reduceTransparency: reduceTransparency, increaseContrast: contrast == .increased)
-        let tint = Color(uiColor: HeroScrim.tint(from: HeroPalette.darkColor(of: image, key: cacheKey)))
+        let cap = HeroScrim.opacity(reduceTransparency: reduceTransparency, increaseContrast: contrast == .increased)
+        let tintColour = HeroScrim.tint(from: HeroPalette.darkColor(of: image, key: cacheKey))
+        // A default (blurred photo, tone gradient) gets only the overlay its text needs, so its colours show; a chosen background keeps the full one.
+        let strength = isDefault ? HeroScrim.defaultStrength(image: image, key: cacheKey, cap: cap, tint: tintColour) : cap
+        let tint = Color(uiColor: tintColour)
         GeometryReader { geo in layers(size: geo.size, strength: strength, tint: tint) }
         .onChange(of: playVideo) { _, playing in if !playing { videoReady = false } }
         .onChange(of: videoReady) { _, now in onVideoReady(now) }
@@ -246,7 +288,8 @@ enum HeroDefault {
         guard let output = blur.outputImage?.cropped(to: input.extent), let cg = CIContext().createCGImage(output, from: input.extent) else { return filled }
         return UIGraphicsImageRenderer(size: size, format: format).image { context in
             UIImage(cgImage: cg).draw(in: CGRect(origin: .zero, size: size))
-            UIColor.black.withAlphaComponent(0.14).setFill()
+            // A soft tint from the photo's own colours (its dominant dark colour) instead of a grey dimming.
+            HeroPalette.compute(filled).withAlphaComponent(0.22).setFill()
             context.fill(CGRect(origin: .zero, size: size))
         }
     }

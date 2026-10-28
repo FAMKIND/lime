@@ -129,3 +129,25 @@ final class ProfileHeroTests: XCTestCase {
         XCTAssertTrue(PhotoProcessing.personalMetadata(in: data).isEmpty)
     }
 }
+
+/// LIME-238: a default hero gets only the overlay its text needs.
+final class HeroDefaultTests: XCTestCase {
+    func testADefaultHeroKeepsWhiteTextAt4Point5WithALighterOverlayThanAChosenBackground() {
+        let cap = HeroScrim.opacity(reduceTransparency: false, increaseContrast: false)
+        var lighter = 0
+        for tone in 0..<8 {
+            let image = HeroDefault.tone(tone, dark: false)
+            let key = "test-tone-\(tone)"
+            let tint = HeroScrim.tint(from: HeroPalette.darkColor(of: image, key: key))
+            let s = HeroScrim.defaultStrength(image: image, key: key, cap: cap, tint: tint)
+            let bright = HeroPalette.brightColor(of: image, key: key)
+            XCTAssertLessThanOrEqual(s, cap)
+            XCTAssertGreaterThanOrEqual(HeroScrim.contrast(text: .white, tint: tint, image: bright, scrim: s), 4.5 - 0.15, "tone \(tone)")
+            if s < cap - 0.05 { lighter += 1 }
+        }
+        XCTAssertGreaterThan(lighter, 0, "at least some defaults get a lighter overlay, so their colours show")
+        // A pure white picture needs the most, and is never beyond the cap.
+        let white = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 32)).image { UIColor.white.setFill(); $0.fill(CGRect(x: 0, y: 0, width: 32, height: 32)) }
+        XCTAssertLessThanOrEqual(HeroScrim.defaultStrength(image: white, key: "test-white", cap: cap, tint: .black), cap)
+    }
+}
