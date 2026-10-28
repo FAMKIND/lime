@@ -17,8 +17,11 @@ final class Player235UITests: LimeUITestCase {
         let play = app.buttons["jam-video-play"], title = app.buttons["jam-video-text"]
         XCTAssertTrue(play.exists && title.exists)
         for id in ["jam-video-speed", "jam-video-back10", "jam-video-fwd30", "jam-video-captions"] { XCTAssertTrue(app.buttons[id].exists, id) }
-        XCTAssertLessThan(play.frame.maxY, title.frame.minY, "the controls row is above the title")
-        XCTAssertLessThan(title.frame.maxY, any(app, "jam-video-timeline").frame.minY + 4, "the progress bar is under the words")
+        // The same order as a video podcast: the info block, the progress bar, then the controls row.
+        let timeline = any(app, "jam-video-timeline")
+        XCTAssertTrue(any(app, "jam-info-cover").exists, "the thumbnail beside the details")
+        XCTAssertLessThan(title.frame.maxY, timeline.frame.minY + 4, "the info block is above the progress bar")
+        XCTAssertLessThan(timeline.frame.maxY, play.frame.minY + 4, "and the controls are under it")
         // The toggle: Listen is on, Watch is dimmed for an audio podcast.
         // An audio podcast has no video: just the waveform, no toggle to operate.
         XCTAssertTrue(any(app, "jam-player-audio-only").exists, "only the waveform")
@@ -27,6 +30,13 @@ final class Player235UITests: LimeUITestCase {
         // The bottom bar: AirPlay, ♥ 💬 remix share, Up next.
         XCTAssertTrue(any(app, "jam-video-airplay").exists)
         XCTAssertTrue(app.buttons["jam-pill-share"].exists)
+        // Tapping the info block opens About: the title, the writer, the description, a close button.
+        title.tap()
+        XCTAssertTrue(any(app, "jam-about-sheet").waitForExistence(timeout: 5), "the About sheet")
+        XCTAssertTrue(any(app, "jam-about-title").exists)
+        XCTAssertTrue(any(app, "jam-about-description").exists || any(app, "jam-about-empty").exists, "the description, or No description")
+        app.buttons["jam-about-close"].tap()
+        XCTAssertFalse(any(app, "jam-about-sheet").waitForExistence(timeout: 2), "closed")
         let upNext = app.buttons["jam-video-upnext"]
         XCTAssertTrue(upNext.exists)
         upNext.tap()

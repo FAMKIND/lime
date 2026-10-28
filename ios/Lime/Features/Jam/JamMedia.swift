@@ -244,6 +244,7 @@ struct JamVideoScreen: View {
     @State private var watching: Bool?
     @State private var fullScreen = false
     @State private var upNext = false
+    @State private var about = false
     @State private var noVideoHint = false
     /// The player's background, from the cover (LIME-235c).
     @State private var tintColors: (top: UIColor, bottom: UIColor)?
@@ -271,7 +272,7 @@ struct JamVideoScreen: View {
                 if landscape && watch {
                     // The video fills the window with glass controls over it (Apple's full-screen layout).
                     JamVideoFullScreen(postID: item.postID, file: item.file, controller: item.controller, cues: shownCues, captionsOn: captionsOn, tint: tint, inline: true,
-                                       listen: { watching = false }, close: { close() })
+                                       listen: { watching = false }, openProfile: { viewProfile(of: $0) }, close: { close() })
                 } else if landscape {
                     landscapeLayout(item, post, geo)
                 } else {
@@ -297,7 +298,7 @@ struct JamVideoScreen: View {
         .gesture(DragGesture(minimumDistance: 30).onEnded { if $0.translation.height > 120, abs($0.translation.width) < 80, !textOpen { close() } })
         .fullScreenCover(item: $editingPost) { JamEditSheet(post: $0) }
         .fullScreenCover(isPresented: $fullScreen) {
-            JamVideoFullScreen(postID: item.postID, file: item.file, controller: item.controller, cues: shownCues, captionsOn: captionsOn, tint: tint, close: { fullScreen = false })
+            JamVideoFullScreen(postID: item.postID, file: item.file, controller: item.controller, cues: shownCues, captionsOn: captionsOn, tint: tint, openProfile: { viewProfile(of: $0) }, close: { fullScreen = false })
         }
         .confirmationDialog("Delete this post for everyone?", isPresented: $confirmingDelete, titleVisibility: .visible) {
             Button("Delete post", role: .destructive) { Task { _ = await store.deleteJamPost(active.postID); NowPlaying.shared.close(); dismiss() } }.accessibilityIdentifier("jam-video-delete-confirm")
@@ -312,6 +313,7 @@ struct JamVideoScreen: View {
             }
         }
         .sheet(isPresented: $upNext) { UpNextSheet() }
+        .sheet(isPresented: $about) { PlayerAboutSheet(postID: item.postID, duration: item.controller.duration) { viewProfile(of: $0) } }
         .task(id: item.postID) {
             // The background takes the cover's colour (the video's poster, or the default cover's tone), crossfading when the cover changes.
             let post = store.jamPost(item.postID)
@@ -353,7 +355,7 @@ struct JamVideoScreen: View {
                 topBar(post)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
-                        if let post { writerRow(post, withDate: true); titleBlock(post) }
+                        if let post { infoBlock(post, cover: 82) }
                         timeline(item.controller)
                         controls(item.controller, circle: false)
                         VolumeSlider().frame(height: 34).accessibilityLabel("Volume").accessibilityIdentifier("jam-video-volume")
@@ -496,9 +498,10 @@ struct JamVideoScreen: View {
         VStack(alignment: .leading, spacing: 14) {
             if captionsOn { CaptionLine(controller: item.controller, cues: shownCues) }
             if isAudio {
-                controls(item.controller, circle: true)
-                if let post { writerRow(post, withDate: false); titleBlock(post) }
+                // The same order as a video podcast: the info block, the timeline, the controls (old and new podcasts alike).
+                if let post { infoBlock(post, cover: 82) }
                 timeline(item.controller)
+                controls(item.controller, circle: true)
             } else {
                 if let post { infoBlock(post, cover: 82) }
                 timeline(item.controller)
@@ -567,11 +570,20 @@ struct JamVideoScreen: View {
     private func infoBlock(_ post: JamPostInfo, cover: CGFloat) -> some View {
         let subtitle = store.playerSubtitle(post.postId)
         return HStack(alignment: .top, spacing: 12) {
-            PostCover(postID: post.postId).frame(width: cover, height: cover).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)).accessibilityHidden(true)
+            Button { about = true } label: {
+                PostCover(postID: post.postId).frame(width: cover, height: cover).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .buttonStyle(.plain).accessibilityLabel("About this podcast").accessibilityIdentifier("jam-info-cover")
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    if let org = store.orgName(post) { JamInitialTile(title: org, size: 24).accessibilityHidden(true) } else { AvatarView(person: store.teacher(post.author), size: 24).accessibilityHidden(true) }
-                    Text(store.authorName(post)).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
+                    // The avatar and name open the writer's profile; the rest of the block opens About.
+                    Button { viewProfile(of: post) } label: {
+                        HStack(spacing: 6) {
+                            if let org = store.orgName(post) { JamInitialTile(title: org, size: 24).accessibilityHidden(true) } else { AvatarView(person: store.teacher(post.author), size: 24).accessibilityHidden(true) }
+                            Text(store.authorName(post)).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
+                        }
+                    }
+                    .buttonStyle(.plain).accessibilityLabel(store.authorName(post)).accessibilityHint("Opens their profile").accessibilityIdentifier("jam-info-writer")
                     Text("\u{00B7} \(JamDates.short(post.created))").font(Theme.font(.subheadline)).foregroundStyle(.white.opacity(0.7)).lineLimit(1).fixedSize()
                     Spacer(minLength: 0)
                     if !store.isFollowing(post.jamId), post.author != store.meProvider().id {
@@ -581,7 +593,7 @@ struct JamVideoScreen: View {
                         .accessibilityIdentifier("jam-video-subscribe")
                     }
                 }
-                Button { withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) { textOpen = true } } label: {
+                Button { about = true } label: {
                     VStack(alignment: .leading, spacing: 0) {
                         if !post.title.isEmpty { MarqueeText(text: post.title, font: Theme.font(.headline)) }
                         if !subtitle.isEmpty { MarqueeText(text: subtitle, font: Theme.font(.subheadline), color: .white.opacity(0.75)) }
@@ -589,9 +601,17 @@ struct JamVideoScreen: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel([post.title, subtitle].filter { !$0.isEmpty }.joined(separator: ", ")).accessibilityHint("Reads the whole post").accessibilityIdentifier("jam-video-text")
+                .accessibilityLabel([post.title, subtitle].filter { !$0.isEmpty }.joined(separator: ", ")).accessibilityHint("Opens About").accessibilityIdentifier("jam-video-text")
             }
         }
+    }
+
+    /// Closes the player and opens a writer's profile.
+    private func viewProfile(of post: JamPostInfo) {
+        let route = ProfileRoute(userID: post.author, name: store.teacher(post.author).name, isMe: post.author == store.meProvider().id)
+        NowPlaying.shared.showsScreen = false
+        dismiss()
+        Task { try? await Task.sleep(for: .milliseconds(450)); store.openProfile(route) }
     }
 
     /// The title (bold) and the subtitle, each one line that scrolls when it does not fit (a marquee, still with Reduce Motion); a tap reads the whole post
@@ -841,7 +861,9 @@ struct JamVideoFullScreen: View {
     var tint: (top: UIColor, bottom: UIColor) = (.black, .black)
     var inline = false
     var listen: (() -> Void)? = nil
+    var openProfile: ((JamPostInfo) -> Void)? = nil
     let close: () -> Void
+    @State private var about = false
     @Environment(ConversationStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showsControls = true
@@ -910,6 +932,7 @@ struct JamVideoFullScreen: View {
         .preferredColorScheme(.dark)
         .statusBarHidden(true)
         .onAppear { show() }
+        .sheet(isPresented: $about) { PlayerAboutSheet(postID: postID, duration: controller.duration) { openProfile?($0) } }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("jam-fullscreen")
     }
@@ -978,7 +1001,8 @@ struct JamVideoFullScreen: View {
     /// Upright: the cover on the left; within its height the writer and the short date, a one-line title and a one-line subtitle on the right.
     private func info(_ post: JamPostInfo) -> some View {
         HStack(alignment: .top, spacing: 10) {
-            PostCover(postID: post.postId).frame(width: 64, height: 64).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous)).accessibilityHidden(true)
+            Button { about = true } label: { PostCover(postID: post.postId).frame(width: 64, height: 64).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous)) }
+                .buttonStyle(.plain).accessibilityLabel("About this podcast").accessibilityIdentifier("jam-fullscreen-info")
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {
                     AvatarView(person: store.teacher(post.author), size: 20).accessibilityHidden(true)
@@ -1100,5 +1124,60 @@ struct EndWatcher: View {
 
     var body: some View {
         Color.clear.frame(width: 0, height: 0).onChange(of: controller.atEnd) { _, now in if now { ended() } }
+    }
+}
+
+
+/// About (LIME-235e): a dark sheet like the comments', with the title, the writer or org (opens their profile), the date, the full description as the
+/// writer wrote it (formatting and links, which open in Safari), co-hosts and the length. Opened by tapping the player's info block.
+struct PlayerAboutSheet: View {
+    let postID: String
+    var duration: Double = 0
+    let openProfile: (JamPostInfo) -> Void
+    @Environment(ConversationStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        let post = store.jamPost(postID)
+        VStack(spacing: 0) {
+            ZStack {
+                Text("About").font(Theme.font(.headline)).foregroundStyle(.white)
+                HStack {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark").font(.system(size: 15, weight: .semibold)).foregroundStyle(.white).frame(width: 36, height: 36).background(.white.opacity(0.16), in: Circle()).frame(width: 44, height: 44)
+                    }
+                    .accessibilityLabel("Close").accessibilityIdentifier("jam-about-close")
+                    Spacer()
+                }
+            }
+            .padding(.horizontal, 12).padding(.top, 8)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    if let post {
+                        Text(post.title.isEmpty ? "Recording" : post.title).font(Theme.font(.title2, weight: .bold)).foregroundStyle(.white).fixedSize(horizontal: false, vertical: true)
+                            .accessibilityAddTraits(.isHeader).accessibilityIdentifier("jam-about-title")
+                        Button { dismiss(); openProfile(post) } label: {
+                            Text(store.authorName(post)).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(.white.opacity(0.8)).frame(minHeight: 44, alignment: .leading)
+                        }
+                        .accessibilityHint("Opens their profile").accessibilityIdentifier("jam-about-writer")
+                        Text(JamDates.text(post.created)).font(Theme.caption).foregroundStyle(.white.opacity(0.7))
+                        if post.markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            Text("No description").font(Theme.body).foregroundStyle(.white.opacity(0.7)).accessibilityIdentifier("jam-about-empty")
+                        } else {
+                            FormattedMessageText(markdown: post.markdown, ink: .white, link: Theme.linkOther)
+                                .accessibilityIdentifier("jam-about-description")
+                        }
+                        let hosts = store.bylinePeople(post).dropFirst().map(\.name)
+                        if !hosts.isEmpty { Text("With " + hosts.joined(separator: ", ")).font(Theme.caption).foregroundStyle(.white.opacity(0.7)).accessibilityIdentifier("jam-about-hosts") }
+                        if duration > 0 { Text("Length \(VoiceFormat.clock(duration))").font(Theme.caption).foregroundStyle(.white.opacity(0.7)).accessibilityIdentifier("jam-about-length") }
+                    }
+                }
+                .padding(20).frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .linkOpening()
+        }
+        .preferredColorScheme(.dark).presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+        .presentationBackground(Color.black.opacity(0.88))
+        .accessibilityElement(children: .contain).accessibilityIdentifier("jam-about-sheet")
     }
 }

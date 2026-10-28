@@ -28,10 +28,10 @@ final class Jam188jUITests: LimeUITestCase {
         let text = app.buttons["jam-video-text"]
         XCTAssertTrue(text.waitForExistence(timeout: 5))
         text.tap()
-        if !any(app, "jam-video-text-open").waitForExistence(timeout: 3) { text.tap() }   // the first tap may only have closed the menu
-        XCTAssertTrue(any(app, "jam-video-text-open").waitForExistence(timeout: 5), "the words open over the video")
-        any(app, "jam-video-text-open").coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
-        XCTAssertFalse(any(app, "jam-video-text-open").waitForExistence(timeout: 2), "and fold back")
+        if !any(app, "jam-about-sheet").waitForExistence(timeout: 3) { text.tap() }   // the first tap may only have closed the menu
+        XCTAssertTrue(any(app, "jam-about-sheet").waitForExistence(timeout: 5), "the About sheet opens (LIME-235e)")
+        app.buttons["jam-about-close"].tap()
+        XCTAssertFalse(any(app, "jam-about-sheet").waitForExistence(timeout: 2), "and closes")
         app.buttons["jam-video-close"].tap()
         XCTAssertFalse(any(app, "jam-video-screen").waitForExistence(timeout: 2))
     }
