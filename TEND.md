@@ -8598,7 +8598,7 @@ On other people's phones (not reachable): their chats with the account, jam post
 - **Item 5:** the cover while playing is ~82 % of the width (was 88 %) and never taller than the stage minus 32 pt, so there are at least 16 pt below the top icons and above the info block; paused it settles to the same size as before (0.86 of the playing size, about 70 % of the width).
 - **Item 6:** a video podcast in **Listen** now uses exactly the audio layout (info block, timeline, circle controls, no volume slider); **Watch** brings the video layout back. One layout per mode, whatever the post type.
 - Visual change, no new test (you check on the phones); `Player235UITests` and `Player235cUITests` still pass (the two known-failing Watch-toggle tests stay skipped).
-- **Installed:** with LIME-243.
+- **Installed:** with LIME-243 (the iPad; see there for the two iPhones).
 
 ## LIME-242 — step titles; About renders its text; small fixes (items 1–13)
 
@@ -8616,7 +8616,7 @@ On other people's phones (not reachable): their chats with the account, jam post
 13. **The video-podcast bug:** the studio no longer closes itself when you press Publish; it asks the post to go and the **whole flow closes when it has gone** (on failure the reason shows on step 2 and nothing is lost).
 - **Tests:** `Fix242UITests` (titles as a pair, an old account's Everyone available, About without "##", the spinner and where it lands for a video podcast and a quick post); `Post240`, `Studio241` and `Privacy210d` updated ("Step 2 of 2", the margin, "from <date>"). Not tested: "1 line" (needs a caption run) and the photo viewer's centring (you check on the phone).
 - **Flaky, not from this:** `Jam188q/r/m` and `Jam188n` fail on the article-body keyboard focus in some runs (one of the two `Jam188r` tests passes in each run); `Jam188b`'s subtitle-cap check shows 161 mid-trim now and then.
-- **Installed:** with LIME-243.
+- **Installed:** with LIME-243 (the iPad; see there for the two iPhones).
 
 ## LIME-243 — a publishing state, landing on your post, series in every card, skeletons and lazy loading
 
@@ -8628,4 +8628,4 @@ On other people's phones (not reachable): their chats with the account, jam post
 4. **Skeletons:** the jam feed shows **skeleton cards** (avatar, name, cover, lines, softly shimmering; still with Reduce Motion) until the first read of the posts has finished; Discover shows them while its first page loads; an open post's page shows a **page skeleton**. VoiceOver hears "Loading". **Not done:** skeletons for a profile's tabs, Drafts and the player's info (those read from the phone's own database and are instant; the feed's and Discover's real waits are covered).
 5. **Lazy loading:** the feed shows **20 cards at a time** and the next 20 as you reach the end (a scroll-to-new-post also opens the page it needs); cards and their pictures were already created as they come on screen (`LazyVStack` and per-card tasks). **Not done:** a blurred thumbnail before a picture, and Discover paging.
 - **Tests (demo):** `Fix242UITests`: the spinner and "Publishing…" for a video podcast then the whole flow closes with the post in the feed (never step 1 or the studio); a quick post shows "Posting…" then is in the feed; the series line is inside the article cover and under the audio and video podcast cards and opens the series; a slow feed (`-lime-demo-slow-feed`) shows skeletons first, then the posts. The article posts of the older tests now come back from the new article's page (`postNow`). 
-- **Installed:** the 13 mini, the iPad and Jean's 12 mini (see the line below).
+- **Installed:** the iPad only. The 13 mini and Jean's 12 mini were unavailable (not connected, or asleep) on three tries each ("not able to fulfil the usage assertion"); install with `bash $TMPDIR/install.sh` when they are plugged in and unlocked.
