@@ -796,6 +796,7 @@ struct VolumeSlider: UIViewRepresentable {
         let view = MPVolumeView(frame: .zero)
         view.showsRouteButton = false
         view.tintColor = .white
+        view.setContentHuggingPriority(.defaultLow, for: .horizontal)
         return view
     }
 
@@ -852,11 +853,13 @@ struct JamVideoFullScreen: View {
             let ratio = JamVideoRatio.of(file)
             let videoLandscape = ratio >= 1
             let fills = deviceLandscape == videoLandscape
+            let inset = geo.safeAreaInsets
             ZStack {
-                PlayerBackground(top: tint.top, bottom: tint.bottom)
+                // Black, to every edge (the home-indicator and status-bar areas included): a video that is not the window's shape is letterboxed in black.
+                Color.black.ignoresSafeArea()
                 picture(fills: fills, ratio: ratio)
                     .frame(width: geo.size.width, height: geo.size.height)
-                    .clipped().ignoresSafeArea(fills ? .all : [])
+                    .clipped()
                     .contentShape(Rectangle())
                     .onTapGesture { toggle() }
                     .accessibilityElement(children: .ignore).accessibilityLabel("Video").accessibilityHint("Shows the controls").accessibilityAddTraits(.isButton)
@@ -864,7 +867,7 @@ struct JamVideoFullScreen: View {
                 if let line = captionsOn ? JamCaptions.line(at: Int(controller.position * 1000), in: cues) : nil {
                     Text(line).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(.white).multilineTextAlignment(.center)
                         .padding(.horizontal, 12).padding(.vertical, 6).background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .frame(maxHeight: .infinity, alignment: .bottom).padding(.bottom, showsControls ? (geo.size.height < 500 ? 92 : 150) : 40)
+                        .frame(maxHeight: .infinity, alignment: .bottom).padding(.bottom, inset.bottom + (showsControls ? (geo.size.height < 500 ? 92 : 150) : 28))
                 }
                 VStack {
                     HStack(alignment: .top, spacing: 10) {
@@ -873,7 +876,7 @@ struct JamVideoFullScreen: View {
                         Spacer(minLength: 0)
                         volumeCapsule
                     }
-                    .padding(.horizontal, 16).padding(.top, 8)
+                    .padding(.horizontal, 16 + max(inset.leading, inset.trailing)).padding(.top, 8 + inset.top)
                     Spacer()
                 }
                 if showsControls {
@@ -899,10 +902,11 @@ struct JamVideoFullScreen: View {
                         }
                         progress
                     }
-                    .padding(.horizontal, 20).padding(.bottom, 12).transition(.opacity)
+                    .padding(.horizontal, 20 + max(inset.leading, inset.trailing)).padding(.bottom, 12 + inset.bottom).transition(.opacity)
                 }
             }
         }
+        .ignoresSafeArea()
         .preferredColorScheme(.dark)
         .statusBarHidden(true)
         .onAppear { show() }
@@ -932,16 +936,19 @@ struct JamVideoFullScreen: View {
         .padding(.horizontal, 4).limeGlass(in: Capsule())
     }
 
-    /// The sound toggle and the system volume slider, in one glass capsule.
+    /// The sound toggle and the system volume slider, in one glass capsule: [speaker · slider], the slider filling the rest of the width, the capsule as
+    /// high as the ✕ circle.
     private var volumeCapsule: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 0) {
             Button { controller.muted.toggle(); show() } label: {
                 Image(systemName: controller.muted ? "speaker.slash.fill" : "speaker.wave.2.fill").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white).frame(width: 44, height: 44)
             }
             .accessibilityLabel(controller.muted ? "Sound off" : "Sound on").accessibilityIdentifier("jam-fullscreen-sound")
-            VolumeSlider().frame(width: 96, height: 30).accessibilityLabel("Volume")
+            VolumeSlider().frame(maxWidth: .infinity).frame(height: 44).padding(.trailing, 14)
+                .accessibilityLabel("Volume").accessibilityIdentifier("jam-fullscreen-volume-slider")
         }
-        .padding(.horizontal, 6).limeGlass(in: Capsule())
+        .frame(width: 180, height: 44).limeGlass(in: Capsule())
+        .accessibilityElement(children: .contain).accessibilityIdentifier("jam-fullscreen-volume")
     }
 
     /// 1.5× and, in the player's own landscape layout, Listen.
@@ -962,7 +969,7 @@ struct JamVideoFullScreen: View {
     /// Landscape: the date and writer, and the title as a marquee.
     private func compactInfo(_ post: JamPostInfo) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("\(JamDates.text(post.created)) \u{00B7} \(store.authorName(post))").font(Theme.caption).foregroundStyle(.white.opacity(0.8)).lineLimit(1)
+            Text("\(JamDates.short(post.created)) \u{00B7} \(store.authorName(post))").font(Theme.caption).foregroundStyle(.white.opacity(0.8)).lineLimit(1)
             if !post.title.isEmpty { MarqueeText(text: post.title, font: Theme.font(.subheadline, weight: .bold)) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

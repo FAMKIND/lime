@@ -8393,3 +8393,11 @@ On other people's phones (not reachable): their chats with the account, jam post
 - **The toggle only with video:** an **audio-only podcast shows just a waveform chip** (glass, non-interactive, "Audio only" for VoiceOver); a video podcast keeps the Listen | Watch segmented control.
 - **Tests:** `Player235UITests` (audio: only the waveform, no segmented control or Watch; video: the info block's title one line and close under the stage), `Player235cUITests` (pass). Not tested: that the marquee actually moves in the info block (visual), and the 82 pt height on a real phone.
 - **Installed:** Debug build on the 13 mini, the iPad and Jean's 12 mini (after both commits).
+
+## LIME-235d follow-up — the full-screen fixes (items 4–6)
+
+- **Fills the window (4):** the full-screen view's geometry now covers the whole window (`.ignoresSafeArea()` on the view, not only on the picture), so the picture, and its **black** background, reach the top and bottom edges: no band at the home indicator; a video that is not the window's shape is letterboxed in black (it was the tint, which read grey). The controls are padded back in by the safe-area insets (top, bottom, and the sides in landscape), so they stay inside the safe area.
+- **The volume capsule (5):** **[speaker · slider]**, a fixed **180 pt** wide and **44 pt** high (the ✕ circle's height), the slider filling the rest of the width (system volume view, so its own knob) with 14 pt at the right.
+- **Info block (6):** the full screen's block already used the smaller layout and the short date from 235d; the landscape caption line under the video still used the long date ("Oct 25, 2026 at 9:5…"): now the short one too.
+- **Tests:** `Player235UITests` (video): the full-screen video's frame equals the window's (± 1 pt) and the volume capsule is 180 × the ✕'s height and inside the screen; the rest as before. I could not check the slider's knob position inside the capsule (the system volume view exposes nothing to the test): visual.
+- **Installed:** with 236d's, below.

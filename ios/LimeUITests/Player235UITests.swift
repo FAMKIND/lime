@@ -55,6 +55,17 @@ final class Player235UITests: LimeUITestCase {
         // A tap on the video: full screen with ✕ and sound.
         any(app, "jam-video-stage").tap()
         XCTAssertTrue(any(app, "jam-fullscreen").waitForExistence(timeout: 5))
+        // The video fills the window to every edge (no band at the bottom), and the volume capsule is as high as the ✕ with the slider inside it.
+        let window = app.windows.firstMatch.frame
+        let picture = any(app, "jam-fullscreen-video").frame
+        XCTAssertEqual(picture.height, window.height, accuracy: 1, "reaches the bottom edge: \(picture) vs \(window)")
+        XCTAssertEqual(picture.width, window.width, accuracy: 1)
+        let volume = any(app, "jam-fullscreen-volume")
+        if !volume.exists { any(app, "jam-fullscreen-video").tap() }
+        XCTAssertTrue(volume.waitForExistence(timeout: 3))
+        XCTAssertEqual(volume.frame.width, 180, accuracy: 2, "a fixed-width capsule")
+        XCTAssertEqual(volume.frame.height, app.buttons["jam-fullscreen-close"].frame.height, accuracy: 1, "as high as the ✕")
+        XCTAssertLessThanOrEqual(volume.frame.maxX, window.width - 8, "inside the screen")
         XCTAssertTrue(app.buttons["jam-fullscreen-close"].exists)
         XCTAssertTrue(app.buttons["jam-fullscreen-sound"].exists)
         // The controls go after 3 s while it plays; a tap brings them back.
