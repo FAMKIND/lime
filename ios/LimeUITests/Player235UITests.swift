@@ -67,7 +67,7 @@ final class Player235UITests: LimeUITestCase {
     /// log shows no change for Watch, with a custom glass toggle and with the system segmented control alike). Not diagnosed; the user checks it on the
     /// phones.
     func testListenPutsTheCoverOnTheStageAndWatchBringsTheVideoBack() throws {
-        try XCTSkipIf(true, "known failing: the Watch half of the toggle does not take the simulator's tap")
+        try XCTSkipIf(true, "known failing (rule 12d): a tap on the Watch half of the toggle does not take effect in the simulator")
         let app = XCUIApplication()
         app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-screen", "jam-following"]
         app.launch()

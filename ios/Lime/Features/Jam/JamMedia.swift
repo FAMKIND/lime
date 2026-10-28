@@ -245,6 +245,10 @@ struct JamVideoScreen: View {
     @State private var fullScreen = false
     @State private var upNext = false
     @State private var noVideoHint = false
+    /// The player's background, from the cover (LIME-235c).
+    @State private var tintColors: (top: UIColor, bottom: UIColor)?
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var current: (postID: String, file: JamAttachmentInfo, controller: PodcastController)?
 
@@ -259,29 +263,41 @@ struct JamVideoScreen: View {
     var body: some View {
         let item = active
         let post = store.jamPost(item.postID)
-        ZStack {
-            Color.black.ignoresSafeArea()
-            VStack(spacing: 0) {
-                topBar(post)
-                if typeSize.isAccessibilitySize {
-                    // Large text: the page scrolls, the stage never overlaps the words.
-                    ScrollView { VStack(spacing: 16) { stage(item, post).frame(height: 260); lower(item, post) }.padding(.horizontal, 20) }
+        GeometryReader { geo in
+            // The window's shape decides the layout, not the device's (iPad windows, Stage Manager).
+            let landscape = geo.size.width > geo.size.height
+            ZStack {
+                PlayerBackground(top: tint.top, bottom: tint.bottom)
+                if landscape && watch {
+                    // The video fills the window with glass controls over it (Apple's full-screen layout).
+                    JamVideoFullScreen(postID: item.postID, file: item.file, controller: item.controller, cues: shownCues, captionsOn: captionsOn, tint: tint, inline: true,
+                                       listen: { watching = false }, close: { close() })
+                } else if landscape {
+                    landscapeLayout(item, post, geo)
                 } else {
-                    stage(item, post).frame(maxHeight: .infinity)
-                    lower(item, post).padding(.horizontal, 20)
+                    VStack(spacing: 0) {
+                        topBar(post)
+                        if typeSize.isAccessibilitySize {
+                            // Large text: the page scrolls, the stage never overlaps the words.
+                            ScrollView { VStack(spacing: 16) { stage(item, post).frame(height: 260); lower(item, post) }.padding(.horizontal, 20) }
+                        } else {
+                            stage(item, post).frame(maxHeight: .infinity)
+                            lower(item, post).padding(.horizontal, 20)
+                        }
+                        bottomBar(item, post)
+                    }
                 }
-                bottomBar(item, post)
-            }
-            if textOpen, let post {
-                TextOver(post: post, writer: store.teacher(post.author), close: { withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) { textOpen = false } })
-                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                if textOpen, let post {
+                    TextOver(post: post, writer: store.teacher(post.author), close: { withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) { textOpen = false } })
+                        .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                }
             }
         }
         .preferredColorScheme(.dark)
         .gesture(DragGesture(minimumDistance: 30).onEnded { if $0.translation.height > 120, abs($0.translation.width) < 80, !textOpen { close() } })
         .fullScreenCover(item: $editingPost) { JamEditSheet(post: $0) }
         .fullScreenCover(isPresented: $fullScreen) {
-            JamVideoFullScreen(postID: item.postID, file: item.file, controller: item.controller, cues: shownCues, captionsOn: captionsOn) { fullScreen = false }
+            JamVideoFullScreen(postID: item.postID, file: item.file, controller: item.controller, cues: shownCues, captionsOn: captionsOn, tint: tint, close: { fullScreen = false })
         }
         .confirmationDialog("Delete this post for everyone?", isPresented: $confirmingDelete, titleVisibility: .visible) {
             Button("Delete post", role: .destructive) { Task { _ = await store.deleteJamPost(active.postID); NowPlaying.shared.close(); dismiss() } }.accessibilityIdentifier("jam-video-delete-confirm")
@@ -296,6 +312,14 @@ struct JamVideoScreen: View {
             }
         }
         .sheet(isPresented: $upNext) { UpNextSheet() }
+        .task(id: item.postID) {
+            // The background takes the cover's colour (the video's poster, or the default cover's tone), crossfading when the cover changes.
+            let post = store.jamPost(item.postID)
+            let image = await store.coverImage(for: item.postID)
+            let sampled = image.map { HeroPalette.compute($0) }
+            let colours = PlayerTint.colors(sampled: sampled, fallbackTone: store.teacher(post?.author ?? "").tone, deeper: reduceTransparency || contrast == .increased)
+            withAnimation(.easeInOut(duration: 0.4)) { tintColors = colours }
+        }
         .task(id: item.file.attachmentId) {
             loadedCues = []
             guard cues.isEmpty || current != nil,
@@ -307,13 +331,38 @@ struct JamVideoScreen: View {
             item.controller.muted = false
             if NowPlaying.shared.opensComments { NowPlaying.shared.opensComments = false; commenting = true }
         }
-        .onChange(of: active.controller.atEnd) { _, ended in if ended, !isAudio { advance() } }
+        .background { EndWatcher(controller: active.controller) { if !isAudio { advance() } } }
         .onChange(of: watch) { _, on in active.controller.setPicture(on) }
         .sheet(isPresented: $sharing) { if let post { JamShareSheet(post: post) } }
         .reportSheet($reporting)
         .sheet(isPresented: $transcript) { TranscriptSheet(cues: shownCues) }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("jam-video-screen")
+    }
+
+    private var tint: (top: UIColor, bottom: UIColor) {
+        tintColors ?? PlayerTint.colors(sampled: nil, fallbackTone: store.teacher(store.jamPost(active.postID)?.author ?? "").tone, deeper: reduceTransparency || contrast == .increased)
+    }
+
+    /// Landscape, audio (and a video with Listen): two columns as Apple's player: the cover on the left as tall as the window allows; on the right the
+    /// top bar, the writer and date, the title and subtitle, the progress bar, the controls, the volume, and the bottom row.
+    private func landscapeLayout(_ item: (postID: String, file: JamAttachmentInfo, controller: PodcastController), _ post: JamPostInfo?, _ geo: GeometryProxy) -> some View {
+        HStack(spacing: 16) {
+            stage(item, post).frame(width: max(120, min(geo.size.height - 24, geo.size.width * 0.44)))
+            VStack(spacing: 8) {
+                topBar(post)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        if let post { writerRow(post, withDate: true); titleBlock(post) }
+                        timeline(item.controller)
+                        controls(item.controller, circle: false)
+                        VolumeSlider().frame(height: 34).accessibilityLabel("Volume").accessibilityIdentifier("jam-video-volume")
+                    }
+                    .padding(.horizontal, 16)
+                }
+                bottomBar(item, post)
+            }
+        }
     }
 
     // MARK: Parts (LIME-235: the black player, Liquid Glass throughout)
@@ -391,16 +440,20 @@ struct JamVideoScreen: View {
 
     @ViewBuilder
     private func stage(_ item: (postID: String, file: JamAttachmentInfo, controller: PodcastController), _ post: JamPostInfo?) -> some View {
+        let playing = item.controller.isPlaying
+        // Playing: full size, a small radius. Paused: it settles back to 80 % with a larger radius; the stage's box does not change, so nothing else moves.
+        let scale: CGFloat = playing || reduceMotion ? 1 : 0.8
         GeometryReader { geo in
             if watch {
                 let ratio = JamVideoRatio.of(item.file)
                 let landscape = ratio >= 1
-                let paused = !item.controller.isPlaying
                 video(item)
                     .aspectRatio(ratio, contentMode: .fit)
                     .frame(maxWidth: landscape ? .infinity : geo.size.width * 0.7, maxHeight: geo.size.height)
-                    .clipShape(RoundedRectangle(cornerRadius: paused || !landscape ? 20 : 0, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: playing ? (landscape ? 0 : 12) : 24, style: .continuous))
+                    .scaleEffect(scale)
                     .frame(width: geo.size.width, height: geo.size.height)
+                    .animation(reduceMotion ? nil : .spring(duration: 0.35), value: playing)
                     .contentShape(Rectangle())
                     .onTapGesture { fullScreen = true }
                     .accessibilityElement(children: .ignore).accessibilityLabel("Video").accessibilityHint("Opens it full screen")
@@ -408,9 +461,11 @@ struct JamVideoScreen: View {
             } else {
                 PostCover(postID: post?.postId ?? active.postID)
                     .aspectRatio(1, contentMode: .fit)
-                    .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-                    .frame(maxWidth: geo.size.width * 0.82, maxHeight: geo.size.height)
+                    .clipShape(RoundedRectangle(cornerRadius: playing ? 12 : 24, style: .continuous))
+                    .scaleEffect(scale)
+                    .frame(maxWidth: geo.size.width * 0.88, maxHeight: geo.size.height)
                     .frame(width: geo.size.width, height: geo.size.height)
+                    .animation(reduceMotion ? nil : .spring(duration: 0.35), value: playing)
                     .accessibilityLabel("Cover").accessibilityHidden(false).accessibilityIdentifier("jam-audio-cover")
             }
         }
@@ -432,11 +487,7 @@ struct JamVideoScreen: View {
     @ViewBuilder
     private func lower(_ item: (postID: String, file: JamAttachmentInfo, controller: PodcastController), _ post: JamPostInfo?) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            if captionsOn, let line = JamCaptions.line(at: Int(item.controller.position * 1000), in: shownCues) {
-                Text(line).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(.white).multilineTextAlignment(.center)
-                    .padding(.horizontal, 12).padding(.vertical, 6).background(.white.opacity(0.16), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .frame(maxWidth: .infinity).accessibilityIdentifier("jam-video-caption")
-            }
+            if captionsOn { CaptionLine(controller: item.controller, cues: shownCues) }
             if isAudio {
                 controls(item.controller, circle: true)
                 if let post { writerRow(post, withDate: false); titleBlock(post) }
@@ -513,43 +564,22 @@ struct JamVideoScreen: View {
         }
     }
 
-    /// The title (bold) and the subtitle; a tap reads the whole post over the player.
-    private func titleBlock(_ post: JamPostInfo, lines: Int = 2) -> some View {
+    /// The title (bold) and the subtitle, each one line that scrolls when it does not fit (a marquee, still with Reduce Motion); a tap reads the whole post
+    /// over the player.
+    private func titleBlock(_ post: JamPostInfo, lines: Int = 1) -> some View {
         let subtitle = store.playerSubtitle(post.postId)
         return Button { withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) { textOpen = true } } label: {
             VStack(alignment: .leading, spacing: 2) {
-                if !post.title.isEmpty { Text(post.title).font(Theme.font(.title3, weight: .bold)).foregroundStyle(.white).lineLimit(lines) }
-                if !subtitle.isEmpty { Text(subtitle).font(Theme.body).foregroundStyle(.white.opacity(0.75)).lineLimit(lines) }
+                if !post.title.isEmpty { MarqueeText(text: post.title, font: Theme.font(.title3, weight: .bold)) }
+                if !subtitle.isEmpty { MarqueeText(text: subtitle, font: Theme.body, color: .white.opacity(0.75)) }
             }
-            .multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .accessibilityHint("Reads the whole post").accessibilityIdentifier("jam-video-text")
+        .buttonStyle(.plain)
+        .accessibilityLabel([post.title, subtitle].filter { !$0.isEmpty }.joined(separator: ", ")).accessibilityHint("Reads the whole post").accessibilityIdentifier("jam-video-text")
     }
 
-    private func timeline(_ controller: PodcastController) -> some View {
-        VStack(spacing: 4) {
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(.white.opacity(0.3)).frame(height: 4)
-                    Capsule().fill(.white).frame(width: geo.size.width * controller.fraction, height: 4)
-                }
-                .frame(maxHeight: .infinity)
-                .contentShape(Rectangle())
-                .gesture(DragGesture(minimumDistance: 0).onChanged { controller.seek(to: Double(min(max($0.location.x / max(geo.size.width, 1), 0), 1)) * controller.duration) })
-            }
-            .frame(height: 28)
-            .accessibilityElement().accessibilityLabel("Position")
-            .accessibilityValue("\(PodcastFormat.spoken(controller.position)) of \(PodcastFormat.spoken(controller.duration))")
-            .accessibilityAdjustableAction { direction in controller.skip(by: direction == .increment ? 10 : -10) }
-            .accessibilityIdentifier("jam-video-timeline")
-            HStack {
-                Text(VoiceFormat.clock(controller.position)).accessibilityIdentifier("jam-video-elapsed")
-                Spacer()
-                Text(VoiceFormat.clock(controller.duration))
-            }
-            .font(Theme.caption.monospacedDigit()).foregroundStyle(.white.opacity(0.8)).accessibilityHidden(true)
-        }
-    }
+    private func timeline(_ controller: PodcastController) -> some View { PlayerTimeline(controller: controller) }
 
     // The bottom bar
 
@@ -766,15 +796,20 @@ struct UpNextSheet: View {
     }
 }
 
-/// The video full screen (LIME-235): black, ✕ and sound as glass circles, the video centred at full width while the phone is upright (a landscape video
-/// letterboxed) and filling the screen when it is turned to match; a tap shows ⟲10 · play · ⟳10 and the writer, title and progress, which go after 3 s
-/// while it plays.
+/// The video full screen (LIME-235, 235c): the video centred at full width while the phone is upright (a landscape video letterboxed) and filling the
+/// screen when it is turned to match, with glass controls over it as Apple's: ✕ and a Picture in Picture · AirPlay capsule top left, a volume capsule top
+/// right, ⟲10 · play · ⟳10 in the middle, the date and writer with the title bottom left, a speed (· Listen) capsule bottom right and a progress capsule
+/// across the bottom. They go after 3 s while it plays (never while VoiceOver is on); a tap brings them back. `inline` is the player's own landscape
+/// layout for a video with Watch (✕ closes the player, Listen goes back to the cover).
 struct JamVideoFullScreen: View {
     let postID: String
     let file: JamAttachmentInfo
     let controller: PodcastController
     let cues: [CaptionCue]
     let captionsOn: Bool
+    var tint: (top: UIColor, bottom: UIColor) = (.black, .black)
+    var inline = false
+    var listen: (() -> Void)? = nil
     let close: () -> Void
     @Environment(ConversationStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -788,7 +823,7 @@ struct JamVideoFullScreen: View {
             let videoLandscape = ratio >= 1
             let fills = deviceLandscape == videoLandscape
             ZStack {
-                Color.black.ignoresSafeArea()
+                PlayerBackground(top: tint.top, bottom: tint.bottom)
                 picture(fills: fills, ratio: ratio)
                     .frame(width: geo.size.width, height: geo.size.height)
                     .clipped().ignoresSafeArea(fills ? .all : [])
@@ -799,13 +834,14 @@ struct JamVideoFullScreen: View {
                 if let line = captionsOn ? JamCaptions.line(at: Int(controller.position * 1000), in: cues) : nil {
                     Text(line).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(.white).multilineTextAlignment(.center)
                         .padding(.horizontal, 12).padding(.vertical, 6).background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .frame(maxHeight: .infinity, alignment: .bottom).padding(.bottom, showsControls ? 190 : 40)
+                        .frame(maxHeight: .infinity, alignment: .bottom).padding(.bottom, showsControls ? (geo.size.height < 500 ? 92 : 150) : 40)
                 }
                 VStack {
-                    HStack {
+                    HStack(alignment: .top, spacing: 10) {
                         circle("xmark", "Close", id: "jam-fullscreen-close") { controller.muted = true; close() }
-                        Spacer()
-                        circle(controller.muted ? "speaker.slash.fill" : "speaker.wave.2.fill", controller.muted ? "Sound off" : "Sound on", id: "jam-fullscreen-sound") { controller.muted.toggle(); show() }
+                        if deviceLandscape || inline { routeCapsule }
+                        Spacer(minLength: 0)
+                        volumeCapsule
                     }
                     .padding(.horizontal, 16).padding(.top, 8)
                     Spacer()
@@ -821,7 +857,16 @@ struct JamVideoFullScreen: View {
                     .transition(.opacity)
                     VStack(alignment: .leading, spacing: 10) {
                         Spacer()
-                        if let post = store.jamPost(postID) { info(post) }
+                        if let post = store.jamPost(postID) {
+                            if deviceLandscape || inline {
+                                HStack(alignment: .bottom, spacing: 12) {
+                                    compactInfo(post)
+                                    speedCapsule
+                                }
+                            } else {
+                                info(post)
+                            }
+                        }
                         progress
                     }
                     .padding(.horizontal, 20).padding(.bottom, 12).transition(.opacity)
@@ -846,7 +891,54 @@ struct JamVideoFullScreen: View {
         }
     }
 
-    /// The same block as under the stage: the cover on the left; the writer and date, a one-line title and a one-line subtitle on the right.
+    /// Picture in Picture and AirPlay, in one glass capsule.
+    private var routeCapsule: some View {
+        HStack(spacing: 0) {
+            Button { PictureInPicture.start() } label: { Image(systemName: "pip.enter").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white).frame(width: 44, height: 44) }
+                .disabled(!PictureInPicture.isAvailable).opacity(PictureInPicture.isAvailable ? 1 : 0.4)
+                .accessibilityLabel("Picture in Picture").accessibilityIdentifier("jam-fullscreen-pip")
+            AirPlayButton().frame(width: 44, height: 44).accessibilityLabel("AirPlay").accessibilityIdentifier("jam-fullscreen-airplay")
+        }
+        .padding(.horizontal, 4).limeGlass(in: Capsule())
+    }
+
+    /// The sound toggle and the system volume slider, in one glass capsule.
+    private var volumeCapsule: some View {
+        HStack(spacing: 4) {
+            Button { controller.muted.toggle(); show() } label: {
+                Image(systemName: controller.muted ? "speaker.slash.fill" : "speaker.wave.2.fill").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white).frame(width: 44, height: 44)
+            }
+            .accessibilityLabel(controller.muted ? "Sound off" : "Sound on").accessibilityIdentifier("jam-fullscreen-sound")
+            VolumeSlider().frame(width: 96, height: 30).accessibilityLabel("Volume")
+        }
+        .padding(.horizontal, 6).limeGlass(in: Capsule())
+    }
+
+    /// 1.5× and, in the player's own landscape layout, Listen.
+    private var speedCapsule: some View {
+        HStack(spacing: 0) {
+            Button { controller.cycleRate(); show() } label: {
+                Text(controller.rate == 1.5 ? "1.5\u{00D7}" : "\(Int(controller.rate))\u{00D7}").font(Theme.font(.subheadline, weight: .bold)).foregroundStyle(.white).frame(minWidth: 52, minHeight: 44)
+            }
+            .accessibilityLabel("Playback speed, \(controller.rate == 1.5 ? "1.5" : "\(Int(controller.rate))")\u{00D7}").accessibilityIdentifier("jam-fullscreen-speed")
+            if let listen {
+                Button(action: listen) { Image(systemName: "waveform").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white).frame(width: 44, height: 44) }
+                    .accessibilityLabel("Listen").accessibilityIdentifier("jam-fullscreen-listen")
+            }
+        }
+        .padding(.horizontal, 4).limeGlass(in: Capsule())
+    }
+
+    /// Landscape: the date and writer, and the title as a marquee.
+    private func compactInfo(_ post: JamPostInfo) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("\(JamDates.text(post.created)) \u{00B7} \(store.authorName(post))").font(Theme.caption).foregroundStyle(.white.opacity(0.8)).lineLimit(1)
+            if !post.title.isEmpty { MarqueeText(text: post.title, font: Theme.font(.subheadline, weight: .bold)) }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Upright: the cover on the left; the writer and date, a one-line title and a one-line subtitle on the right.
     private func info(_ post: JamPostInfo) -> some View {
         HStack(alignment: .top, spacing: 12) {
             PostCover(postID: post.postId).frame(width: 84, height: 84).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous)).accessibilityHidden(true)
@@ -858,15 +950,15 @@ struct JamVideoFullScreen: View {
                         Text(JamDates.text(post.created)).font(Theme.caption).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
                     }
                 }
-                if !post.title.isEmpty { Text(post.title).font(Theme.font(.subheadline, weight: .bold)).foregroundStyle(.white).lineLimit(1) }
+                if !post.title.isEmpty { MarqueeText(text: post.title, font: Theme.font(.subheadline, weight: .bold)) }
                 let subtitle = store.playerSubtitle(post.postId)
-                if !subtitle.isEmpty { Text(subtitle).font(Theme.caption).foregroundStyle(.white.opacity(0.75)).lineLimit(1) }
+                if !subtitle.isEmpty { MarqueeText(text: subtitle, font: Theme.caption, color: .white.opacity(0.75)) }
             }
             Spacer(minLength: 0)
         }
     }
 
-    /// A glass capsule with the timeline and elapsed / total.
+    /// A glass capsule with the timeline, elapsed and remaining.
     private var progress: some View {
         HStack(spacing: 10) {
             Text(VoiceFormat.clock(controller.position)).font(Theme.caption.monospacedDigit()).foregroundStyle(.white)
@@ -883,7 +975,7 @@ struct JamVideoFullScreen: View {
             .accessibilityValue("\(PodcastFormat.spoken(controller.position)) of \(PodcastFormat.spoken(controller.duration))")
             .accessibilityAdjustableAction { controller.skip(by: $0 == .increment ? 10 : -10) }
             .accessibilityIdentifier("jam-fullscreen-timeline")
-            Text(VoiceFormat.clock(controller.duration)).font(Theme.caption.monospacedDigit()).foregroundStyle(.white)
+            Text("-" + VoiceFormat.clock(max(0, controller.duration - controller.position))).font(Theme.caption.monospacedDigit()).foregroundStyle(.white)
         }
         .padding(.horizontal, 16).frame(minHeight: 44).limeGlass(in: Capsule())
     }
@@ -899,22 +991,79 @@ struct JamVideoFullScreen: View {
         if showsControls { withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { showsControls = false } } else { show() }
     }
 
-    /// Shows the controls; while playing they go after 3 seconds.
+    /// Shows the controls; while playing they go after 3 seconds (not while VoiceOver is on, which needs them in reach).
     private func show() {
         withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { showsControls = true }
         hideTask?.cancel()
         hideTask = Task {
             try? await Task.sleep(for: .seconds(3))
-            if !Task.isCancelled, controller.isPlaying { withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) { showsControls = false } }
+            if !Task.isCancelled, controller.isPlaying, !UIAccessibility.isVoiceOverRunning { withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) { showsControls = false } }
         }
     }
 }
-
 
 enum JamVideoRatio {
     /// Width over height of a video file (16:9 when unknown).
     static func of(_ file: JamAttachmentInfo) -> CGFloat {
         guard let w = file.width, let h = file.height, h > 0 else { return 16.0 / 9 }
         return CGFloat(w) / CGFloat(h)
+    }
+}
+
+
+// The parts of the player that change ten times a second are their own views, so the player's menus and toggle (which the system rebuilds when their
+// view does) are not redrawn with every tick of the clock.
+
+/// The timeline with elapsed and total.
+struct PlayerTimeline: View {
+    let controller: PodcastController
+
+    var body: some View {
+        VStack(spacing: 4) {
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.white.opacity(0.3)).frame(height: 4)
+                    Capsule().fill(.white).frame(width: geo.size.width * controller.fraction, height: 4)
+                }
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .gesture(DragGesture(minimumDistance: 0).onChanged { controller.seek(to: Double(min(max($0.location.x / max(geo.size.width, 1), 0), 1)) * controller.duration) })
+            }
+            .frame(height: 28)
+            .accessibilityElement().accessibilityLabel("Position")
+            .accessibilityValue("\(PodcastFormat.spoken(controller.position)) of \(PodcastFormat.spoken(controller.duration))")
+            .accessibilityAdjustableAction { direction in controller.skip(by: direction == .increment ? 10 : -10) }
+            .accessibilityIdentifier("jam-video-timeline")
+            HStack {
+                Text(VoiceFormat.clock(controller.position)).accessibilityIdentifier("jam-video-elapsed")
+                Spacer()
+                Text(VoiceFormat.clock(controller.duration))
+            }
+            .font(Theme.caption.monospacedDigit()).foregroundStyle(.white.opacity(0.8)).accessibilityHidden(true)
+        }
+    }
+}
+
+/// The caption line showing now.
+struct CaptionLine: View {
+    let controller: PodcastController
+    let cues: [CaptionCue]
+
+    var body: some View {
+        if let line = JamCaptions.line(at: Int(controller.position * 1000), in: cues) {
+            Text(line).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(.white).multilineTextAlignment(.center)
+                .padding(.horizontal, 12).padding(.vertical, 6).background(.white.opacity(0.16), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .frame(maxWidth: .infinity).accessibilityIdentifier("jam-video-caption")
+        }
+    }
+}
+
+/// Says when what is playing has ended.
+struct EndWatcher: View {
+    let controller: PodcastController
+    let ended: () -> Void
+
+    var body: some View {
+        Color.clear.frame(width: 0, height: 0).onChange(of: controller.atEnd) { _, now in if now { ended() } }
     }
 }

@@ -359,6 +359,7 @@ struct PlayerLayerView: UIViewRepresentable {
     func makeUIView(context: Context) -> Host {
         let view = Host()
         view.backgroundColor = .black
+        Task { @MainActor in PictureInPicture.layer = view.layer_ }
         return view
     }
 
