@@ -8485,3 +8485,19 @@ On other people's phones (not reachable): their chats with the account, jam post
 - **Tests (Open210cUITests, demo, 4 pass):** Everyone → the exact copy, Keep leaves it, confirm sets it, the post card gets a globe; the chip and Discover are hidden when the server does not take open posts; Discover groups Sam's 4, hides the grouped ones until opened, the Reading chip hides Sam's, a Preview shows the lock, its page has Subscribe to read the rest, ♥ asks to subscribe, subscribing opens the whole post; an uncut open post has no Subscribe. Demo flag `-lime-demo-open`, screen `jam-discover`.
 - **Not done in this brief (said plainly):** (1) **open posts in on-device search (223's index)**: needs a decision on caching open rows on the phone; (2) the optional **subject/grade chips at publish** (choice (d)): the open row carries the jam's topics, which Discover filters by; (3) **Report on an open post** (191's report kind for open rows) and the Edit warning's wording on the card; both belong before the flag goes on (docs/jam.md 13.9); (4) writers' names for strangers show their jam title until a profile is known; (5) the real network round trip of Discover was not run against a server (the core and server have their own tests).
 - **Installed:** with the final build.
+
+## LIME-210d — the student-privacy check before an Everyone post
+
+- **Before an Everyone post with a photo, video or audio** (compose, and Edit when a post that has files is opened to Everyone) a sheet **"Before you post"** shows: **"No students can be identified: faces, names or voices."**, a one-line explanation, a **required, per-post checkbox** ("I have permission to share any students who appear or are heard"), **Read the guidance**, and **Post to everyone** (dim until the box is ticked). Text-only Everyone posts skip it.
+- **On-device face check (Vision, nothing sent):** photos, an article's pictures and cover, a recording's cover and a video's poster are checked; faces give a calm warning **"This photo has faces. Check you have permission, or choose another photo."** It warns, never blocks, and never replaces the checkbox. (An edit that opens an old post's own files has no face check, only the checkbox.)
+- **(g) New accounts wait 7 days for Everyone:** this phone remembers the day the account first registered on it; until then the audience menu shows **"Everyone opens Nov 3"** (disabled) with the rule. The server also keeps its first-week limit (10 open posts a day). **Phones that already had an account get their 7 days counted from the first launch of this build.**
+- **Guidance page** ("Sharing students"): safe to share, ask first, Subscribers or Everyone, if you made a mistake.
+- **Tests (Privacy210dUITests, demo, 3 pass):** the sheet needs the box before Post; the guidance opens; the post then goes with a globe; faces warn (demo hook `-lime-demo-faces`); a new account's Everyone is locked with the date (`-lime-demo-new-account`). The real Vision result was not tested on a real classroom photo.
+- **Nothing new to the server.** The flag stays **off**.
+- **How YOU turn open posts on later (not done; a staging change, your go):**
+  1. Make sure the migration and the functions of LIME-210a are deployed (see that record).
+  2. Report and takedown for open posts must be ready first (`moderation-act hide_open_post` is there; the app's Report on an open post is **not built yet**, see 210c "Not done").
+  3. In the Supabase SQL editor for the project: `update server_flags set enabled = true where name = 'open_posts_enabled';`
+  4. Open lime: the jam tab shows **Discover**, and the composer shows the audience chip (after the app next asks the feed). Try one Everyone post from an account older than 7 days, open it on another phone from Discover.
+  5. To turn it off again: the same statement with `false`. Existing open posts stay readable; new ones are refused with "not available yet".
+- **Installed:** with the final build.

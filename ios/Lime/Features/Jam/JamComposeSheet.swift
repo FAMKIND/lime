@@ -67,6 +67,8 @@ struct JamComposeSheet: View {
     @State private var postAsJam: String?
     /// Who can read the post (LIME-210c): `subscribers` (the default) or `everyone`.
     @State private var audience = "subscribers"
+    /// An Everyone post with a photo, video or audio waits for the student-privacy confirmation (LIME-210d).
+    @State private var privacy: PrivacyAsk?
     @State private var article = JamDraft.shared.article
     @State private var title = JamDraft.shared.title
     @State private var subtitle = JamDraft.shared.subtitle
@@ -138,6 +140,7 @@ struct JamComposeSheet: View {
                 }
             }
             .sheet(isPresented: $showingAuthors) { if let coedit { CoEditAuthorsSheet(session: coedit) } }
+            .sheet(item: $privacy) { StudentPrivacySheet(ask: $0) }
             .onChange(of: composer.plainText) { refreshLink() }
             .onChange(of: previewsOn) { refreshLink() }
             .sheet(isPresented: $choosingCoauthors) { JamCoauthorPicker(selected: $coauthors) }
@@ -202,6 +205,13 @@ struct JamComposeSheet: View {
             .onChange(of: coauthors) { _, now in if let coedit { store.coeditShare(coedit.draftID, with: now.map(\.id)); coedit.reloadAuthors() } }
             .onDisappear { coedit?.stop() }
             .task {
+                #if DEBUG
+                // Tests: a photo already in the post.
+                if ProcessInfo.processInfo.arguments.contains("-lime-demo-compose-photo"), editing == nil, photos.isEmpty {
+                    let image = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 40)).image { c in UIColor.systemTeal.setFill(); c.fill(CGRect(x: 0, y: 0, width: 40, height: 40)) }
+                    photos = [DraftAttachment(outgoing: OutgoingAttachment(bytes: image.jpegData(compressionQuality: 0.8) ?? Data(), name: "photo.jpg", mime: "image/jpeg", width: 40, height: 40, durationMs: nil, thumb: Data(), poster: Data()), preview: image)]
+                }
+                #endif
                 if let editing {
                     // The post's own words, in its own layout (a recording shows its title, subtitle and description on the article page).
                     article = editing.kind != "quick"; title = editing.title; subtitle = editing.subtitle
@@ -988,6 +998,16 @@ struct JamComposeSheet: View {
     /// Update: the words go to the post in place (its pictures keep the numbers the text already has).
     private func update() {
         guard let editing, !posting else { return }
+        // Opening a post that has files to Everyone asks the same question (the files are the post's own, so there is no face check here).
+        if audience == "everyone" && editing.audience != "everyone" && privacy == nil && !store.jamAttachments(editing.postId).isEmpty {
+            privacy = PrivacyAsk(pictures: []) { update2() }
+            return
+        }
+        update2()
+    }
+
+    private func update2() {
+        guard let editing, !posting else { return }
         let existing = store.jamAttachments(editing.postId).count
         // An article keeps its pictures' numbers as they stand (the core closes up the gaps); the new files are the ones after the old.
         let markdown = article ? (composer.textView.map { ComposerDocument.markdown(from: $0.textStorage, post: true) } ?? composer.markdown()) : composer.markdown()
@@ -1004,7 +1024,25 @@ struct JamComposeSheet: View {
         }
     }
 
+    /// The pictures in the post that Vision should look at for faces: photos, an article's pictures and cover, a recording's cover and a video's poster.
+    private var privacyPictures: [Data] {
+        photos.map(\.outgoing).filter { $0.mime.hasPrefix("image/") }.map(\.bytes)
+        + articleFiles.filter { $0.mime.hasPrefix("image/") }.map(\.bytes)
+        + [articleCover, recordCover].compactMap { $0?.bytes }
+        + (photos.map(\.outgoing) + articleFiles + clips).map(\.poster).filter { !$0.isEmpty }
+    }
+
+    private var hasMedia: Bool { !photos.isEmpty || hasClip || (article && !articleFiles.isEmpty) || articleCover != nil }
+
     private func post() {
+        if audience == "everyone" && hasMedia && privacy == nil {
+            privacy = PrivacyAsk(pictures: privacyPictures) { post2() }
+            return
+        }
+        post2()
+    }
+
+    private func post2() {
         guard captions.values.contains(where: \.making) else { buildAndPost(); return }
         // Captions are still being made: wait a few seconds for them, then post with what there is.
         posting = true

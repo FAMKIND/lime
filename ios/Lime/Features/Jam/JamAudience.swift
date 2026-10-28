@@ -7,6 +7,8 @@ struct AudienceChip: View {
     @Binding var audience: String
     /// The audience the post being edited has now (nil for a new post): taking it back from Everyone asks first.
     var saved: String? = nil
+    /// A new account waits before it can post to Everyone (LIME-210d): the day it opens, or nil.
+    var opensOn: Date? = AccountAge.everyoneOpensOn()
     @State private var confirmingEveryone = false
     @State private var confirmingTakeBack = false
 
@@ -16,8 +18,12 @@ struct AudienceChip: View {
         Menu {
             Button { choose("subscribers") } label: { Label("Subscribers", systemImage: !everyone ? "checkmark" : "lock") }
                 .accessibilityIdentifier("audience-subscribers")
-            Button { choose("everyone") } label: { Label("Everyone on lime", systemImage: everyone ? "checkmark" : "globe") }
+            Button { choose("everyone") } label: { Label(opensOn.map { "Everyone opens \($0.formatted(.dateTime.month(.abbreviated).day()))" } ?? "Everyone on lime", systemImage: everyone ? "checkmark" : "globe") }
+                .disabled(opensOn != nil && !everyone)
                 .accessibilityIdentifier("audience-everyone")
+            if let opensOn {
+                Text("New accounts can post to everyone after 7 days (\(opensOn.formatted(.dateTime.month(.abbreviated).day()))).").accessibilityIdentifier("audience-opens")
+            }
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: everyone ? "globe" : "lock").font(.system(size: 13, weight: .medium)).accessibilityHidden(true)
