@@ -84,6 +84,8 @@ pub struct OpenFeedPage {
     /// Posts deleted or taken down since: forget them.
     pub gone: Vec<String>,
     pub cursor: i64,
+    /// The server takes open posts (its `open_posts_enabled` flag): the app shows the Everyone choice and Discover only then.
+    pub enabled: bool,
 }
 
 /// How the open deliveries stand.
@@ -396,7 +398,7 @@ impl LimeStore {
                 seq: entry.get("seq").and_then(Value::as_i64).unwrap_or(0),
             });
         }
-        Ok(OpenFeedPage { items, gone, cursor: body.get("cursor").and_then(Value::as_i64).unwrap_or(since) })
+        Ok(OpenFeedPage { items, gone, cursor: body.get("cursor").and_then(Value::as_i64).unwrap_or(since), enabled: body.get("enabled").and_then(Value::as_bool).unwrap_or(false) })
     }
 
     /// One open post, whole, **checked on this phone** (no session needed). `NotFound` when it is gone or taken down; `BadMessage` when the row does

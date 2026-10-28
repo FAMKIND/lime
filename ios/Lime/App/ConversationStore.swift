@@ -78,6 +78,16 @@ final class ConversationStore {
     /// The jam tab's Posts | Articles choice and filters, kept while the app runs (LIME-188t).
     var jamSegment: JamSegment = .all
     var jamFilter = JamFilter()
+    /// Open posts (LIME-210c): whether the server takes them (the Everyone choice and Discover show only then), Discover's items (oldest first, as the
+    /// feed gives them), the cursor to continue from, when it was last asked, and the verified posts opened this session.
+    var openPostsEnabled = false
+    var discoverItems: [OpenFeedItem] = []
+    var discoverCursor: Int64 = 0
+    var discoverLoading = false
+    var discoverAsked = Date.distantPast
+    var openPostCache: [String: OpenPostInfo] = [:]
+    /// The jam page of each open writer seen in Discover (the jam's name, for the byline).
+    var openWriterPages: [String: JamPageInfo] = [:]
     /// Bumped when the posts hidden on this phone change, so the feed redraws.
     var jamHiddenChanged = 0
     /// People I asked, a moment ago, to send again what I could not read (LIME-232): their chat shows "Waiting for messages…".
@@ -119,6 +129,7 @@ final class ConversationStore {
     var coauthoredPosts: [JamPostInfo] = []
     /// Demo mode (UI tests): jam pages of other teachers by user id.
     var demoJamPages: [String: JamPageInfo] = [:]
+    var demoOpenPosts: [String: OpenPostInfo] = [:]
     var demoJamAttachments: [String: [JamAttachmentInfo]] = [:]
     /// The call tab's All | Missed segment and its filters (kept while the app runs).
     var callMissedOnly = false
@@ -1123,9 +1134,10 @@ final class ConversationStore {
             ])]
             path.append("dm:fmt")
         case "notif-banner": demoNotification = "banner"
-        case "jam", "jam-following", "jam-mine", "jam-mine-profile", "jam-mine-asjam", "jam-mine-podcast", "jam-request":
+        case "jam", "jam-following", "jam-mine", "jam-mine-profile", "jam-mine-asjam", "jam-mine-podcast", "jam-request", "jam-discover":
             // The jam tab, with nothing yet, with a jam I follow (Sam's, two posts), or with a jam of my own (one post, two subscribers).
             section = .jam
+            if ProcessInfo.processInfo.arguments.contains("-lime-demo-open") { openPostsEnabled = true }   // the server takes open posts (LIME-210c)
             UserDefaults.standard.removeObject(forKey: JamRead.key)   // every demo run starts with everything unread
             if screen == "jam-following", let page = demoJamPages["sam"] { demoSubscribe(page) }
             if screen == "jam-mine" || screen == "jam-mine-profile" || screen == "jam-mine-asjam" || screen == "jam-mine-podcast" { demoMineWithPost() }
@@ -1143,6 +1155,7 @@ final class ConversationStore {
                 demoPublish("demo-my-jam", kind: "record", title: "Songs for the circle", subtitle: "Korean children's songs", markdown: "Three songs we sing.", items: [audio, cover])
             }
             if screen == "jam-request" { demoRequest() }
+            if screen == "jam-discover" { demoDiscover() }
             if screen == "jam-mine-profile" { jamPath.append(ProfileRoute(userID: meProvider().id, name: meProvider().name, isMe: true)) }
         case "group-incoming", "group-incoming-ios-refused":
             loadDemoTeachers()

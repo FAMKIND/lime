@@ -2,6 +2,7 @@
 // limited per account; METADATA only (title, subtitle, a 240-character excerpt, topics, author, file ids, series, version); the whole signed row comes from
 // `open-post-get` by id. `since` is the last `seq` seen: a deleted or taken-down post comes back as `{ post_id, seq, gone: true }` so phones forget it.
 // Filters by subject or grade are done on the phone: the server never learns what a person is interested in.
+// The answer also says whether the server takes open posts (`enabled`, the flag `open_posts_enabled`): the app shows the Everyone choice and Discover only then.
 
 import { admin, rateLimit, requireUser } from "../_shared/db.ts";
 import { handler, HttpError, json, readJson } from "../_shared/http.ts";
@@ -17,5 +18,6 @@ Deno.serve(handler(async (req) => {
     .gt("seq", since).order("seq", { ascending: true }).limit(limit);
   if (error) throw new HttpError(500, "internal");
   const items = (data ?? []).map((r) => (r.deleted_at || r.taken_down_at) ? { post_id: r.post_id, seq: r.seq, gone: true } : r);
-  return json({ items, cursor: items.length > 0 ? items[items.length - 1].seq : since });
+  const { data: flag } = await admin().from("server_flags").select("enabled").eq("name", "open_posts_enabled").maybeSingle();
+  return json({ items, cursor: items.length > 0 ? items[items.length - 1].seq : since, enabled: flag?.enabled === true });
 }));

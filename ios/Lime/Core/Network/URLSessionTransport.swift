@@ -9,7 +9,7 @@ import Foundation
 /// is meant to ship in an app and goes in the `apikey` header. The user's token comes from LimeCore
 /// per call. The service-role key never belongs here.
 final class URLSessionTransport: Transport, @unchecked Sendable {
-    private let baseURL: URL
+    let baseURL: URL
     private let apiKey: String
     private let session: URLSession
 

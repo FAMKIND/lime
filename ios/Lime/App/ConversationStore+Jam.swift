@@ -179,18 +179,18 @@ extension ConversationStore {
     /// Publishes a post (a quick post, an article or a recording) to my jam, making the jam first if this is my first post: the core seals it, and
     /// the next delivery sends it. Every post is free (payments are off). The photos go up afterwards in the background, each on its own and retried
     /// by itself; nothing here waits for the network.
-    func publishJamPost(kind: String, title: String, subtitle: String, markdown: String, items: [OutgoingAttachment], coauthors: [String] = [], displayAs: String = "person", about: String) async -> Result<Void, JamPostFailure> {
+    func publishJamPost(kind: String, title: String, subtitle: String, markdown: String, items: [OutgoingAttachment], coauthors: [String] = [], displayAs: String = "person", audience: String = "subscribers", about: String) async -> Result<Void, JamPostFailure> {
         guard items.count <= 10 else { return .failure(.tooManyFiles) }
         guard items.allSatisfy({ $0.bytes.count <= Self.jamFileLimit }) else { return .failure(.fileTooLarge) }
         guard let jamID = await myJamID(about: about) else { return .failure(.couldNotMake) }
         #if DEBUG
-        if isDemo { demoPublish(jamID, kind: kind, title: title, subtitle: subtitle, markdown: markdown, items: items, coauthors: coauthors, displayAs: displayAs); return .success(()) }
+        if isDemo { demoPublish(jamID, kind: kind, title: title, subtitle: subtitle, markdown: markdown, items: items, coauthors: coauthors, displayAs: displayAs, audience: audience); return .success(()) }
         #endif
         guard let core else { return .failure(.couldNotMake) }
         guard StorageGuard.shared.allows(items.reduce(0) { $0 + Int64($1.bytes.count) }) else { return .failure(.noSpace) }
         do {
             lastPublishedPostID = try await Task.detached(priority: .userInitiated) {
-                try core.publishJamPostAs(jamId: jamID, kind: kind, title: title, subtitle: subtitle, markdown: markdown, tier: "free", attachments: items, coauthors: coauthors, displayAs: displayAs)
+                try core.publishJamPostWith(jamId: jamID, kind: kind, title: title, subtitle: subtitle, markdown: markdown, tier: "free", attachments: items, coauthors: coauthors, displayAs: displayAs, options: PostOptions(audience: audience, series: nil))
             }.value
         } catch {
             CallDiagnostics.shared.log("jam post failed: \(error)")

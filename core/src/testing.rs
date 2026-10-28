@@ -661,7 +661,7 @@ impl FakeServer {
                     })
                     .collect();
                 let cursor = rows.last().map(|(_, r)| r.seq).unwrap_or(since);
-                respond(200, json!({ "items": items, "cursor": cursor }))
+                respond(200, json!({ "items": items, "cursor": cursor, "enabled": state.open_enabled }))
             }
             "open-post-get" => match state.open_posts.get(&text("post_id")) {
                 Some(r) if r.taken_down => respond(410, json!({ "error": "taken_down" })),

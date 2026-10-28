@@ -28,6 +28,7 @@ struct JamPage: View {
                 .navigationDestination(for: OrgRoute.self) { OrgProfileView(route: $0) }
                 .navigationDestination(for: SharedListRoute.self) { SharedListView(route: $0) }
                 .navigationDestination(for: JamPostRoute.self) { JamPostView(postID: $0.postID, toComments: $0.toComments) }
+                .navigationDestination(for: OpenPostRoute.self) { OpenPostPage(postID: $0.postID) }
                 .navigationDestination(for: JamSubscribersRoute.self) { JamSubscribersView(jamID: $0.jamID) }
                 .navigationDestination(for: Conversation.ID.self) { id in ChatView(conversationID: id).toolbar(.hidden, for: .tabBar) }
                 .navigationDestination(for: ChatTarget.self) { target in
@@ -40,6 +41,7 @@ struct JamPage: View {
                 .fullScreenCover(isPresented: $composing) { JamComposeSheet() }
                 .onAppear {
             store.refreshJams()
+            Task { await store.refreshDiscover() }
             #if DEBUG
             store.simulateDraftInviteIfAsked()
             store.simulateDraftsIfAsked()
@@ -96,7 +98,7 @@ struct JamPage: View {
     private func feedBody(_ posts: [JamPostInfo], topMargin: CGFloat) -> some View {
         @Bindable var store = store
         let list = shown(posts)
-        let nothingYet = posts.isEmpty && store.draftRows().isEmpty
+        let nothingYet = posts.isEmpty && store.draftRows().isEmpty && !store.openPostsEnabled
         return ScrollView {
             LazyVStack(spacing: 0) {
                 requests
@@ -109,6 +111,12 @@ struct JamPage: View {
                     JamFilterRow(segment: $store.jamSegment, filter: $store.jamFilter).padding(.top, 4)
                     if store.jamSegment == .drafts {
                         JamDraftsList()
+                    } else if store.jamSegment == .discover {
+                        JamDiscoverList()
+                    } else if list.isEmpty && posts.isEmpty && store.jamSegment == .all {
+                        Text("Subscribe to teachers from their profiles. Your posts show here too.")
+                            .font(Theme.body).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
+                            .padding(.horizontal, 40).padding(.top, 80).accessibilityIdentifier("jam-feed-empty")
                     } else if list.isEmpty {
                         if store.jamSegment == .all && store.jamFilter == JamFilter(saved: true) {
                             Text("Nothing saved yet.").font(Theme.body).foregroundStyle(Theme.textSecondary).padding(.top, 60)
@@ -117,7 +125,7 @@ struct JamPage: View {
                             FilteredEmpty(text: store.jamSegment == .articles ? "No articles match" : store.jamSegment == .podcasts ? "No podcasts match" : "No posts match") { store.jamFilter = JamFilter(); store.jamSegment = .all }
                         }
                     }
-                    ForEach(store.jamSegment == .drafts ? [] : list, id: \.postId) { post in
+                    ForEach(store.jamSegment == .drafts || store.jamSegment == .discover ? [] : list, id: \.postId) { post in
                         JamPostCard(post: post, place: .feed(store.jamSegment))
                         Divider().overlay(Theme.hairline)
                     }
@@ -220,6 +228,7 @@ struct JamPostCard: View {
                             Text(detail).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1).truncationMode(.tail).frame(minHeight: 20, alignment: .leading)
                         }
                         .buttonStyle(.plain).accessibilityLabel(detail).accessibilityHint("Opens the post").accessibilityIdentifier("jam-card-byline-\(post.postId)")
+                        if post.audience == "everyone" { openGlobe }
                     }
                 }
                 Spacer(minLength: 0)
@@ -227,9 +236,18 @@ struct JamPostCard: View {
             .contentShape(Rectangle())
             .onTapGesture { openPost() }
         } else {
-            Text([store.byline(post), JamDates.short(post.created), post.editedAt > 0 ? "Edited" : nil].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
-                .accessibilityIdentifier("jam-card-byline-\(post.postId)")
+            HStack(spacing: 4) {
+                Text([store.byline(post), JamDates.short(post.created), post.editedAt > 0 ? "Edited" : nil].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                    .accessibilityIdentifier("jam-card-byline-\(post.postId)")
+                if post.audience == "everyone" { openGlobe }
+            }
         }
+    }
+
+    /// A small globe beside the date: this post is open to everyone on lime (LIME-210c). A subscribers-only post shows nothing (the default needs no mark).
+    private var openGlobe: some View {
+        Image(systemName: "globe").font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.textSecondary)
+            .accessibilityLabel("Open to everyone").accessibilityIdentifier("jam-card-globe-\(post.postId)")
     }
 
     private func openWriter(_ writer: Person) { store.openProfile(ProfileRoute(userID: writer.id, name: writer.name, isMe: writer.id == store.meProvider().id)) }

@@ -3,10 +3,10 @@ import SwiftUI
 /// The jam feed's segments (LIME-188x): **All**, **Posts** (quick posts: words, photos, videos that are not recordings), **Articles** and
 /// **Podcasts** (recordings, audio or video).
 enum JamSegment: Int, CaseIterable {
-    case all, posts, articles, podcasts, drafts
-    var title: String { ["All", "Posts", "Articles", "Podcasts", "Drafts"][rawValue] }
+    case all, posts, articles, podcasts, drafts, discover
+    var title: String { ["All", "Posts", "Articles", "Podcasts", "Drafts", "Discover"][rawValue] }
     func includes(kind: String) -> Bool {
-        switch self { case .all: true; case .posts: kind == "quick"; case .articles: kind == "article"; case .podcasts: kind == "record"; case .drafts: false }
+        switch self { case .all: true; case .posts: kind == "quick"; case .articles: kind == "article"; case .podcasts: kind == "record"; case .drafts, .discover: false }
     }
 }
 
@@ -56,6 +56,7 @@ struct JamFilterRow: View {
     @Binding var segment: JamSegment
     @Binding var filter: JamFilter
     var idPrefix = "jam-filter"
+    @Environment(ConversationStore.self) private var store
     private let fade: CGFloat = 16
 
     var body: some View {
@@ -63,7 +64,7 @@ struct JamFilterRow: View {
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 4) {
-                        ForEach(JamSegment.allCases, id: \.self) { item in
+                        ForEach(JamSegment.allCases.filter { $0 != .discover || store.openPostsEnabled }, id: \.self) { item in
                             let on = segment == item
                             Button { segment = item } label: {
                                 Text(item.title).font(Theme.font(.subheadline, weight: on ? .semibold : .regular)).foregroundStyle(on ? Theme.text : Theme.textSecondary)

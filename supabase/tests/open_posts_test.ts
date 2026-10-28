@@ -76,6 +76,7 @@ Deno.test("publish, list, fetch without a session, edit and delete (tombstone)",
     try {
       const feed = await call("open-feed", reader.token, { since: made.body.seq - 1 });
       assertEquals(feed.status, 200);
+      assertEquals(feed.body.enabled, true, "the feed says the server takes open posts");
       const item = feed.body.items.find((i: any) => i.post_id === postId);
       assertEquals([item.title, item.kind, item.author_id], ["Equal parts", "article", w.user.id]);
       assert(item.excerpt.includes("Fractions are equal parts"));

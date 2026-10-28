@@ -7189,7 +7189,7 @@ fn discover_lists_open_posts_by_cursor_with_metadata_only_and_forgets_deleted_on
     let page = bob.store.fetch_open_feed(transport.clone(), bob.token.clone(), 0).unwrap();
     assert_eq!(page.items.iter().map(|i| i.title.as_str()).collect::<Vec<_>>(), vec!["First", "Second"]);
     assert_eq!((page.items[0].excerpt.as_str(), page.items[0].author_id.as_str(), page.items[1].series.clone()), ("One two three", "alice", Some(series("S", 1, None))));
-    assert!(page.gone.is_empty());
+    assert!(page.gone.is_empty() && page.enabled);
     // Nothing new: an empty page at the same cursor. Then a deletion arrives as "gone".
     let same = bob.store.fetch_open_feed(transport.clone(), bob.token.clone(), page.cursor).unwrap();
     assert_eq!((same.items.len(), same.cursor), (0, page.cursor));

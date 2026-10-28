@@ -20,7 +20,7 @@ extension ConversationStore {
     /// The bytes of demo files that are not pictures (a post's captions), by attachment id.
     nonisolated(unsafe) static var demoJamBlobs: [String: Data] = [:]
 
-    func demoPublish(_ jamID: String, kind: String, title: String, subtitle: String, markdown: String, items: [OutgoingAttachment], coauthors: [String] = [], displayAs: String = "person") {
+    func demoPublish(_ jamID: String, kind: String, title: String, subtitle: String, markdown: String, items: [OutgoingAttachment], coauthors: [String] = [], displayAs: String = "person", audience: String = "subscribers") {
         let id = UUID().uuidString.lowercased()
         let info = items.map { item -> JamAttachmentInfo in
             let fileID = UUID().uuidString.lowercased()
@@ -31,7 +31,7 @@ extension ConversationStore {
         }
         demoJamAttachments[id] = info
         let post = JamPostInfo(postId: id, jamId: jamID, author: meProvider().id, tier: "free", kind: kind, title: title, subtitle: subtitle, markdown: markdown, plain: messagePlainText(text: markdown),
-                               attachmentsJson: "[]", created: Int64(Date().timeIntervalSince1970 * 1000), coauthors: coauthors, displayAs: displayAs, editedAt: 0, audience: "subscribers", series: nil, state: "ready")
+                               attachmentsJson: "[]", created: Int64(Date().timeIntervalSince1970 * 1000), coauthors: coauthors, displayAs: displayAs, editedAt: 0, audience: audience, series: nil, state: "ready")
         jamPosts[jamID, default: []].append(post)
         if let i = jamsMine.firstIndex(where: { $0.jamId == jamID }) {
             let old = jamsMine[i]
@@ -139,6 +139,40 @@ extension ConversationStore {
             context.cgContext.fillEllipse(in: CGRect(x: 150, y: 50, width: 300, height: 300))
         }
         return image.jpegData(compressionQuality: 0.8)
+    }
+
+    // MARK: Open posts and Discover (LIME-210c)
+
+    /// Discover with made-up open posts: four of Sam's (the first is a Preview of the post you get by subscribing), one of Lee's, one of Priya's.
+    func demoDiscover() {
+        openPostsEnabled = true
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        func page(_ id: String, _ title: String, _ topics: [String]) -> JamPageInfo { JamPageInfo(jamId: "demo-\(id)-jam", writerId: id, title: title, about: "", topics: topics, postCount: 3, subscriberCount: 12) }
+        openWriterPages = ["sam": demoJamPages["sam"] ?? page("sam", "Fractions that stick", ["Maths", "Grade 4"]), "lee": page("lee", "Reading circles", ["Reading", "Grade 3"]), "priya.nair": page("priya.nair", "Practice, not homework", ["Practice"])]
+        var items: [OpenFeedItem] = []
+        func add(_ id: String, _ author: String, _ title: String, _ subtitle: String, _ body: String, _ topics: [String], preview: Bool = false, ago: Int64) {
+            let jam = openWriterPages[author]?.jamId ?? "demo-\(author)-jam"
+            items.append(OpenFeedItem(postId: id, authorId: author, jamId: jam, kind: "article", title: title, subtitle: subtitle, excerpt: String(body.prefix(240)), topics: topics, fileIds: [], series: nil,
+                                      previewOf: preview ? id : nil, hasRest: preview, version: 1, created: now - ago * 60_000, seq: Int64(items.count + 1)))
+            demoOpenPosts[id] = OpenPostInfo(postId: id, authorId: author, jamId: jam, kind: "article", title: title, subtitle: subtitle, markdown: body, plain: messagePlainText(text: body), topics: topics, files: [],
+                                             series: nil, previewOf: preview ? id : nil, hasRest: preview, version: 1, created: now - ago * 60_000, pinned: false)
+        }
+        add("demo-post-1", "sam", "Equivalent fractions in ten minutes", "Fold, cut, compare", "Fold a strip of paper in half, then in half again. **Equal parts** are the whole idea.", ["Maths", "Grade 4"], preview: true, ago: 400)
+        add("demo-open-sam-2", "sam", "Fraction walls", "", "Build a wall of bricks, one row for each fraction.", ["Maths", "Grade 4"], ago: 300)
+        add("demo-open-sam-3", "sam", "Comparing with benchmarks", "", "Is it more or less than a half? Start there.", ["Maths", "Grade 4"], ago: 200)
+        add("demo-open-sam-4", "sam", "Mixed numbers, gently", "", "Show three pizzas and a quarter before any rule.", ["Maths", "Grade 5"], ago: 100)
+        add("demo-open-lee-1", "lee", "Setting up reading circles", "A first week", "Four chairs, one book each, and a job for everyone.", ["Reading", "Grade 3"], ago: 50)
+        add("demo-open-priya-1", "priya.nair", "Why we stopped giving homework", "", "We swapped it for ten minutes of practice a child chooses.", ["Practice"], ago: 20)
+        discoverItems = items
+        jamSegment = .discover
+    }
+
+    func demoSetAudience(_ post: JamPostInfo, _ audience: String) {
+        guard var list = jamPosts[post.jamId], let i = list.firstIndex(where: { $0.postId == post.postId }) else { return }
+        let old = list[i]
+        list[i] = JamPostInfo(postId: old.postId, jamId: old.jamId, author: old.author, tier: old.tier, kind: old.kind, title: old.title, subtitle: old.subtitle, markdown: old.markdown, plain: old.plain,
+                              attachmentsJson: old.attachmentsJson, created: old.created, coauthors: old.coauthors, displayAs: old.displayAs, editedAt: old.editedAt, audience: audience, series: old.series, state: old.state)
+        jamPosts[post.jamId] = list
     }
 }
 #endif
