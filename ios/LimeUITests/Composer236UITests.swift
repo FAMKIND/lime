@@ -19,10 +19,12 @@ final class Composer236UITests: LimeUITestCase {
         XCTAssertLessThan(article.frame.maxY, photo.frame.minY + 2, "the pills sit above the bar")
         XCTAssertLessThan(record.frame.maxY, photo.frame.minY + 2)
         XCTAssertLessThan(article.frame.minX, record.frame.minX)
-        // Side by side on one line, each one line high (a warm pill, not wrapped).
-        XCTAssertEqual(article.frame.minY, record.frame.minY, accuracy: 2, "on one line")
-        XCTAssertLessThanOrEqual(article.frame.height, 48, "the label does not wrap")
-        XCTAssertLessThanOrEqual(record.frame.height, 48)
+        // Two cards side by side: the icon on top, the label below (so taller than a line), the left edge at the photo icon's glyph, ~10 pt apart.
+        XCTAssertEqual(article.frame.minY, record.frame.minY, accuracy: 2, "side by side")
+        XCTAssertGreaterThan(article.frame.height, 60, "icon over label")
+        XCTAssertEqual(record.frame.minX - article.frame.maxX, 10, accuracy: 3, "10 pt between the cards")
+        XCTAssertEqual(article.frame.minX, photo.frame.minX + (photo.frame.width - 25) / 2, accuracy: 5, "lined up with the photo icon")
+        XCTAssertLessThanOrEqual(record.frame.maxX, app.windows.firstMatch.frame.width, "neither is cut off")
         // The bar: photo library · camera · Aa ⌄ · H ⌄ · undo · redo … hide keyboard.
         let ids = ["jam-add-photo", "jam-add-camera", "jam-format", "jam-heading", "jam-undo", "jam-redo", "jam-hide-keyboard"]
         let xs = ids.map { app.buttons[$0].frame.minX }

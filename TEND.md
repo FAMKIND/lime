@@ -8379,3 +8379,17 @@ On other people's phones (not reachable): their chats with the account, jam post
 - **Offline status:** the dot was a filled light circle in a ring because every badge sits in a page-coloured notch. Offline now has **no notch fill**: an empty grey ring, transparent inside (the photo shows through), with a thin page-coloured outline outside so it reads on light and dark photos. It is the one `StatusBadge`, so it applies to the hero avatar, chat rows, headers and members alike. I did not run a status UI test for it (the look is the visual check).
 - **Tests:** `Composer236UITests` (the pills on one line, each one line high, above the bar; the bar in order), `Jam219UITests`, `Studio227UITests` pass.
 - **Installed:** Debug build on the 13 mini, the iPad and Jean's 12 mini.
+
+## LIME-236c — New post: Write article and Record podcast as cards
+
+- The pills are now **cards**: warm-grey (`Theme.surface`, no glass) rounded rectangles (radius 14, at least 120 pt wide, 44 pt+ tall) with the **icon on top, left-aligned**, and **"Write article" / "Record podcast" on its own line below**; ~10 pt between them; the row's **left edge is the photo-library icon's glyph edge** (the bar's 16 pt inset plus half the icon box's slack); the row is a horizontal scroll view that scrolls only when it does not fit (large text, small phones) with 20 pt of trailing room, so the last card is never clipped at rest and no label is cut mid-way. VoiceOver labels unchanged.
+- **Tests:** `Composer236UITests` (pass): side by side, taller than a line (icon over label), 10 pt apart, the first card's left edge within 5 pt of the photo icon's glyph, neither cut off at the right; the bar in order. The scroll at the largest text size is the visual check.
+- **Installed:** see 235d's record (installed together).
+
+## LIME-235d — the player's info block smaller; the toggle only when there's video
+
+- **Smaller block:** the thumbnail is **82 pt** under the stage (was 110) and **64 pt** in the portrait full screen (was 84); the right column fits within its height: a **24 pt avatar**, the name (subheadline semibold) and the **short date** ("· Oct 25", so it is never cut off), then the title (headline) and the subtitle (subheadline), tightly spaced; the stage takes the height saved. (At accessibility text sizes the layout lets the column grow; nothing is clipped.)
+- **Marquee in the info block:** the title and subtitle there use `MarqueeText`. I could not see why your screenshot showed "ABCCD…" truncated: with Reduce Motion on, the marquee is static and truncated by design; otherwise the text's width was measured through a view that is clipped by its box, which could under-report a long title. The measurement now uses its own unclipped copy of the text (`MarqueeWidthKey`), so a long title is always known to be long. **If it is truncated with Reduce Motion off, tell me.**
+- **The toggle only with video:** an **audio-only podcast shows just a waveform chip** (glass, non-interactive, "Audio only" for VoiceOver); a video podcast keeps the Listen | Watch segmented control.
+- **Tests:** `Player235UITests` (audio: only the waveform, no segmented control or Watch; video: the info block's title one line and close under the stage), `Player235cUITests` (pass). Not tested: that the marquee actually moves in the info block (visual), and the 82 pt height on a real phone.
+- **Installed:** Debug build on the 13 mini, the iPad and Jean's 12 mini (after both commits).

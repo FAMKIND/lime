@@ -589,12 +589,11 @@ struct JamComposeSheet: View {
                 .buttonStyle(.plain).padding(.bottom, 6).accessibilityIdentifier("jam-exit-article")
             }
             if !article && editing == nil {
-                // Both on one line, never wrapping: at the largest text sizes they scroll sideways instead.
-                ViewThatFits(in: .horizontal) {
-                    pillRow
-                    ScrollView(.horizontal, showsIndicators: false) { pillRow.padding(.horizontal, 16) }
-                }
-                .padding(.horizontal, 16).padding(.bottom, 4)
+                // Two cards side by side, lined up with the photo icon below; they scroll sideways when they do not fit, and the last one ends with room to spare.
+                let itemWidth = min(44, (UIScreen.main.bounds.width - 32) / 7)
+                ScrollView(.horizontal, showsIndicators: false) { pillRow.padding(.leading, 16 + (itemWidth - 25) / 2).padding(.trailing, 20) }
+                    .scrollBounceBehavior(.basedOnSize)
+                    .padding(.bottom, 6)
             }
             // The full strip (Aa) sits under the pills in a quick post, above the tool row in an article; never over the text.
             if composer.showsStrip { FormattingToolbar(model: composer).transition(.opacity) }
@@ -704,18 +703,21 @@ struct JamComposeSheet: View {
     }
 
     private var pillRow: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             chip("Write article", spoken: "Write an article", system: "square.and.pencil", id: "jam-write-article") { setArticle(true) }
             chip("Record podcast", spoken: "Record a podcast", system: "waveform", id: "jam-record") { recordMode = 1 }
-            Spacer(minLength: 0)
         }
     }
 
-    /// A pill above the keyboard bar (LIME-236b): a subtle warm grey (not glass), the icon and the words on one line.
+    /// A card above the keyboard bar (LIME-236c): a warm grey rounded rectangle, the icon on top at the left, the label on its own line below.
     private func chip(_ label: String, spoken: String, system: String, id: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Label(label, systemImage: system).font(Theme.font(.subheadline, weight: .medium)).foregroundStyle(Theme.text).lineLimit(1).fixedSize()
-                .padding(.horizontal, 14).frame(minHeight: 44).background(Theme.surface, in: Capsule()).contentShape(Capsule())
+            VStack(alignment: .leading, spacing: 10) {
+                Image(systemName: system).font(.system(size: 20, weight: .regular)).accessibilityHidden(true)
+                Text(label).font(Theme.font(.subheadline, weight: .medium)).lineLimit(1).fixedSize()
+            }
+            .foregroundStyle(Theme.text).padding(.horizontal, 14).padding(.vertical, 12).frame(minWidth: 120, minHeight: 44, alignment: .leading)
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous)).contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .buttonStyle(.plain).accessibilityLabel(spoken).accessibilityIdentifier(id)
     }
