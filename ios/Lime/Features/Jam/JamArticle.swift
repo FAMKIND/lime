@@ -288,6 +288,12 @@ struct JamArticlePage: View {
         VStack(alignment: .leading, spacing: 14) {
             Color.clear.frame(height: 64)
             Text(store.jamTitle(post.jamId).uppercased()).font(Theme.font(.caption, weight: .semibold)).tracking(1).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("jam-article-jam")
+            if let series = post.series {
+                Button { store.jamPath.append(SeriesRoute(seriesID: series.id)) } label: {
+                    Text("\(series.partLabel) \u{00B7} \(series.title)").font(Theme.font(.subheadline)).foregroundStyle(Theme.textSecondary).frame(minHeight: 44, alignment: .leading)
+                }
+                .buttonStyle(.plain).accessibilityHint("Opens the series").accessibilityIdentifier("jam-article-series")
+            }
             Text(post.title).font(font.font(size: size + 12, weight: .bold)).foregroundStyle(Theme.text).accessibilityAddTraits(.isHeader).accessibilityIdentifier("jam-reader-title")
             if !post.subtitle.isEmpty { Text(post.subtitle).font(font.font(size: size + 2)).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("jam-reader-subtitle") }
             Button { store.openProfile(ProfileRoute(userID: writer.id, name: writer.name, isMe: writer.id == store.meProvider().id)) } label: {

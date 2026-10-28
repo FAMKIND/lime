@@ -8511,3 +8511,13 @@ On other people's phones (not reachable): their chats with the account, jam post
 - **Tests:** core: accepting a chat follows (bob follows alice's jam, the writer takes them in), a jam started later is noticed (and alice follows bob's), unsubscribing by hand sticks even after a new check, the pass takes 20 a minute and re-looks after a day and never a chat that is only a request. Server: `chat_test` now also expects `has_jam` and `since` in another person's profile (it had been failing since `since` was added). Core **385 pass**.
 - **Known:** server tests 114 pass, 1 fails and is not from this: `blobs_test` public avatars "the bucket refuses more than 1 MB" (the local Storage limit).
 - **Installed:** with the final build.
+
+## LIME-210f — series of articles, videos and podcasts
+
+- **Core had it from 210b** (`series {id, title, part, of?}` sealed in the post and in the open row; `set_jam_post_series`). This brief is the app.
+- **Series row** in the article composer and in Edit (any article or recording opened for Edit): "Add to a series" / "Fractions · Part 2 of 6". It opens a picker: **No series**, one of my series (it suggests the next part number and the total), or **New series…** (a name); a stepper for the **part** and one for **how many parts** (optional, "not said" shows "Part 2"). **Reordering** is changing the part number in Edit (no bulk screen, as the design says). In Edit a changed series seals the post again as a new version and its open copy follows.
+- **Cards** show "Part 2 of 6 · Fractions" above the post (and the article page above its title); a tap opens the **series page**: the parts in order, "n of 6 read" and a check on the ones read (**kept on the phone only**), and a lock and "Preview" on a part that is only the open Preview. It is built from the posts this phone has plus open posts from Discover, so a part that is subscribers-only and not yours to read does not show (the phone cannot know of it).
+- **Each part keeps its own audience and Preview** (the series field is independent of both).
+- **Tests (Series210fUITests, demo, 2 pass):** a card names its part, the series page lists three parts in order with a Preview lock and the read mark and "1 of 3 read"; making a new series in the composer shows "Part 1" and the posted card says so.
+- **Not done:** the **podcast recorder's details page has no series row yet** (a podcast joins a series through Edit on an article-style page only for now; a new recording cannot be put in a series when it is posted) and the series page does not yet offer "Subscribe" for a Preview-only series. Flagged for a follow-up brief.
+- **Installed:** with the final build.

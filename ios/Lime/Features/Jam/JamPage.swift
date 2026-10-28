@@ -29,6 +29,7 @@ struct JamPage: View {
                 .navigationDestination(for: SharedListRoute.self) { SharedListView(route: $0) }
                 .navigationDestination(for: JamPostRoute.self) { JamPostView(postID: $0.postID, toComments: $0.toComments) }
                 .navigationDestination(for: OpenPostRoute.self) { OpenPostPage(postID: $0.postID) }
+                .navigationDestination(for: SeriesRoute.self) { SeriesPage(seriesID: $0.seriesID) }
                 .navigationDestination(for: JamSubscribersRoute.self) { JamSubscribersView(jamID: $0.jamID) }
                 .navigationDestination(for: Conversation.ID.self) { id in ChatView(conversationID: id).toolbar(.hidden, for: .tabBar) }
                 .navigationDestination(for: ChatTarget.self) { target in
@@ -163,6 +164,7 @@ struct JamPostCard: View {
         } else {
         VStack(alignment: .leading, spacing: 10) {
             writerRow(writer)
+            if let series = post.series { seriesLine(series) }
             if post.kind == "article", post.state == "ready" {
                 Button { openPost() } label: { JamArticleCover(post: post).contentShape(Rectangle()) }
                     .buttonStyle(.plain)
@@ -242,6 +244,14 @@ struct JamPostCard: View {
                 if post.audience == "everyone" { openGlobe }
             }
         }
+    }
+
+    /// "Part 2 of 6 · Fractions": opens the series page (LIME-210f).
+    private func seriesLine(_ series: SeriesInfo) -> some View {
+        Button { store.jamPath.append(SeriesRoute(seriesID: series.id)) } label: {
+            Text("\(series.partLabel) \u{00B7} \(series.title)").font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1).frame(minHeight: 28, alignment: .leading)
+        }
+        .buttonStyle(.plain).accessibilityLabel("\(series.partLabel) of the series \(series.title)").accessibilityHint("Opens the series").accessibilityIdentifier("jam-card-series-\(post.postId)")
     }
 
     /// A small globe beside the date: this post is open to everyone on lime (LIME-210c). A subscribers-only post shows nothing (the default needs no mark).

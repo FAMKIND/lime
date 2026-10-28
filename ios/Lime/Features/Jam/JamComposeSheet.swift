@@ -67,6 +67,8 @@ struct JamComposeSheet: View {
     @State private var postAsJam: String?
     /// Who can read the post (LIME-210c): `subscribers` (the default) or `everyone`.
     @State private var audience = "subscribers"
+    /// The series this post belongs to, if any (LIME-210f).
+    @State private var series: SeriesInfo?
     /// An Everyone post with a photo, video or audio waits for the student-privacy confirmation (LIME-210d).
     @State private var privacy: PrivacyAsk?
     @State private var article = JamDraft.shared.article
@@ -216,7 +218,7 @@ struct JamComposeSheet: View {
                     // The post's own words, in its own layout (a recording shows its title, subtitle and description on the article page).
                     article = editing.kind != "quick"; title = editing.title; subtitle = editing.subtitle
                     postAsJam = editing.displayAs == "jam" ? editing.jamId : nil   // the chip starts on the post's current author (LIME-201)
-                    audience = editing.audience
+                    audience = editing.audience; series = editing.series
                     coauthors = Array(store.bylinePeople(editing).dropFirst()); pendingHosts = store.pendingCoauthors(editing)
                     if let stored = store.jamAttachments(editing.postId).first(where: JamCover.isCover), let data = await store.jamAttachmentData(editing.postId, stored.attachmentId) { coverImage = UIImage(data: data) }
                     // The post's own files keep their numbers; new pictures are numbered after them (LIME-195b).
@@ -421,6 +423,7 @@ struct JamComposeSheet: View {
     private var articleHead: some View {
         VStack(alignment: .leading, spacing: 4) {
             postLine.padding(.bottom, 6)
+            SeriesChip(series: $series).padding(.bottom, 2)
             if let coedit { CoEditBar(session: coedit) }
             coverRow.padding(.bottom, 8)
             CaretTextField(text: $title, title: "Title", prompt: Text("Title").foregroundColor(Theme.placeholderLarge)) { caret, end in titleCaret = (caret, end); coedit?.fieldMoved() }
@@ -1018,7 +1021,8 @@ struct JamComposeSheet: View {
             let result = await store.editJamPost(editing, title: title, subtitle: subtitle, markdown: markdown, added: added + (article ? articleCover.map { [$0] } ?? [] : []),
                                                  displayAs: postAsJam == nil ? "person" : "jam", removeCover: article && coverRemoved && articleCover == nil)
             // Who can read it changed: Everyone publishes an open copy, Subscribers takes it back (LIME-210c).
-            let moved = result && audience != editing.audience ? await store.setPostAudience(editing, to: audience) : true
+            var moved = result && audience != editing.audience ? await store.setPostAudience(editing, to: audience) : true
+            if moved && series != editing.series { moved = await store.setPostSeries(editing, to: series) }
             posting = false
             if result && moved { coedit?.published(postID: editing.postId); dismiss() } else { problem = "Could not update the post." }
         }
@@ -1092,7 +1096,7 @@ struct JamComposeSheet: View {
         problem = nil
         posting = true
         Task {
-            let result = await store.publishJamPost(kind: kind, title: headline, subtitle: article ? subtitle : hasClip ? recordSubtitle : "", markdown: markdown, items: files, coauthors: coauthors.map(\.id), displayAs: postAsJam == nil ? "person" : "jam", audience: audience, about: session.profile?.aboutText ?? "")
+            let result = await store.publishJamPost(kind: kind, title: headline, subtitle: article ? subtitle : hasClip ? recordSubtitle : "", markdown: markdown, items: files, coauthors: coauthors.map(\.id), displayAs: postAsJam == nil ? "person" : "jam", audience: audience, series: article || hasClip ? series : nil, about: session.profile?.aboutText ?? "")
             posting = false
             switch result {
             case .success:
