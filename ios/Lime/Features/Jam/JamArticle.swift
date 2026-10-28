@@ -129,6 +129,8 @@ struct JamArticleCover: View {
                     Text(post.subtitle).font(Theme.font(.subheadline)).foregroundStyle(.white.opacity(0.95)).lineLimit(2).multilineTextAlignment(.leading)
                         .accessibilityIdentifier("jam-article-card-subtitle")
                 }
+                // Part of a series: inside the card, under the subtitle (LIME-243).
+                if post.series != nil { SeriesTag(post: post, onScrim: true) }
             }
             .padding(.leading, 16).padding(.trailing, 64).padding(.bottom, 16)
             HStack {

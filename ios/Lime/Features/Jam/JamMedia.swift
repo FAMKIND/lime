@@ -604,8 +604,18 @@ struct JamVideoScreen: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel([post.title, subtitle].filter { !$0.isEmpty }.joined(separator: ", ")).accessibilityHint("Opens About").accessibilityIdentifier("jam-video-text")
+                // Part of a series: under the subtitle; a tap closes the player and opens the series (LIME-243).
+                SeriesTag(post: post, onScrim: true) { openSeries(post) }
             }
         }
+    }
+
+    /// Closes the player and opens the post's series page.
+    private func openSeries(_ post: JamPostInfo) {
+        guard let series = post.series else { return }
+        NowPlaying.shared.showsScreen = false
+        dismiss()
+        Task { try? await Task.sleep(for: .milliseconds(450)); store.jamPath.append(SeriesRoute(seriesID: series.id)) }
     }
 
     /// Closes the player and opens a writer's profile.
@@ -1166,7 +1176,8 @@ struct PlayerAboutSheet: View {
                         if post.markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             Text("No description").font(Theme.body).foregroundStyle(.white.opacity(0.7)).accessibilityIdentifier("jam-about-empty")
                         } else {
-                            FormattedMessageText(markdown: post.markdown, ink: .white, link: Theme.linkOther)
+                            // Drawn the way the reader draws a post: headings, lists, bold, links (LIME-242); a picture block has nothing to show here.
+                            FormattedMessageText(markdown: post.markdown, ink: .white, link: Theme.linkOther, postImage: { _, _ in AnyView(EmptyView()) })
                                 .accessibilityIdentifier("jam-about-description")
                         }
                         let hosts = store.bylinePeople(post).dropFirst().map(\.name)

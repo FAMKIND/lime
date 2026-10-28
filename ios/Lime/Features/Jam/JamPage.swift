@@ -100,10 +100,13 @@ struct JamPage: View {
         @Bindable var store = store
         let list = shown(posts)
         let nothingYet = posts.isEmpty && store.draftRows().isEmpty && !store.openPostsEnabled
-        return ScrollView {
+        return ScrollViewReader { proxy in ScrollView {
             LazyVStack(spacing: 0) {
                 requests
-                if nothingYet {
+                if !store.jamsLoaded {
+                    // The posts are on their way: placeholders in the shape of the cards (LIME-243).
+                    SkeletonFeed()
+                } else if nothingYet {
                     Text("Subscribe to teachers from their profiles. Your posts show here too.")
                         .font(Theme.body).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
                         .padding(.horizontal, 40).padding(.top, 120)
@@ -126,8 +129,14 @@ struct JamPage: View {
                             FilteredEmpty(text: store.jamSegment == .articles ? "No articles match" : store.jamSegment == .podcasts ? "No podcasts match" : "No posts match") { store.jamFilter = JamFilter(); store.jamSegment = .all }
                         }
                     }
-                    ForEach(store.jamSegment == .drafts || store.jamSegment == .discover ? [] : list, id: \.postId) { post in
+                    // A page at a time (LIME-243): the next twenty come as you near the end.
+                    let shown = store.jamSegment == .drafts || store.jamSegment == .discover ? [] : Array(list.prefix(store.jamVisibleCount))
+                    ForEach(shown, id: \.postId) { post in
                         JamPostCard(post: post, place: .feed(store.jamSegment))
+                            .background(store.jamHighlight == post.postId ? Theme.accent.opacity(0.14) : Color.clear)
+                            .animation(.easeOut(duration: 0.4), value: store.jamHighlight)
+                            .id(post.postId)
+                            .onAppear { if post.postId == shown.last?.postId, list.count > shown.count { store.jamVisibleCount += 20 } }
                         Divider().overlay(Theme.hairline)
                     }
                 }
@@ -136,6 +145,13 @@ struct JamPage: View {
             .padding(.bottom, FloatingPlus.size + 32)
         }
         .accessibilityIdentifier("jam-feed")
+        .onChange(of: store.jamScrollTarget) { _, target in
+            guard let target else { return }
+            if let index = list.firstIndex(where: { $0.postId == target }), index >= store.jamVisibleCount { store.jamVisibleCount = index + 5 }
+            withAnimation { proxy.scrollTo(target, anchor: .top) }
+            store.jamScrollTarget = nil
+        }
+        }
     }
 }
 
@@ -164,7 +180,7 @@ struct JamPostCard: View {
         } else {
         VStack(alignment: .leading, spacing: 10) {
             writerRow(writer)
-            if let series = post.series { seriesLine(series) }
+            // (A post with a series says so inside its card: the article's cover, the podcast cards. A quick post has no series.)
             if post.kind == "article", post.state == "ready" {
                 Button { openPost() } label: { JamArticleCover(post: post).contentShape(Rectangle()) }
                     .buttonStyle(.plain)
@@ -246,14 +262,6 @@ struct JamPostCard: View {
         }
     }
 
-    /// "Part 2 of 6 · Fractions": opens the series page (LIME-210f).
-    private func seriesLine(_ series: SeriesInfo) -> some View {
-        Button { store.jamPath.append(SeriesRoute(seriesID: series.id)) } label: {
-            Text("\(series.partLabel) \u{00B7} \(series.title)").font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1).frame(minHeight: 28, alignment: .leading)
-        }
-        .buttonStyle(.plain).accessibilityLabel("\(series.partLabel) of the series \(series.title)").accessibilityHint("Opens the series").accessibilityIdentifier("jam-card-series-\(post.postId)")
-    }
-
     /// A small globe beside the date: this post is open to everyone on lime (LIME-210c). A subscribers-only post shows nothing (the default needs no mark).
     private var openGlobe: some View {
         Image(systemName: "globe").font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.textSecondary)
@@ -278,6 +286,7 @@ struct JamPostCard: View {
             writerRow(writer)
             Text(post.title.isEmpty ? "Recording" : post.title).font(Theme.font(.title3, weight: .semibold)).foregroundStyle(Theme.text).multilineTextAlignment(.leading)
                 .accessibilityAddTraits(.isHeader).accessibilityIdentifier("jam-podcast-title")
+            SeriesTag(post: post)
             if let video {
                 JamVideoCard(postID: post.postId, file: video, captionFile: JamCaptions.file(for: files.firstIndex(of: video) ?? 0, in: files),
                              label: "Video podcast, \(post.title.isEmpty ? "recording" : post.title), \(org), \(VoiceFormat.clock(Double(video.durationMs ?? 0) / 1000))",

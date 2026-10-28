@@ -31,6 +31,7 @@ struct JamPodcastCard: View {
                         .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain).accessibilityHint("Opens the player").accessibilityIdentifier("jam-podcast-title")
+                SeriesTag(post: post)
                 if let file { pill(file, mine?.controller) }
             }
             .padding(.trailing, 36)
