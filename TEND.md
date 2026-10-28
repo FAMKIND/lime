@@ -8581,7 +8581,7 @@ On other people's phones (not reachable): their chats with the account, jam post
 - **Edit** follows the same two steps (Next, then Update). A **co-author** in a shared draft keeps Ready · Done and never sees step 2.
 - **Tests:** new `Post240UITests` (4): a quick post goes Next → Before you post (Audience, Tags, no Series) → Post and back keeps the text; an article Next → Before you publish (Series, Audience, Tags) → Publish; Everyone + photo shows the confirmation on step 2; Edit's step 2 says Update. The 210c/210d/210f/210h tests that used the old one-screen layout were moved to step 2, and a `postNow` helper (Next, then the button) replaced about 25 direct taps in the older jam tests; the related classes pass (Post240, Open210c/h, Privacy210d, Series210f, Jam188b/195 and the rest of the regression).
 - **Flaky, not caused by this:** a handful of old tests that type a title and wait for the article body to take the keyboard focus (`Jam188q/r/m`, `Coedit233d`) fail now and then in the simulator, a different one each run (4 failed in one run, 2 others in the rerun, none in the code of this brief). Left as they are.
-- **Installed:** with LIME-241.
+- **Installed:** with LIME-241 (all three phones).
 
 ## LIME-241 — the podcast recorder's toggle and mic; details with a scrub line and two steps
 
@@ -8591,4 +8591,4 @@ On other people's phones (not reachable): their chats with the account, jam post
 - **Step 2, "Before you publish"** (240's screen, with the podcast's own button): Series, Audience, Tags, and the student-privacy confirmation when Everyone; **Publish** (or **Update** when editing, which also saves a changed audience, tags and series). The old Series row on the details page moved here.
 - **Tests:** `Studio241UITests` (2): the preview is about 45% wide, preview, Post as, title, subtitle and description start at one x, the playhead moves when the track is dragged; Next → Before you publish (Series, Audience, Tags) → Everyone asks the confirmation → Publish. `Studio239aUITests`: the toggle is centred at the top with no "Preview mode", the timer sits just under it while recording and the toggle is held still, the mic menu lists the inputs and remembers the choice. The older podcast tests (239b, 227, Jam188g/o/212, Open210h) were moved to the two steps with a `publishPodcast` helper; Jam188o had been failing since 239b (the title field became a text view) and is fixed.
 - **Not tested on a phone:** the real microphone list (AirPods, USB), the real scrub playback and the real trim export (the demo has no media).
-- **Installed:** the 13 mini, the iPad and Jean's 12 mini (see the result below).
+- **Installed (both 240 and 241):** the 13 mini, the iPad and Jean's 12 mini, all three.
