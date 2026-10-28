@@ -8566,3 +8566,10 @@ On other people's phones (not reachable): their chats with the account, jam post
 - **Not done:** topic chips for a podcast on its details page (the series row is there; the jam's topics are used); the moderators' tool is not covered by a UI test for the new button; nothing was run against staging (flag off).
 - **Gate for you:** with the flag on in a throwaway way (or in the demo) report an open post on the second phone and see "Hide open post" in the moderators' tool; search for a word of an open post you opened; record a podcast and add it to a series.
 - **Installed:** the 13 mini and the iPad; Jean's 12 mini was unavailable (off, locked or away) on three tries.
+
+## open_posts_enabled turned ON on staging (you asked, 2026-10-28)
+
+- `update server_flags set enabled = true where name = 'open_posts_enabled'` on `lime-staging` (done through the service role, key in memory only). The row reads `enabled: true`.
+- **Confirmed:** `open-feed` (a throwaway user, deleted afterwards) answers 200 with **`enabled: true`**. So the app now shows the audience chip and Discover (it asks the feed when the jam tab opens), and publishing open posts, file uploads and the 7-day / first-week rules are live on staging.
+- Not done: no open post was published; the second-phone report check is yours.
+- **To turn it off again:** `update server_flags set enabled = false where name = 'open_posts_enabled';`
