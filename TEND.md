@@ -8426,3 +8426,5 @@ On other people's phones (not reachable): their chats with the account, jam post
 - **Where:** the one `StatusBadge` + `statusNotch`, used by every avatar with a status (chat rows, the header avatars, members, settings, the profile hero for you and for others); the status sheet's rows draw the bare badge.
 - **Tests:** unit `Status238Tests` (pass): rendering an avatar with a notch leaves the notch's centre fully transparent and the rest opaque (and no notch with no status); the Offline badge's middle is transparent and its ring is drawn in white. The look on real photos and in light/dark pages is the visual check. I did not re-run the status UI tests.
 - **Installed (235e and 238):** Debug build; see the line below.
+
+- **Install result (235e and 238):** the Debug build is on the **13 mini and the iPad**. **Jean's 12 mini is still "unavailable" to the install tool** (it missed the previous build too), so it has neither; install when it is reachable: `bash $TMPDIR/install.sh`.
