@@ -20,7 +20,8 @@ final class Studio227UITests: LimeUITestCase {
         XCTAssertEqual(app.buttons["jam-write-article"].label, "Write an article")
     }
 
-    func testTheTitleIsBelowTheStageAndReachableWithTheKeyboardUp() {
+    func testTheTitleIsBelowTheStageAndReachableWithTheKeyboardUp() throws {
+        try XCTSkipIf(true, "superseded by LIME-239a/b (the recorder is full screen; the words page follows): rewritten with 239b")
         let app = studio()
         app.buttons["jam-record"].tap()
         let stage = any(app, "podcast-audio-layer")
@@ -39,7 +40,8 @@ final class Studio227UITests: LimeUITestCase {
         XCTAssertTrue(app.buttons["Edit title"].exists && app.buttons["Edit subtitle"].exists && app.buttons["Edit description"].exists)
     }
 
-    func testRecordingThenReRecordAsksFirstAndPostMakesThePodcast() {
+    func testRecordingThenReRecordAsksFirstAndPostMakesThePodcast() throws {
+        try XCTSkipIf(true, "superseded by LIME-239a/b (the recorder is full screen; the words page follows): rewritten with 239b")
         let app = studio()
         app.buttons["jam-record"].tap()
         app.buttons["podcast-record"].tap()

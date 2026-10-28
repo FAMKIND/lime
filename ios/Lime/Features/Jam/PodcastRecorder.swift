@@ -41,6 +41,16 @@ final class PodcastCapture: NSObject, AVCaptureFileOutputRecordingDelegate {
         ready = false
     }
 
+    /// The torch (the flash light) for a dark room; the front camera has none.
+    var hasTorch: Bool { session.inputs.compactMap { $0 as? AVCaptureDeviceInput }.first { $0.device.hasMediaType(.video) }?.device.hasTorch ?? false }
+
+    func setTorch(_ on: Bool) {
+        guard let device = session.inputs.compactMap({ $0 as? AVCaptureDeviceInput }).first(where: { $0.device.hasMediaType(.video) })?.device, device.hasTorch else { return }
+        try? device.lockForConfiguration()
+        device.torchMode = on ? .on : .off
+        device.unlockForConfiguration()
+    }
+
     func flip() {
         guard configured, !recording, let camera = Self.camera(front: !front), let input = try? AVCaptureDeviceInput(device: camera) else { return }
         session.beginConfiguration()
@@ -235,6 +245,8 @@ struct PodcastRecorder: View {
     @State private var postingAs = false
     @State private var pickingCover = false
     @State private var confirmingRerecord = false
+    @State private var confirmingDiscard = false
+    @State private var torchOn = false
     // Edit mode (LIME-227)
     @State private var reRecording = false
     @State private var removeCover = false
@@ -262,7 +274,168 @@ struct PodcastRecorder: View {
     /// The stage's height: about a third of the screen, never more, so the words under it are never pushed off.
     private var stageHeight: CGFloat { min(UIScreen.main.bounds.height * 0.34, 300) }
 
+    /// The recorder screen (LIME-239a) is shown until there is a take; an article's audio, a take and an edit of a post use the words page.
+    private var usesWordsPage: Bool { forArticle || clip != nil || (editing != nil && !reRecording) }
+
     var body: some View {
+        Group {
+            if usesWordsPage { wordsPage } else { recordScreen }
+        }
+        .preferredColorScheme(.dark)
+        .sheet(isPresented: $choosingHosts) { JamCoauthorPicker(selected: $coauthors, title: "Add co-hosts") }
+        .sheet(isPresented: $postingAs) { PostAsSheet(selection: $postAsJam) }
+        .fullScreenCover(isPresented: $pickingCover) {
+            MediaLibraryPicker(limit: 1, onPick: { images, _ in
+                pickingCover = false
+                if let image = images.first, let made = AttachmentProcessing.photo(image, name: JamCover.name) { cover = made; removeCover = false }
+            }, onCancel: { pickingCover = false }).ignoresSafeArea()
+        }
+        .confirmSheet("Replace this recording?", isPresented: $confirmingRerecord) {
+            Button("Re-record", role: .destructive) { again() }.accessibilityIdentifier("podcast-rerecord-confirm")
+            Button("Keep it", role: .cancel) {}
+        } message: { Text("The one you made is thrown away.") }
+        .confirmSheet("Discard this recording?", isPresented: $confirmingDiscard) {
+            Button("Discard", role: .destructive) { cancel() }.accessibilityIdentifier("podcast-discard-confirm")
+            Button("Keep recording", role: .cancel) {}
+        } message: { Text("What you recorded is thrown away.") }
+        .alert("Can\u{2019}t record", isPresented: Binding(get: { problem != nil }, set: { if !$0 { problem = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(problem ?? "") }
+        .onAppear {
+            guard !shown else { return }
+            shown = true
+            voice.podcast = true
+            #if DEBUG
+            voice.simulated = store.isDemo
+            #endif
+            if let editing { prefill(editing); return }
+            if camera { Task { await turnCamera(on: true) } }
+        }
+        .onDisappear { teardown() }
+        .onChange(of: voice.elapsed) { _, now in if !cameraOn, now >= VoiceRecorder.podcastSeconds { Task { await stop() } } }
+        .onChange(of: seconds) { _, now in if cameraOn, now >= VideoProcessing.maxSeconds { Task { await stop() } } }
+    }
+
+    // MARK: The recorder (LIME-239a)
+
+    /// Video: the camera full screen. Audio: a soft blur of the avatar's colours with the lime-shaped avatar in the middle and the sound on both sides.
+    private var recordScreen: some View {
+        ZStack {
+            if !cameraOn { audioCentre }
+            VStack(spacing: 0) {
+                recordTop
+                Spacer(minLength: 0)
+                recordBottom
+            }
+        }
+        // The picture behind is a background, so a photo that fills never changes the size of what is laid over it.
+        .background { recordBackground }
+        .accessibilityElement(children: .contain).accessibilityIdentifier("podcast-recorder")
+    }
+
+    @ViewBuilder private var recordBackground: some View {
+        if cameraOn {
+            cameraLayer.ignoresSafeArea()
+        } else {
+            ZStack {
+                Color.black
+                Image(uiImage: HeroDefault.tone(store.meProvider().tone, dark: true)).resizable().scaledToFill().blur(radius: 50).opacity(0.85)
+                Color.black.opacity(0.35)
+            }
+            .ignoresSafeArea()
+        }
+    }
+
+    /// The avatar with the sound on both sides: bars from the microphone level (a plain level meter with Reduce Motion).
+    private var audioCentre: some View {
+        HStack(spacing: 14) {
+            sound(mirrored: false)
+            LimeShapedAvatar(person: store.meProvider(), size: 150).accessibilityHidden(true).accessibilityIdentifier("podcast-avatar")
+            sound(mirrored: true)
+        }
+        .padding(.horizontal, 16)
+        .accessibilityHidden(true)
+    }
+
+    @ViewBuilder private func sound(mirrored: Bool) -> some View {
+        let active = voice.phase != .idle && !voice.paused
+        if reduceMotion {
+            let level = CGFloat(voice.levels.last ?? 0)
+            Capsule().fill(.white.opacity(0.6)).frame(width: 8, height: 8 + 70 * (active ? level : 0)).frame(width: 60, height: 90)
+        } else {
+            LiveBars(levels: voice.levels, active: active, count: 12).frame(width: 78, height: 90).scaleEffect(x: mirrored ? -1 : 1)
+        }
+    }
+
+    /// ✕ · "Preview mode" (a red timer while recording) · ⚡ (video only).
+    private var recordTop: some View {
+        HStack {
+            glass("xmark", "Close", id: "podcast-cancel") { if isRecording || elapsed > 0 { confirmingDiscard = true } else { cancel() } }
+            Spacer()
+            Group {
+                if isRecording {
+                    Text(VoiceFormat.clock(elapsed)).font(Theme.font(.subheadline, weight: .semibold).monospacedDigit()).foregroundStyle(.white)
+                        .padding(.horizontal, 16).frame(minHeight: 36).background(.red, in: Capsule())
+                        .accessibilityLabel("Recording").accessibilityValue(PodcastFormat.spoken(elapsed)).accessibilityIdentifier("podcast-timer")
+                } else {
+                    Text("Preview mode").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(.white)
+                        .padding(.horizontal, 16).frame(minHeight: 36).limeGlass(in: Capsule()).accessibilityIdentifier("podcast-mode-pill")
+                }
+            }
+            Spacer()
+            if cameraOn {
+                glass(torchOn ? "bolt.fill" : "bolt.slash.fill", torchOn ? "Flash on" : "Flash off", id: "podcast-torch") { torchOn.toggle(); capture.setTorch(torchOn) }
+            } else {
+                Color.clear.frame(width: 44, height: 44)
+            }
+        }
+        .padding(.horizontal, 16).padding(.top, 8)
+    }
+
+    /// Switch to the other mode · the shutter · flip (video only).
+    private var recordBottom: some View {
+        HStack {
+            glass(cameraOn ? "video.fill" : "waveform", cameraOn ? "Switch to audio" : "Switch to video", id: "podcast-camera", size: 52) { Task { await turnCamera(on: !cameraOn) } }
+                .disabled(isRecording || preparing).opacity(isRecording ? 0.35 : 1)
+            Spacer()
+            shutter
+            Spacer()
+            if cameraOn {
+                glass("arrow.triangle.2.circlepath.camera", "Flip camera", id: "podcast-flip", size: 52) { capture.flip() }
+                    .disabled(isRecording).opacity(isRecording ? 0.35 : 1)
+            } else {
+                Color.clear.frame(width: 52, height: 52)
+            }
+        }
+        .padding(.horizontal, 28).padding(.bottom, 20).padding(.top, 8)
+    }
+
+    /// The big white shutter; while recording a red circle with a white stop square.
+    private var shutter: some View {
+        Button { Task { if isRecording { await stop() } else { await begin() } } } label: {
+            ZStack {
+                Circle().strokeBorder(.white, lineWidth: 4).frame(width: 84, height: 84)
+                if isRecording {
+                    Circle().fill(.red).frame(width: 68, height: 68)
+                    RoundedRectangle(cornerRadius: 5).fill(.white).frame(width: 26, height: 26)
+                } else {
+                    Circle().fill(.white).frame(width: 68, height: 68)
+                }
+            }
+        }
+        .disabled(preparing).accessibilityLabel(isRecording ? "Stop recording" : "Record").accessibilityIdentifier(isRecording ? "podcast-stop" : "podcast-record")
+    }
+
+    private func glass(_ symbol: String, _ label: String, id: String, size: CGFloat = 44, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: size > 48 ? 22 : 18, weight: .semibold)).foregroundStyle(.white).frame(width: size, height: size).limeGlass(in: Circle())
+        }
+        .buttonStyle(.plain).accessibilityLabel(label).accessibilityIdentifier(id)
+    }
+
+    // MARK: The words page (LIME-239b replaces this)
+
+    private var wordsPage: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             VStack(spacing: 0) {
@@ -286,35 +459,6 @@ struct PodcastRecorder: View {
                 bottom
             }
         }
-        .preferredColorScheme(.dark)
-        .sheet(isPresented: $choosingHosts) { JamCoauthorPicker(selected: $coauthors, title: "Add co-hosts") }
-        .sheet(isPresented: $postingAs) { PostAsSheet(selection: $postAsJam) }
-        .fullScreenCover(isPresented: $pickingCover) {
-            MediaLibraryPicker(limit: 1, onPick: { images, _ in
-                pickingCover = false
-                if let image = images.first, let made = AttachmentProcessing.photo(image, name: JamCover.name) { cover = made; removeCover = false }
-            }, onCancel: { pickingCover = false }).ignoresSafeArea()
-        }
-        .confirmSheet("Replace this recording?", isPresented: $confirmingRerecord) {
-            Button("Re-record", role: .destructive) { again() }.accessibilityIdentifier("podcast-rerecord-confirm")
-            Button("Keep it", role: .cancel) {}
-        } message: { Text("The one you made is thrown away.") }
-        .alert("Can\u{2019}t record", isPresented: Binding(get: { problem != nil }, set: { if !$0 { problem = nil } })) {
-            Button("OK", role: .cancel) {}
-        } message: { Text(problem ?? "") }
-        .onAppear {
-            guard !shown else { return }
-            shown = true
-            voice.podcast = true
-            #if DEBUG
-            voice.simulated = store.isDemo
-            #endif
-            if let editing { prefill(editing); return }
-            if camera { Task { await turnCamera(on: true) } }
-        }
-        .onDisappear { teardown() }
-        .onChange(of: voice.elapsed) { _, now in if !cameraOn, now >= VoiceRecorder.podcastSeconds { Task { await stop() } } }
-        .onChange(of: seconds) { _, now in if cameraOn, now >= VideoProcessing.maxSeconds { Task { await stop() } } }
     }
 
     // MARK: The stage
@@ -691,10 +835,10 @@ struct PodcastRecorder: View {
 private struct LiveBars: View {
     let levels: [Float]
     let active: Bool
+    var count = 48
 
     var body: some View {
         Canvas { context, size in
-            let count = 48
             let gap: CGFloat = 4
             let width = max(2, (size.width - gap * CGFloat(count - 1)) / CGFloat(count))
             let shown = Array(levels.suffix(count))

@@ -641,7 +641,7 @@ struct JamComposeSheet: View {
                         HStack(spacing: 0) {
                             leadingTools(width: width)
                             compactPill("Write article", spoken: "Write an article", system: "square.and.pencil", id: "jam-write-article") { setArticle(true) }.padding(.leading, 4)
-                            compactPill("Record podcast", spoken: "Record a podcast", system: "waveform", id: "jam-record") { recordMode = 1 }.padding(.horizontal, 8)
+                            compactPill("Record podcast", spoken: "Record a podcast", system: "waveform", id: "jam-record") { recordMode = 0 }.padding(.horizontal, 8)
                             trailingTools(width: width)
                         }
                     }
@@ -767,7 +767,7 @@ struct JamComposeSheet: View {
     private var pillRow: some View {
         HStack(spacing: 10) {
             chip("Write article", spoken: "Write an article", system: "square.and.pencil", id: "jam-write-article") { setArticle(true) }
-            chip("Record podcast", spoken: "Record a podcast", system: "waveform", id: "jam-record") { recordMode = 1 }
+            chip("Record podcast", spoken: "Record a podcast", system: "waveform", id: "jam-record") { recordMode = 0 }
         }
     }
 
