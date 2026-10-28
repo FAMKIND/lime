@@ -8371,3 +8371,11 @@ On other people's phones (not reachable): their chats with the account, jam post
 - **Tests:** UI (demo, `-lime-drafts-sim`): a three-author draft's row lists its authors and "Jean is writing"; swipe shows Delete and Copy one way and Edit and Pin the other, and Copy adds a copy; long press → Select → Select All → Delete with one confirm empties the list. `Coedit233gUITests` (Drafts and the banner) still pass.
 - **Not done / notes:** the ring is on each author's circle in the group, as asked; I could not see it on a real phone, nor test "FAM is writing while FAM types on the iPad" (the gate): the demo fakes presence. A pin is local (not synced). Copying a draft with pictures this phone has not fetched leaves those pictures out. The list is a non-scrolling `List` inside the feed's scroll view (what gives rows swipe actions), sized to its rows.
 - **Installed:** Debug build on the 13 mini, the iPad and Jean's 12 mini.
+
+## LIME-236b — New post, as the user's updated mockup
+
+- **Pills:** "Write article" (pen) and "Record podcast" (waveform), a subtle warm grey (`Theme.surface`, no glass, no shadow), each one line (`lineLimit(1)` + `fixedSize`), side by side above the keyboard bar; if they ever do not fit (the largest text sizes) the row scrolls sideways instead of wrapping (`ViewThatFits`). VoiceOver still says "Write an article" / "Record a podcast". Cancel and Post are the system's glass capsules, as before. **Aa and H lost their ⌄** (their menus open on tap as before).
+- **Cover button:** "Add cover" / **"Edit cover"** (was "Change cover"), one line, in the article editor and the podcast studio's cover control (`Jam219UITests` updated).
+- **Offline status:** the dot was a filled light circle in a ring because every badge sits in a page-coloured notch. Offline now has **no notch fill**: an empty grey ring, transparent inside (the photo shows through), with a thin page-coloured outline outside so it reads on light and dark photos. It is the one `StatusBadge`, so it applies to the hero avatar, chat rows, headers and members alike. I did not run a status UI test for it (the look is the visual check).
+- **Tests:** `Composer236UITests` (the pills on one line, each one line high, above the bar; the bar in order), `Jam219UITests`, `Studio227UITests` pass.
+- **Installed:** Debug build on the 13 mini, the iPad and Jean's 12 mini.

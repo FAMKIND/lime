@@ -416,9 +416,9 @@ struct JamComposeSheet: View {
                 Button { addCoverFromLibrary() } label: { Label("Choose a photo", systemImage: "photo.on.rectangle") }.accessibilityIdentifier("jam-cover-library")
                 Button { choosingArticlePhoto = true } label: { Label("Use a photo from this article", systemImage: "doc.richtext") }.accessibilityIdentifier("jam-cover-from-article")
             } label: {
-                Text(coverImage == nil ? "Add cover" : "Change cover").font(Theme.secondary).foregroundStyle(Theme.text).padding(.horizontal, 14).frame(minHeight: 44).background(Theme.surface, in: Capsule())
+                Text(coverImage == nil ? "Add cover" : "Edit cover").font(Theme.secondary).foregroundStyle(Theme.text).lineLimit(1).fixedSize().padding(.horizontal, 14).frame(minHeight: 44).background(Theme.surface, in: Capsule())
             }
-            .accessibilityLabel(coverImage == nil ? "Add cover" : "Change cover").accessibilityIdentifier("jam-cover-change")
+            .accessibilityLabel(coverImage == nil ? "Add cover" : "Edit cover").accessibilityIdentifier("jam-cover-change")
             if coverImage != nil {
                 Button(role: .destructive) { articleCover = nil; coverImage = nil; coverRemoved = hasStoredCover } label: { Text("Remove").font(Theme.secondary).padding(.horizontal, 10).frame(minHeight: 44) }
                     .accessibilityIdentifier("jam-cover-remove")
@@ -589,10 +589,10 @@ struct JamComposeSheet: View {
                 .buttonStyle(.plain).padding(.bottom, 6).accessibilityIdentifier("jam-exit-article")
             }
             if !article && editing == nil {
-                HStack(spacing: 8) {
-                    chip("Write an article", system: "square.and.pencil", id: "jam-write-article") { setArticle(true) }
-                    chip("Record a podcast", system: "waveform", id: "jam-record") { recordMode = 1 }
-                    Spacer()
+                // Both on one line, never wrapping: at the largest text sizes they scroll sideways instead.
+                ViewThatFits(in: .horizontal) {
+                    pillRow
+                    ScrollView(.horizontal, showsIndicators: false) { pillRow.padding(.horizontal, 16) }
                 }
                 .padding(.horizontal, 16).padding(.bottom, 4)
             }
@@ -627,12 +627,8 @@ struct JamComposeSheet: View {
     /// Aa opens the strip of text styles (B I U S link code lists quote indent): it also appears under a selection.
     private func formattingButton(width: CGFloat) -> some View {
         Button { composer.formattingTapped() } label: {
-            HStack(spacing: 1) {
-                Text("Aa").font(.system(size: 17, weight: composer.toolbarVisible ? .bold : .medium))
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).accessibilityHidden(true)
-            }
-            .foregroundStyle(Theme.text).frame(width: width, height: 44)
-            .background(composer.toolbarVisible ? Theme.surface : .clear, in: Capsule())
+            Text("Aa").font(.system(size: 17, weight: composer.toolbarVisible ? .bold : .medium)).foregroundStyle(Theme.text).frame(width: width, height: 44)
+                .background(composer.toolbarVisible ? Theme.surface : .clear, in: Circle())
         }
         .accessibilityLabel("Formatting").accessibilityIdentifier("jam-format").accessibilityAddTraits(composer.toolbarVisible ? [.isSelected] : [])
     }
@@ -642,12 +638,8 @@ struct JamComposeSheet: View {
     private func headingButton(width: CGFloat) -> some View {
         let level = composer.format.heading
         return Button { headingOpen = true } label: {
-            HStack(spacing: 1) {
-                Text(level == 0 ? "H" : "H\(level)").font(.system(size: 17, weight: .bold))
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).accessibilityHidden(true)
-            }
-            .foregroundStyle(Theme.text).frame(width: width, height: 44)
-            .background(level == 0 ? .clear : Theme.surface, in: Capsule())
+            Text(level == 0 ? "H" : "H\(level)").font(.system(size: 17, weight: .bold)).foregroundStyle(Theme.text).frame(width: width, height: 44)
+                .background(level == 0 ? .clear : Theme.surface, in: Circle())
         }
         .accessibilityLabel(level == 0 ? "Heading, currently normal text" : "Heading, currently Heading \(level)").accessibilityIdentifier("jam-heading")
         .popover(isPresented: $headingOpen, arrowEdge: .bottom) {
@@ -711,13 +703,21 @@ struct JamComposeSheet: View {
         .accessibilityLabel(label).accessibilityIdentifier(id).accessibilityAddTraits(on ? [.isSelected] : [])
     }
 
-    /// A glass pill above the keyboard bar (LIME-236): the icon, then the words.
-    private func chip(_ label: String, system: String, id: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Label(label, systemImage: system).font(Theme.font(.subheadline, weight: .medium)).foregroundStyle(Theme.text)
-                .padding(.horizontal, 14).frame(minHeight: 44).limeGlass(in: Capsule()).contentShape(Capsule())
+    private var pillRow: some View {
+        HStack(spacing: 8) {
+            chip("Write article", spoken: "Write an article", system: "square.and.pencil", id: "jam-write-article") { setArticle(true) }
+            chip("Record podcast", spoken: "Record a podcast", system: "waveform", id: "jam-record") { recordMode = 1 }
+            Spacer(minLength: 0)
         }
-        .buttonStyle(.plain).accessibilityLabel(label).accessibilityIdentifier(id)
+    }
+
+    /// A pill above the keyboard bar (LIME-236b): a subtle warm grey (not glass), the icon and the words on one line.
+    private func chip(_ label: String, spoken: String, system: String, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(label, systemImage: system).font(Theme.font(.subheadline, weight: .medium)).foregroundStyle(Theme.text).lineLimit(1).fixedSize()
+                .padding(.horizontal, 14).frame(minHeight: 44).background(Theme.surface, in: Capsule()).contentShape(Capsule())
+        }
+        .buttonStyle(.plain).accessibilityLabel(spoken).accessibilityIdentifier(id)
     }
 
     private func chipPlain(_ label: String, id: String, action: @escaping () -> Void) -> some View {

@@ -26,7 +26,7 @@ final class Jam219UITests: LimeUITestCase {
         let cover = app.buttons["jam-article-cover"]
         XCTAssertTrue(cover.waitForExistence(timeout: 5), "the thumbnail")
         XCTAssertEqual(cover.frame.height, 72, accuracy: 3)
-        XCTAssertEqual(app.buttons["jam-cover-change"].label, "Change cover")
+        XCTAssertEqual(app.buttons["jam-cover-change"].label, "Edit cover")
         cover.tap()
         XCTAssertTrue(app.descendants(matching: .any)["jam-cover-viewer"].waitForExistence(timeout: 5), "full size")
         app.buttons["jam-cover-close"].tap()

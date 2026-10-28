@@ -8,8 +8,9 @@ struct StatusBadge: View {
 
     var body: some View {
         ZStack {
-            // The notch: the page colour around the icon, so it reads as cut out of the avatar.
-            Circle().fill(Theme.canvas).frame(width: size + 4, height: size + 4)
+            // The notch: the page colour around the icon, so it reads as cut out of the avatar. Offline has none: it is an empty ring, transparent inside
+            // (the photo shows through), with a thin outline in the page colour so it reads on light and dark photos.
+            if state != .offline { Circle().fill(Theme.canvas).frame(width: size + 4, height: size + 4) }
             switch state {
             case .available:
                 Circle().fill(Color(red: 0.20, green: 0.72, blue: 0.36)).frame(width: size - 2, height: size - 2)
@@ -22,6 +23,7 @@ struct StatusBadge: View {
                     .overlay(Text("z").font(.system(size: size * 0.72, weight: .black, design: .rounded)).foregroundStyle(.white).offset(y: -0.5))
             case .offline:
                 // Hollow, not filled: the cue is the shape, not only the colour (WCAG 1.4.11), and the notch behind it gives it contrast.
+                Circle().strokeBorder(Theme.canvas.opacity(0.9), lineWidth: max(1.5, size * 0.18) + 2).frame(width: size + 1, height: size + 1)
                 Circle().strokeBorder(Theme.textSecondary, lineWidth: max(1.5, size * 0.18)).frame(width: size - 1, height: size - 1)
             }
         }

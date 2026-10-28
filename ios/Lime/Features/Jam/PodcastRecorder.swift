@@ -455,7 +455,7 @@ struct PodcastRecorder: View {
             .accessibilityLabel(coauthors.isEmpty ? "Add co-host" : "Co-hosts: \(coauthors.map(\.name).joined(separator: ", "))").accessibilityIdentifier("podcast-hosts")
             if !cameraOn {
                 Button { pickingCover = true } label: {
-                    Label(cover == nil && (editing == nil || removeCover || !store.jamAttachments(editing?.postId ?? "").contains(where: JamCover.isCover)) ? "Add cover" : "Change cover", systemImage: "photo").font(Theme.secondary).foregroundStyle(.white).padding(.horizontal, 12).frame(minHeight: 44).background(.white.opacity(0.12), in: Capsule())
+                    Label(cover == nil && (editing == nil || removeCover || !store.jamAttachments(editing?.postId ?? "").contains(where: JamCover.isCover)) ? "Add cover" : "Edit cover", systemImage: "photo").font(Theme.secondary).lineLimit(1).fixedSize().foregroundStyle(.white).padding(.horizontal, 12).frame(minHeight: 44).background(.white.opacity(0.12), in: Capsule())
                 }
                 .accessibilityIdentifier("podcast-add-cover")
                 if cover != nil {
