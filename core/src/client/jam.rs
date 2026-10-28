@@ -42,6 +42,39 @@ pub struct JamInfo {
     pub created: i64,
 }
 
+/// A post's place in a series (LIME-210b/f): `id` is made on the first part and repeated in every part, `title` too, `part` counts from 1, `of` is the
+/// total when the writer knows it ("Part 2 of 6"; without it "Part 2").
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct SeriesInfo {
+    pub id: String,
+    pub title: String,
+    pub part: u32,
+    pub of: Option<u32>,
+}
+
+impl SeriesInfo {
+    pub(crate) fn to_value(&self) -> Value {
+        let mut v = json!({ "id": self.id, "title": self.title, "part": self.part });
+        if let Some(of) = self.of {
+            v["of"] = json!(of);
+        }
+        v
+    }
+
+    pub(crate) fn from_value(v: &Value) -> Option<Self> {
+        let v = jam_store::clean_series(v)?;
+        Some(Self { id: v["id"].as_str()?.to_owned(), title: v["title"].as_str()?.to_owned(), part: v["part"].as_u64()? as u32, of: v.get("of").and_then(Value::as_u64).map(|o| o as u32) })
+    }
+}
+
+/// What a writer chooses for a post besides its words (LIME-210b): who may read it, and the series it belongs to.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct PostOptions {
+    /// `subscribers` or `everyone`.
+    pub audience: String,
+    pub series: Option<SeriesInfo>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct JamPostInfo {
     pub post_id: String,
@@ -63,6 +96,10 @@ pub struct JamPostInfo {
     pub display_as: String,
     /// When the writer last edited it (milliseconds), 0 if never (LIME-195).
     pub edited_at: i64,
+    /// `subscribers` (end-to-end encrypted, the default) or `everyone` (also published as a signed open post, LIME-210b). Never the tier.
+    pub audience: String,
+    /// The series this post is part of, if any (LIME-210f).
+    pub series: Option<SeriesInfo>,
     /// `ready` (the content is here), `fetching` (the title is known, the content is still to come from the server) or `gone` (removed from the
     /// server: the jam ended or the writer deleted it).
     pub state: String,
@@ -185,6 +222,8 @@ fn post_info(conn: &Connection, row: jam_store::PostRow) -> JamPostInfo {
         coauthors: jam_store::credits_in_state(conn, &row.post_id, "accepted").unwrap_or_default(),
         display_as: row.display_as,
         edited_at: row.edited_at,
+        audience: row.audience,
+        series: row.series.as_deref().and_then(|s| serde_json::from_str::<Value>(s).ok()).as_ref().and_then(SeriesInfo::from_value),
         post_id: row.post_id,
         jam_id: row.jam_id,
         author: row.author,
@@ -252,11 +291,16 @@ fn blob_json(blob: &jam_store::BlobRef) -> Value {
 
 /// What a post's content is, as the bytes that are sealed into its blob.
 #[allow(clippy::too_many_arguments)] // one field each
-#[allow(clippy::too_many_arguments)] // one field each
-fn post_plaintext(post_id: &str, jam_id: &str, tier: &str, kind: &str, title: &str, subtitle: &str, markdown: &str, attachments: &Value, created: i64, display_as: &str) -> Vec<u8> {
-    json!({ "post_id": post_id, "jam_id": jam_id, "tier": tier, "kind": kind, "title": title, "subtitle": subtitle, "markdown": markdown, "attachments": attachments, "created": created, "display_as": display_as })
-        .to_string()
-        .into_bytes()
+fn post_plaintext(post_id: &str, jam_id: &str, tier: &str, kind: &str, title: &str, subtitle: &str, markdown: &str, attachments: &Value, created: i64, display_as: &str, audience: &str, series: Option<&str>) -> Vec<u8> {
+    let mut value = json!({ "post_id": post_id, "jam_id": jam_id, "tier": tier, "kind": kind, "title": title, "subtitle": subtitle, "markdown": markdown, "attachments": attachments, "created": created, "display_as": display_as });
+    // Only when set: a post without them seals to the same bytes as before.
+    if audience == jam_store::AUDIENCE_EVERYONE {
+        value["audience"] = json!(audience);
+    }
+    if let Some(series) = series.and_then(|s| serde_json::from_str::<Value>(s).ok()) {
+        value["series"] = series;
+    }
+    value.to_string().into_bytes()
 }
 
 fn blob_text_to_ref(value: &Value) -> Option<jam_store::BlobRef> {
@@ -414,6 +458,23 @@ impl LimeStore {
     /// It travels inside the encrypted post; the server learns nothing new.
     #[allow(clippy::too_many_arguments)]
     pub fn publish_jam_post_as(&self, jam_id: String, kind: String, title: String, subtitle: String, markdown: String, tier: String, attachments: Vec<OutgoingAttachment>, coauthors: Vec<String>, display_as: String) -> Result<String, StoreError> {
+        self.publish_jam_post_with(jam_id, kind, title, subtitle, markdown, tier, attachments, coauthors, display_as, PostOptions { audience: jam_store::AUDIENCE_SUBSCRIBERS.into(), series: None })
+    }
+
+    /// `publish_jam_post_as` with the post's audience and series (LIME-210b). `everyone` also publishes a signed **open copy** of the post (its text and
+    /// files in the clear, readable by lime's server) once the delivery pass reaches it; a post with a `[[freewall]]` always gets an open **Preview**
+    /// (the part above the marker). Both are delivered by the same pass, after the encrypted post; nothing here is sent.
+    #[allow(clippy::too_many_arguments)]
+    pub fn publish_jam_post_with(&self, jam_id: String, kind: String, title: String, subtitle: String, markdown: String, tier: String, attachments: Vec<OutgoingAttachment>, coauthors: Vec<String>, display_as: String, options: PostOptions) -> Result<String, StoreError> {
+        let post_audience = options.audience.clone();
+        if !jam_store::valid_audience(&post_audience) {
+            return Err(StoreError::Rejected);
+        }
+        let series = match &options.series {
+            Some(s) => Some(jam_store::clean_series(&s.to_value()).ok_or(StoreError::Rejected)?),
+            None => None,
+        };
+        let series_text = series.as_ref().map(Value::to_string);
         let display_as = if display_as == "jam" { "jam" } else { "person" };
         let state = self.load_or_create_account()?;
         let me = self.registered_user(&state)?;
@@ -477,7 +538,7 @@ impl LimeStore {
         // The blob: a fresh key and id, the content sealed (one chunk: a post is under 1 MiB), its hash and size noted for the notice.
         let blob_id = new_id();
         let key = crate::store::attachments::new_key();
-        let sealed = crate::store::attachments::seal(&key, &blob_id, &post_plaintext(&post_id, &jam_id, &tier, &kind, &title, &subtitle, &markdown, &attachments, now, &display_as));
+        let sealed = crate::store::attachments::seal(&key, &blob_id, &post_plaintext(&post_id, &jam_id, &tier, &kind, &title, &subtitle, &markdown, &attachments, now, &display_as, &post_audience, series_text.as_deref()));
         let [ciphertext] = <[Vec<u8>; 1]>::try_from(sealed).map_err(|_| StoreError::Rejected)?;
         let blob = jam_store::BlobRef { blob_id, key: vodozemac::base64_encode(&key), sha256: crate::store::attachments::digest_hex(&ciphertext), size: ciphertext.len() as i64 };
         self.with_conn(|conn| {
@@ -499,15 +560,17 @@ impl LimeStore {
                 let wire_b64 = vodozemac::base64_encode(&wire);
                 let audience = jam_store::audience(conn, &jam_id, &tier)?;
                 conn.execute(
-                    "INSERT INTO jam_posts (post_id, jam_id, author, session_id, idx, tier, title, markdown, plain, attachments, created, wire, blob_id, blob_key, blob_sha, blob_size, uploaded, fetched, kind, subtitle, display_as)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, 0, 1, ?17, ?18, ?19)",
-                    params![post_id, jam_id, me, outbound.session.session_id(), index, tier, title, markdown, plain, attachments.to_string(), now, wire_b64, blob.blob_id, blob.key, blob.sha256, blob.size, kind, subtitle, display_as],
+                    "INSERT INTO jam_posts (post_id, jam_id, author, session_id, idx, tier, title, markdown, plain, attachments, created, wire, blob_id, blob_key, blob_sha, blob_size, uploaded, fetched, kind, subtitle, display_as, audience, series)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, 0, 1, ?17, ?18, ?19, ?20, ?21)",
+                    params![post_id, jam_id, me, outbound.session.session_id(), index, tier, title, markdown, plain, attachments.to_string(), now, wire_b64, blob.blob_id, blob.key, blob.sha256, blob.size, kind, subtitle, display_as, post_audience, series_text],
                 )
                 .map_err(db_err)?;
                 for (id, plain, hash, size) in &files {
                     jam_store::insert_attachment(conn, &post_id, id, &jam_id, hash, *size, plain)?;
                 }
                 jam_store::queue_wire(conn, &jam_id, &post_id, &audience)?;
+                // The open copy (everyone, or a Preview above a freewall): signed now, delivered by the pass after the encrypted post.
+                self.queue_open_copy(conn, &state, &post_id)?;
                 // People asked to be credited (at most four, never me, once each): the request goes when the post's blob is up.
                 let mut asked: Vec<&String> = Vec::new();
                 for user in &coauthors {
@@ -665,7 +728,7 @@ impl LimeStore {
                 let now = now_ms();
                 let blob_id = new_id();
                 let key = crate::store::attachments::new_key();
-                let sealed = crate::store::attachments::seal(&key, &blob_id, &post_plaintext(&post_id, &row.jam_id, &row.tier, &row.kind, &title, &subtitle, &markdown, &attachments, row.created, display_as));
+                let sealed = crate::store::attachments::seal(&key, &blob_id, &post_plaintext(&post_id, &row.jam_id, &row.tier, &row.kind, &title, &subtitle, &markdown, &attachments, row.created, display_as, &row.audience, row.series.as_deref()));
                 let [ciphertext] = <[Vec<u8>; 1]>::try_from(sealed).map_err(|_| StoreError::Rejected)?;
                 let old_blob: Option<String> = conn.query_row("SELECT blob_id FROM jam_posts WHERE post_id = ?1", params![post_id], |r| r.get(0)).map_err(db_err)?;
                 conn.execute(
@@ -674,6 +737,8 @@ impl LimeStore {
                     params![post_id, title, subtitle, markdown, crate::format::plain_text_post(&markdown), blob_id, vodozemac::base64_encode(&key), crate::store::attachments::digest_hex(&ciphertext), ciphertext.len() as i64, version, now, attachments.to_string(), display_as],
                 )
                 .map_err(db_err)?;
+                // The open copy follows the edit (a new signed version), if the post has one or now has a Preview.
+                self.queue_open_copy(conn, &state, &post_id)?;
                 for i in &dropped {
                     if let Some(id) = old.get(*i).and_then(|v| v.get("id")).and_then(Value::as_str) {
                         jam_store::queue_blob_delete(conn, id)?;
@@ -735,6 +800,8 @@ impl LimeStore {
                     jam_store::queue_blob_delete(conn, &file)?;
                 }
                 conn.execute("DELETE FROM jam_wire_outbox WHERE post_id = ?1", params![post_id]).map_err(db_err)?;
+                // Deleting a post deletes both copies: the open one goes from the server (its row becomes a tombstone, its files are removed).
+                self.queue_open_delete(conn, &post_id)?;
                 jam_store::apply_delete(conn, &post_id, &row.jam_id, &row.author, now)?;
                 conn.execute("UPDATE jam_posts SET edit_pending = 0 WHERE post_id = ?1", params![post_id]).map_err(db_err)?;
                 jam_store::mark_page_dirty(conn, &row.jam_id)?;
@@ -1096,7 +1163,7 @@ impl LimeStore {
 // ---------------------------------------------------------------- sessions
 
 impl LimeStore {
-    fn registered_user(&self, state: &AccountState) -> Result<String, StoreError> {
+    pub(super) fn registered_user(&self, state: &AccountState) -> Result<String, StoreError> {
         state.user_id.clone().filter(|_| state.registered).ok_or(StoreError::NotRegistered)
     }
 
@@ -1813,6 +1880,7 @@ impl LimeStore {
         self.queue_credit_requests(state);
         self.deliver_jam_ops(transport, token, state, me);
         self.upload_jam_posts(transport, token);
+        self.deliver_open(transport, token);
         self.announce_post_changes(state);
         self.announce_counts(state);
         self.delete_jam_blobs(transport, token);
@@ -1858,7 +1926,7 @@ impl LimeStore {
         for post in posts {
             let Some(key) = vodozemac::base64_decode(&post.blob.key).ok().filter(|k| k.len() == 32) else { continue };
             let attachments: Value = serde_json::from_str(&post.attachments).unwrap_or(Value::Array(vec![]));
-            let plaintext = post_plaintext(&post.post_id, &post.jam_id, &post.tier, &post.kind, &post.title, &post.subtitle, &post.markdown, &attachments, post.created, &post.display_as);
+            let plaintext = post_plaintext(&post.post_id, &post.jam_id, &post.tier, &post.kind, &post.title, &post.subtitle, &post.markdown, &attachments, post.created, &post.display_as, &post.audience, post.series.as_deref());
             let sealed = crate::store::attachments::seal(&key, &post.blob.blob_id, &plaintext);
             let [ciphertext] = <[Vec<u8>; 1]>::try_from(sealed).unwrap_or_default();
             if crate::store::attachments::digest_hex(&ciphertext) != post.blob.sha256 {
@@ -1988,10 +2056,14 @@ impl LimeStore {
                     crate::store::attachments::parse_payload(&json!({ "attachments": attachments }))?;
                     let markdown = crate::format::normalise_post(text("markdown")?);
                     let display_as = if text("display_as") == Some("jam") { "jam" } else { "person" };
-                    (markdown.len() <= jam_store::MAX_POST_BYTES).then_some((markdown, attachments, display_as))
+                    // The writer's choices, sealed in the post: who may read it, and its series (a bad one is dropped, never half-kept).
+                    let audience = if text("audience") == Some(jam_store::AUDIENCE_EVERYONE) { jam_store::AUDIENCE_EVERYONE } else { jam_store::AUDIENCE_SUBSCRIBERS };
+                    let series = value.get("series").and_then(jam_store::clean_series);
+                    (markdown.len() <= jam_store::MAX_POST_BYTES).then_some((markdown, attachments, display_as, audience, series))
                 });
                 match content {
-                    Some((markdown, attachments, display_as)) => jam_store::set_fetched(conn, &post_id, Some((&markdown, &crate::format::plain_text_post(&markdown), &attachments, display_as))),
+                    Some((markdown, attachments, display_as, audience, series)) => jam_store::set_fetched(conn, &post_id, Some((&markdown, &crate::format::plain_text_post(&markdown), &attachments, display_as)))
+                        .and_then(|()| jam_store::set_audience_series(conn, &post_id, audience, series.as_ref())),
                     // Bytes that do not open as announced: gone for good (a retry would fetch the same).
                     None => jam_store::set_fetched(conn, &post_id, None),
                 }

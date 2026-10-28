@@ -1,5 +1,5 @@
 // POST open-post { action, ... }: publish, edit and delete an OPEN post (LIME-210a, docs/api-v2.md section 17, docs/jam.md section 13).
-//   publish { payload, signature, cert } -> { post_id, version, seq }: `payload` is the exact JSON text the writer's device signed (label "lime-open-post-v1\n"
+//   publish { payload, signature, cert } -> { post_id, version, seq }: (a post I deleted can be published again: its version continues) `payload` is the exact JSON text the writer's device signed (label "lime-open-post-v1\n"
 //            + the text); `cert` is that device's certificate (device_id, identity_key, signing_key, master_key, master_signature). Refused while the server
 //            flag `open_posts_enabled` is off; refused for a forged or another writer's row; the files it names must be MY committed open files.
 //   edit    { payload, signature, cert } -> { post_id, version, seq }: the next version (version = old + 1) of MY post; files no longer named are removed.
@@ -40,9 +40,11 @@ Deno.serve(handler(async (req) => {
   if (!jam || jam.writer_id !== me || jam.ended_at) throw new HttpError(403, "not_your_jam", "That jam is not yours.");
   const { data: existing } = await db.from("open_posts").select("author_id, version, files, deleted_at, taken_down_at").eq("post_id", row.post_id).maybeSingle();
 
+  // A tombstone of mine can be published again (Subscribers -> Everyone -> Subscribers -> Everyone): the version continues from the tombstone's.
+  const republish = body.action === "publish" && existing?.deleted_at && existing.author_id === me && !existing.taken_down_at;
   if (body.action === "publish") {
-    if (existing) throw new HttpError(409, "id_taken", "That post already exists.");
-    if (row.version !== 1) throw new HttpError(400, "bad_request", "A new post is version 1.");
+    if (existing && !republish) throw new HttpError(409, "id_taken", "That post already exists.");
+    if (row.version !== (republish ? existing!.version + 1 : 1)) throw new HttpError(400, "bad_request", republish ? "The version must be the next one." : "A new post is version 1.");
     // An account's first week: at most N open posts a day (the anti-spam guard).
     const { data: user } = await db.auth.admin.getUserById(me);
     const ageDays = user?.user ? (Date.now() - new Date(user.user.created_at).getTime()) / 86_400_000 : 99;
@@ -71,7 +73,9 @@ Deno.serve(handler(async (req) => {
     version: row.version, payload: payloadText, signature: body.signature as string, cert: body.cert, seq,
   };
   if (body.action === "publish") {
-    const { error } = await db.from("open_posts").insert(fields);
+    const { error } = republish
+      ? await db.from("open_posts").update({ ...fields, deleted_at: null, edited_at: new Date().toISOString() }).eq("post_id", row.post_id)
+      : await db.from("open_posts").insert(fields);
     if (error) throw new HttpError(500, "internal");
   } else {
     const { error } = await db.from("open_posts").update({ ...fields, edited_at: new Date().toISOString() }).eq("post_id", row.post_id);

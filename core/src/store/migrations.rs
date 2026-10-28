@@ -875,6 +875,25 @@ const MIGRATIONS: &[&str] = &[
      );",
     // 56 (LIME-237): a draft being removed whose goodbyes (`draft.delete` / `draft.leave`) are still to be sent: hidden at once, purged when its outbox is empty.
     "ALTER TABLE drafts ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0;",
+    // 57 (LIME-210b): a post's audience (`subscribers` or `everyone`, never the tier), its series (a JSON field, LIME-210f), and the open copy: the version of
+    // the signed open row last made (`open_version`, `open_live` while a copy is meant to exist). `open_outbox` is what still has to reach the server for a
+    // post (one row, the latest wins): publish or edit (a signed row and the files) or delete.
+    "ALTER TABLE jam_posts ADD COLUMN audience TEXT NOT NULL DEFAULT 'subscribers';
+     ALTER TABLE jam_posts ADD COLUMN series TEXT;
+     ALTER TABLE jam_posts ADD COLUMN open_version INTEGER NOT NULL DEFAULT 0;
+     ALTER TABLE jam_posts ADD COLUMN open_live INTEGER NOT NULL DEFAULT 0;
+     CREATE TABLE open_outbox (
+         post_id   TEXT PRIMARY KEY NOT NULL,
+         action    TEXT NOT NULL,
+         version   INTEGER NOT NULL,
+         payload   TEXT,
+         signature TEXT,
+         cert      TEXT,
+         files     TEXT NOT NULL DEFAULT '[]',
+         attempts  INTEGER NOT NULL DEFAULT 0,
+         next_at   INTEGER NOT NULL DEFAULT 0,
+         blocked   TEXT
+     );",
 ];
 
 /// The schema version this build writes.

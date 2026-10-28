@@ -220,3 +220,21 @@ Deno.test("the open tables are closed to signed-in clients (RLS)", opts, async (
     await deleteUser(user);
   }
 });
+
+Deno.test("a deleted post can be published again by its writer (the version continues), and nobody else can", opts, async () => {
+  await withWriter(async (w) => {
+    const other = await newWriter();
+    try {
+      const postId = crypto.randomUUID();
+      assertEquals((await publish(w, payloadOf(w, { post_id: postId }))).status, 201);
+      assertEquals((await call("open-post", w.user.token, { action: "delete", post_id: postId })).status, 200);
+      assertEquals((await publish(w, payloadOf(w, { post_id: postId, version: 1 }))).status, 400, "the version must continue");
+      assertEquals((await publish(other, payloadOf(other, { post_id: postId, version: 2 }))).status, 409, "another writer cannot take the id");
+      const again = await publish(w, payloadOf(w, { post_id: postId, version: 2, title: "Back again" }));
+      assertEquals([again.status, again.body.version], [201, 2], JSON.stringify(again.body));
+      assertEquals((await call("open-post-get", null, { post_id: postId })).body.post.version, 2);
+    } finally {
+      await deleteUser(other.user);
+    }
+  });
+});

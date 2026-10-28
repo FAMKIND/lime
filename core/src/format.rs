@@ -688,6 +688,43 @@ pub fn serialize_post(blocks: &[Block]) -> String {
     serialize_with(blocks, true)
 }
 
+/// The public part of a post that has a `[[freewall]]` (LIME-210b): the Markdown **above** the marker, with the pictures that stand above it renumbered
+/// from 0, and the original numbers of the files it keeps (in their new order), so the open copy carries only those files. `None` when the post has no
+/// marker (it has no Preview).
+pub fn preview_split(markdown: &str) -> Option<PreviewSplit> {
+    let blocks = parse_post(markdown);
+    let at = blocks.iter().position(|b| matches!(b, Block::Freewall))?;
+    let mut kept: Vec<u32> = Vec::new();
+    let above: Vec<Block> = blocks[..at]
+        .iter()
+        .map(|b| match b {
+            Block::Image { caption, attachment } => {
+                let n = match kept.iter().position(|k| k == attachment) {
+                    Some(n) => n,
+                    None => {
+                        kept.push(*attachment);
+                        kept.len() - 1
+                    }
+                };
+                Block::Image { caption: caption.clone(), attachment: n as u32 }
+            }
+            other => other.clone(),
+        })
+        .collect();
+    Some(PreviewSplit { markdown: serialize_post(&above), kept_files: kept, has_rest: blocks[at + 1..].iter().any(|b| !matches!(b, Block::Divider)) })
+}
+
+/// What [`preview_split`] returns.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreviewSplit {
+    /// The Markdown above the marker.
+    pub markdown: String,
+    /// The post's own file numbers of the files the Preview uses, in the order of the renumbered pictures.
+    pub kept_files: Vec<u32>,
+    /// Whether anything stands below the marker (a marker at the very end leaves nothing for subscribers).
+    pub has_rest: bool,
+}
+
 /// The written lines of a post's heading, quote or indent: line breaks kept (quote, indent) or turned into spaces (heading).
 fn post_line_text(spans: &[Span]) -> String {
     write_spans(spans)
@@ -1562,6 +1599,19 @@ mod tests {
         assert_eq!(plain_text_post(&written), "# not a heading\n> not a quote");
         let bad = vec![Block::Button { text: "x".into(), url: "javascript:alert(1)".into(), caption: String::new(), colour: String::new() }];
         assert_eq!(serialize_post(&bad), "");
+    }
+
+    #[test]
+    fn the_preview_is_exactly_what_stands_above_the_marker() {
+        let text = "Intro line\n\n![Cover](attachment:2)\n\n[[freewall]]\n\nThe rest\n\n![Late](attachment:0)";
+        let split = preview_split(text).unwrap();
+        assert_eq!(split.kept_files, vec![2]);
+        assert!(split.has_rest);
+        assert!(!split.markdown.contains("rest") && !split.markdown.contains("Late") && !split.markdown.contains("freewall"), "{}", split.markdown);
+        assert!(split.markdown.contains("![Cover](attachment:0)"), "the picture is renumbered: {}", split.markdown);
+        assert_eq!(preview_split("No marker at all"), None);
+        let end = preview_split("Only the start\n\n[[freewall]]").unwrap();
+        assert!(!end.has_rest);
     }
 
     #[test]

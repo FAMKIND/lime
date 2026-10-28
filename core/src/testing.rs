@@ -73,6 +73,27 @@ pub(crate) struct ServerState {
     /// Chunk downloads so far, and make the one after this many fail once (an interrupted download).
     pub chunk_downloads: usize,
     pub fail_download_after: Option<usize>,
+    /// The server flag `open_posts_enabled` (LIME-210a): publishing and uploading open files are refused with 403 `open_posts_disabled` while false.
+    pub open_enabled: bool,
+    /// post id to its open row (LIME-210a stand-in)
+    pub open_posts: HashMap<String, FakeOpenPost>,
+    /// open file id to (owner, committed)
+    pub open_files: HashMap<String, (String, bool)>,
+    pub open_seq: i64,
+}
+
+/// An open row as the fake server keeps it.
+#[derive(Clone, Default)]
+pub(crate) struct FakeOpenPost {
+    pub author: String,
+    pub version: i64,
+    pub payload: String,
+    pub signature: String,
+    pub cert: Value,
+    pub files: Vec<String>,
+    pub deleted: bool,
+    pub taken_down: bool,
+    pub seq: i64,
 }
 
 #[derive(Default)]
@@ -185,7 +206,7 @@ impl FakeServer {
             .and_then(|h| h.value.strip_prefix("Bearer tok-"))
             .map(str::to_owned);
         // A sealed `send` carries no token (the server learns nothing about the sender).
-        if user.is_none() && function != "send" && function != "jam-blob-get" {
+        if user.is_none() && function != "send" && function != "jam-blob-get" && function != "open-post-get" {
             return respond(401, json!({ "error": "unauthorized" }));
         }
         let user = user.unwrap_or_default();
@@ -543,6 +564,114 @@ impl FakeServer {
                     _ => respond(400, json!({ "error": "bad_request" })),
                 }
             }
+            "open-file" => {
+                let id = text("file_id");
+                match body.get("action").and_then(Value::as_str).unwrap_or_default() {
+                    "put" => {
+                        if !state.open_enabled {
+                            return respond(403, json!({ "error": "open_posts_disabled" }));
+                        }
+                        if state.open_files.get(&id).is_some_and(|(owner, _)| *owner != user) {
+                            return respond(409, json!({ "error": "id_taken" }));
+                        }
+                        state.open_files.insert(id.clone(), (user.clone(), false));
+                        respond(200, json!({ "url": format!("/storage/v1/object/upload/sign/open-files/{id}?token=t") }))
+                    }
+                    "commit" => {
+                        if !state.objects.contains_key(&format!("open-files/{id}")) {
+                            return respond(409, json!({ "error": "not_uploaded" }));
+                        }
+                        state.open_files.insert(id.clone(), (user.clone(), true));
+                        respond(200, json!({ "size": 1, "public_url": format!("/storage/v1/object/public/open-files/{id}") }))
+                    }
+                    _ => respond(400, json!({ "error": "bad_request" })),
+                }
+            }
+            "open-post" => {
+                let action = text("action");
+                if action == "delete" {
+                    let id = text("post_id");
+                    state.open_seq += 1;
+                    let seq = state.open_seq;
+                    return match state.open_posts.get_mut(&id) {
+                        Some(row) if row.author == user => {
+                            row.deleted = true;
+                            row.seq = seq;
+                            let files = std::mem::take(&mut row.files);
+                            for f in files {
+                                state.objects.remove(&format!("open-files/{f}"));
+                                state.open_files.remove(&f);
+                            }
+                            respond(200, json!({ "ok": true, "seq": seq }))
+                        }
+                        Some(_) => respond(403, json!({ "error": "not_author" })),
+                        None => respond(404, json!({ "error": "not_found" })),
+                    };
+                }
+                if !state.open_enabled {
+                    return respond(403, json!({ "error": "open_posts_disabled" }));
+                }
+                let payload_text = text("payload");
+                let payload: Value = serde_json::from_str(&payload_text).unwrap_or(Value::Null);
+                let id = payload.get("post_id").and_then(Value::as_str).unwrap_or_default().to_owned();
+                let version = payload.get("version").and_then(Value::as_i64).unwrap_or(0);
+                if payload.get("author_id").and_then(Value::as_str) != Some(user.as_str()) {
+                    return respond(403, json!({ "error": "not_author" }));
+                }
+                let existing = state.open_posts.get(&id).cloned();
+                let files: Vec<String> = payload.get("attachments").and_then(Value::as_array).map(|a| a.iter().filter_map(|f| f.get("id").and_then(Value::as_str).map(str::to_owned)).collect()).unwrap_or_default();
+                if files.iter().any(|f| !state.open_files.get(f).is_some_and(|(o, c)| *o == user && *c)) {
+                    return respond(400, json!({ "error": "bad_files" }));
+                }
+                match (action.as_str(), &existing) {
+                    ("publish", Some(row)) if !(row.deleted && row.author == user) => return respond(409, json!({ "error": "id_taken" })),
+                    ("publish", Some(row)) if version != row.version + 1 => return respond(400, json!({ "error": "bad_request" })),
+                    ("publish", None) if version != 1 => return respond(400, json!({ "error": "bad_request" })),
+                    ("edit", None) => return respond(404, json!({ "error": "not_found" })),
+                    ("edit", Some(row)) if row.deleted || row.taken_down => return respond(404, json!({ "error": "not_found" })),
+                    ("edit", Some(row)) if row.version + 1 != version => return respond(409, json!({ "error": "version" })),
+                    _ => {}
+                }
+                if let Some(row) = &existing {
+                    for f in row.files.iter().filter(|f| !files.contains(f)) {
+                        state.objects.remove(&format!("open-files/{f}"));
+                        state.open_files.remove(f);
+                    }
+                }
+                state.open_seq += 1;
+                let seq = state.open_seq;
+                state.open_posts.insert(id.clone(), FakeOpenPost { author: user.clone(), version, payload: payload_text, signature: text("signature"), cert: body.get("cert").cloned().unwrap_or(Value::Null), files, deleted: false, taken_down: false, seq });
+                respond(if action == "publish" { 201 } else { 200 }, json!({ "post_id": id, "version": version, "seq": seq }))
+            }
+            "open-feed" => {
+                let since = body.get("since").and_then(Value::as_i64).unwrap_or(0);
+                let mut rows: Vec<(&String, &FakeOpenPost)> = state.open_posts.iter().filter(|(_, r)| r.seq > since).collect();
+                rows.sort_by_key(|(_, r)| r.seq);
+                let items: Vec<Value> = rows
+                    .iter()
+                    .map(|(id, r)| {
+                        if r.deleted || r.taken_down {
+                            return json!({ "post_id": id, "seq": r.seq, "gone": true });
+                        }
+                        let p: Value = serde_json::from_str(&r.payload).unwrap_or(Value::Null);
+                        let md = p.get("markdown").and_then(Value::as_str).unwrap_or_default();
+                        json!({ "post_id": id, "author_kind": "person", "author_id": r.author, "jam_id": p["jam_id"], "kind": p["kind"], "title": p["title"], "subtitle": p["subtitle"],
+                                "excerpt": md.chars().take(240).collect::<String>(), "topics": p["topics"], "files": r.files, "series": p["series"], "preview_of": p["preview_of"],
+                                "has_rest": p["has_rest"], "version": r.version, "created_at": "2026-10-27T10:00:00.000+00:00", "seq": r.seq })
+                    })
+                    .collect();
+                let cursor = rows.last().map(|(_, r)| r.seq).unwrap_or(since);
+                respond(200, json!({ "items": items, "cursor": cursor }))
+            }
+            "open-post-get" => match state.open_posts.get(&text("post_id")) {
+                Some(r) if r.taken_down => respond(410, json!({ "error": "taken_down" })),
+                Some(r) if !r.deleted => respond(
+                    200,
+                    json!({ "post": { "post_id": text("post_id"), "author_kind": "person", "author_id": r.author, "version": r.version, "payload": r.payload, "signature": r.signature, "cert": r.cert,
+                                      "file_urls": r.files.iter().map(|f| json!({ "id": f, "url": format!("/storage/v1/object/public/open-files/{f}") })).collect::<Vec<_>>() } }),
+                ),
+                _ => respond(404, json!({ "error": "not_found" })),
+            },
             "jam-blob-get" => {
                 state.jam_gets += 1;
                 if !user.is_empty() {

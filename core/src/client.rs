@@ -37,6 +37,7 @@ pub(crate) mod group_calls;
 pub(crate) mod profile;
 pub(crate) mod groups;
 pub(crate) mod jam;
+pub(crate) mod open;
 pub(crate) mod moderation;
 mod account;
 pub(crate) mod draft_sync;
@@ -706,7 +707,7 @@ impl LimeStore {
         })
     }
 
-    fn with_conn<T>(
+    pub(crate) fn with_conn<T>(
         &self,
         f: impl FnOnce(&Connection) -> Result<T, StoreError>,
     ) -> Result<T, StoreError> {

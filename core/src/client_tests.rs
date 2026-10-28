@@ -1479,7 +1479,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
              DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP INDEX olm_sessions_by_peer; DROP TABLE received_ciphertexts; DROP TABLE emergency_messages; DROP TABLE emergency_settings; DROP TABLE mesh_outbox; DROP TABLE mesh_packets; DROP TABLE mesh_seen; DROP TABLE mesh_uploaded; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
-             DROP TABLE draft_files; DROP TABLE draft_outbox; DROP TABLE draft_authors; DROP TABLE draft_chunks; DROP TABLE drafts; DROP TABLE deleted_peers; DROP TABLE session_repairs; DROP TABLE profile_key_requests; DROP TABLE my_extra; DROP TABLE extras; DROP TRIGGER jam_posts_fts_insert; DROP TRIGGER jam_posts_fts_update; DROP TRIGGER jam_posts_fts_delete; DROP TABLE jam_fts; DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_credits; DROP TABLE jam_credit_requests; DROP TABLE jam_credit_wires; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_blob_deletes; DROP TABLE jam_reactions; DROP TABLE jam_my_reactions; DROP TABLE jam_comments; DROP TABLE jam_counts; DROP TABLE jam_counts_out; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; PRAGMA user_version = 9;",
+             DROP TABLE draft_files; DROP TABLE draft_outbox; DROP TABLE draft_authors; DROP TABLE draft_chunks; DROP TABLE drafts; DROP TABLE deleted_peers; DROP TABLE session_repairs; DROP TABLE profile_key_requests; DROP TABLE my_extra; DROP TABLE extras; DROP TRIGGER jam_posts_fts_insert; DROP TRIGGER jam_posts_fts_update; DROP TRIGGER jam_posts_fts_delete; DROP TABLE jam_fts; DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_credits; DROP TABLE jam_credit_requests; DROP TABLE jam_credit_wires; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_blob_deletes; DROP TABLE jam_reactions; DROP TABLE jam_my_reactions; DROP TABLE jam_comments; DROP TABLE jam_counts; DROP TABLE jam_counts_out; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; DROP TABLE open_outbox; PRAGMA user_version = 9;",
         )
         .unwrap();
     }
@@ -6950,4 +6950,280 @@ fn a_copy_of_a_draft_is_private_with_the_same_words_the_writers_delete_reaches_c
     deliver(&alice, &transport); sync(&bob, &transport);
     assert!(!bob.store.list_drafts().unwrap().iter().any(|d| d.draft_id == id), "gone from Bob's");
     assert!(alice.store.list_drafts().unwrap().iter().any(|d| d.draft_id == copy), "the copy stays");
+}
+
+// ---------------------------------------------------------------- LIME-210b: audiences, signed open posts, the Preview, series
+
+fn open_server() -> Arc<FakeServer> {
+    let server = FakeServer::new();
+    server.state.lock().unwrap().open_enabled = true;
+    server
+}
+
+fn options(audience: &str, series: Option<crate::client::jam::SeriesInfo>) -> crate::client::jam::PostOptions {
+    crate::client::jam::PostOptions { audience: audience.into(), series }
+}
+
+fn publish_with(writer: &Party, jam: &str, title: &str, markdown: &str, files: Vec<crate::OutgoingAttachment>, options: crate::client::jam::PostOptions) -> String {
+    writer.store.publish_jam_post_with(jam.to_owned(), "article".into(), title.to_owned(), String::new(), markdown.to_owned(), "free".into(), files, vec![], "person".into(), options).unwrap()
+}
+
+fn series(title: &str, part: u32, of: Option<u32>) -> crate::client::jam::SeriesInfo {
+    crate::client::jam::SeriesInfo { id: "0194c3f0-aaaa-7000-8000-000000000001".into(), title: title.into(), part, of }
+}
+
+/// Lets the delivery pass's back-off pass, so a held open job is tried again now.
+fn retry_open_now(p: &Party) {
+    p.store.with_conn(|conn| conn.execute("UPDATE open_outbox SET next_at = 0", []).map(|_| ()).map_err(crate::store::db_err)).unwrap();
+}
+
+#[test]
+fn an_everyone_post_is_published_signed_and_a_stranger_verifies_it() {
+    let server = open_server();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let jam = new_jam(&alice);
+    let post = publish_with(&alice, &jam, "Equal parts", "Fractions are **equal parts**.\n\n![Wall](attachment:0)", vec![pic(3, 900)], options("everyone", None));
+    assert_eq!(alice.store.read_jam_post(post.clone()).unwrap().unwrap().audience, "everyone");
+    // Nothing is sent until the pass runs; then the file goes up and the signed row after it.
+    assert_eq!(alice.store.open_send_progress().unwrap(), crate::client::open::OpenSendProgress { pending: 1, held: 0 });
+    deliver(&alice, &transport);
+    assert_eq!(alice.store.open_send_progress().unwrap().pending, 0);
+    {
+        let state = server.state.lock().unwrap();
+        let row = &state.open_posts[&post];
+        assert_eq!((row.version, row.files.len(), row.author.as_str()), (1, 1, "alice"));
+        assert!(state.objects.contains_key(&format!("open-files/{}", row.files[0])), "the plain file is on the server");
+    }
+    // Bob follows nothing and has no session need: he fetches the row and it verifies.
+    let open = bob.store.fetch_open_post(transport.clone(), post.clone()).unwrap();
+    assert_eq!((open.title.as_str(), open.kind.as_str(), open.author_id.as_str(), open.version, open.pinned), ("Equal parts", "article", "alice", 1, false));
+    assert!(open.markdown.contains("equal parts") && open.preview_of.is_none() && !open.has_rest);
+    assert_eq!((open.files.len(), open.files[0].mime.as_str()), (1, "image/jpeg"));
+    assert_eq!(open.topics, vec!["Maths".to_owned(), "Grade 4".to_owned()]);
+    // The encrypted post is still the subscribers' copy, and it says its audience.
+    join_jam(&alice, &bob, &jam, &transport);
+    catch_up(&alice, &[&bob], &transport);
+    assert_eq!(bob.store.read_jam_post(post).unwrap().unwrap().audience, "everyone");
+}
+
+#[test]
+fn a_changed_body_a_swapped_author_a_bad_signature_or_another_master_key_is_refused() {
+    let server = open_server();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let jam = new_jam(&alice);
+    let post = publish_with(&alice, &jam, "Equal parts", "Words", vec![], options("everyone", None));
+    deliver(&alice, &transport);
+    assert!(bob.store.fetch_open_post(transport.clone(), post.clone()).is_ok());
+    let original = server.state.lock().unwrap().open_posts[&post].clone();
+    let set = |f: &dyn Fn(&mut crate::testing::FakeOpenPost)| f(server.state.lock().unwrap().open_posts.get_mut(&post).unwrap());
+    // A changed body.
+    set(&|r| r.payload = r.payload.replace("Equal parts", "Unequal parts"));
+    assert_eq!(bob.store.fetch_open_post(transport.clone(), post.clone()).unwrap_err(), crate::store::StoreError::BadMessage);
+    set(&|r| *r = original.clone());
+    // A swapped author: the server says another person wrote it.
+    set(&|r| r.author = "mallory".into());
+    assert_eq!(bob.store.fetch_open_post(transport.clone(), post.clone()).unwrap_err(), crate::store::StoreError::BadMessage);
+    set(&|r| *r = original.clone());
+    // A signature that is not the device's.
+    set(&|r| r.signature = "A".repeat(86));
+    assert_eq!(bob.store.fetch_open_post(transport.clone(), post.clone()).unwrap_err(), crate::store::StoreError::BadMessage);
+    set(&|r| *r = original.clone());
+    // A certificate whose master key did not sign the device (another account's key put in).
+    set(&|r| r.cert["master_key"] = serde_json::json!(vodozemac::base64_encode([7u8; 32])));
+    assert_eq!(bob.store.fetch_open_post(transport.clone(), post.clone()).unwrap_err(), crate::store::StoreError::BadMessage);
+    set(&|r| *r = original.clone());
+    // A different version in the text than the row claims.
+    set(&|r| r.version = 9);
+    assert_eq!(bob.store.fetch_open_post(transport.clone(), post.clone()).unwrap_err(), crate::store::StoreError::BadMessage);
+    set(&|r| *r = original.clone());
+    assert!(bob.store.fetch_open_post(transport.clone(), post.clone()).is_ok(), "restored, it verifies again");
+    // A phone that remembers a different master key for the writer refuses an otherwise valid row; the right one is accepted and marked pinned.
+    let real_master = original.cert["master_key"].as_str().unwrap().to_owned();
+    bob.store.with_conn(|conn| crate::store::account::pin_master_key(conn, "alice", &vodozemac::base64_encode([9u8; 32]))).unwrap();
+    assert_eq!(bob.store.fetch_open_post(transport.clone(), post.clone()).unwrap_err(), crate::store::StoreError::BadMessage);
+    let (carol, _) = party(&server, "carol", 3);
+    carol.store.with_conn(|conn| crate::store::account::pin_master_key(conn, "alice", &real_master)).unwrap();
+    assert!(carol.store.fetch_open_post(transport.clone(), post).unwrap().pinned);
+}
+
+#[test]
+fn a_freewall_publishes_exactly_the_part_above_it_as_the_preview_and_subscribers_keep_the_whole() {
+    let server = open_server();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    let jam = new_jam(&alice);
+    let text = "Open intro\n\n![Top](attachment:1)\n\n[[freewall]]\n\nSubscribers only\n\n![Late](attachment:0)";
+    let post = publish_with(&alice, &jam, "Fraction walls", text, vec![pic(5, 600), pic(6, 700)], options("subscribers", None));
+    deliver(&alice, &transport);
+    let preview = carol.store.fetch_open_post(transport.clone(), post.clone()).unwrap();
+    assert_eq!((preview.preview_of.as_deref(), preview.has_rest), (Some(post.as_str()), true));
+    assert!(preview.markdown.contains("Open intro") && preview.markdown.contains("![Top](attachment:0)"), "{}", preview.markdown);
+    assert!(!preview.markdown.contains("Subscribers only") && !preview.markdown.contains("Late") && !preview.markdown.contains("freewall"), "{}", preview.markdown);
+    assert_eq!(preview.files.len(), 1, "only the picture above the marker is public");
+    assert_eq!(server.state.lock().unwrap().open_files.len(), 1);
+    // The subscriber's copy is the whole post.
+    join_jam(&alice, &bob, &jam, &transport);
+    catch_up(&alice, &[&bob], &transport);
+    let whole = bob.store.read_jam_post(post).unwrap().unwrap();
+    assert!(whole.markdown.contains("Subscribers only") && whole.markdown.contains("Late"));
+    // Removing the marker takes the Preview down; a marker at the very end has nothing below it.
+    let (post2, _) = (publish_with(&alice, &jam, "Short", "Only this\n\n[[freewall]]", vec![], options("subscribers", None)), ());
+    deliver(&alice, &transport);
+    assert!(!carol.store.fetch_open_post(transport.clone(), post2).unwrap().has_rest);
+}
+
+#[test]
+fn changing_the_audience_publishes_or_deletes_the_open_copy_and_it_can_come_back() {
+    let server = open_server();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let jam = new_jam(&alice);
+    let post = publish_with(&alice, &jam, "Plain", "Words", vec![], options("subscribers", None));
+    deliver(&alice, &transport);
+    assert_eq!(bob.store.fetch_open_post(transport.clone(), post.clone()).unwrap_err(), crate::store::StoreError::NotFound, "subscribers only: nothing open");
+    // Subscribers -> Everyone: an open copy of the same post.
+    alice.store.set_jam_post_audience(post.clone(), "everyone".into()).unwrap();
+    deliver(&alice, &transport);
+    assert_eq!(bob.store.fetch_open_post(transport.clone(), post.clone()).unwrap().version, 1);
+    // Everyone -> Subscribers: gone from the server, the encrypted post stays.
+    alice.store.set_jam_post_audience(post.clone(), "subscribers".into()).unwrap();
+    deliver(&alice, &transport);
+    assert_eq!(bob.store.fetch_open_post(transport.clone(), post.clone()).unwrap_err(), crate::store::StoreError::NotFound);
+    assert_eq!(alice.store.read_jam_post(post.clone()).unwrap().unwrap().audience, "subscribers");
+    // And back again: the version continues.
+    alice.store.set_jam_post_audience(post.clone(), "everyone".into()).unwrap();
+    deliver(&alice, &transport);
+    assert_eq!(bob.store.fetch_open_post(transport.clone(), post.clone()).unwrap().version, 2);
+    // Bad values are refused.
+    assert_eq!(alice.store.set_jam_post_audience(post.clone(), "tier".into()).unwrap_err(), crate::store::StoreError::Rejected);
+    // Deleting the post deletes both copies.
+    alice.store.delete_jam_post(post.clone()).unwrap();
+    deliver(&alice, &transport);
+    assert_eq!(bob.store.fetch_open_post(transport, post).unwrap_err(), crate::store::StoreError::NotFound);
+}
+
+#[test]
+fn a_change_made_before_the_first_delivery_never_reaches_the_server_and_an_edit_is_the_next_version() {
+    let server = open_server();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let jam = new_jam(&alice);
+    let post = publish_with(&alice, &jam, "Draft idea", "First", vec![], options("everyone", None));
+    // Taken back before anything was sent: the server never hears of it.
+    alice.store.set_jam_post_audience(post.clone(), "subscribers".into()).unwrap();
+    assert_eq!(alice.store.open_send_progress().unwrap().pending, 0);
+    deliver(&alice, &transport);
+    assert!(server.state.lock().unwrap().open_posts.is_empty());
+    // Everyone again, then two edits before the first delivery collapse to one publish of version 1; a later edit is version 2.
+    alice.store.set_jam_post_audience(post.clone(), "everyone".into()).unwrap();
+    alice.store.edit_jam_post(post.clone(), "Draft idea".into(), String::new(), "Second".into(), vec![], "person".into(), false, None).unwrap();
+    deliver(&alice, &transport);
+    assert_eq!(bob.store.fetch_open_post(transport.clone(), post.clone()).unwrap().markdown, "Second");
+    alice.store.edit_jam_post(post.clone(), "Draft idea".into(), String::new(), "Third".into(), vec![], "person".into(), false, None).unwrap();
+    deliver(&alice, &transport);
+    let open = bob.store.fetch_open_post(transport, post).unwrap();
+    assert_eq!((open.markdown.as_str(), open.version), ("Third", 2));
+}
+
+#[test]
+fn a_server_that_does_not_take_open_posts_yet_holds_them_and_sends_them_when_it_does() {
+    let server = FakeServer::new(); // open_posts_enabled is off
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let jam = new_jam(&alice);
+    let post = publish_with(&alice, &jam, "Waiting", "Words", vec![], options("everyone", None));
+    deliver(&alice, &transport);
+    assert_eq!(alice.store.open_send_progress().unwrap(), crate::client::open::OpenSendProgress { pending: 1, held: 1 });
+    // The encrypted post went anyway.
+    assert!(server.state.lock().unwrap().open_posts.is_empty());
+    assert_eq!(alice.store.read_jam_post(post.clone()).unwrap().unwrap().state, "ready");
+    server.state.lock().unwrap().open_enabled = true;
+    retry_open_now(&alice);
+    deliver(&alice, &transport);
+    assert_eq!(alice.store.open_send_progress().unwrap().pending, 0);
+    assert_eq!(bob.store.fetch_open_post(transport, post).unwrap().title, "Waiting");
+}
+
+#[test]
+fn series_fields_round_trip_to_subscribers_and_the_open_copy_and_bad_ones_are_refused() {
+    let server = open_server();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    let jam = new_jam(&alice);
+    join_jam(&alice, &bob, &jam, &transport);
+    let part1 = publish_with(&alice, &jam, "Fractions, part 1", "One", vec![], options("everyone", Some(series("Fractions", 1, Some(3)))));
+    let part2 = publish_with(&alice, &jam, "Fractions, part 2", "Two", vec![], options("subscribers", Some(series("Fractions", 2, None))));
+    catch_up(&alice, &[&bob], &transport);
+    deliver(&alice, &transport);
+    let mine = alice.store.read_jam_post(part1.clone()).unwrap().unwrap().series.unwrap();
+    assert_eq!((mine.title.as_str(), mine.part, mine.of), ("Fractions", 1, Some(3)));
+    assert_eq!(bob.store.read_jam_post(part1.clone()).unwrap().unwrap().series, Some(series("Fractions", 1, Some(3))));
+    assert_eq!(bob.store.read_jam_post(part2.clone()).unwrap().unwrap().series, Some(series("Fractions", 2, None)));
+    assert_eq!(carol.store.fetch_open_post(transport.clone(), part1.clone()).unwrap().series, Some(series("Fractions", 1, Some(3))));
+    // Adding a post to a series later seals a new version and the subscribers see it.
+    alice.store.set_jam_post_series(part2.clone(), Some(series("Fractions", 2, Some(3)))).unwrap();
+    catch_up(&alice, &[&bob], &transport);
+    assert_eq!(bob.store.read_jam_post(part2.clone()).unwrap().unwrap().series.unwrap().of, Some(3));
+    alice.store.set_jam_post_series(part2.clone(), None).unwrap();
+    catch_up(&alice, &[&bob], &transport);
+    assert_eq!(bob.store.read_jam_post(part2).unwrap().unwrap().series, None);
+    // A part of 0, a total smaller than the part, an empty title or an unusable id is refused.
+    for bad in [series("Fractions", 0, None), series("Fractions", 3, Some(2)), series("  ", 1, None), crate::client::jam::SeriesInfo { id: "no spaces".into(), title: "T".into(), part: 1, of: None }] {
+        assert_eq!(alice.store.publish_jam_post_with(jam.clone(), "article".into(), "T".into(), String::new(), "x".into(), "subscribers".into(), vec![], vec![], "person".into(), options("subscribers", Some(bad))).unwrap_err(), crate::store::StoreError::Rejected);
+    }
+}
+
+#[test]
+fn discover_lists_open_posts_by_cursor_with_metadata_only_and_forgets_deleted_ones() {
+    let server = open_server();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let jam = new_jam(&alice);
+    let a = publish_with(&alice, &jam, "First", "One two three", vec![], options("everyone", None));
+    let b = publish_with(&alice, &jam, "Second", "Four", vec![], options("everyone", Some(series("S", 1, None))));
+    deliver(&alice, &transport);
+    let page = bob.store.fetch_open_feed(transport.clone(), bob.token.clone(), 0).unwrap();
+    assert_eq!(page.items.iter().map(|i| i.title.as_str()).collect::<Vec<_>>(), vec!["First", "Second"]);
+    assert_eq!((page.items[0].excerpt.as_str(), page.items[0].author_id.as_str(), page.items[1].series.clone()), ("One two three", "alice", Some(series("S", 1, None))));
+    assert!(page.gone.is_empty());
+    // Nothing new: an empty page at the same cursor. Then a deletion arrives as "gone".
+    let same = bob.store.fetch_open_feed(transport.clone(), bob.token.clone(), page.cursor).unwrap();
+    assert_eq!((same.items.len(), same.cursor), (0, page.cursor));
+    alice.store.delete_jam_post(a.clone()).unwrap();
+    deliver(&alice, &transport);
+    let after = bob.store.fetch_open_feed(transport.clone(), bob.token.clone(), page.cursor).unwrap();
+    assert_eq!((after.items.len(), after.gone), (0, vec![a]));
+    assert!(bob.store.fetch_open_post(transport, b).is_ok());
+}
+
+#[test]
+fn a_hidden_open_post_is_gone_for_readers() {
+    let server = open_server();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let jam = new_jam(&alice);
+    let post = publish_with(&alice, &jam, "Reported", "Words", vec![], options("everyone", None));
+    deliver(&alice, &transport);
+    server.state.lock().unwrap().open_posts.get_mut(&post).unwrap().taken_down = true;
+    assert_eq!(bob.store.fetch_open_post(transport, post).unwrap_err(), crate::store::StoreError::NotFound);
+}
+
+#[test]
+fn a_co_written_draft_published_to_everyone_goes_out_as_a_signed_open_post_of_the_writer() {
+    let server = open_server();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let jam = new_jam(&alice);
+    let id = shared_draft(&alice, &bob, &transport);
+    let post = alice.store.publish_draft_with(transport.clone(), alice.token.clone(), id, jam, vec![], "person".into(), options("everyone", None)).unwrap();
+    deliver(&alice, &transport);
+    let (carol, _) = party(&server, "carol", 3);
+    let open = carol.store.fetch_open_post(transport, post).unwrap();
+    assert_eq!((open.title.as_str(), open.author_id.as_str()), ("Plans", "alice"));
+    assert!(open.markdown.contains("The intro paragraph."));
 }

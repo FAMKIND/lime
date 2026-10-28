@@ -190,6 +190,13 @@ impl LimeStore {
     /// from 0 in the order they appear. Files this phone does not have yet are fetched first. The draft is linked to the post, and every author is told.
     #[allow(clippy::too_many_arguments)]
     pub fn publish_draft(&self, transport: Arc<dyn Transport>, auth_token: String, draft_id: String, jam_id: String, coauthors: Vec<String>, display_as: String) -> Result<String, StoreError> {
+        self.publish_draft_with(transport, auth_token, draft_id, jam_id, coauthors, display_as, super::jam::PostOptions { audience: "subscribers".into(), series: None })
+    }
+
+    /// `publish_draft` with the post's audience and series (LIME-210b): a co-written article goes out through the same path as any other post, so
+    /// *Everyone* and a `[[freewall]]` Preview work for it too. Only the writer publishes, so the open copy is signed by the writer's device.
+    #[allow(clippy::too_many_arguments)]
+    pub fn publish_draft_with(&self, transport: Arc<dyn Transport>, auth_token: String, draft_id: String, jam_id: String, coauthors: Vec<String>, display_as: String, options: super::jam::PostOptions) -> Result<String, StoreError> {
         let state = self.load_or_create_account()?;
         let me = state.user_id.clone().filter(|_| state.registered).ok_or(StoreError::NotRegistered)?;
         let writer: Option<String> = self.with_conn(|conn| conn.query_row("SELECT writer FROM drafts WHERE draft_id = ?1", params![draft_id], |r| r.get(0)).optional().map_err(db_err)?.ok_or(StoreError::NotFound))?;
@@ -204,7 +211,7 @@ impl LimeStore {
             attachments.push(OutgoingAttachment { bytes, name: info.name, mime: info.mime, width: info.width, height: info.height, duration_ms: info.duration_ms, thumb: info.thumb, poster: info.poster });
         }
         let markdown = self.with_conn(|conn| self.with_draft_conn(conn, &draft_id, false, |d| Ok(d.export_markdown_numbered(&|n| numbers.iter().position(|x| *x == n).unwrap_or(0) as u32))))?;
-        let post_id = self.publish_jam_post_as(jam_id, "article".into(), meta.title, meta.subtitle, markdown, "free".into(), attachments, coauthors, display_as)?;
+        let post_id = self.publish_jam_post_with(jam_id, "article".into(), meta.title, meta.subtitle, markdown, "free".into(), attachments, coauthors, display_as, options)?;
         self.draft_mark_published(draft_id, post_id.clone())?;
         Ok(post_id)
     }

@@ -285,9 +285,13 @@ pub(crate) struct PostRow {
     pub display_as: String,
     /// When it was last edited (milliseconds), 0 if never (LIME-195).
     pub edited_at: i64,
+    /// `subscribers` or `everyone` (LIME-210b).
+    pub audience: String,
+    /// The series field as JSON text, if the post is part of one (LIME-210b/f).
+    pub series: Option<String>,
 }
 
-const POST: &str = "SELECT post_id, jam_id, author, tier, title, markdown, plain, attachments, created, deleted_at IS NOT NULL, fetched, kind, subtitle, display_as, COALESCE(edited_at, 0) FROM jam_posts";
+const POST: &str = "SELECT post_id, jam_id, author, tier, title, markdown, plain, attachments, created, deleted_at IS NOT NULL, fetched, kind, subtitle, display_as, COALESCE(edited_at, 0), audience, series FROM jam_posts";
 
 fn read_post(r: &rusqlite::Row<'_>) -> rusqlite::Result<PostRow> {
     Ok(PostRow {
@@ -306,6 +310,8 @@ fn read_post(r: &rusqlite::Row<'_>) -> rusqlite::Result<PostRow> {
         subtitle: r.get(12)?,
         display_as: r.get(13)?,
         edited_at: r.get(14)?,
+        audience: r.get(15)?,
+        series: r.get(16)?,
     })
 }
 
@@ -392,12 +398,14 @@ pub(crate) struct Unuploaded {
     pub created: i64,
     pub blob: BlobRef,
     pub display_as: String,
+    pub audience: String,
+    pub series: Option<String>,
 }
 
 pub(crate) fn to_upload(conn: &Connection, limit: usize) -> Result<Vec<Unuploaded>, StoreError> {
     let mut statement = conn
         .prepare(
-            "SELECT post_id, jam_id, tier, title, markdown, attachments, created, blob_id, blob_key, blob_sha, blob_size, kind, subtitle, display_as FROM jam_posts
+            "SELECT post_id, jam_id, tier, title, markdown, attachments, created, blob_id, blob_key, blob_sha, blob_size, kind, subtitle, display_as, audience, series FROM jam_posts
              WHERE uploaded = 0 AND wire IS NOT NULL AND deleted_at IS NULL
              AND NOT EXISTS (SELECT 1 FROM jam_attachments a WHERE a.post_id = jam_posts.post_id AND a.uploaded = 0) ORDER BY created, post_id LIMIT ?1",
         )
@@ -416,6 +424,8 @@ pub(crate) fn to_upload(conn: &Connection, limit: usize) -> Result<Vec<Unuploade
                 kind: r.get(11)?,
                 subtitle: r.get(12)?,
                 display_as: r.get(13)?,
+                audience: r.get(14)?,
+                series: r.get(15)?,
             })
         })
         .map_err(db_err)?
@@ -855,4 +865,87 @@ pub(crate) fn remove_comment(conn: &Connection, comment_id: &str) -> Result<(), 
 
 pub(crate) fn comments_by_author_since(conn: &Connection, author: &str, since: i64) -> Result<i64, StoreError> {
     conn.query_row("SELECT COUNT(*) FROM jam_comments WHERE author = ?1 AND created >= ?2", params![author, since], |r| r.get(0)).map_err(db_err)
+}
+
+// ---------------------------------------------------------------- audiences, series and open copies (LIME-210b)
+
+pub(crate) const AUDIENCE_SUBSCRIBERS: &str = "subscribers";
+pub(crate) const AUDIENCE_EVERYONE: &str = "everyone";
+
+pub(crate) fn valid_audience(audience: &str) -> bool {
+    audience == AUDIENCE_SUBSCRIBERS || audience == AUDIENCE_EVERYONE
+}
+
+/// A series field as it may be stored or received: `{ id, title, part, of? }` with a UUID-ish id, a title of at most 80 characters, a part from 1 to 999
+/// and (optionally) a total at least as big. Anything else is dropped (`None`), never half-kept.
+pub(crate) fn clean_series(value: &Value) -> Option<Value> {
+    let id = value.get("id").and_then(Value::as_str).filter(|i| !i.is_empty() && i.len() <= 64 && i.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-'))?;
+    let title = clean_optional_line(value.get("title").and_then(Value::as_str)?, 80).filter(|t| !t.is_empty())?;
+    let part = value.get("part").and_then(Value::as_u64).filter(|p| (1..=999).contains(p))?;
+    let mut out = serde_json::json!({ "id": id, "title": title, "part": part });
+    if let Some(of) = value.get("of").filter(|v| !v.is_null()) {
+        let of = of.as_u64().filter(|o| (1..=999).contains(o) && *o >= part)?;
+        out["of"] = serde_json::json!(of);
+    }
+    Some(out)
+}
+
+/// Records that a downloaded post has this audience and series (the writer sealed them into the post).
+pub(crate) fn set_audience_series(conn: &Connection, post_id: &str, audience: &str, series: Option<&Value>) -> Result<(), StoreError> {
+    conn.execute("UPDATE jam_posts SET audience = ?2, series = ?3 WHERE post_id = ?1", params![post_id, audience, series.map(Value::to_string)]).map_err(db_err)?;
+    Ok(())
+}
+
+/// One pending open-post delivery for the server (the latest per post).
+pub(crate) struct OpenJob {
+    pub post_id: String,
+    pub action: String,
+    pub version: i64,
+    pub payload: Option<String>,
+    pub signature: Option<String>,
+    pub cert: Option<String>,
+    pub files: String,
+    pub attempts: i64,
+}
+
+pub(crate) fn put_open_job(conn: &Connection, job: &OpenJob) -> Result<(), StoreError> {
+    conn.execute(
+        "INSERT OR REPLACE INTO open_outbox (post_id, action, version, payload, signature, cert, files, attempts, next_at, blocked) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, 0, NULL)",
+        params![job.post_id, job.action, job.version, job.payload, job.signature, job.cert, job.files],
+    )
+    .map_err(db_err)?;
+    Ok(())
+}
+
+pub(crate) fn open_jobs(conn: &Connection, now: i64, limit: usize) -> Result<Vec<OpenJob>, StoreError> {
+    let mut statement = conn
+        .prepare("SELECT post_id, action, version, payload, signature, cert, files, attempts FROM open_outbox WHERE next_at <= ?1 ORDER BY rowid LIMIT ?2")
+        .map_err(db_err)?;
+    let rows = statement
+        .query_map(params![now, limit as i64], |r| {
+            Ok(OpenJob { post_id: r.get(0)?, action: r.get(1)?, version: r.get(2)?, payload: r.get(3)?, signature: r.get(4)?, cert: r.get(5)?, files: r.get(6)?, attempts: r.get(7)? })
+        })
+        .map_err(db_err)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(db_err)?;
+    Ok(rows)
+}
+
+/// Done only if it is still the same version (an edit made while it was being sent stays queued).
+pub(crate) fn done_open_job(conn: &Connection, post_id: &str, version: i64) -> Result<(), StoreError> {
+    conn.execute("DELETE FROM open_outbox WHERE post_id = ?1 AND version = ?2", params![post_id, version]).map_err(db_err)?;
+    Ok(())
+}
+
+pub(crate) fn back_off_open_job(conn: &Connection, post_id: &str, attempts: i64, now: i64, blocked: Option<&str>) -> Result<(), StoreError> {
+    let wait = (30_000i64 << attempts.clamp(0, 7)).min(60 * 60 * 1000);
+    conn.execute("UPDATE open_outbox SET attempts = attempts + 1, next_at = ?3, blocked = ?4 WHERE post_id = ?1 AND attempts = ?2", params![post_id, attempts, now + wait, blocked]).map_err(db_err)?;
+    Ok(())
+}
+
+/// How many open deliveries wait, and how many are held for a reason (the server not accepting open posts yet, a limit).
+pub(crate) fn open_progress(conn: &Connection) -> Result<(i64, i64), StoreError> {
+    let total: i64 = conn.query_row("SELECT COUNT(*) FROM open_outbox", [], |r| r.get(0)).map_err(db_err)?;
+    let held: i64 = conn.query_row("SELECT COUNT(*) FROM open_outbox WHERE blocked IS NOT NULL", [], |r| r.get(0)).map_err(db_err)?;
+    Ok((total, held))
 }
