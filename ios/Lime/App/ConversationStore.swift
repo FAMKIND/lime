@@ -1007,7 +1007,7 @@ final class ConversationStore {
         isLoaded = true
         refreshStorageState()
         statuses = ["sam": PeerStatus(state: .dnd, until: nil), "lee": PeerStatus(state: .away, until: nil)]
-        demoJamPages = ["sam": JamPageInfo(jamId: "demo-sam-jam", writerId: "sam", title: "Fractions that stick", about: "Short lessons for grades 3 to 5", topics: ["Maths", "Grade 4"], postCount: 3, subscriberCount: 12)]
+        demoJamPages = ["sam": JamPageInfo(jamId: "demo-sam-jam", writerId: "sam", title: "Fractions that stick", about: "Short lessons for grades 3 to 5", topics: ["Maths", "Grade 4"], postCount: 3, subscriberCount: 12, hasCommunity: false)]
         // Their public profiles, as the server would answer (UI tests and screenshots).
         publicProfiles = [
             "sam": PublicProfile(userId: "sam", displayName: "Sam Park", username: "sam.park", school: "Lincoln Elementary", aboutEmoji: "📚", aboutText: "Fourth grade, loves fractions", since: 1_762_000_000_000, hasJam: false),
@@ -1134,7 +1134,7 @@ final class ConversationStore {
             ])]
             path.append("dm:fmt")
         case "notif-banner": demoNotification = "banner"
-        case "jam", "jam-following", "jam-mine", "jam-mine-profile", "jam-mine-asjam", "jam-mine-podcast", "jam-request", "jam-discover", "jam-series":
+        case "jam", "jam-following", "jam-mine", "jam-mine-profile", "jam-mine-asjam", "jam-mine-podcast", "jam-request", "jam-discover", "jam-series", "jam-community":
             // The jam tab, with nothing yet, with a jam I follow (Sam's, two posts), or with a jam of my own (one post, two subscribers).
             section = .jam
             if ProcessInfo.processInfo.arguments.contains("-lime-demo-open") { openPostsEnabled = true }   // the server takes open posts (LIME-210c)
@@ -1157,6 +1157,7 @@ final class ConversationStore {
             if screen == "jam-request" { demoRequest() }
             if screen == "jam-discover" { demoDiscover() }
             if screen == "jam-series" { demoSeriesScreen() }
+            if screen == "jam-community", let page = demoJamPages["sam"] { demoSubscribe(page); demoSetCommunity(page.jamId, on: true); jamPath.append(ProfileRoute(userID: "sam", name: "Sam Park", isMe: false)) }
             if screen == "jam-mine-profile" { jamPath.append(ProfileRoute(userID: meProvider().id, name: meProvider().name, isMe: true)) }
         case "group-incoming", "group-incoming-ios-refused":
             loadDemoTeachers()

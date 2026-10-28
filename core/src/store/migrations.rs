@@ -898,6 +898,12 @@ const MIGRATIONS: &[&str] = &[
     // automatically again (also if the contact is added again). `contact_jam_checks` is when each contact was last looked at.
     "CREATE TABLE jam_follow_off (jam_id TEXT PRIMARY KEY NOT NULL);
      CREATE TABLE contact_jam_checks (user_id TEXT PRIMARY KEY NOT NULL, checked_at INTEGER NOT NULL);",
+    // 59 (LIME-210g): a jam's community chat. `community` says the jam has one (the writer turns it on; subscribers learn it from the jam's state);
+    // `community_group` is the writer's group (made when the first subscriber joins). `community_joins` is one person's join for one jam: on the writer's
+    // phone `pending` until the group add is made, then `joined` or `full`; on the subscriber's phone `asked`, then the writer's answer.
+    "ALTER TABLE jams ADD COLUMN community INTEGER NOT NULL DEFAULT 0;
+     ALTER TABLE jams ADD COLUMN community_group TEXT;
+     CREATE TABLE community_joins (jam_id TEXT NOT NULL, user_id TEXT NOT NULL, state TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (jam_id, user_id));",
 ];
 
 /// The schema version this build writes.

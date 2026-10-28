@@ -129,6 +129,10 @@ pub(crate) struct JamRow {
     pub status: String,
     pub ended: bool,
     pub created: i64,
+    /// The jam has a community chat (LIME-210g).
+    pub community: bool,
+    /// Mine: the community's group conversation, once the first subscriber joined.
+    pub community_group: Option<String>,
 }
 
 fn read_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<JamRow> {
@@ -145,10 +149,12 @@ fn read_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<JamRow> {
         status: r.get(8)?,
         ended: r.get(9)?,
         created: r.get(10)?,
+        community: r.get(11)?,
+        community_group: r.get(12)?,
     })
 }
 
-const ROW: &str = "SELECT jam_id, writer, title, about, topics, tiers, state_hlc, mine, status, ended, created FROM jams";
+const ROW: &str = "SELECT jam_id, writer, title, about, topics, tiers, state_hlc, mine, status, ended, created, community, community_group FROM jams";
 
 pub(crate) fn get(conn: &Connection, jam_id: &str) -> Result<Option<JamRow>, StoreError> {
     conn.query_row(&format!("{ROW} WHERE jam_id = ?1"), params![jam_id], read_row).optional().map_err(db_err)
@@ -948,4 +954,20 @@ pub(crate) fn open_progress(conn: &Connection) -> Result<(i64, i64), StoreError>
     let total: i64 = conn.query_row("SELECT COUNT(*) FROM open_outbox", [], |r| r.get(0)).map_err(db_err)?;
     let held: i64 = conn.query_row("SELECT COUNT(*) FROM open_outbox WHERE blocked IS NOT NULL", [], |r| r.get(0)).map_err(db_err)?;
     Ok((total, held))
+}
+
+// ---------------------------------------------------------------- the community chat (LIME-210g)
+
+/// The most people in a community: the group's own limit (`protocol::group::MAX_MEMBERS`, the writer included). Beyond it the answer is "full".
+pub(crate) fn community_is_full(members: usize) -> bool {
+    members >= crate::protocol::group::MAX_MEMBERS
+}
+
+pub(crate) fn set_join(conn: &Connection, jam_id: &str, user_id: &str, state: &str, now: i64) -> Result<(), StoreError> {
+    conn.execute("INSERT OR REPLACE INTO community_joins (jam_id, user_id, state, at) VALUES (?1, ?2, ?3, ?4)", params![jam_id, user_id, state, now]).map_err(db_err)?;
+    Ok(())
+}
+
+pub(crate) fn join_state(conn: &Connection, jam_id: &str, user_id: &str) -> Result<Option<String>, StoreError> {
+    conn.query_row("SELECT state FROM community_joins WHERE jam_id = ?1 AND user_id = ?2", params![jam_id, user_id], |r| r.get(0)).optional().map_err(db_err)
 }

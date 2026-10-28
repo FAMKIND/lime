@@ -8521,3 +8521,14 @@ On other people's phones (not reachable): their chats with the account, jam post
 - **Tests (Series210fUITests, demo, 2 pass):** a card names its part, the series page lists three parts in order with a Preview lock and the read mark and "1 of 3 read"; making a new series in the composer shows "Part 1" and the posted card says so.
 - **Not done:** the **podcast recorder's details page has no series row yet** (a podcast joins a series through Edit on an article-style page only for now; a new recording cannot be put in a series when it is posted) and the series page does not yet offer "Subscribe" for a Preview-only series. Flagged for a follow-up brief.
 - **Installed:** with the final build.
+
+## LIME-210g — a community chat for a jam
+
+- **Writer:** a **Community chat** switch in Edit jam page. On, the jam's state tells subscribers (`community: true`, with the welcome for new ones) and the public page carries the one bit `has_community` (server: `jams.has_community`, migration `20261028000000`, `jam-page` set/get/by_writer).
+- **Subscriber:** on a followed jam that has a community: **Join Sam's community** (profile under Subscribe, and the end of an article). Nothing to approve: `jam.community.join` goes (Olm) to the writer; their phone checks the sender is an **active subscriber**, then does today's group add **by itself** (the first join makes the group "<jam> community"); it answers `joined` or `full`. While waiting the app says **"You will be added when Sam's phone is next online."** The group appears in Messages like any group.
+- **Leaving** is the group's ordinary leave; **removing a subscriber** also removes them from the community. A non-subscriber has nothing to join (and a forged join from one is ignored by the writer's phone).
+- **100 members** (the writer included) is the group's limit: the 101st is answered **"The community is full."**
+- **Not done, said plainly: the announcement-channel mode** that was meant to take over at 100 (and the Community/Channel choice at creation) **depends on LIME-193c, which is not built** (no `announce` flag exists in the group protocol). Skipped, not faked. The 100 cap itself has a unit check of the rule; a 101-person run was not made.
+- **What each party learns:** as `docs/jam.md` 13.8/13.10: the server learns the one boolean `has_community` and nothing of the group (sealed as any group); the writer learns who asks to join (and adds them); a member sees the group's members as a group shows them.
+- **Tests:** core: the writer turns it on, subscribers learn it, a non-subscriber and a jam with no community refuse, a join is added by the writer's phone by itself (the group is made, bob is told `joined`, carol joins the same group), removing a subscriber takes them out of the community; the 100 rule. UI (demo, 2 pass): Join from the jam page shows the waiting line; the writer's switch is in Edit jam page. Core **387 pass**.
+- **Installed:** with the final build.

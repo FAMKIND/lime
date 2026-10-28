@@ -270,7 +270,7 @@ struct OpenPostPage: View {
     }
 
     private func subscribe(_ post: OpenPostInfo) async {
-        let target = page ?? JamPageInfo(jamId: post.jamId, writerId: post.authorId, title: "", about: "", topics: post.topics, postCount: 0, subscriberCount: 0)
+        let target = page ?? JamPageInfo(jamId: post.jamId, writerId: post.authorId, title: "", about: "", topics: post.topics, postCount: 0, subscriberCount: 0, hasCommunity: false)
         await store.subscribe(to: target)
     }
 }

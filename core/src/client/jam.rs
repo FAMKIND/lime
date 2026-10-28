@@ -36,6 +36,12 @@ pub struct JamInfo {
     /// Mine: `active`. A subscription: `requested`, `active`, `full`, `removed` or `left`.
     pub status: String,
     pub ended: bool,
+    /// The jam has a community chat (LIME-210g).
+    pub community: bool,
+    /// My join: `asked` (waiting for the writer's phone), `joined` or `full`; none if I have not asked.
+    pub community_state: Option<String>,
+    /// Mine: the community's group conversation (`grp:…`), once someone joined.
+    pub community_group: Option<String>,
     /// Mine: how many active subscribers.
     pub subscriber_count: u32,
     pub post_count: u32,
@@ -176,6 +182,8 @@ pub struct JamPageInfo {
     pub post_count: u32,
     /// How many teachers follow it (public, with the page: LIME-188b).
     pub subscriber_count: u32,
+    /// The writer has a community chat (the one public bit of it, LIME-210g).
+    pub has_community: bool,
 }
 
 /// The largest file in a jam post (the server's blob cap is 25 MiB, and the sealed form is a little larger).
@@ -200,7 +208,12 @@ pub struct JamSendProgress {
 }
 
 fn info(conn: &Connection, row: jam_store::JamRow) -> Result<JamInfo, StoreError> {
+    // On a subscriber's phone its own join is the row with an empty user.
+    let community_state = if row.mine { None } else { jam_store::join_state(conn, &row.jam_id, "")? };
     Ok(JamInfo {
+        community: row.community,
+        community_state,
+        community_group: row.community_group.clone(),
         subscriber_count: if row.mine { jam_store::subscriber_count(conn, &row.jam_id)? as u32 } else { 0 },
         post_count: jam_store::post_count(conn, &row.jam_id)? as u32,
         conversation_id: jam_store::conversation_id(&row.jam_id),
@@ -261,7 +274,7 @@ pub(crate) fn signed_op(conn: &Connection, state: &AccountState, op_type: &str, 
 }
 
 /// Queues an op for one person in the jam's own persistent queue (sent over Olm, paced, counted in the progress).
-fn queue_op(conn: &Connection, jam_id: &str, recipient: &str, op: &Op) -> Result<(), StoreError> {
+pub(crate) fn queue_op(conn: &Connection, jam_id: &str, recipient: &str, op: &Op) -> Result<(), StoreError> {
     jam_store::queue_op(conn, jam_id, recipient, &op.to_json().to_string())
 }
 
@@ -347,7 +360,7 @@ impl LimeStore {
         let now = now_ms();
         self.with_conn(|conn| {
             let jam = jam_store::get(conn, &jam_id)?.filter(|j| j.mine && !j.ended).ok_or(StoreError::NotFound)?;
-            let op = signed_op(conn, &state, "jam.update", &jam_id, None, json!({ "jam_id": jam_id, "title": title, "about": about, "topics": topics, "tiers": jam.tiers }), now)?;
+            let op = signed_op(conn, &state, "jam.update", &jam_id, None, json!({ "jam_id": jam_id, "title": title, "about": about, "topics": topics, "tiers": jam.tiers, "community": jam.community }), now)?;
             conn.execute(
                 "UPDATE jams SET title = ?2, about = ?3, topics = ?4, state_hlc = ?5, page_state = 'dirty' WHERE jam_id = ?1",
                 params![jam_id, title, about, json!(topics).to_string(), op.hlc],
@@ -994,7 +1007,10 @@ impl LimeStore {
                 let op = signed_op(conn, &state, "jam.remove", &jam_id, None, json!({ "jam_id": jam_id }), now)?;
                 queue_op(conn, &jam_id, &user_id, &op)
             })
-        })
+        })?;
+        // A removed subscriber also leaves the community chat.
+        self.leave_community_of(&jam_id, &user_id);
+        Ok(())
     }
 
     /// The people following my jam (active, and those who left or were removed).
@@ -1152,6 +1168,7 @@ impl LimeStore {
             topics,
             post_count: jam.get("post_count").and_then(Value::as_u64).unwrap_or(0) as u32,
             subscriber_count: jam.get("subscriber_count").and_then(Value::as_u64).unwrap_or(0) as u32,
+            has_community: jam.get("has_community").and_then(Value::as_bool).unwrap_or(false),
         }))
     }
 
@@ -1224,7 +1241,7 @@ impl LimeStore {
         }
         let welcome = json!({
             "jam_id": jam_id,
-            "state": { "writer": jam.writer, "title": jam.title, "about": jam.about, "topics": jam.topics, "tiers": jam.tiers, "state_hlc": jam.state_hlc },
+            "state": { "writer": jam.writer, "title": jam.title, "about": jam.about, "topics": jam.topics, "tiers": jam.tiers, "state_hlc": jam.state_hlc, "community": jam.community },
             "sessions": sessions,
             "post_count": jam_store::post_count(conn, jam_id)?,
         });
@@ -1275,6 +1292,26 @@ impl LimeStore {
                     return Ok(());
                 }
                 self.accept_subscriber(conn, state, &jam, sender, now)
+            }
+            // A subscriber asks to join the community: noted if they are an active subscriber of my jam that has one; the pass makes the group add.
+            "jam.community.join" => {
+                let Some(jam) = jam.filter(|j| j.mine && j.writer == me && j.community) else { return Ok(()) };
+                if sender == me || !jam_store::subscriber(conn, jam_id, sender)?.is_some_and(|(status, _)| status == "active") {
+                    return Ok(());
+                }
+                if jam_store::join_state(conn, &jam.jam_id, sender)?.as_deref() == Some("joined") {
+                    // Asked again (a lost answer): answer again by making it pending once more; the add finds them already in.
+                }
+                jam_store::set_join(conn, &jam.jam_id, sender, "pending", now)
+            }
+            // The writer's answer to my join.
+            "jam.community.reply" => {
+                let Some(jam) = jam.filter(|j| !j.mine && j.writer == sender) else { return Ok(()) };
+                let answer = op.payload.get("state").and_then(Value::as_str).filter(|a| *a == "joined" || *a == "full");
+                match answer {
+                    Some(answer) => jam_store::set_join(conn, &jam.jam_id, "", answer, now),
+                    None => Ok(()),
+                }
             }
             "jam.unsubscribe" => {
                 if jam.is_some_and(|j| j.mine) {
@@ -1474,6 +1511,9 @@ impl LimeStore {
             params![jam.jam_id, title, about, json!(topics).to_string(), json!(tiers).to_string(), state_hlc],
         )
         .map_err(db_err)?;
+        if let Some(community) = value.get("community").and_then(Value::as_bool) {
+            conn.execute("UPDATE jams SET community = ?2 WHERE jam_id = ?1", params![jam.jam_id, community]).map_err(db_err)?;
+        }
         Ok(())
     }
 
@@ -1880,6 +1920,7 @@ impl LimeStore {
     /// without internet. Never holds up the messages.
     pub(super) fn deliver_jam(&self, transport: &Arc<dyn Transport>, token: &str, state: &mut AccountState, me: &str) {
         self.queue_credit_requests(state);
+        self.process_community_joins();
         self.deliver_jam_ops(transport, token, state, me);
         self.upload_jam_posts(transport, token);
         self.deliver_open(transport, token);
@@ -1993,7 +2034,7 @@ impl LimeStore {
         for jam in dirty {
             let count = self.with_conn(|conn| jam_store::uploaded_count(conn, &jam.jam_id)).unwrap_or(0);
             let subscribers = self.with_conn(|conn| jam_store::subscriber_count(conn, &jam.jam_id)).unwrap_or(0);
-            let body = json!({ "action": "set", "jam_id": jam.jam_id, "title": jam.title, "about": jam.about, "topics": jam.topics, "post_count": count, "subscriber_count": subscribers });
+            let body = json!({ "action": "set", "jam_id": jam.jam_id, "title": jam.title, "about": jam.about, "topics": jam.topics, "post_count": count, "subscriber_count": subscribers, "has_community": jam.community });
             match call(transport, Some(token), "jam-page", &body) {
                 Ok((status, _)) if (200..300).contains(&status) => {
                     let _ = self.with_conn(|conn| jam_store::set_page_state(conn, &jam.jam_id, "ok"));

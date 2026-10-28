@@ -201,7 +201,7 @@ extension ConversationStore {
     /// The jam's page for a post shown as the jam (mine from my jam, someone's from their public page).
     func jamPageInfo(for post: JamPostInfo) async -> JamPageInfo? {
         if let mine = jamsMine.first(where: { $0.jamId == post.jamId }) {
-            return JamPageInfo(jamId: mine.jamId, writerId: mine.writer, title: mine.title, about: mine.about, topics: mine.topics, postCount: mine.postCount, subscriberCount: mine.subscriberCount)
+            return JamPageInfo(jamId: mine.jamId, writerId: mine.writer, title: mine.title, about: mine.about, topics: mine.topics, postCount: mine.postCount, subscriberCount: mine.subscriberCount, hasCommunity: false)
         }
         return await jamPage(of: post.author)
     }

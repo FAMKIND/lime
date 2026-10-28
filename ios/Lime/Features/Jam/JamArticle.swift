@@ -384,6 +384,7 @@ struct JamArticlePage: View {
                             .frame(maxWidth: .infinity, minHeight: 50).background(following ? Theme.surface : Theme.accent, in: Capsule())
                     }
                     .accessibilityIdentifier("jam-article-end-subscribe")
+                    CommunityJoinRow(jamID: post.jamId).frame(maxWidth: .infinity)
                 }
                 // (The likes row, "12 likes · 6 remixes" with faces, is LIME-189's: nothing is drawn here yet.)
             }

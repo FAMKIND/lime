@@ -10,6 +10,8 @@ struct JamDetailsSheet: View {
     @State private var topics: [String] = []
     @State private var custom = ""
     @State private var saving = false
+    /// A group chat subscribers can join (LIME-210g).
+    @State private var community = false
 
     private static let suggestions = ["Maths", "Reading", "Writing", "Science", "Social studies", "Art", "Music", "Special needs", "Kindergarten", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6"]
     private var canSave: Bool { !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && title.count <= 60 && about.count <= 500 && !saving }
@@ -41,6 +43,13 @@ struct JamDetailsSheet: View {
                         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                         Text("Up to 8. Teachers find your jam by these.").font(Theme.caption).foregroundStyle(Theme.textSecondary)
                     }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle(isOn: $community) { Text("Community chat").font(Theme.body).foregroundStyle(Theme.text) }
+                            .tint(Theme.accent).padding(.horizontal, 14).frame(minHeight: 52)
+                            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .accessibilityIdentifier("jam-community-toggle")
+                        Text("Subscribers can join a group chat with you. Up to 100 people.").font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                    }
                 }
                 .padding(20)
             }
@@ -55,7 +64,7 @@ struct JamDetailsSheet: View {
                 }
             }
             .onAppear {
-                if title.isEmpty { title = editing.title; about = editing.about; topics = editing.topics }
+                if title.isEmpty { title = editing.title; about = editing.about; topics = editing.topics; community = editing.community }
             }
         }
         .presentationDetents([.large])
@@ -88,6 +97,7 @@ struct JamDetailsSheet: View {
         saving = true
         Task {
             await store.editJam(editing.jamId, title: title, about: about, topics: topics)
+            if community != editing.community { _ = await store.setCommunity(editing.jamId, on: community) }
             dismiss()
         }
     }

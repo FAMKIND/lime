@@ -6,7 +6,7 @@ import UIKit
 extension ConversationStore {
     func demoStartJam(title: String, about: String, topics: [String]) {
         jamsMine = [JamInfo(jamId: "demo-my-jam", conversationId: "jam:demo-my-jam", writer: meProvider().id, title: title, about: about, topics: topics, tiers: ["free", "subscribers"],
-                            mine: true, status: "active", ended: false, subscriberCount: 0, postCount: 0, created: Int64(Date().timeIntervalSince1970 * 1000))]
+                            mine: true, status: "active", ended: false, community: false, communityState: nil, communityGroup: nil, subscriberCount: 0, postCount: 0, created: Int64(Date().timeIntervalSince1970 * 1000))]
         jamPosts["demo-my-jam"] = []
     }
 
@@ -14,7 +14,7 @@ extension ConversationStore {
         guard let i = jamsMine.firstIndex(where: { $0.jamId == jamID }) else { return }
         let old = jamsMine[i]
         jamsMine[i] = JamInfo(jamId: old.jamId, conversationId: old.conversationId, writer: old.writer, title: title, about: about, topics: topics, tiers: old.tiers, mine: true,
-                              status: "active", ended: false, subscriberCount: old.subscriberCount, postCount: old.postCount, created: old.created)
+                              status: "active", ended: false, community: false, communityState: nil, communityGroup: nil, subscriberCount: old.subscriberCount, postCount: old.postCount, created: old.created)
     }
 
     /// The bytes of demo files that are not pictures (a post's captions), by attachment id.
@@ -36,7 +36,7 @@ extension ConversationStore {
         if let i = jamsMine.firstIndex(where: { $0.jamId == jamID }) {
             let old = jamsMine[i]
             jamsMine[i] = JamInfo(jamId: old.jamId, conversationId: old.conversationId, writer: old.writer, title: old.title, about: old.about, topics: old.topics, tiers: old.tiers, mine: true,
-                                  status: "active", ended: false, subscriberCount: old.subscriberCount, postCount: old.postCount + 1, created: old.created)
+                                  status: "active", ended: false, community: false, communityState: nil, communityGroup: nil, subscriberCount: old.subscriberCount, postCount: old.postCount + 1, created: old.created)
         }
     }
 
@@ -45,7 +45,7 @@ extension ConversationStore {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         jamSubscriptions.removeAll { $0.jamId == page.jamId }
         jamSubscriptions.append(JamInfo(jamId: page.jamId, conversationId: "jam:\(page.jamId)", writer: page.writerId, title: page.title, about: page.about, topics: page.topics, tiers: ["free"],
-                                        mine: false, status: "active", ended: false, subscriberCount: 0, postCount: 2, created: now))
+                                        mine: false, status: "active", ended: false, community: false, communityState: nil, communityGroup: nil, subscriberCount: 0, postCount: 2, created: now))
         let first = JamPostInfo(postId: "demo-post-1", jamId: page.jamId, author: page.writerId, tier: "free", kind: "article", title: "Equivalent fractions in ten minutes", subtitle: "Fold, cut, compare",
                                 markdown: "**Start** with a pizza.\n\n- fold it\n- cut it\n- compare the pieces", plain: "Start with a pizza.\n• fold it\n• cut it\n• compare the pieces",
                                 attachmentsJson: "[]", created: now - 3_600_000, coauthors: ["lee"], displayAs: "person", editedAt: 0, audience: "subscribers", series: nil, state: "ready")
@@ -86,7 +86,7 @@ extension ConversationStore {
         if let i = jamsMine.firstIndex(where: { $0.jamId == "demo-my-jam" }) {
             let old = jamsMine[i]
             jamsMine[i] = JamInfo(jamId: old.jamId, conversationId: old.conversationId, writer: old.writer, title: old.title, about: old.about, topics: old.topics, tiers: old.tiers, mine: true,
-                                  status: "active", ended: false, subscriberCount: 2, postCount: old.postCount, created: old.created)
+                                  status: "active", ended: false, community: false, communityState: nil, communityGroup: nil, subscriberCount: 2, postCount: old.postCount, created: old.created)
         }
     }
 
@@ -110,7 +110,7 @@ extension ConversationStore {
         if let i = jamsMine.firstIndex(where: { $0.postCount > 0 && jamPosts[$0.jamId] != nil }) {
             let old = jamsMine[i]
             jamsMine[i] = JamInfo(jamId: old.jamId, conversationId: old.conversationId, writer: old.writer, title: old.title, about: old.about, topics: old.topics, tiers: old.tiers, mine: true,
-                                  status: "active", ended: false, subscriberCount: old.subscriberCount, postCount: max(0, old.postCount - 1), created: old.created)
+                                  status: "active", ended: false, community: false, communityState: nil, communityGroup: nil, subscriberCount: old.subscriberCount, postCount: max(0, old.postCount - 1), created: old.created)
         }
     }
 
@@ -147,7 +147,7 @@ extension ConversationStore {
     func demoDiscover() {
         openPostsEnabled = true
         let now = Int64(Date().timeIntervalSince1970 * 1000)
-        func page(_ id: String, _ title: String, _ topics: [String]) -> JamPageInfo { JamPageInfo(jamId: "demo-\(id)-jam", writerId: id, title: title, about: "", topics: topics, postCount: 3, subscriberCount: 12) }
+        func page(_ id: String, _ title: String, _ topics: [String]) -> JamPageInfo { JamPageInfo(jamId: "demo-\(id)-jam", writerId: id, title: title, about: "", topics: topics, postCount: 3, subscriberCount: 12, hasCommunity: false) }
         openWriterPages = ["sam": demoJamPages["sam"] ?? page("sam", "Fractions that stick", ["Maths", "Grade 4"]), "lee": page("lee", "Reading circles", ["Reading", "Grade 3"]), "priya.nair": page("priya.nair", "Practice, not homework", ["Practice"])]
         var items: [OpenFeedItem] = []
         func add(_ id: String, _ author: String, _ title: String, _ subtitle: String, _ body: String, _ topics: [String], preview: Bool = false, ago: Int64) {
@@ -165,6 +165,20 @@ extension ConversationStore {
         add("demo-open-priya-1", "priya.nair", "Why we stopped giving homework", "", "We swapped it for ten minutes of practice a child chooses.", ["Practice"], ago: 20)
         discoverItems = items
         jamSegment = .discover
+    }
+
+    func demoSetCommunity(_ jamID: String, on: Bool) {
+        if let i = jamsMine.firstIndex(where: { $0.jamId == jamID }) { jamsMine[i] = demoWithCommunity(jamsMine[i], on: on, state: nil) }
+        if let i = jamSubscriptions.firstIndex(where: { $0.jamId == jamID }) { jamSubscriptions[i] = demoWithCommunity(jamSubscriptions[i], on: on, state: nil) }
+    }
+
+    func demoJoinCommunity(_ jamID: String) {
+        if let i = jamSubscriptions.firstIndex(where: { $0.jamId == jamID }) { jamSubscriptions[i] = demoWithCommunity(jamSubscriptions[i], on: true, state: "asked") }
+    }
+
+    private func demoWithCommunity(_ old: JamInfo, on: Bool, state: String?) -> JamInfo {
+        JamInfo(jamId: old.jamId, conversationId: old.conversationId, writer: old.writer, title: old.title, about: old.about, topics: old.topics, tiers: old.tiers, mine: old.mine, status: old.status,
+                ended: old.ended, community: on, communityState: state, communityGroup: old.communityGroup, subscriberCount: old.subscriberCount, postCount: old.postCount, created: old.created)
     }
 
     func demoSetSeries(_ post: JamPostInfo, _ series: SeriesInfo?) {

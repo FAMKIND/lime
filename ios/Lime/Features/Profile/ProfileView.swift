@@ -433,7 +433,7 @@ struct ProfileView: View {
     }
 
     private func loadJam() async {
-        if route.isMe { jamPage = store.jamsMine.first.map { JamPageInfo(jamId: $0.jamId, writerId: $0.writer, title: $0.title, about: $0.about, topics: $0.topics, postCount: $0.postCount, subscriberCount: $0.subscriberCount) } }
+        if route.isMe { jamPage = store.jamsMine.first.map { JamPageInfo(jamId: $0.jamId, writerId: $0.writer, title: $0.title, about: $0.about, topics: $0.topics, postCount: $0.postCount, subscriberCount: $0.subscriberCount, hasCommunity: $0.community) } }
         else { jamPage = await store.jamPage(of: route.userID) }
     }
 
@@ -468,7 +468,7 @@ struct ProfileView: View {
                 editable(Text("\u{1F3EB} Add your school").font(Theme.secondary).foregroundStyle(secondary), label: "Edit school", id: "profile-edit-school") { fieldSheet = .school }
             }
             // Subscribe sits under the school, as a pill (LIME-221): lime to subscribe, neutral once you do.
-            if let jamPage, !route.isMe { subscribePill(jamPage).padding(.top, 4) }
+            if let jamPage, !route.isMe { subscribePill(jamPage).padding(.top, 4); CommunityJoinRow(jamID: jamPage.jamId) }
             if let statusLine {
                 Text(statusLine).font(Theme.secondary).foregroundStyle(secondary).accessibilityIdentifier("profile-status")
             }
