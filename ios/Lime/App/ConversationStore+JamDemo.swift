@@ -20,7 +20,7 @@ extension ConversationStore {
     /// The bytes of demo files that are not pictures (a post's captions), by attachment id.
     nonisolated(unsafe) static var demoJamBlobs: [String: Data] = [:]
 
-    func demoPublish(_ jamID: String, kind: String, title: String, subtitle: String, markdown: String, items: [OutgoingAttachment], coauthors: [String] = [], displayAs: String = "person", audience: String = "subscribers", series: SeriesInfo? = nil) {
+    func demoPublish(_ jamID: String, kind: String, title: String, subtitle: String, markdown: String, items: [OutgoingAttachment], coauthors: [String] = [], displayAs: String = "person", audience: String = "subscribers", series: SeriesInfo? = nil, topics: [String] = []) {
         let id = UUID().uuidString.lowercased()
         let info = items.map { item -> JamAttachmentInfo in
             let fileID = UUID().uuidString.lowercased()
@@ -31,8 +31,14 @@ extension ConversationStore {
         }
         demoJamAttachments[id] = info
         let post = JamPostInfo(postId: id, jamId: jamID, author: meProvider().id, tier: "free", kind: kind, title: title, subtitle: subtitle, markdown: markdown, plain: messagePlainText(text: markdown),
-                               attachmentsJson: "[]", created: Int64(Date().timeIntervalSince1970 * 1000), coauthors: coauthors, displayAs: displayAs, editedAt: 0, audience: audience, series: series, state: "ready")
+                               attachmentsJson: "[]", created: Int64(Date().timeIntervalSince1970 * 1000), coauthors: coauthors, displayAs: displayAs, editedAt: 0, audience: audience, series: series, topics: topics, state: "ready")
         jamPosts[jamID, default: []].append(post)
+        // An Everyone post shows up in Discover (the demo has no server), under its chips or else the jam's topics.
+        if audience == "everyone" {
+            let chips = topics.isEmpty ? (jamsMine.first { $0.jamId == jamID }?.topics ?? []) : topics
+            discoverItems.append(OpenFeedItem(postId: id, authorId: meProvider().id, jamId: jamID, kind: kind, title: title, subtitle: subtitle, excerpt: String(post.plain.prefix(240)), topics: chips, fileIds: [], series: series,
+                                              previewOf: nil, hasRest: false, version: 1, created: post.created, seq: Int64(discoverItems.count + 1)))
+        }
         if let i = jamsMine.firstIndex(where: { $0.jamId == jamID }) {
             let old = jamsMine[i]
             jamsMine[i] = JamInfo(jamId: old.jamId, conversationId: old.conversationId, writer: old.writer, title: old.title, about: old.about, topics: old.topics, tiers: old.tiers, mine: true,
@@ -48,14 +54,14 @@ extension ConversationStore {
                                         mine: false, status: "active", ended: false, community: false, communityState: nil, communityGroup: nil, subscriberCount: 0, postCount: 2, created: now))
         let first = JamPostInfo(postId: "demo-post-1", jamId: page.jamId, author: page.writerId, tier: "free", kind: "article", title: "Equivalent fractions in ten minutes", subtitle: "Fold, cut, compare",
                                 markdown: "**Start** with a pizza.\n\n- fold it\n- cut it\n- compare the pieces", plain: "Start with a pizza.\n• fold it\n• cut it\n• compare the pieces",
-                                attachmentsJson: "[]", created: now - 3_600_000, coauthors: ["lee"], displayAs: "person", editedAt: 0, audience: "subscribers", series: nil, state: "ready")
+                                attachmentsJson: "[]", created: now - 3_600_000, coauthors: ["lee"], displayAs: "person", editedAt: 0, audience: "subscribers", series: nil, topics: [], state: "ready")
         let second = JamPostInfo(postId: "demo-post-2", jamId: page.jamId, author: page.writerId, tier: "free", kind: "quick", title: "", subtitle: "",
                                  markdown: "A quick exit ticket: ask one question at the door, *which pieces are equal?*", plain: "A quick exit ticket: ask one question at the door, which pieces are equal?",
-                                 attachmentsJson: "[]", created: now - 600_000, coauthors: [], displayAs: "person", editedAt: 0, audience: "subscribers", series: nil, state: "ready")
+                                 attachmentsJson: "[]", created: now - 600_000, coauthors: [], displayAs: "person", editedAt: 0, audience: "subscribers", series: nil, topics: [], state: "ready")
         let third = JamPostInfo(postId: "demo-post-3", jamId: page.jamId, author: page.writerId, tier: "free", kind: "record", title: "Ten seconds on fraction walls", subtitle: "", markdown: "", plain: "",
-                                attachmentsJson: "[]", created: now - 60_000, coauthors: [], displayAs: "person", editedAt: 0, audience: "subscribers", series: nil, state: "ready")
+                                attachmentsJson: "[]", created: now - 60_000, coauthors: [], displayAs: "person", editedAt: 0, audience: "subscribers", series: nil, topics: [], state: "ready")
         let fourth = JamPostInfo(postId: "demo-post-4", jamId: page.jamId, author: page.writerId, tier: "free", kind: "record", title: "Sunday planning, 18 minutes", subtitle: "Week 4 planning with Sam", markdown: "", plain: "",
-                                 attachmentsJson: "[]", created: now - 7_200_000, coauthors: [], displayAs: "person", editedAt: 0, audience: "subscribers", series: nil, state: "ready")
+                                 attachmentsJson: "[]", created: now - 7_200_000, coauthors: [], displayAs: "person", editedAt: 0, audience: "subscribers", series: nil, topics: [], state: "ready")
         demoJamAttachments["demo-post-4"] = [JamAttachmentInfo(attachmentId: "demo-audio-1", name: "Recording.m4a", mime: "audio/mp4", kind: "audio", size: 90_000, width: nil, height: nil,
                                                                durationMs: 1_080_000, thumb: Data((0..<64).map { UInt8(40 + (($0 * 37) % 200)) }), poster: Data(), available: true)]
         jamPosts[page.jamId] = [first, second, third, fourth]
@@ -123,7 +129,7 @@ extension ConversationStore {
         jamRequests.removeAll { $0.postId == request.postId }
         if accept {
             coauthoredPosts.insert(JamPostInfo(postId: request.postId, jamId: request.jamId, author: request.writer, tier: "free", kind: request.kind, title: request.title, subtitle: "", markdown: "Words",
-                                               plain: "Words", attachmentsJson: "[]", created: request.created, coauthors: [meProvider().id], displayAs: "person", editedAt: 0, audience: "subscribers", series: nil, state: "ready"), at: 0)
+                                               plain: "Words", attachmentsJson: "[]", created: request.created, coauthors: [meProvider().id], displayAs: "person", editedAt: 0, audience: "subscribers", series: nil, topics: [], state: "ready"), at: 0)
         }
     }
 
@@ -185,7 +191,7 @@ extension ConversationStore {
         guard var list = jamPosts[post.jamId], let i = list.firstIndex(where: { $0.postId == post.postId }) else { return }
         let old = list[i]
         list[i] = JamPostInfo(postId: old.postId, jamId: old.jamId, author: old.author, tier: old.tier, kind: old.kind, title: old.title, subtitle: old.subtitle, markdown: old.markdown, plain: old.plain,
-                              attachmentsJson: old.attachmentsJson, created: old.created, coauthors: old.coauthors, displayAs: old.displayAs, editedAt: old.editedAt, audience: old.audience, series: series, state: old.state)
+                              attachmentsJson: old.attachmentsJson, created: old.created, coauthors: old.coauthors, displayAs: old.displayAs, editedAt: old.editedAt, audience: old.audience, series: series, topics: old.topics, state: old.state)
         jamPosts[post.jamId] = list
     }
 
@@ -202,11 +208,19 @@ extension ConversationStore {
                                       series: series(2), previewOf: "demo-open-sam-part2", hasRest: true, version: 1, created: now - 600_000, seq: 1)]
     }
 
+    func demoSetTopics(_ post: JamPostInfo, _ topics: [String]) {
+        guard var list = jamPosts[post.jamId], let i = list.firstIndex(where: { $0.postId == post.postId }) else { return }
+        let old = list[i]
+        list[i] = JamPostInfo(postId: old.postId, jamId: old.jamId, author: old.author, tier: old.tier, kind: old.kind, title: old.title, subtitle: old.subtitle, markdown: old.markdown, plain: old.plain,
+                              attachmentsJson: old.attachmentsJson, created: old.created, coauthors: old.coauthors, displayAs: old.displayAs, editedAt: old.editedAt, audience: old.audience, series: old.series, topics: topics, state: old.state)
+        jamPosts[post.jamId] = list
+    }
+
     func demoSetAudience(_ post: JamPostInfo, _ audience: String) {
         guard var list = jamPosts[post.jamId], let i = list.firstIndex(where: { $0.postId == post.postId }) else { return }
         let old = list[i]
         list[i] = JamPostInfo(postId: old.postId, jamId: old.jamId, author: old.author, tier: old.tier, kind: old.kind, title: old.title, subtitle: old.subtitle, markdown: old.markdown, plain: old.plain,
-                              attachmentsJson: old.attachmentsJson, created: old.created, coauthors: old.coauthors, displayAs: old.displayAs, editedAt: old.editedAt, audience: audience, series: old.series, state: old.state)
+                              attachmentsJson: old.attachmentsJson, created: old.created, coauthors: old.coauthors, displayAs: old.displayAs, editedAt: old.editedAt, audience: audience, series: old.series, topics: old.topics, state: old.state)
         jamPosts[post.jamId] = list
     }
 }

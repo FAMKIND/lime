@@ -48,9 +48,22 @@ extension ConversationStore {
         let words = [post.title, post.subtitle, post.plain].filter { !$0.isEmpty }.joined(separator: "\n")
         // The blob that holds the post now: "Hide post" in the moderators' tool hides that (an edit makes a new one).
         let blob = ((try? core?.jamPostBlobId(postId: post.postId)) ?? nil) ?? ""
-        return ReportTarget(kind: "jam_post", ids: [post.postId, post.jamId, post.author] + (blob.isEmpty ? [] : [blob]), noun: "post", personName: who, blockConversationID: blockChat(for: post.author),
+        // A post that is open to everyone (or has a Preview) also has a public copy: "open" in the ids lets the moderators hide that too (LIME-210h).
+        let hasOpenCopy = post.audience == "everyone" || post.markdown.contains("[[freewall]]")
+        return ReportTarget(kind: "jam_post", ids: [post.postId, post.jamId, post.author] + (blob.isEmpty ? [] : [blob]) + (hasOpenCopy ? ["open"] : []), noun: "post", personName: who, blockConversationID: blockChat(for: post.author),
                             included: jsonText(["post_id": post.postId, "blob_id": blob, "jam_id": post.jamId, "author": post.author, "title": post.title, "subtitle": post.subtitle,
                                                 "text": post.markdown, "created": post.created, "kind": post.kind]),
+                            preview: String(words.prefix(160)))
+    }
+
+    /// An open post (LIME-210h): the same kind as any jam post, the post's id first (the id the server's `hide_open_post` acts on) and "open" in the place of the
+    /// blob, so the moderators' tool offers "Hide open post". "Include" sends the open row as this phone fetched and verified it.
+    func reportTarget(openPost post: OpenPostInfo) -> ReportTarget {
+        let who = teacherName(post.authorId)
+        let words = [post.title, post.subtitle, post.plain].filter { !$0.isEmpty }.joined(separator: "\n")
+        return ReportTarget(kind: "jam_post", ids: [post.postId, post.jamId, post.authorId, "open"], noun: "post", personName: who, blockConversationID: blockChat(for: post.authorId),
+                            included: jsonText(["post_id": post.postId, "open": true, "jam_id": post.jamId, "author": post.authorId, "title": post.title, "subtitle": post.subtitle,
+                                                "text": post.markdown, "created": post.created, "kind": post.kind, "version": Int(post.version), "preview": post.previewOf != nil]),
                             preview: String(words.prefix(160)))
     }
 
@@ -81,7 +94,7 @@ extension ConversationStore {
     /// Sends the report (sealed on this phone, see core `send_report`); with "Also block", blocks the person's chat. True when it was sent.
     func sendReport(_ target: ReportTarget, reason: ReportReason, note: String, include: Bool, alsoBlock: Bool) async -> Bool {
         #if DEBUG
-        if isDemo { Self.demoReports.append((target.kind, reason.rawValue, note, include)); if alsoBlock, let chat = target.blockConversationID { await block(chat) }; return true }
+        if isDemo { Self.demoReports.append((target.kind, reason.rawValue, note, include, target.ids)); if alsoBlock, let chat = target.blockConversationID { await block(chat) }; return true }
         #endif
         guard let core, let link, let token = try? await link.token() else { return false }
         let input = ReportInput(subjectKind: target.kind, subjectIds: target.ids, reason: reason.rawValue, note: String(note.prefix(500)), included: include ? target.included : "")
@@ -91,7 +104,7 @@ extension ConversationStore {
     }
 
     #if DEBUG
-    nonisolated(unsafe) static var demoReports: [(kind: String, reason: String, note: String, included: Bool)] = []
+    nonisolated(unsafe) static var demoReports: [(kind: String, reason: String, note: String, included: Bool, ids: [String])] = []
     #endif
 }
 

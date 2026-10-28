@@ -87,6 +87,10 @@ struct ReportSheet: View {
             Image(systemName: "checkmark.circle").font(.system(size: 44)).foregroundStyle(Theme.text).accessibilityHidden(true)
             Text("Thanks. lime\u{2019}s team will look at this.").font(Theme.font(.title3, weight: .semibold)).foregroundStyle(Theme.text).multilineTextAlignment(.center)
                 .accessibilityIdentifier("report-thanks")
+            #if DEBUG
+            // Tests: what the last demo report carried (kind and ids).
+            if store.isDemo, let last = ConversationStore.demoReports.last { Text("").accessibilityLabel("\(last.kind) \(last.ids.joined(separator: ","))").accessibilityIdentifier("report-probe") }
+            #endif
             Spacer()
         }
         .padding(24).frame(maxWidth: .infinity)

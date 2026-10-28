@@ -1479,7 +1479,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
              DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP INDEX olm_sessions_by_peer; DROP TABLE received_ciphertexts; DROP TABLE emergency_messages; DROP TABLE emergency_settings; DROP TABLE mesh_outbox; DROP TABLE mesh_packets; DROP TABLE mesh_seen; DROP TABLE mesh_uploaded; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
-             DROP TABLE draft_files; DROP TABLE draft_outbox; DROP TABLE draft_authors; DROP TABLE draft_chunks; DROP TABLE drafts; DROP TABLE deleted_peers; DROP TABLE session_repairs; DROP TABLE profile_key_requests; DROP TABLE my_extra; DROP TABLE extras; DROP TRIGGER jam_posts_fts_insert; DROP TRIGGER jam_posts_fts_update; DROP TRIGGER jam_posts_fts_delete; DROP TABLE jam_fts; DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_credits; DROP TABLE jam_credit_requests; DROP TABLE jam_credit_wires; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_blob_deletes; DROP TABLE jam_reactions; DROP TABLE jam_my_reactions; DROP TABLE jam_comments; DROP TABLE jam_counts; DROP TABLE jam_counts_out; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; DROP TABLE open_outbox; DROP TABLE jam_follow_off; DROP TABLE contact_jam_checks; DROP TABLE community_joins; PRAGMA user_version = 9;",
+             DROP TABLE draft_files; DROP TABLE draft_outbox; DROP TABLE draft_authors; DROP TABLE draft_chunks; DROP TABLE drafts; DROP TABLE deleted_peers; DROP TABLE session_repairs; DROP TABLE profile_key_requests; DROP TABLE my_extra; DROP TABLE extras; DROP TRIGGER jam_posts_fts_insert; DROP TRIGGER jam_posts_fts_update; DROP TRIGGER jam_posts_fts_delete; DROP TABLE jam_fts; DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_credits; DROP TABLE jam_credit_requests; DROP TABLE jam_credit_wires; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_blob_deletes; DROP TABLE jam_reactions; DROP TABLE jam_my_reactions; DROP TABLE jam_comments; DROP TABLE jam_counts; DROP TABLE jam_counts_out; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; DROP TABLE open_outbox; DROP TABLE jam_follow_off; DROP TABLE contact_jam_checks; DROP TABLE community_joins; DROP TABLE open_fts; DROP TABLE open_seen; PRAGMA user_version = 9;",
         )
         .unwrap();
     }
@@ -6961,7 +6961,7 @@ fn open_server() -> Arc<FakeServer> {
 }
 
 fn options(audience: &str, series: Option<crate::client::jam::SeriesInfo>) -> crate::client::jam::PostOptions {
-    crate::client::jam::PostOptions { audience: audience.into(), series }
+    crate::client::jam::PostOptions { audience: audience.into(), series, topics: vec![] }
 }
 
 fn publish_with(writer: &Party, jam: &str, title: &str, markdown: &str, files: Vec<crate::OutgoingAttachment>, options: crate::client::jam::PostOptions) -> String {
@@ -7364,4 +7364,61 @@ fn a_community_holds_a_hundred_members_the_writer_included() {
     assert!(!crate::store::jam::community_is_full(99));
     assert!(crate::store::jam::community_is_full(100));
     assert_eq!(crate::protocol::group::MAX_MEMBERS, 100);
+}
+
+// ---------------------------------------------------------------- LIME-210h: publish chips and search of open posts
+
+#[test]
+fn the_chips_picked_at_publish_are_the_open_posts_topics_and_none_means_the_jams() {
+    let server = open_server();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let jam = new_jam(&alice);
+    let picked = crate::client::jam::PostOptions { audience: "everyone".into(), series: None, topics: vec!["Science".into(), "Grade 2".into()] };
+    let with_chips = publish_with(&alice, &jam, "Chips", "Words", vec![], picked);
+    let plain = publish_with(&alice, &jam, "No chips", "Words", vec![], options("everyone", None));
+    deliver(&alice, &transport);
+    assert_eq!(bob.store.fetch_open_post(transport.clone(), with_chips.clone()).unwrap().topics, vec!["Science".to_owned(), "Grade 2".to_owned()]);
+    assert_eq!(bob.store.fetch_open_post(transport.clone(), plain).unwrap().topics, vec!["Maths".to_owned(), "Grade 4".to_owned()], "the jam's topics");
+    assert_eq!(alice.store.read_jam_post(with_chips.clone()).unwrap().unwrap().topics, vec!["Science".to_owned(), "Grade 2".to_owned()]);
+    // Changing them later is a new version; none puts the jam's back.
+    alice.store.set_jam_post_topics(with_chips.clone(), vec!["Art".into()]).unwrap();
+    deliver(&alice, &transport);
+    let after = bob.store.fetch_open_post(transport.clone(), with_chips.clone()).unwrap();
+    assert_eq!((after.topics, after.version), (vec!["Art".to_owned()], 2));
+    alice.store.set_jam_post_topics(with_chips.clone(), vec![]).unwrap();
+    deliver(&alice, &transport);
+    assert_eq!(bob.store.fetch_open_post(transport, with_chips).unwrap().topics, vec!["Maths".to_owned(), "Grade 4".to_owned()]);
+    // Too many chips are refused.
+    let many: Vec<String> = (0..9).map(|n| format!("t{n}")).collect();
+    assert_eq!(alice.store.publish_jam_post_with(jam, "article".into(), "T".into(), String::new(), "x".into(), "free".into(), vec![], vec![], "person".into(), crate::client::jam::PostOptions { audience: "subscribers".into(), series: None, topics: many }).unwrap_err(), crate::store::StoreError::Rejected);
+}
+
+#[test]
+fn an_open_post_the_phone_fetched_is_found_by_search_and_forgotten_when_it_is_gone() {
+    let server = open_server();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    let jam = new_jam(&alice);
+    let post = publish_with(&alice, &jam, "Fraction walls", "Build a wall of bricks, one row for each fraction.", vec![], options("everyone", None));
+    deliver(&alice, &transport);
+    // Not fetched yet: not found. Fetched: found by title and by text, with the match marked.
+    assert!(bob.store.search_open_posts("bricks".into(), 10).unwrap().is_empty());
+    bob.store.fetch_open_post(transport.clone(), post.clone()).unwrap();
+    let hits = bob.store.search_open_posts("brick".into(), 10).unwrap();
+    assert_eq!((hits.len(), hits[0].post_id.as_str(), hits[0].title.as_str()), (1, post.as_str(), "Fraction walls"));
+    assert!(hits[0].snippet.contains('\u{E000}'));
+    assert_eq!(bob.store.search_open_posts("wall".into(), 10).unwrap().len(), 1);
+    // A subscriber who holds the post does not get it twice.
+    join_jam(&alice, &carol, &jam, &transport);
+    catch_up(&alice, &[&carol], &transport);
+    carol.store.fetch_open_post(transport.clone(), post.clone()).unwrap();
+    assert!(carol.store.search_open_posts("brick".into(), 10).unwrap().is_empty());
+    assert_eq!(carol.store.search_jam_posts("brick".into(), 10).unwrap().len(), 1);
+    // Deleted: the feed says gone and the search forgets it.
+    alice.store.delete_jam_post(post.clone()).unwrap();
+    deliver(&alice, &transport);
+    bob.store.fetch_open_feed(transport, bob.token.clone(), 0).unwrap();
+    assert!(bob.store.search_open_posts("brick".into(), 10).unwrap().is_empty());
 }

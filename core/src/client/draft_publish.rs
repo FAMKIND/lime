@@ -190,7 +190,7 @@ impl LimeStore {
     /// from 0 in the order they appear. Files this phone does not have yet are fetched first. The draft is linked to the post, and every author is told.
     #[allow(clippy::too_many_arguments)]
     pub fn publish_draft(&self, transport: Arc<dyn Transport>, auth_token: String, draft_id: String, jam_id: String, coauthors: Vec<String>, display_as: String) -> Result<String, StoreError> {
-        self.publish_draft_with(transport, auth_token, draft_id, jam_id, coauthors, display_as, super::jam::PostOptions { audience: "subscribers".into(), series: None })
+        self.publish_draft_with(transport, auth_token, draft_id, jam_id, coauthors, display_as, super::jam::PostOptions { audience: "subscribers".into(), series: None, topics: vec![] })
     }
 
     /// `publish_draft` with the post's audience and series (LIME-210b): a co-written article goes out through the same path as any other post, so

@@ -904,6 +904,19 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE jams ADD COLUMN community INTEGER NOT NULL DEFAULT 0;
      ALTER TABLE jams ADD COLUMN community_group TEXT;
      CREATE TABLE community_joins (jam_id TEXT NOT NULL, user_id TEXT NOT NULL, state TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (jam_id, user_id));",
+    // 60 (LIME-210h): the open posts this phone has fetched and verified are searchable with the jam posts (LIME-223's idea): `open_seen` holds what a
+    // search needs to show (never the files), `open_fts` is the index, both inside this encrypted database, written by the fetch and emptied when a post
+    // is gone. Nothing leaves the phone.
+    // It also adds `jam_posts.topics`: the subject, grade and topic chips a writer picked for a post (a JSON list; none means the jam's own topics).
+    "ALTER TABLE jam_posts ADD COLUMN topics TEXT;
+     CREATE TABLE open_seen (post_id TEXT PRIMARY KEY NOT NULL, author_id TEXT NOT NULL, jam_id TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, created INTEGER NOT NULL);
+     CREATE VIRTUAL TABLE open_fts USING fts5(
+         title,
+         subtitle,
+         plain,
+         post_id UNINDEXED,
+         tokenize = 'unicode61 remove_diacritics 2'
+     );",
 ];
 
 /// The schema version this build writes.

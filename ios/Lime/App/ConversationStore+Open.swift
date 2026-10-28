@@ -33,7 +33,7 @@ extension ConversationStore {
     func openPost(_ postID: String) async -> OpenPostInfo? {
         if let cached = openPostCache[postID] { return cached }
         #if DEBUG
-        if isDemo { return demoOpenPosts[postID] }
+        if isDemo { if let post = demoOpenPosts[postID] { openPostCache[postID] = post }; return demoOpenPosts[postID] }
         #endif
         guard let core, let link else { return nil }
         guard let post = try? await Task.detached(operation: { try core.fetchOpenPost(transport: link.transport, postId: postID) }).value else { return nil }
@@ -79,6 +79,31 @@ extension ConversationStore {
         if name != "A teacher" { return name }
         if let title = openWriterPages[userID]?.title, !title.isEmpty { return title }
         return name
+    }
+
+    /// Open posts this phone fetched that a search finds (LIME-210h): they sit with the jam posts, opened as the open page.
+    func openResults(_ hits: [OpenSearchHit]) -> [JamHit] {
+        hits.map { JamHit(postID: $0.postId, title: $0.title.isEmpty ? "Post" : $0.title, from: openWriterName($0.authorId), marked: $0.snippet, date: Date(timeIntervalSince1970: Double($0.created) / 1000), kind: $0.kind, open: true) }
+    }
+
+    /// Demo: the open posts opened this session, matched by the same word rule as the demo's jam search.
+    func demoOpenResults(_ query: String) -> [JamHit] {
+        let readable = Set(jamFeed.map(\.postId))
+        return openPostCache.values.filter { !readable.contains($0.postId) && SearchText.matches([$0.title, $0.subtitle, $0.plain].joined(separator: " "), query: query) }
+            .map { JamHit(postID: $0.postId, title: $0.title, from: openWriterName($0.authorId), marked: SearchText.mark($0.title.isEmpty ? $0.plain : $0.title, query: query), date: Date(timeIntervalSince1970: Double($0.created) / 1000), kind: $0.kind, open: true) }
+    }
+
+    /// Sets the subject, grade and topic chips of one of my posts (Edit).
+    func setPostTopics(_ post: JamPostInfo, to topics: [String]) async -> Bool {
+        #if DEBUG
+        if isDemo { demoSetTopics(post, topics); return true }
+        #endif
+        guard let core else { return false }
+        do { try await Task.detached(priority: .userInitiated) { try core.setJamPostTopics(postId: post.postId, topics: topics) }.value }
+        catch { CallDiagnostics.shared.log("jam topics failed: \(error)"); return false }
+        refreshJams()
+        await deliverNow()
+        return true
     }
 
     /// Changes who can read one of my posts (Edit). Subscribers to Everyone publishes an open copy; Everyone to Subscribers deletes it.

@@ -134,7 +134,11 @@ struct ModerationReportScreen: View {
         return VStack(spacing: 10) {
             TextField("Note (kept in the log)", text: $note).font(Theme.body).padding(14).background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous)).accessibilityIdentifier("moderation-note")
             actionButton("Dismiss", id: "dismiss", symbol: "xmark", pending: Pending(id: "dismiss", title: "Dismiss this report?", button: "Dismiss", message: "Nothing else changes."))
-            if detail.item.kind == "jam_post", ids.count >= 4 {
+            if detail.item.kind == "jam_post", ids.contains("open") {
+                // An open post (LIME-210h): its public row and files are removed from the server; phones that fetched it keep it.
+                actionButton("Hide open post", id: "hide_open_post", symbol: "eye.slash", pending: Pending(id: "hide_open_post", title: "Hide this open post?", button: "Hide open post", message: "It stops loading for everyone and its public files are deleted. Phones that already have it keep it."))
+            }
+            if detail.item.kind == "jam_post", ids.count >= 4, ids[3] != "open" {
                 actionButton("Hide post", id: "hide_post", symbol: "eye.slash", pending: Pending(id: "hide_post", title: "Hide this post?", button: "Hide post", message: "It can\u{2019}t be fetched again. Phones that already have it keep it."))
             }
             if ["jam_post", "jam", "org"].contains(detail.item.kind), ids.count >= 2 {
@@ -174,6 +178,7 @@ struct ModerationReportScreen: View {
         let ids = detail.subjectIDs
         let target: String? = switch action.id {
         case "hide_post": ids.count >= 4 ? ids[3] : nil
+        case "hide_open_post": ids.first
         case "take_down_page": detail.item.kind == "jam_post" ? (ids.count > 1 ? ids[1] : nil) : ids.first
         case "remove_public": ids.first
         case "suspend": suspectID(detail)

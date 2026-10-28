@@ -581,9 +581,9 @@ final class ConversationStore {
         #endif
         guard let core else { return SearchResults() }
         let found = try? await Task.detached(priority: .userInitiated) {
-            (try core.searchConversations(query: query), try core.searchMessages(query: query, conversationId: nil, limit: 60), try core.searchJamPosts(query: query, limit: 40))
+            (try core.searchConversations(query: query), try core.searchMessages(query: query, conversationId: nil, limit: 60), try core.searchJamPosts(query: query, limit: 40), (try? core.searchOpenPosts(query: query, limit: 20)) ?? [])
         }.value
-        guard let (chatMatches, hits, jamHits) = found else { return SearchResults() }
+        guard let (chatMatches, hits, jamHits, openHits) = found else { return SearchResults() }
         let byID = Dictionary(uniqueKeysWithValues: conversations.map { ($0.id, $0) })
         return SearchResults(
             chats: chatMatches.compactMap { byID[$0.conversationId] },
@@ -592,7 +592,7 @@ final class ConversationStore {
                            conversationTitle: byID[hit.conversationId]?.title ?? "", marked: hit.snippet,
                            date: Date(timeIntervalSince1970: Double(hit.time) / 1000), fromMe: hit.fromMe, threadRoot: hit.threadRoot)
             },
-            jam: jamResults(query, core: jamHits.map { ($0.postId, $0.snippet) }))
+            jam: jamResults(query, core: jamHits.map { ($0.postId, $0.snippet) }) + openResults(openHits))
     }
 
     /// The matches inside one chat, oldest first (for "3 of 12" and the up and down arrows).
@@ -1283,7 +1283,7 @@ final class ConversationStore {
                     marked: SearchText.mark(message.text, query: query), date: message.date, fromMe: message.isOwn))
             }
         }
-        if id == nil { results.jam = jamResults(query, core: []) }
+        if id == nil { results.jam = jamResults(query, core: []) + demoOpenResults(query) }
         do {
             // Replies in threads are found too (in the chat's own find as well), and open their thread.
             for (root, items) in demoThreads {

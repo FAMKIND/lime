@@ -213,6 +213,8 @@ struct PodcastRecorder: View {
     @Binding var cover: OutgoingAttachment?
     /// Who the post is from (you, or a jam of yours).
     @Binding var postAsJam: String?
+    /// The series the podcast belongs to, if any (LIME-210h).
+    @Binding var series: SeriesInfo?
     let attach: (OutgoingAttachment) -> Void
     /// The studio's Post: hands the take back and posts it at once (when not set, Next only hands the take back).
     var post: ((OutgoingAttachment) -> Void)?
@@ -220,10 +222,10 @@ struct PodcastRecorder: View {
     var editing: JamPostInfo?
     init(title: Binding<String>, coauthors: Binding<[Person]>, camera: Bool, forArticle: Bool = false,
          subtitle: Binding<String> = .constant(""), details: Binding<String> = .constant(""), cover: Binding<OutgoingAttachment?> = .constant(nil),
-         postAsJam: Binding<String?> = .constant(nil), post: ((OutgoingAttachment) -> Void)? = nil, editing: JamPostInfo? = nil,
+         postAsJam: Binding<String?> = .constant(nil), series: Binding<SeriesInfo?> = .constant(nil), post: ((OutgoingAttachment) -> Void)? = nil, editing: JamPostInfo? = nil,
          attach: @escaping (OutgoingAttachment) -> Void = { _ in }) {
         _title = title; _coauthors = coauthors; self.camera = camera; self.forArticle = forArticle
-        _subtitle = subtitle; _details = details; _cover = cover; _postAsJam = postAsJam; self.post = post; self.editing = editing; self.attach = attach
+        _subtitle = subtitle; _details = details; _cover = cover; _postAsJam = postAsJam; _series = series; self.post = post; self.editing = editing; self.attach = attach
     }
 
     @Environment(ConversationStore.self) private var store
@@ -457,6 +459,7 @@ struct PodcastRecorder: View {
                         preview.frame(maxWidth: .infinity)
                         trimBar
                         detailsPostRow
+                        SeriesChip(series: $series)
                         detailsWords
                     }
                     .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 24)
@@ -1056,7 +1059,7 @@ struct PodcastRecorder: View {
     private func prefill(_ post: JamPostInfo) {
         let files = store.jamAttachments(post.postId)
         cameraOn = files.contains { $0.kind == "video" }
-        title = post.title; subtitle = post.subtitle
+        title = post.title; subtitle = post.subtitle; series = post.series
         // The description is the post's text without the picture block of its own cover (which the stage already shows).
         var text = post.markdown
         if let at = files.firstIndex(where: JamCover.isCover) { text = text.replacingOccurrences(of: "![](attachment:\(at))", with: "").trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -1088,8 +1091,10 @@ struct PodcastRecorder: View {
         let hosts = coauthors.map(\.id)
         let ok = await store.editJamPost(editing, title: title, subtitle: subtitle, markdown: details, added: added, displayAs: postAsJam == nil ? "person" : "jam",
                                          removeCover: removeCover && cover == nil, coauthors: Set(hosts) == Set(initialHosts) ? nil : hosts)
+        // Joining or leaving a series is a change of its own (the core seals the post again).
+        let seriesOK = ok && series != editing.series ? await store.setPostSeries(editing, to: series) : true
         saving = false
-        if ok { dismiss() } else { problem = "Could not update the podcast." }
+        if ok && seriesOK { dismiss() } else { problem = "Could not update the podcast." }
     }
 
     /// The take goes back to the post (an article's audio, or Next without the studio's own Post).

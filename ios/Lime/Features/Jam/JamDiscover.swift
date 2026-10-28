@@ -116,6 +116,7 @@ struct JamDiscoverList: View {
 struct DiscoverCard: View {
     let item: OpenFeedItem
     @Environment(ConversationStore.self) private var store
+    @State private var reporting: ReportTarget?
 
     var body: some View {
         let isPreview = item.previewOf != nil
@@ -146,6 +147,17 @@ struct DiscoverCard: View {
         .accessibilityElement(children: .combine)
         .accessibilityHint("Opens the post")
         .accessibilityIdentifier("discover-post-\(item.postId)")
+        .overlay(alignment: .topTrailing) {
+            // Report is on every open post for every reader (LIME-210h, docs/jam.md 13.9).
+            Menu {
+                Button(role: .destructive) { Task { if let post = await store.openPost(item.postId) { reporting = store.reportTarget(openPost: post) } } } label: { Label("Report", systemImage: "flag") }
+                    .accessibilityIdentifier("discover-report-\(item.postId)")
+            } label: {
+                Image(systemName: "ellipsis").font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.textSecondary).frame(width: 44, height: 44).contentShape(Rectangle())
+            }
+            .accessibilityLabel("More").accessibilityIdentifier("discover-more-\(item.postId)")
+        }
+        .reportSheet($reporting)
     }
 
     /// A post I can already read in full (mine, or from a jam I follow) opens as usual; anything else opens the open copy.
@@ -164,6 +176,7 @@ struct OpenPostPage: View {
     @State private var failed = false
     @State private var page: JamPageInfo?
     @State private var asking = false
+    @State private var reporting: ReportTarget?
 
     var body: some View {
         Group {
@@ -178,6 +191,17 @@ struct OpenPostPage: View {
             }
         }
         .background(Theme.canvas)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                if let post, store.jamPost(postID) == nil {
+                    Menu {
+                        Button(role: .destructive) { reporting = store.reportTarget(openPost: post) } label: { Label("Report", systemImage: "flag") }.accessibilityIdentifier("open-post-report")
+                    } label: { Image(systemName: "ellipsis") }
+                    .accessibilityLabel("More").accessibilityIdentifier("open-post-more")
+                }
+            }
+        }
+        .reportSheet($reporting)
         .task {
             if let loaded = await store.openPost(postID) {
                 post = loaded

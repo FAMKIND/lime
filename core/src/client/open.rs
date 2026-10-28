@@ -88,6 +88,18 @@ pub struct OpenFeedPage {
     pub enabled: bool,
 }
 
+/// One fetched open post that matches a search (LIME-210h).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct OpenSearchHit {
+    pub post_id: String,
+    pub author_id: String,
+    pub kind: String,
+    pub title: String,
+    pub created: i64,
+    /// A few words around the match; each matched word sits between `\u{E000}` and `\u{E001}`.
+    pub snippet: String,
+}
+
 /// How the open deliveries stand.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct OpenSendProgress {
@@ -160,7 +172,9 @@ impl LimeStore {
             .collect();
         let markdown = split.as_ref().map(|s| s.markdown.clone()).unwrap_or_else(|| row.markdown.clone());
         let has_rest = split.as_ref().is_some_and(|s| s.has_rest);
-        let topics = jam_store::get(conn, &row.jam_id)?.map(|j| j.topics).unwrap_or_default();
+        // The chips picked for the post, else the jam's own topics.
+        let picked = row.topics.as_deref().and_then(|s| serde_json::from_str::<Vec<String>>(s).ok()).unwrap_or_default();
+        let topics = if picked.is_empty() { jam_store::get(conn, &row.jam_id)?.map(|j| j.topics).unwrap_or_default() } else { picked };
         let (open_version, open_live): (i64, i64) = conn
             .query_row("SELECT open_version, open_live FROM jam_posts WHERE post_id = ?1", params![post_id], |r| Ok((r.get(0)?, r.get(1)?)))
             .map_err(db_err)?;
@@ -359,6 +373,20 @@ impl LimeStore {
         self.reseal(&row)
     }
 
+    /// Sets the subject, grade and topic chips of one of my posts (Edit); an empty list means the jam's topics again. The post is sealed again as the next
+    /// version and its open copy follows.
+    pub fn set_jam_post_topics(&self, post_id: String, topics: Vec<String>) -> Result<(), StoreError> {
+        let state = self.load_or_create_account()?;
+        let me = self.registered_user(&state)?;
+        let text = if topics.is_empty() { None } else { Some(json!(jam_store::clean_topics(&topics).ok_or(StoreError::Rejected)?).to_string()) };
+        let row = self.with_conn(|conn| Ok(jam_store::post(conn, &post_id)?.filter(|p| !p.deleted && p.author == me))).and_then(|r| r.ok_or(StoreError::NotFound))?;
+        if row.topics == text {
+            return Ok(());
+        }
+        self.with_conn(|conn| conn.execute("UPDATE jam_posts SET topics = ?2 WHERE post_id = ?1", params![post_id, text]).map(|_| ()).map_err(db_err))?;
+        self.reseal(&row)
+    }
+
     /// How many open deliveries wait, and how many are held.
     pub fn open_send_progress(&self) -> Result<OpenSendProgress, StoreError> {
         let (pending, held) = self.with_conn(jam_store::open_progress)?;
@@ -398,6 +426,7 @@ impl LimeStore {
                 seq: entry.get("seq").and_then(Value::as_i64).unwrap_or(0),
             });
         }
+        self.forget_open_posts(&gone);
         Ok(OpenFeedPage { items, gone, cursor: body.get("cursor").and_then(Value::as_i64).unwrap_or(since), enabled: body.get("enabled").and_then(Value::as_bool).unwrap_or(false) })
     }
 
@@ -407,7 +436,10 @@ impl LimeStore {
         let (status, body) = call(&transport, None, "open-post-get", &json!({ "post_id": post_id }))?;
         match status {
             200..=299 => {}
-            404 | 410 => return Err(StoreError::NotFound),
+            404 | 410 => {
+                self.forget_open_posts(std::slice::from_ref(&post_id));
+                return Err(StoreError::NotFound);
+            }
             other => return Err(if other >= 500 { StoreError::Unavailable } else { StoreError::Rejected }),
         }
         let row = body.get("post").ok_or(StoreError::BadMessage)?;
@@ -436,7 +468,7 @@ impl LimeStore {
             })
             .unwrap_or_default();
         let markdown = crate::format::normalise_post(&text("markdown").unwrap_or_default());
-        Ok(OpenPostInfo {
+        let info = OpenPostInfo {
             post_id,
             author_id: author,
             jam_id: text("jam_id").ok_or(StoreError::BadMessage)?,
@@ -453,7 +485,55 @@ impl LimeStore {
             version: p.get("version").and_then(Value::as_u64).unwrap_or(1) as u32,
             created: p.get("created").and_then(Value::as_i64).unwrap_or(0),
             pinned: verified.pinned,
+        };
+        self.remember_open_post(&info);
+        Ok(info)
+    }
+
+    /// The open posts this phone has fetched whose title, subtitle or text match `query` (prefix-matched, case- and diacritic-insensitive), best first.
+    /// A post I hold as a subscriber is not repeated here (the jam search finds it). Nothing leaves the phone.
+    pub fn search_open_posts(&self, query: String, limit: u32) -> Result<Vec<OpenSearchHit>, StoreError> {
+        let Some(fts) = crate::store::search::fts_query(&query) else { return Ok(Vec::new()) };
+        self.with_conn(|conn| {
+            let sql = format!(
+                "SELECT s.post_id, s.author_id, s.kind, s.title, s.created, snippet(open_fts, -1, char({start}), char({end}), '…', 12)
+                 FROM open_fts JOIN open_seen s ON s.post_id = open_fts.post_id
+                 WHERE open_fts MATCH ?1 AND NOT EXISTS (SELECT 1 FROM jam_posts p WHERE p.post_id = s.post_id AND p.deleted_at IS NULL)
+                 ORDER BY rank, s.created DESC, s.post_id DESC LIMIT ?2",
+                start = crate::store::search::MATCH_START as u32,
+                end = crate::store::search::MATCH_END as u32,
+            );
+            let mut statement = conn.prepare(&sql).map_err(db_err)?;
+            let hits = statement
+                .query_map(params![fts, limit.max(1)], |r| Ok(OpenSearchHit { post_id: r.get(0)?, author_id: r.get(1)?, kind: r.get(2)?, title: r.get(3)?, created: r.get(4)?, snippet: r.get(5)? }))
+                .map_err(db_err)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(db_err)?;
+            Ok(hits)
         })
+    }
+}
+
+impl LimeStore {
+    /// Puts a fetched, verified open post in the phone's search (replacing an older version).
+    fn remember_open_post(&self, p: &OpenPostInfo) {
+        let _ = self.with_conn(|conn| {
+            conn.execute("DELETE FROM open_fts WHERE post_id = ?1", params![p.post_id]).map_err(db_err)?;
+            conn.execute("INSERT OR REPLACE INTO open_seen (post_id, author_id, jam_id, kind, title, created) VALUES (?1, ?2, ?3, ?4, ?5, ?6)", params![p.post_id, p.author_id, p.jam_id, p.kind, p.title, p.created]).map_err(db_err)?;
+            conn.execute("INSERT INTO open_fts (title, subtitle, plain, post_id) VALUES (?1, ?2, ?3, ?4)", params![p.title, p.subtitle, p.plain, p.post_id]).map_err(db_err)?;
+            Ok(())
+        });
+    }
+
+    /// A post that is gone (deleted, taken down) leaves the search.
+    fn forget_open_posts(&self, ids: &[String]) {
+        for id in ids {
+            let _ = self.with_conn(|conn| {
+                conn.execute("DELETE FROM open_fts WHERE post_id = ?1", params![id]).map_err(db_err)?;
+                conn.execute("DELETE FROM open_seen WHERE post_id = ?1", params![id]).map_err(db_err)?;
+                Ok(())
+            });
+        }
     }
 }
 

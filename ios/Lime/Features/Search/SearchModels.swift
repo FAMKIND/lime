@@ -44,6 +44,8 @@ struct JamHit: Identifiable, Equatable, Sendable {
     let marked: String
     let date: Date
     let kind: String
+    /// An open post this phone fetched from Discover (LIME-210h), opened as the open page.
+    var open = false
 }
 
 /// The marker characters LimeCore puts around matched words, and what the app does with them. The

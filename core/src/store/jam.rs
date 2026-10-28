@@ -295,9 +295,11 @@ pub(crate) struct PostRow {
     pub audience: String,
     /// The series field as JSON text, if the post is part of one (LIME-210b/f).
     pub series: Option<String>,
+    /// The chips picked for this post (JSON list), if any (LIME-210h).
+    pub topics: Option<String>,
 }
 
-const POST: &str = "SELECT post_id, jam_id, author, tier, title, markdown, plain, attachments, created, deleted_at IS NOT NULL, fetched, kind, subtitle, display_as, COALESCE(edited_at, 0), audience, series FROM jam_posts";
+const POST: &str = "SELECT post_id, jam_id, author, tier, title, markdown, plain, attachments, created, deleted_at IS NOT NULL, fetched, kind, subtitle, display_as, COALESCE(edited_at, 0), audience, series, topics FROM jam_posts";
 
 fn read_post(r: &rusqlite::Row<'_>) -> rusqlite::Result<PostRow> {
     Ok(PostRow {
@@ -318,6 +320,7 @@ fn read_post(r: &rusqlite::Row<'_>) -> rusqlite::Result<PostRow> {
         edited_at: r.get(14)?,
         audience: r.get(15)?,
         series: r.get(16)?,
+        topics: r.get(17)?,
     })
 }
 
@@ -406,12 +409,13 @@ pub(crate) struct Unuploaded {
     pub display_as: String,
     pub audience: String,
     pub series: Option<String>,
+    pub topics: Option<String>,
 }
 
 pub(crate) fn to_upload(conn: &Connection, limit: usize) -> Result<Vec<Unuploaded>, StoreError> {
     let mut statement = conn
         .prepare(
-            "SELECT post_id, jam_id, tier, title, markdown, attachments, created, blob_id, blob_key, blob_sha, blob_size, kind, subtitle, display_as, audience, series FROM jam_posts
+            "SELECT post_id, jam_id, tier, title, markdown, attachments, created, blob_id, blob_key, blob_sha, blob_size, kind, subtitle, display_as, audience, series, topics FROM jam_posts
              WHERE uploaded = 0 AND wire IS NOT NULL AND deleted_at IS NULL
              AND NOT EXISTS (SELECT 1 FROM jam_attachments a WHERE a.post_id = jam_posts.post_id AND a.uploaded = 0) ORDER BY created, post_id LIMIT ?1",
         )
@@ -432,6 +436,7 @@ pub(crate) fn to_upload(conn: &Connection, limit: usize) -> Result<Vec<Unuploade
                 display_as: r.get(13)?,
                 audience: r.get(14)?,
                 series: r.get(15)?,
+                topics: r.get(16)?,
             })
         })
         .map_err(db_err)?

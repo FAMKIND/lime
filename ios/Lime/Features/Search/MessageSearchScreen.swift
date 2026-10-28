@@ -269,7 +269,7 @@ struct MessageSearchScreen: View {
     private func open(_ hit: JamHit) {
         store.section = .jam
         dismiss()
-        Task { try? await Task.sleep(for: .milliseconds(350)); store.jamPath.append(JamPostRoute(postID: hit.postID)) }
+        Task { try? await Task.sleep(for: .milliseconds(350)); if hit.open { store.jamPath.append(OpenPostRoute(postID: hit.postID)) } else { store.jamPath.append(JamPostRoute(postID: hit.postID)) } }
     }
 
     private func messageRow(_ hit: MessageHit) -> some View {
