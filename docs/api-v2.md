@@ -448,3 +448,24 @@ No server function is involved: shared drafts use the ordinary mailbox (sealed c
 **Files:** a draft's picture or video is uploaded with the existing `attachment` function (`put` with `recipients` = the other authors, `commit`) and fetched with `get`; its key travels only in `draft.file`.
 
 **Tables (client, SQLCipher):** `drafts`, `draft_chunks`, `draft_authors`, `draft_outbox`, `draft_files` (migrations 53 to 55).
+
+## 17. Open posts and the open file class (LIME-210a, `docs/jam.md` §13)
+
+An **open** post is one the writer chose to make readable by anyone ("Everyone"). It is **not end-to-end encrypted**: the server stores the text and files and can read them. Everything below is behind the server flag `open_posts_enabled` (table `server_flags`, off); while it is off `open-post` and `open-file` `put` answer `403 open_posts_disabled`. Reads, deletes and takedowns work either way.
+
+**What each party learns.** The server learns the whole post (text, files, title, topics, series), its author and jam, and when it was made. It learns no reader: `open-post-get` and the file URLs need no session, and the feed's filters (subject, grade) run on the phone, so the server never learns what a person is interested in. A reader learns what the writer wrote and signed. Anyone with the id can fetch a post.
+
+**The signed row.** The writer's device signs `"lime-open-post-v1\n" + payload` with its device signing key. `payload` is the exact JSON text (`post_id`, `author_kind: "person"`, `author_id`, `jam_id`, `kind: quick|article|record`, `title`, `subtitle`, `markdown`, `attachments [{id, mime}]`, `topics`, `series?`, `preview_of?`, `has_rest?`, `version`). The request carries `cert {device_id, identity_key, signing_key, master_key, master_signature}`; the server checks that the device is the caller's, not revoked, that the master key is the account's, that `master_signature` covers `lime-device-v1\n<device_id>\n<identity_key>\n<signing_key>`, and the row signature. Phones check the same again, so a server that altered a row would be caught.
+
+| Call | Body | Answer |
+|---|---|---|
+| `open-file` | `{action: put, file_id, size, mime}` | `{url}` signed upload (24 MiB a file; 2 GiB a writer; `413 quota`) |
+| `open-file` | `{action: commit, file_id}` | `{size, public_url}`; the file is then public at `/storage/v1/object/public/open-files/<id>` |
+| `open-file` | `{action: delete, file_id}` | `{ok}` |
+| `open-post` | `{action: publish\|edit, payload, signature, cert}` | `{post_id, version, seq}` (`201` / `200`); an edit is the next `version` and removes files no longer named |
+| `open-post` | `{action: delete, post_id}` | `{ok, seq}`: a tombstone; text and files go |
+| `open-feed` | `{since?, limit?}` | `{items, cursor}`: metadata and a 240-character excerpt, in `seq` order; a deleted or taken-down post is `{post_id, seq, gone: true}` |
+| `open-post-get` | `{post_id}` (no session) | `{post}` the whole signed row and `file_urls`; `404` deleted, `410` taken down |
+| `moderation-act` | `{action: hide_open_post, target: post_id}` | `410` for the post, files deleted, `gone` in the feed |
+
+Limits (choice (b)): a burst of 10 open posts a minute (`429`), in an account's first week 10 open posts a day (`429 first_week_limit`), no daily cap afterwards, no file-count limit, 2 GiB of open files a writer. `open-post-get` is limited per network address.

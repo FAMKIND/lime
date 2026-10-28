@@ -3,6 +3,7 @@
 //   dismiss          { report_id }              the report is closed, nothing else changes
 //   hide_post        { report_id, target: blob id }   jam-blob-get refuses the post's blob from now on (a phone that already has it keeps it)
 //   take_down_page   { report_id, target: jam id }    jam-page answers 410 for the page
+//   hide_open_post   { report_id, target: open post id }   open-post-get answers 410, the feed lists it as gone, its public files are deleted (LIME-210a)
 //   remove_public    { report_id, target: user id, slot: photo|links|background|background_video }   the Everyone object is deleted
 //   suspend          { report_id, target: user id, reason }   sign-in and every session call are refused: "This account is suspended"
 //   unsuspend        { target: user id }
@@ -12,7 +13,7 @@ import { admin } from "../_shared/db.ts";
 import { isUuid } from "../_shared/bytes.ts";
 import { handler, HttpError, json, readJson } from "../_shared/http.ts";
 import { requireModerator } from "../_shared/moderation.ts";
-import { AVATAR_BUCKET, removeObject } from "../_shared/storage.ts";
+import { AVATAR_BUCKET, OPEN_BUCKET, removeObject } from "../_shared/storage.ts";
 
 const SLOTS: Record<string, { path: (u: string) => string; version: string }> = {
   photo: { path: (u) => `${u}.jpg`, version: "avatar_version" },
@@ -43,6 +44,19 @@ Deno.serve(handler(async (req) => {
     case "take_down_page": {
       needTarget();
       const { error } = await db.from("jams").update({ taken_down_at: new Date().toISOString() }).eq("jam_id", target);
+      if (error) throw new HttpError(500, "internal");
+      break;
+    }
+    case "hide_open_post": {
+      needTarget();
+      const { data: row } = await db.from("open_posts").select("files").eq("post_id", target).maybeSingle();
+      if (!row) throw new HttpError(404, "not_found", "No such open post.");
+      for (const id of row.files as string[]) {
+        try { await removeObject(OPEN_BUCKET, id); } catch { /* already gone */ }
+        await db.from("open_files").delete().eq("id", id);
+      }
+      const { data: seq } = await db.rpc("nextval_open_posts");
+      const { error } = await db.from("open_posts").update({ taken_down_at: new Date().toISOString(), files: [], seq }).eq("post_id", target);
       if (error) throw new HttpError(500, "internal");
       break;
     }

@@ -63,3 +63,21 @@ export async function removeObject(bucket: string, path: string): Promise<void> 
   const { error } = await admin().storage.from(bucket).remove([path]);
   if (error) throw new HttpError(500, "internal");
 }
+
+/** The public file class (LIME-210a): an open post's pictures, video and audio, readable by anyone at a plain URL. */
+export const OPEN_BUCKET = "open-files";
+export const openConfig = {
+  maxFileBytes: () => intFromEnv("LIME_OPEN_MAX_FILE_BYTES", 24 * 1024 * 1024),
+  /** A writer's open storage (choice (b): the same allowance as jam's). */
+  quotaBytes: () => intFromEnv("LIME_OPEN_QUOTA_BYTES", 2 * 1024 * 1024 * 1024),
+  /** Open posts a minute (a burst limit, like messages). */
+  burstPerMinute: () => intFromEnv("LIME_OPEN_POSTS_PER_MIN", 10),
+  /** An account's first week: at most this many open posts a day (the anti-spam guard). */
+  firstWeekPerDay: () => intFromEnv("LIME_OPEN_FIRST_WEEK_PER_DAY", 10),
+  getPerMinute: () => intFromEnv("LIME_RATE_OPEN_GET_PER_MIN", 600),
+};
+
+/** The plain public URL of an open file (path only; the client adds its own base URL). */
+export function openFileUrl(id: string): string {
+  return `/storage/v1/object/public/${OPEN_BUCKET}/${id}`;
+}

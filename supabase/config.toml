@@ -437,6 +437,10 @@ verify_jwt = false
 [functions.jam-blob-get]
 verify_jwt = false
 
+# open-post-get has no user token by design (LIME-210a): an open post is public by the writer's choice; rate-limited per address.
+[functions.open-post-get]
+verify_jwt = false
+
 [functions.identify]
 verify_jwt = false
 [functions.signin-password]
