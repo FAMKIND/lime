@@ -6915,3 +6915,39 @@ fn a_picture_added_by_a_co_author_is_in_the_writers_published_post() {
     assert!(markdown.contains("![Bob's picture](attachment:0)"), "the post's image block names file 0: {markdown:?}");
     assert_eq!(bob.store.draft_files(id).unwrap().len(), 1);
 }
+
+// LIME-237: Drafts, finished: copy, delete for everyone, leave.
+#[test]
+fn a_copy_of_a_draft_is_private_with_the_same_words_the_writers_delete_reaches_co_authors_and_a_leave_removes_only_them() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (lee, _) = party(&server, "lee", 3);
+    befriend(&alice, &bob, &transport);
+    befriend(&alice, &lee, &transport);
+    let id = shared_draft(&alice, &bob, &transport);
+    alice.store.share_draft(id.clone(), vec![bob.user.clone(), lee.user.clone()]).unwrap();
+    deliver(&alice, &transport); sync(&bob, &transport); sync(&lee, &transport);
+    // A copy: private (no other authors, no channel), same title and words, and the original is untouched.
+    let copy = alice.store.copy_draft(id.clone()).unwrap();
+    assert_ne!(copy, id);
+    assert_eq!(alice.store.draft_markdown(copy.clone()).unwrap(), alice.store.draft_markdown(id.clone()).unwrap());
+    assert!(!alice.store.draft_channels().unwrap().iter().any(|c| c.draft_id == copy), "private: not shared");
+    assert_eq!(alice.store.list_drafts().unwrap().len(), 2);
+    // Lee leaves: only Lee's copy goes; Alice and Bob keep writing.
+    lee.store.leave_and_delete_draft(id.clone()).unwrap();
+    assert!(lee.store.list_drafts().unwrap().is_empty(), "gone from Lee's list at once");
+    deliver(&lee, &transport);
+    sync(&alice, &transport); sync(&bob, &transport);
+    assert!(lee.store.draft_markdown(id.clone()).is_err(), "and then for good, once the goodbye was sent");
+    let still: Vec<String> = alice.store.draft_authors(id.clone()).unwrap().into_iter().filter(|a| a.status == "active").map(|a| a.user_id).collect();
+    assert!(still.contains(&alice.user) && still.contains(&bob.user) && !still.contains(&lee.user), "{still:?}");
+    assert!(bob.store.list_drafts().unwrap().iter().any(|d| d.draft_id == id), "Bob still has it");
+    // A co-author cannot delete for everyone; the writer can, and it reaches Bob.
+    assert!(bob.store.delete_draft_for_everyone(id.clone()).is_err());
+    alice.store.delete_draft_for_everyone(id.clone()).unwrap();
+    assert!(!alice.store.list_drafts().unwrap().iter().any(|d| d.draft_id == id), "gone from the writer's list at once");
+    deliver(&alice, &transport); sync(&bob, &transport);
+    assert!(!bob.store.list_drafts().unwrap().iter().any(|d| d.draft_id == id), "gone from Bob's");
+    assert!(alice.store.list_drafts().unwrap().iter().any(|d| d.draft_id == copy), "the copy stays");
+}

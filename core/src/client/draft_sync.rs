@@ -232,7 +232,7 @@ impl LimeStore {
     /// Drafts that arrived by invitation and have not been opened yet (for "Shem invited you to write …").
     pub fn unseen_draft_invites(&self) -> Result<Vec<String>, StoreError> {
         self.with_conn(|conn| {
-            let mut st = conn.prepare("SELECT draft_id FROM drafts WHERE seen = 0 ORDER BY invited_at").map_err(db_err)?;
+            let mut st = conn.prepare("SELECT draft_id FROM drafts WHERE seen = 0 AND deleted = 0 ORDER BY invited_at").map_err(db_err)?;
             let rows = st.query_map([], |r| r.get::<_, String>(0)).map_err(db_err)?;
             rows.collect::<Result<_, _>>().map_err(db_err)
         })
@@ -247,7 +247,7 @@ impl LimeStore {
         let me = self.me_registered()?;
         self.with_conn(|conn| {
             let mut st = conn
-                .prepare("SELECT d.draft_id, d.channel_id FROM drafts d JOIN draft_authors a ON a.draft_id = d.draft_id AND a.user_id = ?1 AND a.status = 'active' WHERE d.channel_id IS NOT NULL AND d.draft_key IS NOT NULL")
+                .prepare("SELECT d.draft_id, d.channel_id FROM drafts d JOIN draft_authors a ON a.draft_id = d.draft_id AND a.user_id = ?1 AND a.status = 'active' WHERE d.channel_id IS NOT NULL AND d.draft_key IS NOT NULL AND d.deleted = 0")
                 .map_err(db_err)?;
             let rows = st.query_map(params![me], |r| Ok(DraftChannel { draft_id: r.get(0)?, channel_id: r.get(1)? })).map_err(db_err)?;
             rows.collect::<Result<_, _>>().map_err(db_err)
@@ -424,6 +424,7 @@ impl LimeStore {
                 Err(_) => continue,
             }
         }
+        self.purge_sent_deleted_drafts();
         sent
     }
 
@@ -431,7 +432,7 @@ impl LimeStore {
     pub(crate) fn flush_drafts_at(&self, conn: &Connection, me: &str, now: i64) -> Result<(), StoreError> {
         let due: Vec<(String, String, i64, i64)> = {
             let mut st = conn
-                .prepare("SELECT d.draft_id, d.durable_heads, d.last_flush_at, d.last_hello_at FROM drafts d JOIN draft_authors a ON a.draft_id = d.draft_id AND a.user_id = ?1 AND a.status = 'active' WHERE d.channel_id IS NOT NULL AND d.draft_key IS NOT NULL")
+                .prepare("SELECT d.draft_id, d.durable_heads, d.last_flush_at, d.last_hello_at FROM drafts d JOIN draft_authors a ON a.draft_id = d.draft_id AND a.user_id = ?1 AND a.status = 'active' WHERE d.channel_id IS NOT NULL AND d.draft_key IS NOT NULL AND d.deleted = 0")
                 .map_err(db_err)?;
             let rows = st.query_map(params![me], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).map_err(db_err)?;
             rows.collect::<Result<_, _>>().map_err(db_err)?

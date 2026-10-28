@@ -873,6 +873,8 @@ const MIGRATIONS: &[&str] = &[
          announced   TEXT NOT NULL DEFAULT '[]',
          PRIMARY KEY (draft_id, number)
      );",
+    // 56 (LIME-237): a draft being removed whose goodbyes (`draft.delete` / `draft.leave`) are still to be sent: hidden at once, purged when its outbox is empty.
+    "ALTER TABLE drafts ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0;",
 ];
 
 /// The schema version this build writes.

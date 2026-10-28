@@ -308,6 +308,13 @@ impl LimeStore {
                 )
                 .map_err(db_err)?;
             }
+            "draft.delete" => {
+                // The writer removed the draft for everyone: it goes from this phone (a published post is not touched).
+                if writer.as_deref() == Some(sender) && sender != me {
+                    self.draft_cache.lock().unwrap_or_else(|e| e.into_inner()).remove(draft_id);
+                    super::drafts::purge_draft_rows(conn, draft_id)?;
+                }
+            }
             _ => {}
         }
         Ok(())

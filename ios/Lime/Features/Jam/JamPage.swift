@@ -23,6 +23,7 @@ struct JamPage: View {
                 // The same header as link and call: the feed scrolls under it (LIME-188v).
                 .rootHeader(searchID: "jam-search-button", overlays: true) { store.jamSearching = true }
                 .overlay { FloatingPlus(label: "New post", id: "new-jam-post") { composing = true } }
+                .overlay(alignment: .bottom) { if store.draftSelecting { DraftSelectionBar() } }
                 .navigationDestination(for: ProfileRoute.self) { ProfileView(route: $0) }
                 .navigationDestination(for: OrgRoute.self) { OrgProfileView(route: $0) }
                 .navigationDestination(for: SharedListRoute.self) { SharedListView(route: $0) }
@@ -41,6 +42,7 @@ struct JamPage: View {
             store.refreshJams()
             #if DEBUG
             store.simulateDraftInviteIfAsked()
+            store.simulateDraftsIfAsked()
             #endif
         }
         }

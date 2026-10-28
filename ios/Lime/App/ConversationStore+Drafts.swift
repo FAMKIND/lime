@@ -23,7 +23,7 @@ extension ConversationStore {
 
     private func receiveInstant(channel: String, wire: Data) {
         guard let core, let event = (try? core.draftInstantReceive(channelId: channel, wire: wire)) ?? nil else { return }
-        if event.presence?.away != true { draftLive[event.draftId] = .now }
+        if event.presence?.away == true { draftLive[event.draftId]?[event.fromUser] = nil } else { draftLive[event.draftId, default: [:]][event.fromUser] = .now }
         draftRevision += 1
         draftEventSink?(event)
     }
@@ -191,28 +191,64 @@ struct DraftRow: Identifiable {
     let title: String
     let authors: [Person]
     let updatedAt: Int64
-    let live: Bool
+    /// The other authors writing in it now (heard in the last 25 s).
+    let live: [Person]
+    let pinned: Bool
+    /// I am the writer (a draft nobody shares counts): Delete removes it for everyone; otherwise the row says Leave.
+    let isWriter: Bool
     var id: String { draftID }
 }
 
 extension ConversationStore {
-    /// Your drafts and the drafts you are invited to, newest first: unfinished articles, and anything shared. A draft made to edit a published post that
-    /// nobody else writes in is not listed.
+    /// Your drafts and the drafts you are invited to: pinned first, then newest first. A draft made to edit a published post that nobody else writes in
+    /// is not listed.
     func draftRows(now: Date = .now) -> [DraftRow] {
         _ = draftRevision
         guard let core = draftCore else { return [] }
         let channels = Set(((try? core.draftChannels()) ?? []).map(\.draftId))
-        let me = meProvider().id
-        return ((try? core.listDrafts()) ?? [])
+        let me = meProvider()
+        let rows: [DraftRow] = ((try? core.listDrafts()) ?? [])
             .filter { $0.postId == nil || channels.contains($0.draftId) }
-            .sorted { $0.updatedAt > $1.updatedAt }
             .map { info in
-                let authors = ((try? core.draftAuthors(draftId: info.draftId)) ?? []).filter { $0.status == "active" }.map(\.userId)
-                let people = ([me] + authors.filter { $0 != me }).map { teacher($0) }
-                let live = draftLive[info.draftId].map { now.timeIntervalSince($0) < 25 } ?? false
-                return DraftRow(draftID: info.draftId, title: info.title, authors: authors.isEmpty ? [meProvider()] : people, updatedAt: info.updatedAt, live: live)
+                let all = (try? core.draftAuthors(draftId: info.draftId)) ?? []
+                var others = all.filter { $0.status == "active" }.map(\.userId).filter { $0 != me.id }.map { teacher($0) }
+                var isWriter = (all.first(where: \.isWriter)?.userId).map { $0 == me.id } ?? true
+                #if DEBUG
+                if let sim = simDraftAuthors[info.draftId] { others = sim.others; isWriter = sim.isWriter }
+                #endif
+                let live = others.filter { person in draftLive[info.draftId]?[person.id].map { now.timeIntervalSince($0) < 25 } ?? false }
+                return DraftRow(draftID: info.draftId, title: info.title, authors: [me] + others, updatedAt: info.updatedAt, live: live,
+                                pinned: draftPins.contains(info.draftId), isWriter: isWriter)
             }
+        return rows.sorted { ($0.pinned ? 1 : 0, $0.updatedAt) > ($1.pinned ? 1 : 0, $1.updatedAt) }
     }
+
+    func togglePin(_ ids: [String]) {
+        let allPinned = ids.allSatisfy { draftPins.contains($0) }
+        for id in ids { if allPinned { draftPins.remove(id) } else { draftPins.insert(id) } }
+        UserDefaults.standard.set(Array(draftPins), forKey: "lime.draft.pins")
+        draftRevision += 1
+    }
+
+    /// A new private draft with the same words; returns its id.
+    @discardableResult func copyDraft(_ id: String) -> String? {
+        let copy = try? draftCore?.copyDraft(draftId: id)
+        draftRevision += 1
+        return copy
+    }
+
+    /// The writer's Delete removes the draft for every author; a co-author's Leave takes their copy away and leaves the others to it.
+    func removeDraft(_ row: DraftRow) {
+        guard let core = draftCore else { return }
+        if isDemo { try? core.deleteDraft(draftId: row.draftID) }
+        else if row.isWriter { try? core.deleteDraftForEveryone(draftId: row.draftID) } else { try? core.leaveAndDeleteDraft(draftId: row.draftID) }
+        draftPins.remove(row.draftID); draftSelection.remove(row.draftID)
+        refreshDraftChannels()
+        draftRevision += 1
+        Task { await flushDrafts() }
+    }
+
+    func exitDraftSelection() { draftSelecting = false; draftSelection = [] }
 
     /// After a sync: an invitation I have not been told about is announced once, in the app's glass banner.
     func announceNewDraftInvites() {
@@ -232,6 +268,21 @@ extension ConversationStore {
 
 #if DEBUG
 extension ConversationStore {
+    /// Tests only: `-lime-drafts-sim` makes three drafts (one with three authors, Jean writing in it now; one a co-author's; one private).
+    func simulateDraftsIfAsked() {
+        guard isDemo, ProcessInfo.processInfo.arguments.contains("-lime-drafts-sim"), !simulatedDrafts, let core = draftCore else { return }
+        simulatedDrafts = true
+        for old in (try? core.listDrafts()) ?? [] { try? core.deleteDraft(draftId: old.draftId) }   // the demo's core may be kept between runs
+        let jean = Person(id: "sim-jean", name: "Jean Park", tone: 4), fam = Person(id: "sim-fam", name: "FAM Kind", tone: 2), lee = Person(id: "sim-lee", name: "Lee Wong", tone: 6)
+        if let id = try? core.createDraft(title: "The roots of the lime tree", subtitle: "", markdown: "Roots.") {
+            simDraftAuthors[id] = (others: [jean, fam], isWriter: true)
+            draftLive[id] = ["sim-jean": .now]
+        }
+        if let id = try? core.createDraft(title: "Fractions plan", subtitle: "", markdown: "Plan.") { simDraftAuthors[id] = (others: [lee], isWriter: false) }
+        _ = try? core.createDraft(title: "My private notes", subtitle: "", markdown: "Notes.")
+        draftRevision += 1
+    }
+
     /// Tests only: `-lime-coedit-sim-invite` makes a shared draft appear as if Jean had just invited this account to write it.
     func simulateDraftInviteIfAsked() {
         guard isDemo, ProcessInfo.processInfo.arguments.contains("-lime-coedit-sim-invite"), draftInviteBanner == nil, !simulatedInvite, let core = draftCore else { return }

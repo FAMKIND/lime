@@ -14,6 +14,14 @@ pub struct DraftInfo {
     pub updated_at: i64,
 }
 
+/// Removes everything of a draft from the database.
+pub(crate) fn purge_draft_rows(conn: &Connection, draft_id: &str) -> Result<(), StoreError> {
+    for table in ["draft_chunks", "draft_files", "draft_authors", "draft_outbox", "drafts"] {
+        conn.execute(&format!("DELETE FROM {table} WHERE draft_id = ?1"), params![draft_id]).map_err(db_err)?;
+    }
+    Ok(())
+}
+
 fn load_draft_conn(conn: &Connection, draft_id: &str) -> Result<DraftDoc, StoreError> {
     let snapshot: Vec<u8> = conn.query_row("SELECT snapshot FROM drafts WHERE draft_id = ?1", params![draft_id], |r| r.get(0)).optional().map_err(db_err)?.ok_or(StoreError::NotFound)?;
     let mut st = conn.prepare("SELECT bytes FROM draft_chunks WHERE draft_id = ?1 ORDER BY seq").map_err(db_err)?;
@@ -99,19 +107,12 @@ impl LimeStore {
 
     pub fn delete_draft(&self, draft_id: String) -> Result<(), StoreError> {
         self.draft_cache.lock().unwrap_or_else(|e| e.into_inner()).remove(&draft_id);
-        self.with_conn(|conn| {
-            conn.execute("DELETE FROM draft_chunks WHERE draft_id = ?1", params![draft_id]).map_err(db_err)?;
-            conn.execute("DELETE FROM draft_files WHERE draft_id = ?1", params![draft_id]).map_err(db_err)?;
-            conn.execute("DELETE FROM draft_authors WHERE draft_id = ?1", params![draft_id]).map_err(db_err)?;
-            conn.execute("DELETE FROM draft_outbox WHERE draft_id = ?1", params![draft_id]).map_err(db_err)?;
-            conn.execute("DELETE FROM drafts WHERE draft_id = ?1", params![draft_id]).map_err(db_err)?;
-            Ok(())
-        })
+        self.with_conn(|conn| purge_draft_rows(conn, &draft_id))
     }
 
     pub fn list_drafts(&self) -> Result<Vec<DraftInfo>, StoreError> {
         let rows: Vec<(String, Option<String>, i64)> = self.with_conn(|conn| {
-            let mut st = conn.prepare("SELECT draft_id, post_id, updated_at FROM drafts ORDER BY updated_at DESC").map_err(db_err)?;
+            let mut st = conn.prepare("SELECT draft_id, post_id, updated_at FROM drafts WHERE deleted = 0 ORDER BY updated_at DESC").map_err(db_err)?;
             let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).map_err(db_err)?;
             rows.collect::<Result<_, _>>().map_err(db_err)
         })?;

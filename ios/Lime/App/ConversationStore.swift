@@ -90,11 +90,19 @@ final class ConversationStore {
     /// Counts remote draft changes, for views that redraw on it.
     var draftRevision = 0
     /// When each shared draft last showed a sign of someone writing in it (for the live dot in Drafts).
-    var draftLive: [String: Date] = [:]
+    var draftLive: [String: [String: Date]] = [:]
+    /// Drafts pinned to the top of Drafts (on this phone), and Drafts' selection mode.
+    var draftPins: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "lime.draft.pins") ?? [])
+    var draftSelecting = false
+    var draftSelection: Set<String> = []
     /// An invitation to write that just arrived (the glass banner), and the draft a tap opens.
     var draftInviteBanner: DraftInvite?
     var openDraftRoute: DraftRoute?
     var simulatedInvite = false
+    var simulatedDrafts = false
+    #if DEBUG
+    var simDraftAuthors: [String: (others: [Person], isWriter: Bool)] = [:]
+    #endif
     #if DEBUG
     /// A throwaway core for drafts in demo runs.
     var demoDraftCore: LimeStore?

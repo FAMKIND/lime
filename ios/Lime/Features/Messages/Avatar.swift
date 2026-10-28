@@ -77,16 +77,22 @@ struct ConversationAvatar: View {
 struct GroupCircles: View {
     let plan: GroupAvatarPlan
     var size: CGFloat = 52
+    /// People drawn with a lime ring (the ones writing in a draft right now, LIME-237).
+    var ringed: Set<String> = []
 
     private enum Item { case person(Person), more(Int) }
 
     var body: some View {
         switch plan {
-        case .single(let person): AvatarView(person: person, size: size)
+        case .single(let person): AvatarView(person: person, size: size).overlay(ring(person, size))
         case .pair(let front, let back): circles([.person(back), .person(front)])
         case .triangle(let people): circles(people.map { .person($0) })
         case .ring(let shown, let extra): circles(shown.map { .person($0) } + (extra > 0 ? [.more(extra)] : []))
         }
+    }
+
+    @ViewBuilder private func ring(_ person: Person, _ side: CGFloat) -> some View {
+        if ringed.contains(person.id) { Circle().strokeBorder(Theme.accent, lineWidth: max(2, side * 0.07)) }
     }
 
     private func circles(_ items: [Item]) -> some View {
@@ -97,7 +103,7 @@ struct GroupCircles: View {
                 let at = spots.centres[min(index, spots.centres.count - 1)]
                 Group {
                     switch item {
-                    case .person(let person): AvatarView(person: person, size: d)
+                    case .person(let person): AvatarView(person: person, size: d).overlay(ring(person, d))
                     case .more(let extra):
                         Circle().fill(Theme.surface).frame(width: d, height: d)
                             .overlay(Text("+\(extra)").font(.system(size: d * 0.38, weight: .medium)).foregroundStyle(Theme.text))
