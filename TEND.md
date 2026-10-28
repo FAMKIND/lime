@@ -2,40 +2,55 @@
 
 Record of work landed via the `tend` skill.
 
-# MORNING SUMMARY — the overnight co-editing run (2026-10-26)
+# MORNING SUMMARY — the overnight run (2026-10-28)
 
-**Everything in the chain landed; nothing is skipped, nothing was deployed, no staging setting, secret or account was touched.** All of it is behind the app flag **`coedit`** (on in Debug builds, **off in Release** until you switch it on), so TestFlight/Release behaviour is unchanged.
+**Everything in the run landed and is pushed. Nothing was deployed, no staging setting, secret or account was touched, and `open_posts_enabled` is OFF** (it is created off by the migration and nothing turns it on).
 
 | brief | commit | what |
 |---|---|---|
-| (plot) | `9799ed5` | PLOT.md committed first, as asked |
-| 233a | `2ff2e4c` | core: the draft document (Automerge), Markdown round trip, SQLCipher storage |
-| 233b | `a174643` | core: the authors' sync, the **instant path** (public Realtime broadcast channel, signed + encrypted) and the durable path (sealed mailbox ops); iOS socket adapter |
-| 233c | `5329050` | the article editor writes into a draft (fewest operations, so two people typing in one paragraph merge); remote changes keep your caret |
-| 233d | `1a5cc9b` | co-authors in the editor: faces row, coloured cursors with photo + name, selection tint, "Jean is editing…", invitations in Activity and the post's ⋯ "Open draft" |
-| 233e | `a2aa498` | only the writer publishes; co-author **Ready**; "Published by…" and "Changes since the last publish"; pictures from any author |
-| 233f | (this commit) | `docs/coedit.md` as built, `docs/api-v2.md` §16 (`draft.*` ops), `docs/jam.md` pointer, this summary |
+| (plot) | `4ddacf5` | PLOT.md committed first |
+| 235e follow-up | `2ddd88c` | 8 pt more space above the player's bottom bar |
+| 238 follow-up | `e0f1ca9` | default profile heroes keep their colours (blurred photo with a soft tint, or the avatar's tone, with a lighter overlay) |
+| 239a | `ea9a2c3` | the podcast recorder as the mockups |
+| 239b | `21c3f30` | the podcast details page: preview, trim, the words (also for Edit) |
+| 210a | `797f11d` | server: `open_posts`, the public `open` file class, 4 functions + takedown, `open_posts_enabled` flag (off) |
+| 210b | `97634c8` | core: audience, signed open rows, the Preview at `[[freewall]]`, series field, verification on read |
+| 210c | `22480d4` | app: audience chip, globe, Preview page, "Subscribe to read the rest", Discover |
+| 210d | `6c7583b` | the student-privacy check (notice + per-post confirmation + on-device face warning + 7-day wait for new accounts) |
+| 210e | `6112b9c` | contacts follow each other's jams (paced, unsubscribing sticks) |
+| 210f | `8175987` | series: picker, series page, "Part 2 of 6" |
+| 210g | `526e7ba` | community chat for a jam (join added by the writer's phone) |
+| test fixes | `36f28ce` | two jam tests that had gone stale |
 
-**Staging's Realtime allows public broadcast channels with the anon key** (checked read-only, no setting needed; ~21 ms from the Mac). Core tests: **368 pass** (`check-android.sh` OK). iOS: the new unit and UI tests pass (Coedit233c/d/e, CoEdit233d/e).
+**Behind a flag:** all of open posts. The server flag `open_posts_enabled` is off, so **TestFlight users will see no audience chip and no Discover** until you turn it on (the app asks the feed whether the server takes open posts). Everything else (contacts following, series, community chat) is live in the app and needs no flag; series and community need the new server migrations deployed for their public bits (community's `has_community`).
 
-**Installed** (Debug, flag on) on the **13 mini and the iPad** (both installed; I did not install on Jean's phone, as you asked for two).
+**What failed or was left out, and why (nothing hidden):**
+- **Announcement-channel mode at 100 community members** (210g): depends on LIME-193c, which does not exist (no `announce` flag in the group protocol). The 101st gets "The community is full." instead.
+- **Report on an open post** (the app side) is not built: the server can take a post down (`moderation-act hide_open_post`), but a reader cannot report one yet. **Needed before you turn the flag on** (docs/jam.md 13.9).
+- **Open posts in on-device search (223)** and the **optional subject/grade chips at publish** (choice (d)): not done (Discover filters by the jam's topics).
+- **The podcast recorder has no series row** (a new recording cannot join a series when posted; articles and Edit can).
+- **Real-world checks not made:** Vision on a real classroom photo, a real Discover round trip against a server, a 100-person community, the real trim export on a phone (239b).
+- **Server tests:** 114 of 115 pass; the one failure is `blobs_test` public avatars ("refuses more than 1 MB", the local Storage limit), not from this run. Core **387 pass**. UI: all new classes pass; a 40-test jam regression passed after two stale tests were fixed (`Jam188t` is now skipped with its reason, rule 12d). Earlier known-failing: `Player235UITests` Watch toggle and `Jam203UITests` View-post menu (simulator taps).
+- One UI test outside jam (`Composer152aUITests testNoteToSelfsHeaderOpensYourOwnProfile`) failed once in an aborted full-suite run; not investigated, not touched by this run.
 
-**What failed, and why:**
-- The full jam UI suites (83 tests): **79 pass, 4 failed**. One was real and is **fixed**: `Jam203` (podcast title opens the player) timed out because my new "Open draft" item in the post ⋯ asked the core while every card was drawn; it now checks cheaply first and the test passes (136 s). `Jam188b…ArticleIsAPage…` failed under load and **passes alone** (flaky on its unwaited tap of "Write an article"). Two are **stale expectations from earlier briefs, not touched by this chain** (not re-run against the pre-chain commit): `Jam188b…QuickPost…` looks for a "like" label (189 changed the card) and `Jam188j…VideoCard…` asserts there is no "Report" item (191 added it).
-- Nothing was put behind the flag for failing tests: every brief's tests passed.
+**Installed** (Debug) on the **13 mini and the iPad**. **Jean's 12 mini was unavailable** (off, locked or away) on three tries; install it when it is on and unlocked: `bash $TMPDIR/install.sh`.
 
-**Decisions I made that you should know (all in the records below and in `docs/coedit.md` §12):** the durable path uses **pairwise sealed ops** instead of a Megolm draft group (≤ 5 authors); inviting sends the draft invitation **when you pick the co-author** (the old credit request at publish time is unchanged); "Changes since the last publish" is a **line at the top**, not a highlight on each changed paragraph; the editor redraws its text when another author's change arrives (your caret, selection and keyboard stay; that text view's undo stack resets); a picture's server copy lives only for the normal attachment retention.
+**Deploy steps for you (I did not run any):**
+1. `supabase db push` (applies `20261027000000_open_posts.sql`: flag table, `open_posts`, `open_files`, the public `open-files` bucket; and `20261028000000_jam_has_community.sql`).
+2. `supabase functions deploy open-file open-post open-feed open-post-get moderation-act jam-page profile-get` (`open-post-get` has no JWT check; `config.toml` already says so). The app works against the old functions too, except Discover, the audience chip, `has_jam` auto-follow and `has_community`, which quietly do nothing until they are deployed.
+3. Check in the Supabase dashboard that the `open-files` bucket exists and is public.
 
-**Your two-phone check (Shem + Jean, both on the new build, both signed in, contacts with each other):**
-1. Shem: Jam → New post → Write an article. Type a title and a line. Tap the person-plus, add Jean, Done.
-2. Jean: open Profile → Activity: **"Shem invited you to write <title>"**. Tap it (needs a sync; pull to refresh or wait a few seconds).
-3. Both type **in the same paragraph at the same time**. Check: both see each other's letters within about a blink; each sees the other's coloured cursor with a photo/name tag (the tag fades to just the caret after 3 s); your own caret does not jump; "Jean is editing…" shows.
-4. Jean: add a picture. Shem should see it appear in his editor (a blur first, then the picture).
-5. Jean has **no Post button** (there is a Done) and sees "Shem publishes this article" with **Ready**; tap it: Shem sees "Jean is ready". Shem taps Post: Jean sees "Published by Shem · <time>", and the post has Jean's picture.
-6. Then try Airplane mode on one phone for a minute, keep typing on both, turn it back on: both end with the same text.
-If anything misbehaves, `-lime-no-coedit` as a launch argument turns the whole thing off in Debug.
+**To turn open posts on (when you decide; needs the Report work first):** in the SQL editor: `update server_flags set enabled = true where name = 'open_posts_enabled';`. Off again: the same with `false`. Then open lime: the jam tab shows Discover and the composer shows the audience chip.
 
-**Not covered by any test** (needs two real phones): the iOS invitation round trip, the picture fetch between phones, the Activity row. The core tests cover the invitation, sync, ready, publish and picture transfer between three fake phones.
+**Check first in the morning (on the phones):**
+1. Podcast: record (video, then audio), the controls and the live bars; stop, trim with both handles, Post as, cover, Post. Edit a published podcast and trim it (the real export).
+2. Open any profile: the default hero keeps the photo's or tone's colours and the white text stays readable.
+3. Player: 8 pt more air above the bottom bar.
+4. After deploying and turning the flag on **in a throwaway way** (or not at all): an Everyone post with a photo asks the confirmation, a photo with a face warns; open it from Discover on the second phone; a `[[freewall]]` article shows a Preview with a lock to a non-subscriber and "Subscribe to read the rest" opens the whole post.
+5. Two phones that chat: each follows the other's jam by itself (give it a minute or two; sync runs the pass at 20 contacts a minute); unsubscribe and check it stays that way.
+6. Make a 3-part series; the cards say "Part 2 of 3"; the series page lists them with the ones you read checked.
+7. Turn the Community chat on in Edit jam page; on the other phone tap Join; the writer's phone must be running to add them.
+
 
 
 ## LIME-03a — Sidebar Polish
