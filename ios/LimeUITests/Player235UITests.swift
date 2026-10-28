@@ -20,10 +20,10 @@ final class Player235UITests: LimeUITestCase {
         XCTAssertLessThan(play.frame.maxY, title.frame.minY, "the controls row is above the title")
         XCTAssertLessThan(title.frame.maxY, any(app, "jam-video-timeline").frame.minY + 4, "the progress bar is under the words")
         // The toggle: Listen is on, Watch is dimmed for an audio podcast.
-        let mode = app.segmentedControls["jam-player-mode"]
-        XCTAssertTrue(mode.exists && mode.buttons["Listen"].isSelected, "Listen is on")
-        mode.buttons["Watch, no video"].tap()
-        XCTAssertTrue(mode.buttons["Listen"].isSelected, "an audio podcast has no picture: Watch gives way")
+        // An audio podcast has no video: just the waveform, no toggle to operate.
+        XCTAssertTrue(any(app, "jam-player-audio-only").exists, "only the waveform")
+        XCTAssertFalse(app.segmentedControls["jam-player-mode"].exists, "no Listen | Watch")
+        XCTAssertFalse(app.buttons["Watch"].exists)
         // The bottom bar: AirPlay, ♥ 💬 remix share, Up next.
         XCTAssertTrue(any(app, "jam-video-airplay").exists)
         XCTAssertTrue(app.buttons["jam-pill-share"].exists)
@@ -47,7 +47,9 @@ final class Player235UITests: LimeUITestCase {
         let title = app.buttons["jam-video-text"]
         XCTAssertTrue(title.waitForExistence(timeout: 3))
         XCTAssertLessThan(any(app, "jam-video-stage").frame.maxY, title.frame.minY + 200)
-        XCTAssertLessThan(title.frame.height, 60, "title and subtitle are one line each: \(title.frame)")
+        XCTAssertLessThan(title.frame.height, 50, "title and subtitle are one line each: \(title.frame)")
+        // The info block's text fits within the (smaller, 82 pt) cover's height.
+        XCTAssertLessThanOrEqual(title.frame.maxY - any(app, "jam-video-stage").frame.maxY, 120, "close under the stage")
         XCTAssertTrue(any(app, "jam-video-volume").exists, "the volume slider")
         XCTAssertFalse(any(app, "jam-audio-cover").exists)
         // A tap on the video: full screen with ✕ and sound.

@@ -419,14 +419,21 @@ struct JamVideoScreen: View {
 
     /// A glass segmented toggle, waveform | video: Listen keeps the sound with the cover on the stage; Watch shows the picture. An audio-only podcast has
     /// no picture, so its Watch half is dimmed.
+    @ViewBuilder
     private var modeToggle: some View {
-        // The system's segmented control (glass on iOS 26; a segmented control for VoiceOver). An audio podcast has no picture: Watch gives way to Listen.
-        Picker("Listen or watch", selection: Binding(get: { watch }, set: { if $0 && isAudio { noVideoHint = true } else { watching = $0 } })) {
-            Image(systemName: "waveform").accessibilityLabel("Listen").tag(false)
-            Image(systemName: "video").accessibilityLabel(isAudio ? "Watch, no video" : "Watch").tag(true)
+        if isAudio {
+            // Audio only: just the waveform, one glass chip that does nothing: there is no picture to switch to.
+            Image(systemName: "waveform").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white).frame(width: 64, height: 36).limeGlass(in: Capsule())
+                .accessibilityElement(children: .ignore).accessibilityLabel("Audio only").accessibilityIdentifier("jam-player-audio-only")
+        } else {
+            // The system's segmented control (glass on iOS 26; a segmented control for VoiceOver).
+            Picker("Listen or watch", selection: Binding(get: { watch }, set: { watching = $0 })) {
+                Image(systemName: "waveform").accessibilityLabel("Listen").tag(false)
+                Image(systemName: "video").accessibilityLabel("Watch").tag(true)
+            }
+            .pickerStyle(.segmented).frame(width: 128)
+            .accessibilityIdentifier("jam-player-mode")
         }
-        .pickerStyle(.segmented).frame(width: 128)
-        .accessibilityIdentifier("jam-player-mode")
     }
 
     private func glassCircle(_ symbol: String, label: String, id: String, action: @escaping () -> Void) -> some View {
@@ -493,16 +500,7 @@ struct JamVideoScreen: View {
                 if let post { writerRow(post, withDate: false); titleBlock(post) }
                 timeline(item.controller)
             } else {
-                if let post {
-                    // One block: the cover on the left; the writer and date, a one-line title and a one-line subtitle on the right.
-                    HStack(alignment: .top, spacing: 12) {
-                        PostCover(postID: post.postId).frame(width: 110, height: 110).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous)).accessibilityHidden(true)
-                        VStack(alignment: .leading, spacing: 4) {
-                            writerRow(post, withDate: true)
-                            titleBlock(post, lines: 1)
-                        }
-                    }
-                }
+                if let post { infoBlock(post, cover: 82) }
                 timeline(item.controller)
                 controls(item.controller, circle: false)
                 VolumeSlider().frame(height: 34).accessibilityLabel("Volume").accessibilityIdentifier("jam-video-volume")
@@ -560,6 +558,38 @@ struct JamVideoScreen: View {
                     Text("Subscribe").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.accentInk).padding(.horizontal, 14).frame(minHeight: 36).background(Theme.accent, in: Capsule())
                 }
                 .accessibilityIdentifier("jam-video-subscribe")
+            }
+        }
+    }
+
+    /// The video podcast's info block (LIME-235d): the cover on the left; on the right, within the cover's height, the writer (a small avatar, the name, the
+    /// short date), the title and the subtitle, each one line that scrolls when it is too long.
+    private func infoBlock(_ post: JamPostInfo, cover: CGFloat) -> some View {
+        let subtitle = store.playerSubtitle(post.postId)
+        return HStack(alignment: .top, spacing: 12) {
+            PostCover(postID: post.postId).frame(width: cover, height: cover).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    if let org = store.orgName(post) { JamInitialTile(title: org, size: 24).accessibilityHidden(true) } else { AvatarView(person: store.teacher(post.author), size: 24).accessibilityHidden(true) }
+                    Text(store.authorName(post)).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
+                    Text("\u{00B7} \(JamDates.short(post.created))").font(Theme.font(.subheadline)).foregroundStyle(.white.opacity(0.7)).lineLimit(1).fixedSize()
+                    Spacer(minLength: 0)
+                    if !store.isFollowing(post.jamId), post.author != store.meProvider().id {
+                        Button { Task { if let page = await store.jamPage(of: post.author) { await store.subscribe(to: page) } } } label: {
+                            Text("Subscribe").font(Theme.font(.caption, weight: .semibold)).foregroundStyle(Theme.accentInk).padding(.horizontal, 10).frame(minHeight: 28).background(Theme.accent, in: Capsule())
+                        }
+                        .accessibilityIdentifier("jam-video-subscribe")
+                    }
+                }
+                Button { withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) { textOpen = true } } label: {
+                    VStack(alignment: .leading, spacing: 0) {
+                        if !post.title.isEmpty { MarqueeText(text: post.title, font: Theme.font(.headline)) }
+                        if !subtitle.isEmpty { MarqueeText(text: subtitle, font: Theme.font(.subheadline), color: .white.opacity(0.75)) }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel([post.title, subtitle].filter { !$0.isEmpty }.joined(separator: ", ")).accessibilityHint("Reads the whole post").accessibilityIdentifier("jam-video-text")
             }
         }
     }
@@ -938,21 +968,19 @@ struct JamVideoFullScreen: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// Upright: the cover on the left; the writer and date, a one-line title and a one-line subtitle on the right.
+    /// Upright: the cover on the left; within its height the writer and the short date, a one-line title and a one-line subtitle on the right.
     private func info(_ post: JamPostInfo) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            PostCover(postID: post.postId).frame(width: 84, height: 84).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous)).accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 8) {
-                    AvatarView(person: store.teacher(post.author), size: 28).accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(store.authorName(post)).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
-                        Text(JamDates.text(post.created)).font(Theme.caption).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
-                    }
+        HStack(alignment: .top, spacing: 10) {
+            PostCover(postID: post.postId).frame(width: 64, height: 64).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous)).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    AvatarView(person: store.teacher(post.author), size: 20).accessibilityHidden(true)
+                    Text(store.authorName(post)).font(Theme.font(.footnote, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
+                    Text("\u{00B7} \(JamDates.short(post.created))").font(Theme.font(.footnote)).foregroundStyle(.white.opacity(0.7)).lineLimit(1).fixedSize()
                 }
                 if !post.title.isEmpty { MarqueeText(text: post.title, font: Theme.font(.subheadline, weight: .bold)) }
                 let subtitle = store.playerSubtitle(post.postId)
-                if !subtitle.isEmpty { MarqueeText(text: subtitle, font: Theme.caption, color: .white.opacity(0.75)) }
+                if !subtitle.isEmpty { MarqueeText(text: subtitle, font: Theme.font(.caption), color: .white.opacity(0.75)) }
             }
             Spacer(minLength: 0)
         }

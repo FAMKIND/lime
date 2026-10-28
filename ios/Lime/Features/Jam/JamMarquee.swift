@@ -15,6 +15,11 @@ enum MarqueeMotion {
     static func duration(overflow: CGFloat) -> Double { max(0.5, Double(overflow) / speed) }
 }
 
+private struct MarqueeWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
 /// A line of text that scrolls sideways when it does not fit, like Apple Podcasts: a pause at the start, a slow scroll to the end, a pause, back, with
 /// both edges fading out. With Reduce Motion it is truncated with … and never moves. VoiceOver reads all of it.
 struct MarqueeText: View {
@@ -29,13 +34,18 @@ struct MarqueeText: View {
     private var overflow: CGFloat { MarqueeMotion.overflow(text: textWidth, box: boxWidth) }
 
     var body: some View {
-        // The one-line, truncated text sizes the box and is what shows when nothing needs to move.
+        // The one-line, truncated text sizes the box and is what shows when nothing needs to move; the text's own width is measured by a copy that is
+        // never clipped or resized, so a long title is known to be long.
         Text(text).font(font).foregroundStyle(color).lineLimit(1).opacity(overflow > 0 && !reduceMotion ? 0 : 1)
             .frame(maxWidth: .infinity, alignment: .leading)
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { boxWidth = $0 }
+            .background {
+                Text(text).font(font).fixedSize().hidden().background(GeometryReader { Color.clear.preference(key: MarqueeWidthKey.self, value: $0.size.width) })
+                    .frame(width: 0, height: 0, alignment: .leading)
+            }
+            .onPreferenceChange(MarqueeWidthKey.self) { textWidth = $0 }
             .overlay(alignment: .leading) {
                 Text(text).font(font).foregroundStyle(color).fixedSize()
-                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { textWidth = $0 }
                     .offset(x: offset)
                     .frame(width: boxWidth, alignment: .leading).clipped()
                     .mask { edgeFade }
