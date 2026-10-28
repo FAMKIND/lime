@@ -8547,3 +8547,11 @@ On other people's phones (not reachable): their chats with the account, jam post
 - **What each party learns:** as `docs/jam.md` 13.8/13.10: the server learns the one boolean `has_community` and nothing of the group (sealed as any group); the writer learns who asks to join (and adds them); a member sees the group's members as a group shows them.
 - **Tests:** core: the writer turns it on, subscribers learn it, a non-subscriber and a jam with no community refuse, a join is added by the writer's phone by itself (the group is made, bob is told `joined`, carol joins the same group), removing a subscriber takes them out of the community; the 100 rule. UI (demo, 2 pass): Join from the jam page shows the waiting line; the writer's switch is in Edit jam page. Core **387 pass**.
 - **Installed:** with the final build.
+
+## Deploy of the open-posts server pieces to staging (you asked; flag left OFF)
+
+- **Migrations pushed** to `lime-staging` (`db push`, dry run first showed exactly these two): `20261027000000_open_posts.sql`, `20261028000000_jam_has_community.sql`.
+- **Functions deployed** one by one (`--use-api`): `open-file`, `open-post`, `open-feed`, `open-post-get`, `moderation-act`, `jam-page`, `profile-get`. Nothing else was deployed, **no secrets were set or changed**, no Auth setting touched; `check-staging-mesh-key.sh` still passes.
+- **Smoke test with `open_posts_enabled` OFF** (`./supabase/smoke-open-staging.sh`, new, throwaway user deleted afterwards): the `open-files` bucket exists and **is public**; the flag row is `false`; `open-post-get` with no session answers 404 (so it needs no JWT); `open-feed` answers `enabled: false` with no items; `open-file put` and `open-post publish` answer **403 `open_posts_disabled`**; `moderation-act hide_open_post` refuses a non-moderator (403); `jam-page` stores and returns `has_community`. The existing `smoke-staging.sh` also passes (sealed send, accounts, chat/profile).
+- **Not tested on staging:** a real open post (that needs the flag on). The flag was **not** turned on.
+- To turn it on later: `update server_flags set enabled = true where name = 'open_posts_enabled';` (after the Report work).
