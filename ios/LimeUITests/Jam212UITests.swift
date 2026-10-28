@@ -23,15 +23,15 @@ final class Jam212UITests: LimeUITestCase {
     func testEditOnARecordingIsAPodcastPageNotTheArticleEditor() {
         let app = launch()
         openEditor(app)
-        // LIME-227: the black studio in edit mode: a pencil by each line, Cancel · Update, Re-record asks first.
+        // LIME-239b: the details page in edit mode: Update on top, who it is from, Record again in the ⋯ (it asks first).
         XCTAssertEqual(app.descendants(matching: .any)["podcast-title"].value as? String, "Songs for the circle")
         XCTAssertEqual(app.descendants(matching: .any)["podcast-subtitle"].value as? String, "Korean children's songs")
-        XCTAssertTrue(app.buttons["podcast-title-edit"].exists && app.buttons["podcast-subtitle-edit"].exists && app.buttons["podcast-description-edit"].exists, "a pencil by each line")
         XCTAssertTrue(app.buttons["podcast-update"].exists, "Update on top")
         XCTAssertTrue(app.buttons["jam-post-as"].exists == false, "the article editor's bar is gone")
         XCTAssertTrue(app.buttons["podcast-post-as"].exists, "who it is from")
-        app.buttons["podcast-again"].tap()
-        XCTAssertTrue(app.buttons["podcast-rerecord-confirm"].waitForExistence(timeout: 5), "Re-record asks first")
+        app.buttons["podcast-more"].tap()
+        app.buttons["Record again"].tap()
+        XCTAssertTrue(app.buttons["podcast-rerecord-confirm"].waitForExistence(timeout: 5), "Record again asks first")
         app.buttons["Keep it"].tap()
         XCTAssertFalse(app.buttons["podcast-record"].exists, "the recording stays until they confirm")
     }

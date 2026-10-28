@@ -247,6 +247,12 @@ struct PodcastRecorder: View {
     @State private var confirmingRerecord = false
     @State private var confirmingDiscard = false
     @State private var torchOn = false
+    // The details page (LIME-239b)
+    @State private var descModel = RichComposerModel()
+    @State private var trimStart: Double = 0
+    @State private var trimEnd: Double = 0
+    @State private var editClip: OutgoingAttachment?
+    @State private var headingOpen = false
     // Edit mode (LIME-227)
     @State private var reRecording = false
     @State private var removeCover = false
@@ -275,13 +281,13 @@ struct PodcastRecorder: View {
     private var stageHeight: CGFloat { min(UIScreen.main.bounds.height * 0.34, 300) }
 
     /// The recorder screen (LIME-239a) is shown until there is a take; an article's audio, a take and an edit of a post use the words page.
-    private var usesWordsPage: Bool { forArticle || clip != nil || (editing != nil && !reRecording) }
+    private var showsDetails: Bool { !forArticle && (clip != nil || (editing != nil && !reRecording)) }
 
     var body: some View {
         Group {
-            if usesWordsPage { wordsPage } else { recordScreen }
+            if forArticle { wordsPage } else if showsDetails { detailsPage } else { recordScreen }
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(showsDetails ? nil : .dark)
         .sheet(isPresented: $choosingHosts) { JamCoauthorPicker(selected: $coauthors, title: "Add co-hosts") }
         .sheet(isPresented: $postingAs) { PostAsSheet(selection: $postAsJam) }
         .fullScreenCover(isPresented: $pickingCover) {
@@ -290,10 +296,10 @@ struct PodcastRecorder: View {
                 if let image = images.first, let made = AttachmentProcessing.photo(image, name: JamCover.name) { cover = made; removeCover = false }
             }, onCancel: { pickingCover = false }).ignoresSafeArea()
         }
-        .confirmSheet("Replace this recording?", isPresented: $confirmingRerecord) {
-            Button("Re-record", role: .destructive) { again() }.accessibilityIdentifier("podcast-rerecord-confirm")
+        .confirmSheet("Record again?", isPresented: $confirmingRerecord) {
+            Button("Record again", role: .destructive) { again() }.accessibilityIdentifier("podcast-rerecord-confirm")
             Button("Keep it", role: .cancel) {}
-        } message: { Text("The one you made is thrown away.") }
+        } message: { Text("This take will be discarded.") }
         .confirmSheet("Discard this recording?", isPresented: $confirmingDiscard) {
             Button("Discard", role: .destructive) { cancel() }.accessibilityIdentifier("podcast-discard-confirm")
             Button("Keep recording", role: .cancel) {}
@@ -433,7 +439,285 @@ struct PodcastRecorder: View {
         .buttonStyle(.plain).accessibilityLabel(label).accessibilityIdentifier(id)
     }
 
-    // MARK: The words page (LIME-239b replaces this)
+    // MARK: The details page (LIME-239b)
+
+    /// What the preview and the trim bar work on: the new take, or (editing) the recording the post already has.
+    private var previewClip: OutgoingAttachment? { clip ?? editClip }
+    private var isVideoTake: Bool { previewClip?.mime.hasPrefix("video/") ?? cameraOn }
+    private var previewDuration: Double { take.duration > 0 ? take.duration : Double(previewClip?.durationMs ?? 0) / 1000 }
+    private var trimmed: Bool { previewDuration > 0 && (trimStart > 0.05 || trimEnd < previewDuration - 0.05) }
+    private var canSend: Bool { editing != nil ? canUpdate : canPost && !saving }
+
+    private var detailsPage: some View {
+        VStack(spacing: 0) {
+            detailsTop
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        preview.frame(maxWidth: .infinity)
+                        trimBar
+                        detailsPostRow
+                        detailsWords
+                    }
+                    .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 24)
+                }
+                .scrollDismissesKeyboard(.interactively)
+                .onChange(of: focus) { _, line in
+                    guard let line else { return }
+                    withAnimation { proxy.scrollTo(line, anchor: .center) }
+                }
+            }
+            detailsBar
+        }
+        .background(Theme.canvas.ignoresSafeArea())
+        .task(id: previewClip?.durationMs ?? 0) {
+            if let c = previewClip, take.player == nil { take.load(c) }
+            if trimEnd == 0 || trimEnd > previewDuration { trimEnd = previewDuration }
+        }
+        .task {
+            // Editing: the recording the post already has, for the preview and the trim.
+            guard let editing, editClip == nil, clip == nil else { return }
+            let files = store.jamAttachments(editing.postId)
+            if let media = files.first(where: { $0.kind == "video" || $0.kind == "audio" }), let data = await store.jamAttachmentData(editing.postId, media.attachmentId) {
+                editClip = OutgoingAttachment(bytes: data, name: media.name, mime: media.mime, width: media.width, height: media.height, durationMs: media.durationMs, thumb: media.thumb, poster: media.poster)
+            }
+            try? await Task.sleep(for: .milliseconds(300))
+            if !details.isEmpty { descModel.textView?.attributedText = ComposerDocument.attributed(fromMarkdown: details, post: true); descModel.didEdit() }
+        }
+        .onChange(of: descModel.plainText) { _, _ in details = descModel.markdown() }
+    }
+
+    /// ‹ (back to the recorder, asking first; when editing, closes) · Post or Update, both glass.
+    private var detailsTop: some View {
+        HStack {
+            Button { if editing != nil { cancel() } else { confirmingRerecord = true } } label: {
+                Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.text).frame(width: 44, height: 44).limeGlass(in: Circle())
+            }
+            .buttonStyle(.plain).accessibilityLabel(editing != nil ? "Close" : "Back to the recorder").accessibilityIdentifier("podcast-back")
+            Spacer()
+            if editing != nil {
+                Menu {
+                    Button { confirmingRerecord = true } label: { Label("Record again", systemImage: "arrow.counterclockwise") }.accessibilityIdentifier("podcast-again")
+                } label: {
+                    Image(systemName: "ellipsis").font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.text).frame(width: 44, height: 44).limeGlass(in: Circle())
+                }
+                .accessibilityLabel("More").accessibilityIdentifier("podcast-more")
+            }
+            Button { Task { editing != nil ? await update() : await sendNow() } } label: {
+                Text(editing != nil ? (saving ? "Saving\u{2026}" : "Update") : (preparing ? "Getting ready\u{2026}" : "Post")).font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text)
+                    .padding(.horizontal, 18).frame(minHeight: 44).limeGlass(in: Capsule()).opacity(canSend ? 1 : 0.45)
+            }
+            .buttonStyle(.plain).disabled(!canSend || preparing).accessibilityIdentifier(editing != nil ? "podcast-update" : "podcast-post")
+        }
+        .padding(.horizontal, 16).padding(.top, 8)
+    }
+
+    /// The recording as a rounded preview (a video at its own shape; audio: the cover or the avatar with a small play button); a tap plays or pauses it.
+    private var preview: some View {
+        let shape = RoundedRectangle(cornerRadius: 22, style: .continuous)
+        let ratio: CGFloat = {
+            guard isVideoTake, let w = previewClip?.width, let h = previewClip?.height, h > 0 else { return isVideoTake ? 3.0 / 4 : 1 }
+            return CGFloat(w) / CGFloat(h)
+        }()
+        return Button { take.toggle() } label: {
+            ZStack {
+                if isVideoTake {
+                    if take.player != nil, !demo { TakeVideoView(player: take.player) }
+                    else {
+                        LinearGradient(colors: [Color(white: 0.28), Color(white: 0.1)], startPoint: .top, endPoint: .bottom)
+                        Image(systemName: "person.fill").font(.system(size: 70)).foregroundStyle(.white.opacity(0.25))
+                    }
+                } else {
+                    if let editing, coverImage == nil, !removeCover { PostCover(postID: editing.postId) } else { CoverArt(image: coverImage, person: store.meProvider(), org: jamTitle) }
+                }
+                Image(systemName: take.playing ? "pause.fill" : "play.fill").font(.system(size: 22)).foregroundStyle(.white)
+                    .frame(width: 52, height: 52).background(.black.opacity(0.45), in: Circle()).opacity(take.playing ? 0.0 : 1)
+            }
+            .aspectRatio(ratio, contentMode: .fit)
+            .frame(maxWidth: isVideoTake ? 260 : 240)
+            .clipShape(shape)
+        }
+        .buttonStyle(.plain).accessibilityLabel(take.playing ? "Pause recording" : "Play recording").accessibilityIdentifier("podcast-play")
+    }
+
+    /// A glass capsule with the recording's waveform (or frames) and a handle at each end to set where it starts and ends.
+    private var trimBar: some View {
+        let duration = max(previewDuration, 0.1)
+        return VStack(spacing: 6) {
+            GeometryReader { geo in trimTrack(width: geo.size.width, height: geo.size.height, duration: duration) }
+                .frame(height: 48)
+            HStack {
+                Text(VoiceFormat.clock(trimStart)).accessibilityHidden(true)
+                Spacer()
+                Text(VoiceFormat.clock(max(trimEnd - trimStart, 0))).accessibilityLabel("Length").accessibilityValue(PodcastFormat.spoken(max(trimEnd - trimStart, 0))).accessibilityIdentifier("podcast-trim-length")
+                Spacer()
+                Text(VoiceFormat.clock(trimEnd)).accessibilityHidden(true)
+            }
+            .font(Theme.caption.monospacedDigit()).foregroundStyle(Theme.textSecondary)
+        }
+    }
+
+    private func trimSpan(_ width: CGFloat) -> CGFloat { max(width - 32, 1) }
+
+    private func moveStart(toX x: CGFloat, width: CGFloat, duration: Double) {
+        let seconds = Double((x - 8) / trimSpan(width)) * duration
+        trimStart = min(max(seconds, 0), max(trimEnd - 1, 0))
+    }
+
+    private func moveEnd(toX x: CGFloat, width: CGFloat, duration: Double) {
+        let seconds = Double((x - 24) / trimSpan(width)) * duration
+        trimEnd = max(min(seconds, duration), min(trimStart + 1, duration))
+    }
+
+    private func trimTrack(width: CGFloat, height: CGFloat, duration: Double) -> some View {
+        let span = trimSpan(width)
+        let x0 = CGFloat(trimStart / duration) * span
+        let x1 = 16 + CGFloat(trimEnd / duration) * span
+        let kept = max(x1 + 16 - x0, 32)
+        return ZStack(alignment: .leading) {
+            Capsule().fill(.clear).limeGlass(in: Capsule())
+            waveform(width: width).padding(.horizontal, 16).opacity(0.55)
+            RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Theme.text, lineWidth: 2.5).frame(width: kept, height: height - 4).offset(x: x0).allowsHitTesting(false)
+            trimHandle("chevron.left", "Start", value: trimStart, id: "podcast-trim-start", x: x0,
+                       drag: { moveStart(toX: $0, width: width, duration: duration) }, step: { trimStart = min(max(trimStart + $0, 0), max(trimEnd - 1, 0)) })
+            trimHandle("chevron.right", "End", value: trimEnd, id: "podcast-trim-end", x: x1,
+                       drag: { moveEnd(toX: $0, width: width, duration: duration) }, step: { trimEnd = max(min(trimEnd + $0, duration), min(trimStart + 1, duration)) })
+        }
+        .coordinateSpace(name: "trim")
+    }
+
+    private func trimHandle(_ symbol: String, _ label: String, value: Double, id: String, x: CGFloat, drag: @escaping (CGFloat) -> Void, step: @escaping (Double) -> Void) -> some View {
+        handleView(symbol).offset(x: x)
+            .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("trim")).onChanged { drag($0.location.x) })
+            .accessibilityElement().accessibilityLabel(label).accessibilityValue(VoiceFormat.clock(value)).accessibilityIdentifier(id)
+            .accessibilityAdjustableAction { step($0 == .increment ? 1 : -1) }
+    }
+
+    private func handleView(_ symbol: String) -> some View {
+        Image(systemName: symbol).font(.system(size: 11, weight: .bold)).foregroundStyle(Theme.canvas).frame(width: 16, height: 44)
+            .background(Theme.text, in: RoundedRectangle(cornerRadius: 6, style: .continuous)).contentShape(Rectangle().inset(by: -8))
+    }
+
+    /// Bars from the recording's own waveform (audio); a plain strip for video.
+    private func waveform(width: CGFloat) -> some View {
+        let samples = previewClip.map { Array($0.thumb) } ?? []
+        return Canvas { context, size in
+            let count = 60
+            let gap: CGFloat = 3
+            let barWidth = max(2, (size.width - gap * CGFloat(count - 1)) / CGFloat(count))
+            for i in 0..<count {
+                let level: CGFloat = samples.isEmpty || isVideoTake ? 0.35 : CGFloat(samples[min(samples.count - 1, i * samples.count / count)]) / 255
+                let h = max(4, size.height * (0.15 + 0.7 * level))
+                context.fill(Path(roundedRect: CGRect(x: CGFloat(i) * (barWidth + gap), y: (size.height - h) / 2, width: barWidth, height: h), cornerRadius: barWidth / 2), with: .color(Theme.text))
+            }
+        }
+        .frame(height: 30)
+    }
+
+    /// Who it is from, the co-hosts and the cover, on the light page.
+    private var detailsPostRow: some View {
+        HStack(spacing: 8) {
+            Button { postingAs = true } label: {
+                HStack(spacing: 8) {
+                    if let jamTitle { BylineAvatar(people: [store.meProvider()] + coauthors, jam: jamTitle, size: 32).frame(width: 42, height: 32, alignment: .leading) } else { AvatarView(person: store.meProvider(), size: 30).accessibilityHidden(true) }
+                    Text(jamTitle ?? store.meProvider().name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
+                    Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.textSecondary)
+                }
+                .frame(minHeight: 44)
+            }
+            .buttonStyle(.plain).accessibilityLabel("Posting as \(jamTitle ?? store.meProvider().name)").accessibilityIdentifier("podcast-post-as")
+            Button { choosingHosts = true } label: {
+                Image(systemName: "person.badge.plus").font(.system(size: 18)).foregroundStyle(Theme.textSecondary).frame(width: 44, height: 44)
+            }
+            .accessibilityLabel(coauthors.isEmpty ? "Add co-host" : "Co-hosts: \(coauthors.map(\.name).joined(separator: ", "))").accessibilityIdentifier("podcast-hosts")
+            Spacer(minLength: 0)
+            let hasCover = cover != nil || (editing != nil && !removeCover && store.jamAttachments(editing?.postId ?? "").contains(where: JamCover.isCover))
+            Button { pickingCover = true } label: {
+                Label(hasCover ? "Edit cover" : "Add cover", systemImage: "photo").font(Theme.secondary).foregroundStyle(Theme.text).lineLimit(1).fixedSize()
+                    .padding(.horizontal, 14).frame(minHeight: 44).background(Theme.surface, in: Capsule())
+            }
+            .accessibilityIdentifier("podcast-add-cover")
+        }
+    }
+
+    /// Title, subtitle and the description (the article editor's styles: headings, bold, links).
+    private var detailsWords: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField("", text: $title, prompt: Text("Add a title").foregroundColor(Theme.placeholderLarge), axis: .vertical)
+                .font(Theme.font(.title2, weight: .bold)).foregroundStyle(Theme.text).lineLimit(1...3)
+                .focused($focus, equals: .title).submitLabel(.next).onSubmit { focus = .subtitle }
+                .onChange(of: title) { _, now in if now.count > 120 { title = String(now.prefix(120)) } }
+                .accessibilityLabel("Title").accessibilityIdentifier("podcast-title").id(Line.title)
+            TextField("", text: $subtitle, prompt: Text("Add a subtitle").foregroundColor(Theme.placeholder), axis: .vertical)
+                .font(Theme.font(.body)).foregroundStyle(Theme.textSecondary).lineLimit(1...2)
+                .focused($focus, equals: .subtitle).submitLabel(.next).onSubmit { descModel.focus() }
+                .onChange(of: subtitle) { _, now in if now.count > 160 { subtitle = String(now.prefix(160)) } }
+                .accessibilityLabel("Subtitle").accessibilityIdentifier("podcast-subtitle").id(Line.subtitle)
+            ZStack(alignment: .topLeading) {
+                RichComposerField(model: descModel, selfSizing: true)
+                    .onAppear { descModel.hasText = false; descModel.isPost = true }
+                if !descModel.hasText {
+                    Text("Write a description\u{2026}").font(Theme.body).foregroundStyle(Theme.placeholder).padding(.leading, 4).padding(.top, 8).allowsHitTesting(false).accessibilityHidden(true)
+                }
+            }
+            .frame(minHeight: 120).accessibilityIdentifier("podcast-description").id(Line.details)
+        }
+    }
+
+    /// Aa · H · undo · redo … keyboard, above the keyboard.
+    private var detailsBar: some View {
+        VStack(spacing: 0) {
+            if descModel.showsStrip { FormattingToolbar(model: descModel).transition(.opacity) }
+            HStack(spacing: 0) {
+                barButton("Aa", "Formatting", id: "podcast-format") { descModel.formattingTapped() }
+                let level = descModel.format.heading
+                barButton(level == 0 ? "H" : "H\(level)", "Heading", id: "podcast-heading") { headingOpen = true }
+                    .popover(isPresented: $headingOpen, arrowEdge: .bottom) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(0...6, id: \.self) { n in
+                                Button { descModel.setHeading(n == 0 ? nil : n); headingOpen = false } label: {
+                                    Text(n == 0 ? "Normal text" : "Heading \(n)").foregroundStyle(Theme.text).padding(.horizontal, 14).frame(minHeight: 44, alignment: .leading).frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .accessibilityIdentifier("podcast-heading-\(n)")
+                            }
+                        }
+                        .frame(width: 200).presentationCompactAdaptation(.popover)
+                    }
+                barIcon("arrow.uturn.backward", "Undo", id: "podcast-undo") { descModel.undo() }.disabled(!descModel.format.canUndo).opacity(descModel.format.canUndo ? 1 : 0.35)
+                barIcon("arrow.uturn.forward", "Redo", id: "podcast-redo") { descModel.redo() }.disabled(!descModel.format.canRedo).opacity(descModel.format.canRedo ? 1 : 0.35)
+                Spacer(minLength: 0)
+                barIcon(descModel.editing ? "keyboard.chevron.compact.down" : "keyboard", descModel.editing ? "Hide keyboard" : "Show keyboard", id: "podcast-keyboard") { descModel.toggleKeyboard() }
+            }
+            .padding(.horizontal, 16).frame(minHeight: 48).background(.bar)
+        }
+    }
+
+    private func barButton(_ text: String, _ label: String, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) { Text(text).font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.text).frame(width: 44, height: 44) }
+            .accessibilityLabel(label).accessibilityIdentifier(id)
+    }
+
+    private func barIcon(_ symbol: String, _ label: String, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) { Image(systemName: symbol).font(.system(size: 19)).foregroundStyle(Theme.text).frame(width: 44, height: 44) }
+            .accessibilityLabel(label).accessibilityIdentifier(id)
+    }
+
+    /// Post: the take is trimmed to the chosen range first (a re-export of that part only), then handed back and posted.
+    private func sendNow() async {
+        guard var current = clip, canPost else { return }
+        if trimmed {
+            preparing = true
+            if !demo, let cut = await TrimExport.trim(current, start: trimStart, end: trimEnd) { current = cut }
+            else if demo { current.durationMs = UInt32(max(trimEnd - trimStart, 0) * 1000) }
+            preparing = false
+            clip = current
+        }
+        details = descModel.markdown()
+        if post != nil { post?(current); dismiss() } else { attach(current); dismiss() }
+    }
+
+    // MARK: The words page (the article's audio keeps this)
+
 
     private var wordsPage: some View {
         ZStack {
@@ -756,6 +1040,8 @@ struct PodcastRecorder: View {
     private func again() {
         take.unload()
         clip = nil
+        editClip = nil
+        trimStart = 0; trimEnd = 0
         seconds = 0
         if editing != nil { reRecording = true }
     }
@@ -784,6 +1070,9 @@ struct PodcastRecorder: View {
     private func update() async {
         guard let editing, canUpdate else { return }
         saving = true
+        // A trim of the recording the post already has replaces it with the cut part (the same path as recording again).
+        if clip == nil, trimmed, let edit = editClip, !demo, let cut = await TrimExport.trim(edit, start: trimStart, end: trimEnd) { clip = cut }
+        details = descModel.markdown().isEmpty ? details : descModel.markdown()
         var added: [OutgoingAttachment] = []
         if let clip {
             added.append(clip)
@@ -849,5 +1138,33 @@ private struct LiveBars: View {
                 context.fill(Path(roundedRect: rect, cornerRadius: width / 2), with: .color(.white.opacity(0.35 + 0.4 * Double(level))))
             }
         }
+    }
+}
+
+
+/// Cuts a recording to a range with AVFoundation, without re-encoding what is kept (passthrough); the waveform bytes are cut to the same range.
+enum TrimExport {
+    static func trim(_ clip: OutgoingAttachment, start: Double, end: Double) async -> OutgoingAttachment? {
+        let video = clip.mime.hasPrefix("video/")
+        let ext = video ? "mp4" : "m4a"
+        let dir = FileManager.default.temporaryDirectory
+        let input = dir.appendingPathComponent("lime-trim-in-\(UUID().uuidString).\(ext)")
+        let output = dir.appendingPathComponent("lime-trim-out-\(UUID().uuidString).\(ext)")
+        defer { try? FileManager.default.removeItem(at: input); try? FileManager.default.removeItem(at: output) }
+        guard end > start, (try? clip.bytes.write(to: input)) != nil else { return nil }
+        let asset = AVURLAsset(url: input)
+        guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetPassthrough) else { return nil }
+        session.outputURL = output
+        session.outputFileType = video ? .mp4 : .m4a
+        session.timeRange = CMTimeRange(start: CMTime(seconds: start, preferredTimescale: 600), duration: CMTime(seconds: end - start, preferredTimescale: 600))
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in session.exportAsynchronously { done.resume() } }
+        guard session.status == .completed, let data = try? Data(contentsOf: output), !data.isEmpty else { return nil }
+        let total = Double(clip.durationMs ?? 0) / 1000
+        var thumb = clip.thumb
+        if !video, total > 0, !thumb.isEmpty {
+            let from = min(thumb.count - 1, Int(start / total * Double(thumb.count))), to = max(from + 1, min(thumb.count, Int(end / total * Double(thumb.count))))
+            thumb = Data(thumb[from..<to])
+        }
+        return OutgoingAttachment(bytes: data, name: clip.name, mime: clip.mime, width: clip.width, height: clip.height, durationMs: UInt32((end - start) * 1000), thumb: thumb, poster: clip.poster)
     }
 }

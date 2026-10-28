@@ -20,40 +20,40 @@ final class Studio227UITests: LimeUITestCase {
         XCTAssertEqual(app.buttons["jam-write-article"].label, "Write an article")
     }
 
-    func testTheTitleIsBelowTheStageAndReachableWithTheKeyboardUp() throws {
-        try XCTSkipIf(true, "superseded by LIME-239a/b (the recorder is full screen; the words page follows): rewritten with 239b")
-        let app = studio()
-        app.buttons["jam-record"].tap()
-        let stage = any(app, "podcast-audio-layer")
-        XCTAssertTrue(stage.waitForExistence(timeout: 8))
-        let title = app.textFields["podcast-title"]
-        XCTAssertTrue(title.waitForExistence(timeout: 5))
-        XCTAssertGreaterThan(title.frame.minY, stage.frame.maxY, "the title is under the stage: \(title.frame) \(stage.frame)")
-        title.tap()
-        title.typeText("Pine")
-        XCTAssertTrue(title.isHittable, "still reachable with the keyboard up")
-        let keyboard = app.keyboards.firstMatch.frame
-        XCTAssertLessThan(title.frame.maxY, keyboard.minY, "above the keyboard: \(title.frame) \(keyboard)")
-        XCTAssertFalse(title.frame.intersects(stage.frame), "never over the stage")
-        XCTAssertEqual(app.textFields["podcast-title"].value as? String, "Pine")
-        // The pencils.
-        XCTAssertTrue(app.buttons["Edit title"].exists && app.buttons["Edit subtitle"].exists && app.buttons["Edit description"].exists)
-    }
+    private func field(_ app: XCUIApplication, _ id: String) -> XCUIElement { app.textFields[id].exists ? app.textFields[id] : app.textViews[id] }
 
-    func testRecordingThenReRecordAsksFirstAndPostMakesThePodcast() throws {
-        try XCTSkipIf(true, "superseded by LIME-239a/b (the recorder is full screen; the words page follows): rewritten with 239b")
+    func testTheTitleIsBelowThePreviewAndReachableWithTheKeyboardUp() {
         let app = studio()
         app.buttons["jam-record"].tap()
         app.buttons["podcast-record"].tap()
         sleep(1)
         app.buttons["podcast-stop"].tap()
-        XCTAssertTrue(app.buttons["podcast-play"].waitForExistence(timeout: 8), "the stage plays the take")
-        app.buttons["podcast-again"].tap()
-        XCTAssertTrue(app.buttons["podcast-rerecord-confirm"].firstMatch.waitForExistence(timeout: 5), "Replace this recording?")
+        let preview = app.buttons["podcast-play"]
+        XCTAssertTrue(preview.waitForExistence(timeout: 8), "the details page shows the recording as a preview")
+        let title = field(app, "podcast-title")
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(title.frame.minY, preview.frame.maxY, "the title is under the preview: \(title.frame) \(preview.frame)")
+        title.tap()
+        title.typeText("Pine")
+        XCTAssertTrue(title.isHittable, "still reachable with the keyboard up")
+        XCTAssertLessThan(title.frame.maxY, app.keyboards.firstMatch.frame.minY, "above the keyboard")
+        XCTAssertEqual(field(app, "podcast-title").value as? String, "Pine")
+    }
+
+    func testBackAsksBeforeDiscardingTheTakeAndPostMakesThePodcast() {
+        let app = studio()
+        app.buttons["jam-record"].tap()
+        app.buttons["podcast-record"].tap()
+        sleep(1)
+        app.buttons["podcast-stop"].tap()
+        XCTAssertTrue(app.buttons["podcast-play"].waitForExistence(timeout: 8), "the preview plays the take")
+        app.buttons["podcast-back"].tap()
+        XCTAssertTrue(app.buttons["podcast-rerecord-confirm"].firstMatch.waitForExistence(timeout: 5), "Record again? This take will be discarded")
         app.buttons["Keep it"].firstMatch.tap()
         XCTAssertTrue(app.buttons["podcast-play"].exists, "kept")
-        app.textFields["podcast-title"].tap(); app.textFields["podcast-title"].typeText("Pine walk")
+        let title = field(app, "podcast-title")
+        title.tap(); title.typeText("Pine walk")
         app.buttons["podcast-post"].tap()
-        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'jam-audio-card-'")).firstMatch.waitForExistence(timeout: 12), "the podcast is posted")
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'jam-audio-card-' OR identifier == 'jam-video'")).firstMatch.waitForExistence(timeout: 12), "the podcast is posted")
     }
 }

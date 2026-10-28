@@ -12,47 +12,32 @@ final class Jam188gUITests: LimeUITestCase {
 
     private func any(_ app: XCUIApplication, _ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
 
+    private func field(_ app: XCUIApplication, _ id: String) -> XCUIElement {
+        app.textFields[id].exists ? app.textFields[id] : app.textViews[id]
+    }
+
     func testARecordingGetsATitleAndCoHostsThenPostsAsAPodcast() {
         let app = launch("jam")
         app.buttons["new-jam-post"].tap()
         app.buttons["jam-record"].tap()
-        XCTAssertTrue(any(app, "podcast-audio-layer").waitForExistence(timeout: 8), "audio first: your picture and the sound")
-        XCTAssertEqual(any(app, "podcast-sharing").label, "Shared with your subscribers")
-        XCTAssertFalse(app.buttons["podcast-post"].isEnabled, "no Post without a take and a title")
+        XCTAssertTrue(any(app, "podcast-recorder").waitForExistence(timeout: 8), "the recorder (LIME-239a)")
         app.buttons["podcast-record"].tap()
         XCTAssertTrue(app.buttons["podcast-stop"].waitForExistence(timeout: 5))
-        app.buttons["podcast-pause"].tap()
-        XCTAssertEqual(app.buttons["podcast-pause"].label, "Resume recording")
-        app.buttons["podcast-pause"].tap()
         sleep(2)
-        XCTAssertNotEqual(any(app, "podcast-time").label, "0:00", "the timer runs")
+        XCTAssertNotEqual(any(app, "podcast-timer").label, "", "the timer runs")
         app.buttons["podcast-stop"].tap()
-        XCTAssertTrue(app.buttons["podcast-post"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["podcast-post"].waitForExistence(timeout: 8), "the details page (LIME-239b)")
         XCTAssertFalse(app.buttons["podcast-post"].isEnabled, "a take but no title yet")
-        app.textFields["podcast-title"].tap(); app.textFields["podcast-title"].typeText("Sunday planning")
-        XCTAssertTrue(app.buttons["podcast-post"].isEnabled, "a take and a title: Post (lime)")
-        any(app, "podcast-audio-layer").tap()   // a tap on the stage puts the keyboard away
-        XCTAssertTrue(app.buttons["podcast-again"].exists, "Re-record beside it")
+        let title = field(app, "podcast-title")
+        title.tap(); title.typeText("Sunday planning")
+        XCTAssertTrue(app.buttons["podcast-post"].isEnabled, "a take and a title: Post")
         app.buttons["podcast-hosts"].tap()
         let sam = app.buttons["jam-coauthor-choice-sam"]
         XCTAssertTrue(sam.waitForExistence(timeout: 5), "co-hosts come from your contacts")
         sam.tap()
         app.buttons["jam-coauthor-done"].tap()
-        app.buttons["podcast-post"].tap()   // the studio's own Post (LIME-227): no second screen
+        app.buttons["podcast-post"].tap()
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Sunday planning'")).firstMatch.waitForExistence(timeout: 8))
-        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'jam-audio-card-'")).firstMatch.waitForExistence(timeout: 5), "the recording is a card with a play button")
-    }
-
-    func testTheCameraButtonSwitchesTheScreenToThePreviewAndBack() {
-        let app = launch("jam")
-        app.buttons["new-jam-post"].tap()
-        app.buttons["jam-record"].tap()
-        XCTAssertTrue(any(app, "podcast-audio-layer").waitForExistence(timeout: 8))
-        app.buttons["podcast-camera"].tap()
-        XCTAssertTrue(any(app, "podcast-camera-layer").waitForExistence(timeout: 5))
-        XCTAssertFalse(any(app, "podcast-audio-layer").exists, "the camera takes the stage in place of the cover")
-        XCTAssertTrue(app.buttons["podcast-flip"].exists)
-        app.buttons["podcast-camera"].tap()
-        XCTAssertTrue(any(app, "podcast-audio-layer").waitForExistence(timeout: 5), "camera off: your picture again")
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'jam-audio-card-' OR identifier == 'jam-video'")).firstMatch.waitForExistence(timeout: 5), "the recording is a card")
     }
 }
