@@ -640,7 +640,7 @@ struct JamVideoScreen: View {
             JamActionPill(dark: true, share: { sharing = true }, postID: item.postID, comment: { commenting = true })
             glassCircle("list.bullet", label: "Up next", id: "jam-video-upnext") { upNext = true }
         }
-        .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 10)
+        .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 10)
     }
 
     // MARK: Doing

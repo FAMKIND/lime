@@ -8428,3 +8428,7 @@ On other people's phones (not reachable): their chats with the account, jam post
 - **Installed (235e and 238):** Debug build; see the line below.
 
 - **Install result (235e and 238):** the Debug build is on the **13 mini and the iPad**. **Jean's 12 mini is still "unavailable" to the install tool** (it missed the previous build too), so it has neither; install when it is reachable: `bash $TMPDIR/install.sh`.
+
+## LIME-235e follow-up — more room above the bottom bar
+
+- The player's bottom bar (AirPlay · ♥💬 remix share · Up next) now has **16 pt above it (was 8)**: ~8 pt more between the controls row and the bar, in every layout that uses it (portrait audio and video, landscape columns). Not run on its own: it is a padding change; the next builds compile it, and the visual check is yours.
