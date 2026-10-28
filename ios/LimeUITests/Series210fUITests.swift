@@ -25,7 +25,7 @@ final class Series210fUITests: LimeUITestCase {
         XCTAssertEqual(any(app, "series-progress").label, "1 of 3 read")
     }
 
-    func testMakingANewSeriesInTheComposerPutsPartOneOnTheCard() {
+    func testMakingANewSeriesOnBeforeYouPublishPutsPartOneOnTheCard() {
         let app = XCUIApplication()
         app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-screen", "jam-mine"]
         app.launch()
@@ -35,6 +35,13 @@ final class Series210fUITests: LimeUITestCase {
         app.buttons["jam-write-article"].tap()
         let title = app.textFields["jam-article-title"].exists ? app.textFields["jam-article-title"] : app.textViews["jam-article-title"]
         XCTAssertTrue(title.waitForExistence(timeout: 8))
+        XCTAssertFalse(any(app, "jam-series").exists, "the series is on step 2, not while writing")
+        title.tap(); title.typeText("Halves\n\n")
+        let body = app.textViews["composer-field"]
+        XCTAssertTrue(body.waitForExistence(timeout: 5))
+        body.tap(); body.typeText("Cut it in two")
+        app.buttons["jam-next"].tap()
+        XCTAssertTrue(any(app, "jam-series").waitForExistence(timeout: 8))
         XCTAssertEqual(any(app, "jam-series").label, "Add to a series")
         any(app, "jam-series").tap()
         any(app, "series-new").tap()
@@ -44,10 +51,6 @@ final class Series210fUITests: LimeUITestCase {
         app.buttons["series-done"].tap()
         XCTAssertTrue(any(app, "jam-series").waitForExistence(timeout: 5))
         XCTAssertEqual(any(app, "jam-series").label, "Series: Fractions, Part 1")
-        title.tap(); title.typeText("Halves\n\n")
-        let body = app.textViews["composer-field"]
-        XCTAssertTrue(body.waitForExistence(timeout: 5))
-        body.tap(); body.typeText("Cut it in two")
         app.buttons["jam-post"].tap()
         let card = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'jam-card-series-'")).firstMatch
         XCTAssertTrue(card.waitForExistence(timeout: 10))

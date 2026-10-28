@@ -35,7 +35,7 @@ final class Jam188mUITests: LimeUITestCase {
         app.buttons["jam-add"].tap()
         app.buttons["Photo"].tap(); app.buttons["Library"].tap()
         sleep(1)
-        XCTAssertTrue(app.buttons["jam-post"].isEnabled, "enabled with a title, words and a photo")
+        XCTAssertTrue(app.buttons["jam-next"].isEnabled, "enabled with a title, words and a photo")
         app.buttons["jam-format"].tap()
         let scroll = app.scrollViews["fmt-scroll"]
         for _ in 0..<4 where !app.buttons["fmt-button"].isHittable { scroll.swipeLeft() }
@@ -50,7 +50,7 @@ final class Jam188mUITests: LimeUITestCase {
         XCTAssertEqual(app.staticTexts["button-shown"].label, "Opens https://limemessenger.com")
         app.buttons["button-apply"].tap()
         sleep(1)
-        XCTAssertTrue(app.buttons["jam-post"].isEnabled, "Post is still enabled after the button")
+        XCTAssertTrue(app.buttons["jam-next"].isEnabled, "Post is still enabled after the button")
         XCTAssertTrue((body.value as? String ?? "").contains("[[Worksheet]](https://limemessenger.com)"), body.value as? String ?? "")
     }
 }

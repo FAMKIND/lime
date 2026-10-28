@@ -11,8 +11,14 @@ final class Open210cUITests: LimeUITestCase {
         app.launch()
         XCTAssertTrue(app.buttons["new-jam-post"].waitForExistence(timeout: 10))
         app.buttons["new-jam-post"].tap()
+        // Step 1 is writing only; the audience is on step 2.
+        let body = app.textViews["composer-field"]
+        XCTAssertTrue(body.waitForExistence(timeout: 8))
+        XCTAssertFalse(any(app, "jam-audience").exists, "nothing about audience while writing")
+        body.tap(); body.typeText("Open to all")
+        app.buttons["jam-next"].tap()
         let chip = any(app, "jam-audience")
-        XCTAssertTrue(chip.waitForExistence(timeout: 8), "the audience chip is beside Post as")
+        XCTAssertTrue(chip.waitForExistence(timeout: 8), "the audience is on Before you post")
         XCTAssertTrue(chip.label.contains("subscribers"), chip.label)
         chip.tap()
         any(app, "audience-everyone").tap()
@@ -23,9 +29,6 @@ final class Open210cUITests: LimeUITestCase {
         any(app, "jam-audience").tap(); any(app, "audience-everyone").tap()
         any(app, "audience-confirm-everyone").tap()
         XCTAssertTrue(any(app, "jam-audience").label.contains("everyone"), any(app, "jam-audience").label)
-        let body = app.textViews["composer-field"]
-        XCTAssertTrue(body.waitForExistence(timeout: 5))
-        body.tap(); body.typeText("Open to all")
         app.buttons["jam-post"].tap()
         let globe = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'jam-card-globe-'")).firstMatch
         XCTAssertTrue(globe.waitForExistence(timeout: 10), "an open post shows the globe by its date")
@@ -37,9 +40,15 @@ final class Open210cUITests: LimeUITestCase {
         app.launch()
         XCTAssertTrue(app.buttons["new-jam-post"].waitForExistence(timeout: 10))
         app.buttons["new-jam-post"].tap()
-        XCTAssertTrue(app.textViews["composer-field"].waitForExistence(timeout: 8))
+        let body = app.textViews["composer-field"]
+        XCTAssertTrue(body.waitForExistence(timeout: 8))
+        body.tap(); body.typeText("Quiet")
+        app.buttons["jam-next"].tap()
+        XCTAssertTrue(app.buttons["jam-post"].waitForExistence(timeout: 8), "step 2 is there")
         XCTAssertFalse(any(app, "jam-audience").exists, "hidden, not disabled")
+        app.navigationBars.buttons.firstMatch.tap()
         app.buttons["jam-compose-cancel"].tap()
+        if app.buttons["Discard"].waitForExistence(timeout: 2) { app.buttons["Discard"].tap() }
         XCTAssertFalse(app.buttons["jam-segment-Discover"].exists, "no Discover either")
     }
 

@@ -33,7 +33,7 @@ final class Composer236dUITests: LimeUITestCase {
         // A long post scrolls: the caret stays above the bar.
         field.typeText(String(repeating: "A long post that keeps going. ", count: 12))
         sleep(1)
-        XCTAssertTrue(app.buttons["jam-post"].exists)
+        XCTAssertTrue(app.buttons["jam-next"].exists)
         // The bar sits above the keyboard.
         let keyboard = app.keyboards.firstMatch
         if keyboard.exists { XCTAssertLessThanOrEqual(photo.frame.maxY, keyboard.frame.minY + 2, "the bar is above the keyboard: \(photo.frame) vs \(keyboard.frame)") }

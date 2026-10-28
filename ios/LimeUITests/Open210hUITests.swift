@@ -57,6 +57,10 @@ final class Open210hUITests: LimeUITestCase {
         app.launch()
         XCTAssertTrue(app.buttons["new-jam-post"].waitForExistence(timeout: 10))
         app.buttons["new-jam-post"].tap()
+        let body = app.textViews["composer-field"]
+        XCTAssertTrue(body.waitForExistence(timeout: 8))
+        body.tap(); body.typeText("Open science")
+        app.buttons["jam-next"].tap()
         let chips = any(app, "jam-topics")
         XCTAssertTrue(chips.waitForExistence(timeout: 8))
         XCTAssertTrue(chips.label.contains("Reading"), "the jam's topics are preselected: \(chips.label)")
@@ -68,9 +72,6 @@ final class Open210hUITests: LimeUITestCase {
         app.buttons["topics-done"].tap()
         XCTAssertTrue(any(app, "jam-topics").label.contains("Science"))
         any(app, "jam-audience").tap(); any(app, "audience-everyone").tap(); any(app, "audience-confirm-everyone").tap()
-        let body = app.textViews["composer-field"]
-        XCTAssertTrue(body.waitForExistence(timeout: 5))
-        body.tap(); body.typeText("Open science")
         app.buttons["jam-post"].tap()
         XCTAssertTrue(app.buttons["jam-segment-Discover"].waitForExistence(timeout: 10))
         app.buttons["jam-segment-Discover"].tap()

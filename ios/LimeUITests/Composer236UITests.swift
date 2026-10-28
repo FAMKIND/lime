@@ -31,7 +31,7 @@ final class Composer236UITests: LimeUITestCase {
         XCTAssertEqual(xs, xs.sorted(), "in order: \(xs)")
         XCTAssertTrue(app.buttons["jam-hide-keyboard"].frame.minX > app.buttons["jam-redo"].frame.maxX, "hide keyboard is at the right end")
         // Post is disabled until there is something to post.
-        XCTAssertFalse(app.buttons["jam-post"].isEnabled)
+        XCTAssertFalse(app.buttons["jam-next"].isEnabled)
         // The pills open the studio and the article editor.
         record.tap()
         XCTAssertTrue(any(app, "podcast-record").waitForExistence(timeout: 8), "Record a podcast opens the studio")

@@ -72,8 +72,8 @@ struct JamComposeSheet: View {
     /// The subject, grade and topic chips (LIME-210h): the jam's topics to start with.
     @State private var topics: [String] = []
     @State private var topicsSet = false
-    /// An Everyone post with a photo, video or audio waits for the student-privacy confirmation (LIME-210d).
-    @State private var privacy: PrivacyAsk?
+    /// Step 2 of 2, "Before you post / publish" (LIME-240).
+    @State private var step2 = false
     @State private var article = JamDraft.shared.article
     @State private var title = JamDraft.shared.title
     @State private var subtitle = JamDraft.shared.subtitle
@@ -136,16 +136,16 @@ struct JamComposeSheet: View {
                                     .accessibilityIdentifier("coedit-ready")
                             }
                             Button("Done") { close() }.fontWeight(.semibold).accessibilityIdentifier("jam-coedit-done")
-                        } else if editing != nil {
-                            Button("Update") { update() }.fontWeight(.semibold).disabled(!canPost).accessibilityIdentifier("jam-update")
                         } else {
-                            Button("Post") { post() }.fontWeight(.semibold).disabled(!canPost).accessibilityIdentifier("jam-post")
+                            // Writing is step 1; Next goes to "Before you post / publish" (LIME-240).
+                            Button("Next") { focus = nil; step2 = true }.fontWeight(.semibold).disabled(!canPost).accessibilityIdentifier("jam-next")
+                                .accessibilityHint("Step 1 of 2. Goes to the choices before you \(article || hasClip ? "publish" : "post")")
                         }
                     }
                 }
             }
             .sheet(isPresented: $showingAuthors) { if let coedit { CoEditAuthorsSheet(session: coedit) } }
-            .sheet(item: $privacy) { StudentPrivacySheet(ask: $0) }
+            .navigationDestination(isPresented: $step2) { stepTwo }
             .onChange(of: composer.plainText) { refreshLink() }
             .onChange(of: previewsOn) { refreshLink() }
             .sheet(isPresented: $choosingCoauthors) { JamCoauthorPicker(selected: $coauthors) }
@@ -373,7 +373,6 @@ struct JamComposeSheet: View {
     private var quickHead: some View {
         VStack(alignment: .leading, spacing: 8) {
             postLine
-            if store.openPostsEnabled { TopicsChip(topics: $topics) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20).padding(.top, compact ? 0 : 12)
@@ -419,8 +418,6 @@ struct JamComposeSheet: View {
             }
             .buttonStyle(.plain).accessibilityLabel("Add co-author").accessibilityIdentifier("jam-add-coauthor")
             Spacer(minLength: 0)
-            // The audience: only while the server takes open posts (or the post being edited is open already).
-            if store.openPostsEnabled || audience == "everyone" || editing?.audience == "everyone" { AudienceChip(audience: $audience, saved: editing?.audience) }
         }
     }
 
@@ -428,8 +425,6 @@ struct JamComposeSheet: View {
     private var articleHead: some View {
         VStack(alignment: .leading, spacing: 4) {
             postLine.padding(.bottom, 6)
-            SeriesChip(series: $series).padding(.bottom, 2)
-            if store.openPostsEnabled { TopicsChip(topics: $topics) }
             if let coedit { CoEditBar(session: coedit) }
             coverRow.padding(.bottom, 8)
             CaretTextField(text: $title, title: "Title", prompt: Text("Title").foregroundColor(Theme.placeholderLarge)) { caret, end in titleCaret = (caret, end); coedit?.fieldMoved() }
@@ -1004,18 +999,21 @@ struct JamComposeSheet: View {
         dismiss()
     }
 
-    /// Update: the words go to the post in place (its pictures keep the numbers the text already has).
-    private func update() {
-        guard let editing, !posting else { return }
-        // Opening a post that has files to Everyone asks the same question (the files are the post's own, so there is no face check here).
-        if audience == "everyone" && editing.audience != "everyone" && privacy == nil && !store.jamAttachments(editing.postId).isEmpty {
-            privacy = PrivacyAsk(pictures: []) { update2() }
-            return
+    /// Step 2 of 2 (LIME-240): the choices before the post goes out, and the button that sends it.
+    private var stepTwo: some View {
+        let kind: PostStepKind = article || hasClip || editing?.kind == "record" ? (hasClip || editing?.kind == "record" ? .podcast : .article) : .post
+        let first = composer.plainText.replacingOccurrences(of: "\u{FFFC}", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let summary = article ? title : first.split(separator: "\n").first.map(String.init) ?? ""
+        return BeforePublishScreen(kind: kind, editing: editing != nil, summary: summary, thumbnail: photos.first?.preview ?? coverImage,
+                                   audience: $audience, topics: $topics, series: $series, savedAudience: editing?.audience,
+                                   hasMedia: editing != nil ? !store.jamAttachments(editing?.postId ?? "").isEmpty : hasMedia, pictures: privacyPictures,
+                                   working: posting, problem: problem, buttonID: editing != nil ? "jam-update" : "jam-post") {
+            if editing != nil { update() } else { post() }
         }
-        update2()
     }
 
-    private func update2() {
+    /// Update: the words go to the post in place (its pictures keep the numbers the text already has).
+    private func update() {
         guard let editing, !posting else { return }
         let existing = store.jamAttachments(editing.postId).count
         // An article keeps its pictures' numbers as they stand (the core closes up the gaps); the new files are the ones after the old.
@@ -1046,14 +1044,6 @@ struct JamComposeSheet: View {
     private var hasMedia: Bool { !photos.isEmpty || hasClip || (article && !articleFiles.isEmpty) || articleCover != nil }
 
     private func post() {
-        if audience == "everyone" && hasMedia && privacy == nil {
-            privacy = PrivacyAsk(pictures: privacyPictures) { post2() }
-            return
-        }
-        post2()
-    }
-
-    private func post2() {
         guard captions.values.contains(where: \.making) else { buildAndPost(); return }
         // Captions are still being made: wait a few seconds for them, then post with what there is.
         posting = true

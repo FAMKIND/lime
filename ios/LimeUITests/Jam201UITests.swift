@@ -22,7 +22,7 @@ final class Jam201UITests: LimeUITestCase {
         chip.tap()
         let jam = app.buttons["jam-post-as-jam-demo-my-jam"]
         XCTAssertTrue(jam.waitForExistence(timeout: 5)); jam.tap()
-        app.buttons["jam-update"].tap()
+        postNow(app, id: "jam-update")
         let byline = app.staticTexts["jam-reader-byline"]
         XCTAssertTrue(byline.waitForExistence(timeout: 8))
         XCTAssertTrue(byline.label.hasPrefix("by "), "the page names the jam first, then \"by <writer>\": \(byline.label)")

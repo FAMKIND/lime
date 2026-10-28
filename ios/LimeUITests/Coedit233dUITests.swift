@@ -24,10 +24,10 @@ final class Coedit233dUITests: LimeUITestCase {
         let authors = any(app, "coedit-authors")
         XCTAssertTrue(authors.waitForExistence(timeout: 10), "the authors are in the top bar")
         XCTAssertTrue(authors.label.contains("Jean Park"), authors.label)
-        XCTAssertTrue(app.buttons["jam-post"].exists)
+        XCTAssertTrue(app.buttons["jam-next"].exists)
         XCTAssertFalse(app.staticTexts["Article"].exists, "no nav title")
         XCTAssertFalse(any(app, "coedit-editing").exists, "no \"is editing\" line: the cursor says it")
-        XCTAssertLessThan(authors.frame.minX, app.buttons["jam-post"].frame.minX, "the avatars sit left of Post")
+        XCTAssertLessThan(authors.frame.minX, app.buttons["jam-next"].frame.minX, "the avatars sit left of Post")
         // Her cursor is in the page, with her name.
         XCTAssertTrue(any(app, "coedit-cursor-sim-jean").waitForExistence(timeout: 6), "her cursor shows")
         XCTAssertEqual(any(app, "coedit-cursor-sim-jean").label, "Jean\u{2019}s cursor")

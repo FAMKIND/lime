@@ -61,7 +61,7 @@ final class Jam188nUITests: LimeUITestCase {
         let afterUndo = body.value as? String ?? ""
         XCTAssertEqual(afterUndo.components(separatedBy: "---").count - 1, 1, "undo took the last divider back: \(afterUndo)")
         XCTAssertTrue(afterUndo.contains("[[freewall]]"))
-        app.buttons["jam-post"].tap()
+        postNow(app)
         app.showJamArticles()
         let card = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Ten minutes'")).firstMatch
         XCTAssertTrue(card.waitForExistence(timeout: 8))

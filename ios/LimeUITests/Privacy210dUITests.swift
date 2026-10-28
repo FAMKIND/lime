@@ -11,12 +11,12 @@ final class Privacy210dUITests: LimeUITestCase {
         app.launch()
         XCTAssertTrue(app.buttons["new-jam-post"].waitForExistence(timeout: 10))
         app.buttons["new-jam-post"].tap()
+        XCTAssertTrue(app.buttons["jam-next"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["jam-next"].isEnabled, "the photo alone is a post")
+        app.buttons["jam-next"].tap()
         XCTAssertTrue(any(app, "jam-audience").waitForExistence(timeout: 8))
         any(app, "jam-audience").tap(); any(app, "audience-everyone").tap()
         any(app, "audience-confirm-everyone").tap()
-        XCTAssertTrue(app.buttons["jam-post"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["jam-post"].isEnabled, "the photo alone is a post")
-        app.buttons["jam-post"].tap()
         return app
     }
 
@@ -25,7 +25,7 @@ final class Privacy210dUITests: LimeUITestCase {
         XCTAssertTrue(any(app, "privacy-notice").waitForExistence(timeout: 8))
         XCTAssertEqual(any(app, "privacy-notice").label, "No students can be identified: faces, names or voices.")
         XCTAssertFalse(any(app, "privacy-faces").exists, "no face found")
-        let post = app.buttons["privacy-post"]
+        let post = app.buttons["jam-post"]
         XCTAssertFalse(post.isEnabled, "needs the confirmation")
         any(app, "privacy-guidance").tap()
         XCTAssertTrue(any(app, "privacy-guide").waitForExistence(timeout: 5))
@@ -41,7 +41,7 @@ final class Privacy210dUITests: LimeUITestCase {
         let app = chooseEveryoneAndPost(["-lime-demo-faces"])
         XCTAssertTrue(any(app, "privacy-faces").waitForExistence(timeout: 8))
         XCTAssertTrue(any(app, "privacy-faces").label.contains("This photo has faces"), any(app, "privacy-faces").label)
-        XCTAssertFalse(app.buttons["privacy-post"].isEnabled, "a warning never replaces the confirmation")
+        XCTAssertFalse(app.buttons["jam-post"].isEnabled, "a warning never replaces the confirmation")
     }
 
     func testANewAccountSeesWhenEveryoneOpens() {
@@ -50,6 +50,10 @@ final class Privacy210dUITests: LimeUITestCase {
         app.launch()
         XCTAssertTrue(app.buttons["new-jam-post"].waitForExistence(timeout: 10))
         app.buttons["new-jam-post"].tap()
+        let body = app.textViews["composer-field"]
+        XCTAssertTrue(body.waitForExistence(timeout: 8))
+        body.tap(); body.typeText("New here")
+        app.buttons["jam-next"].tap()
         XCTAssertTrue(any(app, "jam-audience").waitForExistence(timeout: 8))
         any(app, "jam-audience").tap()
         let everyone = any(app, "audience-everyone")

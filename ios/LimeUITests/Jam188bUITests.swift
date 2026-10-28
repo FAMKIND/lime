@@ -43,10 +43,10 @@ final class Jam188bUITests: LimeUITestCase {
     func testAQuickPostWithTheFirstPostMakingTheJamAndShowingFirstInTheFeed() {
         let app = launch("jam")
         app.buttons["new-jam-post"].tap()
-        XCTAssertFalse(app.buttons["jam-post"].isEnabled, "nothing to post yet")
+        XCTAssertFalse(app.buttons["jam-next"].isEnabled, "nothing to post yet")
         write(app, "Thinking about fractions today")
-        XCTAssertTrue(app.buttons["jam-post"].isEnabled)
-        app.buttons["jam-post"].tap()
+        XCTAssertTrue(app.buttons["jam-next"].isEnabled)
+        postNow(app)
         XCTAssertTrue(card(app, containing: "Thinking about fractions today").waitForExistence(timeout: 8), "the post is in the feed")
         XCTAssertFalse(any(app, "jam-feed-empty").exists)
         for action in ["like", "comment", "remix", "share"] {
@@ -63,7 +63,7 @@ final class Jam188bUITests: LimeUITestCase {
         for _ in 0..<3 { app.buttons["jam-add-photo"].tap() }
         XCTAssertTrue(any(app, "jam-photo-2").waitForExistence(timeout: 8), "three photos in a row under the words")
         XCTAssertGreaterThan(any(app, "jam-photos").frame.minY, field.frame.minY, "under the text")
-        app.buttons["jam-post"].tap()
+        postNow(app)
         XCTAssertTrue(card(app, containing: "Our field trip").waitForExistence(timeout: 8), "it posts")
         XCTAssertTrue(any(app, "jam-photo-row").waitForExistence(timeout: 8), "the photos are one row that scrolls sideways")
         XCTAssertEqual(any(app, "jam-photo-counter").label, "1 / 3")
@@ -79,7 +79,7 @@ final class Jam188bUITests: LimeUITestCase {
         app.buttons["new-jam-post"].tap()
         app.buttons["jam-write-article"].tap()
         XCTAssertTrue(app.buttons["jam-exit-article"].exists)
-        XCTAssertFalse(app.buttons["jam-post"].isEnabled)
+        XCTAssertFalse(app.buttons["jam-next"].isEnabled)
         let title = app.textFields["jam-article-title"].exists ? app.textFields["jam-article-title"] : app.textViews["jam-article-title"]
         title.tap(); title.typeText("Exit tickets that work")
         let subtitle = app.textFields["jam-article-subtitle"].exists ? app.textFields["jam-article-subtitle"] : app.textViews["jam-article-subtitle"]
@@ -95,7 +95,7 @@ final class Jam188bUITests: LimeUITestCase {
         body.typeText((1...20).map { "Line \($0) of the plan" }.joined(separator: "\n") + "\n\n")
         addArticlePhoto(app)
         XCTAssertFalse((subtitle.value as? String ?? "").contains("Ask one question"), "the subtitle never holds the article")
-        app.buttons["jam-post"].tap()
+        postNow(app)
         app.showJamArticles()
         let article = card(app, containing: "Exit tickets that work")
         XCTAssertTrue(article.waitForExistence(timeout: 8))
@@ -195,7 +195,7 @@ final class Jam188bUITests: LimeUITestCase {
         sam.tap()
         app.buttons["jam-coauthor-done"].tap()
         XCTAssertTrue(app.buttons["jam-coauthors"].waitForExistence(timeout: 5), "the co-author's avatar on the name line")
-        app.buttons["jam-post"].tap()
+        postNow(app)
         app.showJamArticles()
         let article = card(app, containing: "What is liming?")
         XCTAssertTrue(article.waitForExistence(timeout: 8))

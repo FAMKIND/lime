@@ -4,6 +4,15 @@ import XCTest
 /// time: one big class cannot run in parallel.
 @MainActor
 class LimeUITestCase: XCTestCase {
+    /// Writing is step 1, "Before you post / publish" step 2 (LIME-240): Next, then the button there (Post, Publish or, with `id: "jam-update"`, Update).
+    func postNow(_ app: XCUIApplication, id: String = "jam-post") {
+        let next = app.buttons["jam-next"]
+        if next.waitForExistence(timeout: 3) { next.tap() }
+        let button = app.buttons[id]
+        XCTAssertTrue(button.waitForExistence(timeout: 8), "step 2 has \(id)")
+        button.tap()
+    }
+
     /// An app that is already signed in (no backend) with the made-up sample chats loaded: what the
     /// older tests of Messages and Chat need now that a new account starts empty.
     func signedInApp(_ extra: [String] = []) -> XCUIApplication {

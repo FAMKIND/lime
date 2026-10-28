@@ -41,63 +41,42 @@ enum FaceCheck {
     }
 }
 
-/// One post waiting for its privacy confirmation.
-struct PrivacyAsk: Identifiable {
-    let id = UUID()
-    /// The pictures (and video posters) in the post, to check for faces; empty for a post that only has a video or a recording.
+/// The student-privacy check as a block of the "Before you post / publish" screen (LIME-210d, moved there by LIME-240): the notice, a warning when the phone
+/// finds faces in a photo, a **required** confirmation for this post, and the guidance. Nothing here goes to the server.
+struct StudentPrivacyBlock: View {
+    /// The pictures (and video posters) in the post, to check for faces; empty when there are none to look at.
     let pictures: [Data]
-    let proceed: () -> Void
-}
-
-/// Before an Everyone post with a photo, video or audio (LIME-210d, `docs/jam.md` 13.9): the notice, a **required** confirmation for this post, and
-/// a warning when the phone finds faces in a photo. Nothing here goes to the server.
-struct StudentPrivacySheet: View {
-    let ask: PrivacyAsk
-    @Environment(\.dismiss) private var dismiss
-    @State private var confirmed = false
+    @Binding var confirmed: Bool
     @State private var faces = 0
-    @State private var checked = false
     @State private var guidance = false
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("No students can be identified: faces, names or voices.").font(Theme.font(.title3, weight: .bold)).foregroundStyle(Theme.text)
-                        .accessibilityAddTraits(.isHeader).accessibilityIdentifier("privacy-notice")
-                    Text("Everyone on lime can see this post. Only share students with their family\u{2019}s permission.").font(Theme.body).foregroundStyle(Theme.textSecondary)
-                    if faces > 0 {
-                        HStack(alignment: .top, spacing: 10) {
-                            Image(systemName: "person.crop.square").font(.system(size: 18)).foregroundStyle(Theme.text).accessibilityHidden(true)
-                            Text(faces == 1 ? "This photo has faces. Check you have permission, or choose another photo." : "These photos have faces. Check you have permission, or choose other photos.")
-                                .font(Theme.body).foregroundStyle(Theme.text)
-                        }
-                        .padding(14).frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .accessibilityElement(children: .combine).accessibilityIdentifier("privacy-faces")
-                    }
-                    Toggle(isOn: $confirmed) {
-                        Text("I have permission to share any students who appear or are heard").font(Theme.body).foregroundStyle(Theme.text)
-                    }
-                    .toggleStyle(CheckToggleStyle())
-                    .accessibilityIdentifier("privacy-confirm")
-                    Button { guidance = true } label: { Text("Read the guidance").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.linkOther).frame(minHeight: 44) }
-                        .buttonStyle(.plain).accessibilityIdentifier("privacy-guidance")
-                    Button { dismiss(); ask.proceed() } label: {
-                        Text("Post to everyone").font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.accentInk).frame(maxWidth: .infinity, minHeight: 50)
-                            .background(Theme.accent.opacity(confirmed ? 1 : 0.4), in: Capsule())
-                    }
-                    .buttonStyle(.plain).disabled(!confirmed).accessibilityIdentifier("privacy-post")
+        VStack(alignment: .leading, spacing: 14) {
+            Text("No students can be identified: faces, names or voices.").font(Theme.font(.headline, weight: .bold)).foregroundStyle(Theme.text)
+                .accessibilityAddTraits(.isHeader).accessibilityIdentifier("privacy-notice")
+            Text("Everyone on lime can see this post. Only share students with their family\u{2019}s permission.").font(Theme.body).foregroundStyle(Theme.textSecondary)
+            if faces > 0 {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "person.crop.square").font(.system(size: 18)).foregroundStyle(Theme.text).accessibilityHidden(true)
+                    Text(faces == 1 ? "This photo has faces. Check you have permission, or choose another photo." : "These photos have faces. Check you have permission, or choose other photos.")
+                        .font(Theme.body).foregroundStyle(Theme.text)
                 }
-                .padding(20)
+                .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .accessibilityElement(children: .combine).accessibilityIdentifier("privacy-faces")
             }
-            .background(Theme.canvas)
-            .navigationTitle("Before you post").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.accessibilityIdentifier("privacy-cancel") } }
-            .sheet(isPresented: $guidance) { StudentPrivacyGuide() }
-            .task { faces = await FaceCheck.picturesWithFaces(ask.pictures); checked = true }
+            Toggle(isOn: $confirmed) {
+                Text("I have permission to share any students who appear or are heard").font(Theme.body).foregroundStyle(Theme.text)
+            }
+            .toggleStyle(CheckToggleStyle())
+            .accessibilityIdentifier("privacy-confirm")
+            Button { guidance = true } label: { Text("Read the guidance").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.linkOther).frame(minHeight: 44) }
+                .buttonStyle(.plain).accessibilityIdentifier("privacy-guidance")
         }
-        .presentationDetents([.large])
+        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.surface.opacity(0.5), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .sheet(isPresented: $guidance) { StudentPrivacyGuide() }
+        .task { faces = await FaceCheck.picturesWithFaces(pictures) }
     }
 }
 

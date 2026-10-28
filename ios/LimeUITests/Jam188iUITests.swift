@@ -57,7 +57,7 @@ final class Jam188iUITests: LimeUITestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 8))
         field.tap(); field.typeText("Worth a read https://example.com/fractions")
         XCTAssertTrue(any(app, "jam-link-draft").waitForExistence(timeout: 8), "the card is built while writing")
-        app.buttons["jam-post"].tap()
+        postNow(app)
         XCTAssertTrue(any(app, "jam-link-card").waitForExistence(timeout: 8), "and shown with the post")
     }
 }

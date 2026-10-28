@@ -93,7 +93,7 @@ final class Jam188qUITests: LimeUITestCase {
         XCTAssertTrue(app.buttons["jam-post-as"].label.contains("Reading circles"), "the chip shows the choice")
         let field = app.textViews["composer-field"]
         field.tap(); field.typeText("From the jam")
-        app.buttons["jam-post"].tap()
+        postNow(app)
         let card = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'jam-card-writer-'")).element(boundBy: 0)
         XCTAssertTrue(card.waitForExistence(timeout: 8))
         XCTAssertTrue(card.label.contains("Reading circles, by"), card.label)
@@ -117,7 +117,7 @@ final class Jam188qUITests: LimeUITestCase {
         caption.typeText("Never miss a post")
         app.buttons["button-caption-add"].tap()
         XCTAssertTrue((body.value as? String ?? "").contains("[[Subscribe]](lime:subscribe \"Never miss a post\"){.blue}"), body.value as? String ?? "")
-        app.buttons["jam-post"].tap()
+        postNow(app)
         app.showJamArticles()
         let card = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Ten minutes'")).firstMatch
         XCTAssertTrue(card.waitForExistence(timeout: 8))
