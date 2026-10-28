@@ -11,6 +11,7 @@ struct BeforePublishScreen: View {
     var editing = false
     /// The title or the first line, and a small picture, to remind what is going out.
     let summary: String
+    var subtitle = ""
     var thumbnail: UIImage? = nil
     @Binding var audience: String
     @Binding var topics: [String]
@@ -27,7 +28,8 @@ struct BeforePublishScreen: View {
     @Environment(ConversationStore.self) private var store
     @State private var confirmed = false
 
-    private var title: String { kind == .post ? "Before you post" : "Before you publish" }
+    /// What VoiceOver hears with the visible "Step 2 of 2".
+    private var spoken: String { kind == .post ? "before you post" : "before you publish" }
     private var buttonTitle: String { editing ? "Update" : kind == .post ? "Post" : "Publish" }
     /// Everyone with media needs the confirmation, unless the post was Everyone already.
     private var needsPrivacy: Bool { audience == "everyone" && hasMedia && savedAudience != "everyone" }
@@ -36,13 +38,20 @@ struct BeforePublishScreen: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                Text("Step 2 of 2").font(Theme.caption).foregroundStyle(Theme.textSecondary).accessibilityHidden(true)
-                HStack(spacing: 12) {
-                    if let thumbnail { Image(uiImage: thumbnail).resizable().scaledToFill().frame(width: 56, height: 56).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous)).accessibilityHidden(true) }
-                    Text(summary.isEmpty ? "Your post" : summary).font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(2).multilineTextAlignment(.leading)
-                        .accessibilityIdentifier("before-summary")
+              VStack(alignment: .leading, spacing: 20) {
+                // Like the player's info block: the cover on the left, the title and the subtitle beside it.
+                HStack(spacing: 14) {
+                    Group {
+                        if let thumbnail { Image(uiImage: thumbnail).resizable().scaledToFill() } else { RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.surface).overlay { Image(systemName: kind == .post ? "text.alignleft" : "doc.text").foregroundStyle(Theme.textSecondary) } }
+                    }
+                    .frame(width: 72, height: 72).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)).accessibilityHidden(true).accessibilityIdentifier("before-thumbnail")
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(summary.isEmpty ? "Your post" : summary).font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(2).multilineTextAlignment(.leading)
+                        if !subtitle.isEmpty { Text(subtitle).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(2) }
+                    }
                     Spacer(minLength: 0)
                 }
+                .accessibilityElement(children: .combine).accessibilityIdentifier("before-summary")
                 VStack(spacing: 0) {
                     if showsAudience { row("Audience", id: "before-audience") { AudienceChip(audience: $audience, saved: savedAudience) } }
                     if store.openPostsEnabled { row("Tags", id: "before-tags") { TopicsChip(topics: $topics) } }
@@ -50,20 +59,31 @@ struct BeforePublishScreen: View {
                 }
                 if needsPrivacy { StudentPrivacyBlock(pictures: pictures, confirmed: $confirmed) }
                 if let problem { Text(problem).font(Theme.secondary).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("before-problem") }
+              }
+              // While it goes out, everything else is dimmed and cannot be tapped (the button shows the spinner).
+              .opacity(working ? 0.5 : 1).allowsHitTesting(!working).animation(.easeOut(duration: 0.2), value: working)
                 Button(action: action) {
-                    Text(working ? "\(buttonTitle)\u{2026}" : buttonTitle).font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.accentInk)
-                        .frame(maxWidth: .infinity, minHeight: 50).background(Theme.accent.opacity(canGo ? 1 : 0.4), in: Capsule())
+                    // Working: a spinner and "Posting…" / "Publishing…" / "Updating…", so the app never looks frozen (LIME-243).
+                    HStack(spacing: 10) {
+                        if working { ProgressView().tint(Theme.accentInk) }
+                        Text(working ? workingTitle : buttonTitle).font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.accentInk)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 50).background(Theme.accent.opacity(canGo || working ? 1 : 0.4), in: Capsule())
                 }
                 .buttonStyle(.plain).disabled(!canGo)
-                .accessibilityLabel(buttonTitle).accessibilityIdentifier(buttonID)
+                .accessibilityLabel(working ? workingTitle : buttonTitle).accessibilityIdentifier(buttonID)
             }
             .padding(20)
         }
+        .scrollDisabled(working)
         .background(Theme.canvas)
-        .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
-        .onAppear { AccessibilityNotification.Announcement("Step 2 of 2, \(title.lowercased())").post() }
+        .navigationBarBackButtonHidden(working)
+        .navigationTitle("Step 2 of 2").navigationBarTitleDisplayMode(.inline)
+        .onAppear { AccessibilityNotification.Announcement("Step 2 of 2, \(spoken)").post() }
+        .onChange(of: working) { _, now in if now { AccessibilityNotification.Announcement(workingTitle).post() } }
     }
 
+    private var workingTitle: String { editing ? "Updating\u{2026}" : kind == .post ? "Posting\u{2026}" : "Publishing\u{2026}" }
     private var canGo: Bool { !working && (!needsPrivacy || confirmed) }
 
     private func row<Content: View>(_ label: String, id: String, @ViewBuilder content: () -> Content) -> some View {

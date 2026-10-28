@@ -111,8 +111,7 @@ struct CaptionsEditor: View {
                 }
             }
             .listStyle(.insetGrouped)
-            .navigationTitle("Captions").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.accessibilityIdentifier("captions-done") } }
+            .sheetHeader("Captions")
         }
         .presentationDetents([.large])
     }

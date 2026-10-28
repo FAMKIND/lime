@@ -29,7 +29,7 @@ final class Privacy210dUITests: LimeUITestCase {
         XCTAssertFalse(post.isEnabled, "needs the confirmation")
         any(app, "privacy-guidance").tap()
         XCTAssertTrue(any(app, "privacy-guide").waitForExistence(timeout: 5))
-        app.buttons["privacy-guide-done"].tap()
+        app.buttons["sheet-close"].tap()
         any(app, "privacy-confirm").tap()
         XCTAssertTrue(post.isEnabled)
         post.tap()
@@ -59,6 +59,6 @@ final class Privacy210dUITests: LimeUITestCase {
         let everyone = any(app, "audience-everyone")
         XCTAssertTrue(everyone.waitForExistence(timeout: 5))
         XCTAssertFalse(everyone.isEnabled, "locked for now")
-        XCTAssertTrue(everyone.label.contains("opens"), everyone.label)
+        XCTAssertTrue(everyone.label.hasPrefix("Everyone \u{00B7} from "), "one clear line with the date: \(everyone.label)")
     }
 }

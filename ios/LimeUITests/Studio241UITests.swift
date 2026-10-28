@@ -22,8 +22,11 @@ final class Studio241UITests: LimeUITestCase {
         let window = app.windows.firstMatch.frame
         let preview = app.buttons["podcast-play"].frame
         XCTAssertEqual(preview.width / window.width, 0.45, accuracy: 0.06, "about 45% of the width: \(preview)")
-        // One margin: the preview, Post as, the title, the subtitle and the description start at the same x.
-        let edges = [preview.minX, any(app, "podcast-post-as").frame.minX, any(app, "podcast-title").frame.minX, any(app, "podcast-subtitle").frame.minX, any(app, "podcast-description").frame.minX]
+        XCTAssertEqual(preview.midX, window.midX, accuracy: 4, "the preview is centred (LIME-242)")
+        XCTAssertGreaterThan(any(app, "podcast-add-cover").frame.minY, any(app, "podcast-post-as").frame.maxY - 2, "Add cover is under the author row, so the name shows in full")
+        XCTAssertEqual(any(app, "podcast-step").label, "Step 1 of 2")
+        // One margin: Post as, Add cover, the title, the subtitle and the description start at the same x.
+        let edges = [any(app, "podcast-post-as").frame.minX, any(app, "podcast-add-cover").frame.minX, any(app, "podcast-title").frame.minX, any(app, "podcast-subtitle").frame.minX, any(app, "podcast-description").frame.minX]
         for edge in edges { XCTAssertEqual(edge, edges[0], accuracy: 2, "left-aligned: \(edges)") }
         // The playhead: a line that moves when dragged, and says where it is.
         let head = any(app, "podcast-playhead")
@@ -41,7 +44,7 @@ final class Studio241UITests: LimeUITestCase {
         title.tap(); title.typeText("Pine walk")
         XCTAssertFalse(any(app, "jam-series").exists)
         app.buttons["podcast-next"].tap()
-        XCTAssertTrue(app.navigationBars["Before you publish"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.navigationBars["Step 2 of 2"].waitForExistence(timeout: 8))
         for id in ["jam-series", "jam-audience", "jam-topics"] { XCTAssertTrue(any(app, id).exists, id) }
         XCTAssertEqual(app.buttons["podcast-post"].label, "Publish")
         // Everyone asks the student-privacy confirmation here.

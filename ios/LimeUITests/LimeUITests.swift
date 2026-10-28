@@ -20,6 +20,11 @@ class LimeUITestCase: XCTestCase {
         let button = app.buttons[id]
         XCTAssertTrue(button.waitForExistence(timeout: 8), "step 2 has \(id)")
         button.tap()
+        // A new article opens on its own page when it has gone (LIME-243); these older tests want the feed, so go back to it.
+        if id == "jam-post" {
+            _ = app.buttons["new-jam-post"].waitForExistence(timeout: 12)
+            if app.descendants(matching: .any)["jam-reader-title"].waitForExistence(timeout: 2.5) { app.buttons["jam-article-back"].tap() }
+        }
     }
 
     /// An app that is already signed in (no backend) with the made-up sample chats loaded: what the

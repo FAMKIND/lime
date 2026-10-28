@@ -220,12 +220,12 @@ struct PodcastRecorder: View {
     @Binding var topics: [String]
     let attach: (OutgoingAttachment) -> Void
     /// The studio's Post: hands the take back and posts it at once (when not set, Next only hands the take back).
-    var post: ((OutgoingAttachment) -> Void)?
+    var post: ((OutgoingAttachment) async -> Bool)?
     /// A podcast of mine being edited (LIME-227): the same studio with a pencil by each line, a camera badge on the cover and Re-record; Cancel · Update on top.
     var editing: JamPostInfo?
     init(title: Binding<String>, coauthors: Binding<[Person]>, camera: Bool, forArticle: Bool = false,
          subtitle: Binding<String> = .constant(""), details: Binding<String> = .constant(""), cover: Binding<OutgoingAttachment?> = .constant(nil),
-         postAsJam: Binding<String?> = .constant(nil), series: Binding<SeriesInfo?> = .constant(nil), audience: Binding<String> = .constant("subscribers"), topics: Binding<[String]> = .constant([]), post: ((OutgoingAttachment) -> Void)? = nil, editing: JamPostInfo? = nil,
+         postAsJam: Binding<String?> = .constant(nil), series: Binding<SeriesInfo?> = .constant(nil), audience: Binding<String> = .constant("subscribers"), topics: Binding<[String]> = .constant([]), post: ((OutgoingAttachment) async -> Bool)? = nil, editing: JamPostInfo? = nil,
          attach: @escaping (OutgoingAttachment) -> Void = { _ in }) {
         _title = title; _coauthors = coauthors; self.camera = camera; self.forArticle = forArticle
         _subtitle = subtitle; _details = details; _cover = cover; _postAsJam = postAsJam; _series = series; _audience = audience; _topics = topics; self.post = post; self.editing = editing; self.attach = attach
@@ -259,6 +259,7 @@ struct PodcastRecorder: View {
     @State private var editClip: OutgoingAttachment?
     @State private var headingOpen = false
     @State private var step2 = false
+    @State private var publishing = false
     @State private var mic = MicChoice()
     @State private var scrubbing = false
     @State private var scrubWasPlaying = false
@@ -493,8 +494,8 @@ struct PodcastRecorder: View {
         var pictures: [Data] = []
         if let poster = previewClip?.poster, !poster.isEmpty { pictures.append(poster) }
         if let cover { pictures.append(cover.bytes) }
-        return BeforePublishScreen(kind: .podcast, editing: editing != nil, summary: summary, thumbnail: coverImage, audience: $audience, topics: $topics, series: $series,
-                                   savedAudience: editing?.audience, hasMedia: true, pictures: pictures, working: saving || preparing, problem: problem,
+        return BeforePublishScreen(kind: .podcast, editing: editing != nil, summary: summary, subtitle: subtitle, thumbnail: coverImage, audience: $audience, topics: $topics, series: $series,
+                                   savedAudience: editing?.audience, hasMedia: true, pictures: pictures, working: saving || preparing || publishing, problem: problem,
                                    buttonID: editing != nil ? "podcast-update" : "podcast-post") {
             Task { editing != nil ? await update() : await sendNow() }
         }
@@ -506,7 +507,7 @@ struct PodcastRecorder: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
-                        preview.frame(maxWidth: .infinity, alignment: .leading)
+                        preview.frame(maxWidth: .infinity, alignment: .center)
                         trimBar
                         detailsPostRow
                         detailsWords
@@ -546,6 +547,8 @@ struct PodcastRecorder: View {
                 Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.text).frame(width: 44, height: 44).limeGlass(in: Circle())
             }
             .buttonStyle(.plain).accessibilityLabel(editing != nil ? "Close" : "Back to the recorder").accessibilityIdentifier("podcast-back")
+            Spacer()
+            Text("Step 1 of 2").font(Theme.font(.headline, weight: .semibold)).foregroundStyle(Theme.text).accessibilityAddTraits(.isHeader).accessibilityIdentifier("podcast-step")
             Spacer()
             if editing != nil {
                 Menu {
@@ -702,21 +705,24 @@ struct PodcastRecorder: View {
 
     /// Who it is from, the co-hosts and the cover, on the light page.
     private var detailsPostRow: some View {
-        HStack(spacing: 8) {
-            Button { postingAs = true } label: {
-                HStack(spacing: 8) {
-                    if let jamTitle { BylineAvatar(people: [store.meProvider()] + coauthors, jam: jamTitle, size: 32).frame(width: 42, height: 32, alignment: .leading) } else { AvatarView(person: store.meProvider(), size: 30).accessibilityHidden(true) }
-                    Text(jamTitle ?? store.meProvider().name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
-                    Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.textSecondary)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Button { postingAs = true } label: {
+                    HStack(spacing: 8) {
+                        if let jamTitle { BylineAvatar(people: [store.meProvider()] + coauthors, jam: jamTitle, size: 32).frame(width: 42, height: 32, alignment: .leading) } else { AvatarView(person: store.meProvider(), size: 30).accessibilityHidden(true) }
+                        Text(jamTitle ?? store.meProvider().name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
+                        Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.textSecondary)
+                    }
+                    .frame(minHeight: 44)
                 }
-                .frame(minHeight: 44)
+                .buttonStyle(.plain).accessibilityLabel("Posting as \(jamTitle ?? store.meProvider().name)").accessibilityIdentifier("podcast-post-as")
+                Button { choosingHosts = true } label: {
+                    Image(systemName: "person.badge.plus").font(.system(size: 18)).foregroundStyle(Theme.textSecondary).frame(width: 44, height: 44)
+                }
+                .accessibilityLabel(coauthors.isEmpty ? "Add co-host" : "Co-hosts: \(coauthors.map(\.name).joined(separator: ", "))").accessibilityIdentifier("podcast-hosts")
+                Spacer(minLength: 0)
             }
-            .buttonStyle(.plain).accessibilityLabel("Posting as \(jamTitle ?? store.meProvider().name)").accessibilityIdentifier("podcast-post-as")
-            Button { choosingHosts = true } label: {
-                Image(systemName: "person.badge.plus").font(.system(size: 18)).foregroundStyle(Theme.textSecondary).frame(width: 44, height: 44)
-            }
-            .accessibilityLabel(coauthors.isEmpty ? "Add co-host" : "Co-hosts: \(coauthors.map(\.name).joined(separator: ", "))").accessibilityIdentifier("podcast-hosts")
-            Spacer(minLength: 0)
+            // Under the author row, as in the article editor (LIME-242): so the author's name always shows in full.
             let hasCover = cover != nil || (editing != nil && !removeCover && store.jamAttachments(editing?.postId ?? "").contains(where: JamCover.isCover))
             Button { pickingCover = true } label: {
                 Label(hasCover ? "Edit cover" : "Add cover", systemImage: "photo").font(Theme.secondary).foregroundStyle(Theme.text).lineLimit(1).fixedSize()
@@ -805,7 +811,13 @@ struct PodcastRecorder: View {
             clip = current
         }
         details = descModel.markdown()
-        if post != nil { post?(current); dismiss() } else { attach(current); dismiss() }
+        if let post {
+            // The studio does not close itself: the post does, all of it, when it has gone (LIME-242 item 13, LIME-243).
+            publishing = true
+            let ok = await post(current)
+            publishing = false
+            if !ok { problem = "Could not publish the podcast. Nothing is lost: try again." }
+        } else { attach(current); dismiss() }
     }
 
     // MARK: The words page (the article's audio keeps this)
@@ -1202,8 +1214,7 @@ struct PodcastRecorder: View {
     /// The studio's Post: the take, its words, who it is from and the co-hosts go back and the post is made.
     private func postNow() {
         guard let clip, let post else { return }
-        post(clip)
-        dismiss()
+        Task { _ = await post(clip) }
     }
 
     private func cancel() {

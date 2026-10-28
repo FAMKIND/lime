@@ -80,10 +80,17 @@ final class ConversationStore {
     var jamFilter = JamFilter()
     /// Open posts (LIME-210c): whether the server takes them (the Everyone choice and Discover show only then), Discover's items (oldest first, as the
     /// feed gives them), the cursor to continue from, when it was last asked, and the verified posts opened this session.
+    /// After a post goes out (LIME-243): the post jam scrolls to, and the one that is briefly highlighted.
+    var jamScrollTarget: String?
+    var jamHighlight: String?
+    /// The feed has been read from the core once (until then it shows skeletons), and how many cards it shows so far (it loads a page at a time).
+    var jamsLoaded = false
+    var jamVisibleCount = 20
     var openPostsEnabled = false
     var discoverItems: [OpenFeedItem] = []
     var discoverCursor: Int64 = 0
     var discoverLoading = false
+    var discoverLoaded = false
     var discoverAsked = Date.distantPast
     var openPostCache: [String: OpenPostInfo] = [:]
     /// The jam page of each open writer seen in Discover (the jam's name, for the byline).
@@ -982,6 +989,13 @@ final class ConversationStore {
     /// `screen` opens one screen for a screenshot: `requests`, `request-chat`, `chat`, `new-message`, `new-message-found`.
     func loadDemo(screen: String? = nil) {
         isDemo = true
+        jamsLoaded = true
+        discoverLoaded = true
+        // Tests: a feed that is slow to come, so the skeletons show first.
+        if ProcessInfo.processInfo.arguments.contains("-lime-demo-slow-feed") {
+            jamsLoaded = false; discoverLoaded = false
+            Task { try? await Task.sleep(for: .seconds(4)); jamsLoaded = true; discoverLoaded = true }
+        }
         let now = Date()
         let ada = Person(id: "ada", name: "Ada Lovelace")
         let sam = Person(id: "sam", name: "Sam Park", username: "sam.park")
@@ -1152,7 +1166,7 @@ final class ConversationStore {
                 // A recording of mine, with a cover (LIME-212).
                 let audio = OutgoingAttachment(bytes: Data("demo audio".utf8), name: "Recording.m4a", mime: "audio/mp4", width: nil, height: nil, durationMs: 43_000, thumb: Data(), poster: Data())
                 let cover = OutgoingAttachment(bytes: Data("demo cover".utf8), name: "cover.jpg", mime: "image/jpeg", width: 600, height: 600, durationMs: nil, thumb: Data(), poster: Data())
-                demoPublish("demo-my-jam", kind: "record", title: "Songs for the circle", subtitle: "Korean children's songs", markdown: "Three songs we sing.", items: [audio, cover])
+                demoPublish("demo-my-jam", kind: "record", title: "Songs for the circle", subtitle: "Korean children's songs", markdown: "## Explore the different types of songs.\n\nThree songs we sing.", items: [audio, cover])
             }
             if screen == "jam-request" { demoRequest() }
             if screen == "jam-discover" { demoDiscover() }

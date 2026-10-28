@@ -33,6 +33,7 @@ extension ConversationStore {
         let post = JamPostInfo(postId: id, jamId: jamID, author: meProvider().id, tier: "free", kind: kind, title: title, subtitle: subtitle, markdown: markdown, plain: messagePlainText(text: markdown),
                                attachmentsJson: "[]", created: Int64(Date().timeIntervalSince1970 * 1000), coauthors: coauthors, displayAs: displayAs, editedAt: 0, audience: audience, series: series, topics: topics, state: "ready")
         jamPosts[jamID, default: []].append(post)
+        lastPublishedPostID = id
         // An Everyone post shows up in Discover (the demo has no server), under its chips or else the jam's topics.
         if audience == "everyone" {
             let chips = topics.isEmpty ? (jamsMine.first { $0.jamId == jamID }?.topics ?? []) : topics
@@ -202,6 +203,9 @@ extension ConversationStore {
         openPostsEnabled = true
         func series(_ part: UInt32) -> SeriesInfo { SeriesInfo(id: "demo-series-fractions", title: "Fractions that stick", part: part, of: 3) }
         for post in jamPosts[page.jamId] ?? [] where post.postId == "demo-post-1" || post.postId == "demo-post-2" { demoSetSeries(post, series(post.postId == "demo-post-1" ? 1 : 3)) }
+        // A second series for the two podcasts: Part 1 is the small audio card, Part 2 the big video card (LIME-243).
+        func planning(_ part: UInt32) -> SeriesInfo { SeriesInfo(id: "demo-series-planning", title: "Planning", part: part, of: 2) }
+        for post in jamPosts[page.jamId] ?? [] where post.postId == "demo-post-3" || post.postId == "demo-post-4" { demoSetSeries(post, planning(post.postId == "demo-post-4" ? 1 : 2)) }
         JamRead.mark("demo-post-1")
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         discoverItems = [OpenFeedItem(postId: "demo-open-sam-part2", authorId: "sam", jamId: page.jamId, kind: "article", title: "Fraction walls", subtitle: "", excerpt: "Build a wall of bricks.", topics: ["Maths"], fileIds: [],

@@ -69,7 +69,7 @@ final class Open210hUITests: LimeUITestCase {
         XCTAssertTrue(custom.waitForExistence(timeout: 5))
         custom.tap(); custom.typeText("Science")
         app.buttons["topics-add"].tap()
-        app.buttons["topics-done"].tap()
+        app.buttons["sheet-close"].tap()
         XCTAssertTrue(any(app, "jam-topics").label.contains("Science"))
         any(app, "jam-audience").tap(); any(app, "audience-everyone").tap(); any(app, "audience-confirm-everyone").tap()
         app.buttons["jam-post"].tap()
@@ -102,7 +102,7 @@ final class Open210hUITests: LimeUITestCase {
         let name = app.textFields["series-title"]
         XCTAssertTrue(name.waitForExistence(timeout: 5))
         name.tap(); name.typeText("Songs")
-        app.buttons["series-done"].tap()
+        app.buttons["sheet-close"].tap()
         XCTAssertTrue(any(app, "jam-series").waitForExistence(timeout: 5))
         XCTAssertEqual(any(app, "jam-series").label, "Series: Songs, Part 1")
     }

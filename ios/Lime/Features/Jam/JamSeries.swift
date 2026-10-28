@@ -96,67 +96,70 @@ struct SeriesChip: View {
 }
 
 /// Choose a series of mine or make a new one, and say which part this is (and, if known, how many there will be). Reordering is changing the part
-/// number of a post in Edit: there is no bulk screen.
+/// number of a post in Edit: there is no bulk screen. Changes apply as you make them (LIME-242): ✕ just closes.
 struct SeriesPickerSheet: View {
     @Binding var series: SeriesInfo?
     @Environment(ConversationStore.self) private var store
-    @Environment(\.dismiss) private var dismiss
     @State private var chosen: String?          // an existing series id, or nil
     @State private var making = false
     @State private var newTitle = ""
+    @State private var newID = UUID().uuidString.lowercased()
     @State private var part: Int = 1
     @State private var total: Int = 0           // 0: not said
+    @State private var loaded = false
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
-                    Button { chosen = nil; making = false; series = nil; dismiss() } label: { row("No series", check: chosen == nil && !making) }
+                    Button { chosen = nil; making = false; series = nil } label: { row("No series", check: chosen == nil && !making) }
                         .accessibilityIdentifier("series-none")
                     ForEach(store.mySeries(), id: \.id) { entry in
-                        Button { chosen = entry.id; making = false; part = Int(entry.next); total = Int(store.seriesInfo(entry.id)?.of ?? 0) } label: { row("\(entry.title) \u{00B7} \(entry.parts) \(entry.parts == 1 ? "part" : "parts")", check: chosen == entry.id) }
+                        Button { chosen = entry.id; making = false; part = Int(entry.next); total = Int(store.seriesInfo(entry.id)?.of ?? 0); apply() } label: { row("\(entry.title) \u{00B7} \(entry.parts) \(entry.parts == 1 ? "part" : "parts")", check: chosen == entry.id) }
                             .accessibilityIdentifier("series-existing-\(entry.id)")
                     }
-                    Button { making = true; chosen = nil; part = 1 } label: { row("New series\u{2026}", check: making) }
+                    Button { making = true; chosen = nil; part = 1; apply() } label: { row("New series\u{2026}", check: making) }
                         .accessibilityIdentifier("series-new")
                 }
+                .listRowBackground(Theme.canvas)
                 if making {
                     Section("Name") {
                         TextField("Series name", text: $newTitle).textInputAutocapitalization(.sentences).accessibilityIdentifier("series-title")
+                            .onChange(of: newTitle) { apply() }
                     }
+                    .listRowBackground(Theme.canvas)
                 }
                 if making || chosen != nil {
                     Section("This post") {
-                        Stepper("Part \(part)", value: $part, in: 1...99).accessibilityIdentifier("series-part")
-                        Stepper(total == 0 ? "How many parts: not said" : "How many parts: \(total)", value: $total, in: 0...99).accessibilityIdentifier("series-total")
+                        Stepper("Part \(part)", value: $part, in: 1...99).accessibilityIdentifier("series-part").onChange(of: part) { apply() }
+                        Stepper(total == 0 ? "How many parts: not said" : "How many parts: \(total)", value: $total, in: 0...99).accessibilityIdentifier("series-total").onChange(of: total) { apply() }
                     }
+                    .listRowBackground(Theme.canvas)
                 }
             }
             .scrollContentBackground(.hidden).background(Theme.canvas)
-            .navigationTitle("Series").navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { done() }.disabled(!ready).accessibilityIdentifier("series-done") }
-            }
-            .onAppear { if let series { chosen = series.id; part = Int(series.part); total = Int(series.of ?? 0) } }
+            .sheetHeader("Series")
+            .onAppear { if !loaded { loaded = true; if let series { chosen = series.id; part = Int(series.part); total = Int(series.of ?? 0) } } }
         }
         .presentationDetents([.medium, .large])
     }
-
-    private var ready: Bool { making ? !newTitle.trimmingCharacters(in: .whitespaces).isEmpty : chosen != nil }
 
     private func row(_ text: String, check: Bool) -> some View {
         HStack { Text(text).foregroundStyle(Theme.text); Spacer(minLength: 0); if check { Image(systemName: "checkmark").foregroundStyle(Theme.text).accessibilityHidden(true) } }.frame(minHeight: 44)
             .accessibilityAddTraits(check ? [.isSelected] : [])
     }
 
-    private func done() {
+    /// Puts what the sheet shows into the post's series now.
+    private func apply() {
         let title: String, id: String
-        if making { title = newTitle.trimmingCharacters(in: .whitespaces); id = UUID().uuidString.lowercased() }
-        else if let chosen, let known = store.seriesInfo(chosen) { title = known.title; id = chosen }
-        else { dismiss(); return }
+        if making {
+            title = newTitle.trimmingCharacters(in: .whitespaces)
+            id = newID
+            if title.isEmpty { series = nil; return }
+        } else if let chosen, let known = store.seriesInfo(chosen) ?? series.flatMap({ $0.id == chosen ? $0 : nil }) {
+            title = known.title; id = chosen
+        } else { return }
         series = SeriesInfo(id: id, title: title, part: UInt32(part), of: total >= part ? UInt32(total) : nil)
-        dismiss()
     }
 }
 

@@ -193,7 +193,7 @@ final class Jam188bUITests: LimeUITestCase {
         let sam = app.buttons["jam-coauthor-choice-sam"]
         XCTAssertTrue(sam.waitForExistence(timeout: 5))
         sam.tap()
-        app.buttons["jam-coauthor-done"].tap()
+        app.buttons["sheet-close"].tap()
         XCTAssertTrue(app.buttons["jam-coauthors"].waitForExistence(timeout: 5), "the co-author's avatar on the name line")
         postNow(app)
         app.showJamArticles()

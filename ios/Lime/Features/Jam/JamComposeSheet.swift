@@ -120,7 +120,7 @@ struct JamComposeSheet: View {
             #if DEBUG
             .overlay(alignment: .topTrailing) { coeditProbe }
             #endif
-            .navigationTitle(editing != nil ? "Edit" : article ? "" : "New post")
+            .navigationTitle(coedit?.isCoAuthorOnly == true ? (editing != nil ? "Edit" : "") : "Step 1 of 2")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { close() }.accessibilityIdentifier("jam-compose-cancel") }
@@ -175,21 +175,7 @@ struct JamComposeSheet: View {
                 Button("Delete", role: .destructive) { composer.deleteBlock(request.index) }.accessibilityIdentifier("block-delete")
                 Button("Cancel", role: .cancel) {}
             }
-            .fullScreenCover(item: Binding(get: { recordMode.map(RecordMode.init) }, set: { recordMode = $0?.mode })) { mode in
-                if mode.mode == 2 {
-                    // Audio for the article: the recorder with no title or co-host steps; the clip goes into the text at the caret.
-                    PodcastRecorder(title: $recordTitle, coauthors: $coauthors, camera: false, forArticle: true) { clip in
-                        insertIntoArticle(clip, preview: Self.fileCard(named: "Audio recording \(VoiceFormat.clock(Double(clip.durationMs ?? 0) / 1000))"))
-                    }
-                } else {
-                    PodcastRecorder(title: $recordTitle, coauthors: $coauthors, camera: mode.mode == 0, subtitle: $recordSubtitle, details: $recordDetails, cover: $recordCover, postAsJam: $postAsJam, series: $series, audience: $audience, topics: $topics,
-                                    // The studio's Post (LIME-227): the take goes in, the studio closes and the post is made.
-                                    post: { clip in
-                        clips = [clip]; captions = captions.filter { if case .clip = $0.key { false } else { true } }; startCaptions(clip, .clip(0))
-                        Task { try? await Task.sleep(for: .milliseconds(450)); post() }
-                    }) { clip in clips = [clip]; captions = captions.filter { if case .clip = $0.key { false } else { true } }; startCaptions(clip, .clip(0)) }
-                }
-            }
+            .fullScreenCover(item: Binding(get: { recordMode.map(RecordMode.init) }, set: { recordMode = $0?.mode })) { mode in recorderView(mode) }
             .fullScreenCover(item: $chooser) { which in
                 switch which {
                 case .library:
@@ -209,58 +195,7 @@ struct JamComposeSheet: View {
             .onChange(of: store.draftRevision) { _, _ in coeditRemote() }
             .onChange(of: coauthors) { _, now in if let coedit { store.coeditShare(coedit.draftID, with: now.map(\.id)); coedit.reloadAuthors() } }
             .onDisappear { coedit?.stop() }
-            .task {
-                if !topicsSet, editing == nil { topicsSet = true; topics = store.jamsMine.first?.topics ?? [] }
-                #if DEBUG
-                // Tests: a photo already in the post.
-                if ProcessInfo.processInfo.arguments.contains("-lime-demo-compose-photo"), editing == nil, photos.isEmpty {
-                    let image = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 40)).image { c in UIColor.systemTeal.setFill(); c.fill(CGRect(x: 0, y: 0, width: 40, height: 40)) }
-                    photos = [DraftAttachment(outgoing: OutgoingAttachment(bytes: image.jpegData(compressionQuality: 0.8) ?? Data(), name: "photo.jpg", mime: "image/jpeg", width: 40, height: 40, durationMs: nil, thumb: Data(), poster: Data()), preview: image)]
-                }
-                #endif
-                if let editing {
-                    // The post's own words, in its own layout (a recording shows its title, subtitle and description on the article page).
-                    article = editing.kind != "quick"; title = editing.title; subtitle = editing.subtitle
-                    postAsJam = editing.displayAs == "jam" ? editing.jamId : nil   // the chip starts on the post's current author (LIME-201)
-                    audience = editing.audience; series = editing.series; topics = editing.topics.isEmpty ? (store.jamsMine.first { $0.jamId == editing.jamId }?.topics ?? []) : editing.topics
-                    coauthors = Array(store.bylinePeople(editing).dropFirst()); pendingHosts = store.pendingCoauthors(editing)
-                    if let stored = store.jamAttachments(editing.postId).first(where: JamCover.isCover), let data = await store.jamAttachmentData(editing.postId, stored.attachmentId) { coverImage = UIImage(data: data) }
-                    // The post's own files keep their numbers; new pictures are numbered after them (LIME-195b).
-                    articleFiles = store.jamAttachments(editing.postId).map { _ in OutgoingAttachment(bytes: Data(), name: "", mime: "image/jpeg", width: nil, height: nil, durationMs: nil, thumb: Data(), poster: Data()) }
-                    try? await Task.sleep(for: .milliseconds(300))
-                    composer.textView?.attributedText = ComposerDocument.attributed(fromMarkdown: editing.markdown, post: true); composer.didEdit()
-                    if article { coedit = store.coeditSession(existingID: nil, forPost: editing, title: title, subtitle: subtitle, markdown: editing.markdown) }
-                    wireCoedit()
-                    return
-                }
-                // A shared draft opened from an invitation or a post's ⋯: its words, with everyone's changes so far.
-                if let openDraft {
-                    article = true
-                    try? await Task.sleep(for: .milliseconds(300))
-                    if let session = store.coeditSession(existingID: openDraft, forPost: nil, title: "", subtitle: "", markdown: ""), let md = session.exportMarkdown(), let meta = store.coeditMeta(openDraft) {
-                        coedit = session
-                        title = meta.title; subtitle = meta.subtitle
-                        wireCoedit()
-                        composer.textView?.attributedText = session.render(markdown: md); composer.didEdit(); session.rebase()
-                        store.coeditSeen(openDraft)
-                        coauthors = session.otherAuthors()
-                    }
-                    wireCoedit()
-                    return
-                }
-                // The draft's words go back into the field once it exists.
-                try? await Task.sleep(for: .milliseconds(300))
-                if !JamDraft.shared.markdown.isEmpty { composer.textView?.attributedText = ComposerDocument.attributed(fromMarkdown: JamDraft.shared.markdown, post: true); composer.didEdit() }
-                // A draft that was started before (its words are in the core): it comes back, with everything the other authors wrote meanwhile.
-                if article, let id = JamDraft.shared.draftID, let session = store.coeditSession(existingID: id, forPost: nil, title: "", subtitle: "", markdown: ""), let md = session.exportMarkdown(), let meta = store.coeditMeta(id) {
-                    coedit = session
-                    title = meta.title; subtitle = meta.subtitle
-                    wireCoedit()
-                    composer.textView?.attributedText = session.render(markdown: md); composer.didEdit(); session.rebase()
-                }
-                wireCoedit()
-                if !article { composer.focus() }
-            }
+            .task { await loadInitialState() }
         }
     }
 
@@ -579,7 +514,7 @@ struct JamComposeSheet: View {
                     let draft = captions[key] ?? CaptionDraft(making: false)
                     HStack(spacing: 10) {
                         Image(systemName: "captions.bubble").foregroundStyle(Theme.textSecondary).accessibilityHidden(true)
-                        Text(draft.making ? "Making captions\u{2026}" : draft.none ? "No captions for this one" : draft.on ? "Captions \u{00B7} \(draft.cues.count) lines" : "Captions off")
+                        Text(draft.making ? "Making captions\u{2026}" : draft.none ? "No captions for this one" : draft.on ? "Captions \u{00B7} \(draft.cues.count) \(draft.cues.count == 1 ? "line" : "lines")" : "Captions off")
                             .font(Theme.secondary).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("jam-captions-status")
                         Spacer()
                         if !draft.making, !draft.none {
@@ -999,12 +934,97 @@ struct JamComposeSheet: View {
         dismiss()
     }
 
+    /// The studio: a podcast to post, or the audio of an article.
+    @ViewBuilder private func recorderView(_ mode: RecordMode) -> some View {
+        if mode.mode == 2 {
+            // Audio for the article: the recorder with no title or co-host steps; the clip goes into the text at the caret.
+            PodcastRecorder(title: $recordTitle, coauthors: $coauthors, camera: false, forArticle: true, attach: { clip in
+                insertIntoArticle(clip, preview: Self.fileCard(named: "Audio recording \(VoiceFormat.clock(Double(clip.durationMs ?? 0) / 1000))"))
+            })
+        } else {
+            PodcastRecorder(title: $recordTitle, coauthors: $coauthors, camera: mode.mode == 0, subtitle: $recordSubtitle, details: $recordDetails, cover: $recordCover, postAsJam: $postAsJam,
+                            series: $series, audience: $audience, topics: $topics,
+                            // The studio's Publish: the take goes in and the post is made; everything closes when it has gone (LIME-242, LIME-243).
+                            post: { clip in
+                takeClip(clip)
+                try? await Task.sleep(for: .milliseconds(450))
+                return await publishAll()
+            }, attach: { clip in takeClip(clip) })
+        }
+    }
+
+    private func takeClip(_ clip: OutgoingAttachment) {
+        clips = [clip]
+        captions = captions.filter { if case .clip = $0.key { false } else { true } }
+        startCaptions(clip, .clip(0))
+    }
+
+    /// What the sheet starts with: the jam's topics, a post being edited, a shared draft opened from an invitation.
+    private func loadInitialState() async {
+        if !topicsSet, editing == nil { topicsSet = true; topics = store.jamsMine.first?.topics ?? [] }
+        #if DEBUG
+        // Tests: a photo already in the post.
+        if ProcessInfo.processInfo.arguments.contains("-lime-demo-compose-photo"), editing == nil, photos.isEmpty {
+            let image = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 40)).image { c in UIColor.systemTeal.setFill(); c.fill(CGRect(x: 0, y: 0, width: 40, height: 40)) }
+            photos = [DraftAttachment(outgoing: OutgoingAttachment(bytes: image.jpegData(compressionQuality: 0.8) ?? Data(), name: "photo.jpg", mime: "image/jpeg", width: 40, height: 40, durationMs: nil, thumb: Data(), poster: Data()), preview: image)]
+        }
+        #endif
+        if let editing {
+            // The post's own words, in its own layout (a recording shows its title, subtitle and description on the article page).
+            article = editing.kind != "quick"; title = editing.title; subtitle = editing.subtitle
+            postAsJam = editing.displayAs == "jam" ? editing.jamId : nil   // the chip starts on the post's current author (LIME-201)
+            audience = editing.audience; series = editing.series; topics = savedTopics(of: editing)
+            coauthors = Array(store.bylinePeople(editing).dropFirst()); pendingHosts = store.pendingCoauthors(editing)
+            if let stored = store.jamAttachments(editing.postId).first(where: JamCover.isCover), let data = await store.jamAttachmentData(editing.postId, stored.attachmentId) { coverImage = UIImage(data: data) }
+            // The post's own files keep their numbers; new pictures are numbered after them (LIME-195b).
+            articleFiles = store.jamAttachments(editing.postId).map { _ in OutgoingAttachment(bytes: Data(), name: "", mime: "image/jpeg", width: nil, height: nil, durationMs: nil, thumb: Data(), poster: Data()) }
+            try? await Task.sleep(for: .milliseconds(300))
+            composer.textView?.attributedText = ComposerDocument.attributed(fromMarkdown: editing.markdown, post: true); composer.didEdit()
+            if article { coedit = store.coeditSession(existingID: nil, forPost: editing, title: title, subtitle: subtitle, markdown: editing.markdown) }
+            wireCoedit()
+            return
+        }
+        // A shared draft opened from an invitation or a post's ⋯: its words, with everyone's changes so far.
+        if let openDraft {
+            article = true
+            try? await Task.sleep(for: .milliseconds(300))
+            if let session = store.coeditSession(existingID: openDraft, forPost: nil, title: "", subtitle: "", markdown: ""), let md = session.exportMarkdown(), let meta = store.coeditMeta(openDraft) {
+                coedit = session
+                title = meta.title; subtitle = meta.subtitle
+                wireCoedit()
+                composer.textView?.attributedText = session.render(markdown: md); composer.didEdit(); session.rebase()
+                store.coeditSeen(openDraft)
+                coauthors = session.otherAuthors()
+            }
+            wireCoedit()
+            return
+        }
+        // The draft's words go back into the field once it exists.
+        try? await Task.sleep(for: .milliseconds(300))
+        if !JamDraft.shared.markdown.isEmpty { composer.textView?.attributedText = ComposerDocument.attributed(fromMarkdown: JamDraft.shared.markdown, post: true); composer.didEdit() }
+        // A draft that was started before (its words are in the core): it comes back, with everything the other authors wrote meanwhile.
+        if article, let id = JamDraft.shared.draftID, let session = store.coeditSession(existingID: id, forPost: nil, title: "", subtitle: "", markdown: ""), let md = session.exportMarkdown(), let meta = store.coeditMeta(id) {
+            coedit = session
+            title = meta.title; subtitle = meta.subtitle
+            wireCoedit()
+            composer.textView?.attributedText = session.render(markdown: md); composer.didEdit(); session.rebase()
+        }
+        wireCoedit()
+        if !article { composer.focus() }
+    }
+
+    /// The chips a post has: its own, else its jam's topics.
+    private func savedTopics(of post: JamPostInfo) -> [String] {
+        if !post.topics.isEmpty { return post.topics }
+        return store.jamsMine.first(where: { $0.jamId == post.jamId })?.topics ?? []
+    }
+
     /// Step 2 of 2 (LIME-240): the choices before the post goes out, and the button that sends it.
     private var stepTwo: some View {
         let kind: PostStepKind = article || hasClip || editing?.kind == "record" ? (hasClip || editing?.kind == "record" ? .podcast : .article) : .post
         let first = composer.plainText.replacingOccurrences(of: "\u{FFFC}", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
         let summary = article ? title : first.split(separator: "\n").first.map(String.init) ?? ""
-        return BeforePublishScreen(kind: kind, editing: editing != nil, summary: summary, thumbnail: photos.first?.preview ?? coverImage,
+        return BeforePublishScreen(kind: kind, editing: editing != nil, summary: summary, subtitle: article ? subtitle : "", thumbnail: photos.first?.preview ?? coverImage,
                                    audience: $audience, topics: $topics, series: $series, savedAudience: editing?.audience,
                                    hasMedia: editing != nil ? !store.jamAttachments(editing?.postId ?? "").isEmpty : hasMedia, pictures: privacyPictures,
                                    working: posting, problem: problem, buttonID: editing != nil ? "jam-update" : "jam-post") {
@@ -1027,7 +1047,7 @@ struct JamComposeSheet: View {
             // Who can read it changed: Everyone publishes an open copy, Subscribers takes it back (LIME-210c).
             var moved = result && audience != editing.audience ? await store.setPostAudience(editing, to: audience) : true
             if moved && series != editing.series { moved = await store.setPostSeries(editing, to: series) }
-            if moved && topics != (editing.topics.isEmpty ? (store.jamsMine.first { $0.jamId == editing.jamId }?.topics ?? []) : editing.topics) { moved = await store.setPostTopics(editing, to: topics) }
+            if moved && topics != savedTopics(of: editing) { moved = await store.setPostTopics(editing, to: topics) }
             posting = false
             if result && moved { coedit?.published(postID: editing.postId); dismiss() } else { problem = "Could not update the post." }
         }
@@ -1043,18 +1063,20 @@ struct JamComposeSheet: View {
 
     private var hasMedia: Bool { !photos.isEmpty || hasClip || (article && !articleFiles.isEmpty) || articleCover != nil }
 
-    private func post() {
-        guard captions.values.contains(where: \.making) else { buildAndPost(); return }
-        // Captions are still being made: wait a few seconds for them, then post with what there is.
-        posting = true
-        Task {
+    /// Post / Publish: the button on step 2. The whole flow closes and jam opens on the new post when it has gone (LIME-243).
+    private func post() { Task { _ = await publishAll() } }
+
+    /// Waits a few seconds for captions still being made, then posts with what there is. True when it went.
+    private func publishAll() async -> Bool {
+        if captions.values.contains(where: \.making) {
+            posting = true
             for _ in 0..<20 where captions.values.contains(where: \.making) { try? await Task.sleep(for: .milliseconds(500)) }
             posting = false
-            buildAndPost()
         }
+        return await buildAndPost()
     }
 
-    private func buildAndPost() {
+    private func buildAndPost() async -> Bool {
         var files: [OutgoingAttachment] = []
         var captionTargets: [(index: Int, draft: CaptionDraft)] = []
         var markdown = ""
@@ -1092,15 +1114,20 @@ struct JamComposeSheet: View {
         if hasClip, markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { markdown = recordDetails.trimmingCharacters(in: .whitespacesAndNewlines) }
         problem = nil
         posting = true
-        Task {
-            let result = await store.publishJamPost(kind: kind, title: headline, subtitle: article ? subtitle : hasClip ? recordSubtitle : "", markdown: markdown, items: files, coauthors: coauthors.map(\.id), displayAs: postAsJam == nil ? "person" : "jam", audience: audience, series: article || hasClip ? series : nil, topics: topics, about: session.profile?.aboutText ?? "")
-            posting = false
-            switch result {
-            case .success:
-                if let coedit { coedit.published(postID: store.lastPublishedPostID); store.coeditFinish(coedit.draftID) }
-                JamDraft.shared.clear(); dismiss()
-            case .failure(let failure): problem = failure.message   // the words, the photos and the title all stay
-            }
+        let result = await store.publishJamPost(kind: kind, title: headline, subtitle: article ? subtitle : hasClip ? recordSubtitle : "", markdown: markdown, items: files, coauthors: coauthors.map(\.id), displayAs: postAsJam == nil ? "person" : "jam", audience: audience, series: article || hasClip ? series : nil, topics: topics, about: session.profile?.aboutText ?? "")
+        posting = false
+        switch result {
+        case .success:
+            if let coedit { coedit.published(postID: store.lastPublishedPostID); store.coeditFinish(coedit.draftID) }
+            JamDraft.shared.clear()
+            let landed = store.lastPublishedPostID
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            dismiss()
+            if let landed { store.landOnPost(landed, article: kind == "article") }
+            return true
+        case .failure(let failure):
+            problem = failure.message   // the words, the photos and the title all stay
+            return false
         }
     }
 }
@@ -1143,8 +1170,7 @@ struct PostAsSheet: View {
                 }
                 Text("Posting as a school or a subject group comes later.").font(Theme.caption).foregroundStyle(Theme.textSecondary)
             }
-            .navigationTitle("Post as").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .sheetHeader("Post as")
         }
         .presentationDetents([.medium])
     }
@@ -1194,14 +1220,14 @@ struct JamCoauthorPicker: View {
                     }
                     .frame(minHeight: 48)
                 }
+                .listRowBackground(Theme.canvas)
                 .accessibilityAddTraits(on ? [.isSelected] : [])
                 .accessibilityIdentifier("jam-coauthor-choice-\(person.id)")
             }
-            .listStyle(.plain)
+            .listStyle(.plain).scrollContentBackground(.hidden).background(Theme.canvas)
             .searchable(text: $query, prompt: "Search your contacts")
             .overlay { if store.coauthorChoices.isEmpty { Text("Your contacts show here.").font(Theme.body).foregroundStyle(Theme.textSecondary) } }
-            .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button(selected.isEmpty && title != "Add co-author" ? "Skip" : "Done") { dismiss() }.fontWeight(.semibold).accessibilityIdentifier("jam-coauthor-done") } }
+            .sheetHeader(title)
             .safeAreaInset(edge: .bottom) {
                 Text("They are asked first. \u{201C}with <name>\u{201D} shows once they accept.").font(Theme.caption).foregroundStyle(Theme.textSecondary).padding(.bottom, 8)
             }

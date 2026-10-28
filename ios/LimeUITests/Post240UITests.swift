@@ -17,13 +17,14 @@ final class Post240UITests: LimeUITestCase {
         XCTAssertTrue(app.buttons["new-jam-post"].waitForExistence(timeout: 10)); app.buttons["new-jam-post"].tap()
         let next = app.buttons["jam-next"]
         XCTAssertTrue(next.waitForExistence(timeout: 8))
+        XCTAssertTrue(app.navigationBars["Step 1 of 2"].exists, "step 1 is titled as a pair with step 2")
         XCTAssertFalse(next.isEnabled, "nothing to post yet")
         XCTAssertFalse(any(app, "jam-audience").exists || any(app, "jam-topics").exists || any(app, "jam-series").exists, "step 1 is writing only")
         let body = app.textViews["composer-field"]
         body.tap(); body.typeText("Step by step")
         XCTAssertTrue(next.isEnabled)
         next.tap()
-        XCTAssertTrue(app.navigationBars["Before you post"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.navigationBars["Step 2 of 2"].waitForExistence(timeout: 8), "the step title (LIME-242)")
         XCTAssertTrue(any(app, "jam-audience").exists && any(app, "jam-topics").exists)
         XCTAssertFalse(any(app, "jam-series").exists, "a post has no series")
         XCTAssertEqual(any(app, "before-summary").label, "Step by step")
@@ -47,11 +48,12 @@ final class Post240UITests: LimeUITestCase {
         let body = app.textViews["composer-field"]
         body.tap(); body.typeText("And parts")
         app.buttons["jam-next"].tap()
-        XCTAssertTrue(app.navigationBars["Before you publish"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.navigationBars["Step 2 of 2"].waitForExistence(timeout: 8))
         for id in ["jam-series", "jam-audience", "jam-topics"] { XCTAssertTrue(any(app, id).exists, id) }
         XCTAssertEqual(app.buttons["jam-post"].label, "Publish")
         app.buttons["jam-post"].tap()
-        XCTAssertTrue(app.buttons["new-jam-post"].waitForExistence(timeout: 10))
+        // An article opens on its own page when it has gone (LIME-243).
+        XCTAssertTrue(any(app, "jam-reader-title").waitForExistence(timeout: 12), "landed on the new article")
     }
 
     func testEveryoneWithAPhotoAsksForTheConfirmationOnStepTwo() {

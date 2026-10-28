@@ -27,7 +27,7 @@ final class Jam188nUITests: LimeUITestCase {
         icon.tap()
         let sam = app.buttons["jam-coauthor-choice-sam"]
         XCTAssertTrue(sam.waitForExistence(timeout: 5)); sam.tap()
-        app.buttons["jam-coauthor-done"].tap()
+        app.buttons["sheet-close"].tap()
         XCTAssertTrue(app.buttons["jam-coauthors"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.buttons["jam-coauthors"].frame.midY, chip.frame.midY, accuracy: 8, "the avatars stay on the line")
     }

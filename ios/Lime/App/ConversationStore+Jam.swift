@@ -30,6 +30,7 @@ extension ConversationStore {
         if posts != jamPosts { jamPosts = posts }
         jamEngagement += 1
         if progress != jamProgress { jamProgress = progress }
+        jamsLoaded = true
         let waiting = posts.values.joined().contains { $0.state == "fetching" } || credited.contains { $0.state == "fetching" } || !progress.isEmpty
         if waiting, link != nil, Date().timeIntervalSince(jamLastKick) > 15 {
             jamLastKick = Date()
@@ -184,6 +185,8 @@ extension ConversationStore {
         guard items.allSatisfy({ $0.bytes.count <= Self.jamFileLimit }) else { return .failure(.fileTooLarge) }
         guard let jamID = await myJamID(about: about) else { return .failure(.couldNotMake) }
         #if DEBUG
+        // Tests: a post that takes a moment, so the "Posting…" state can be seen.
+        if isDemo, ProcessInfo.processInfo.arguments.contains("-lime-demo-slow-publish") { try? await Task.sleep(for: .seconds(2)) }
         if isDemo { demoPublish(jamID, kind: kind, title: title, subtitle: subtitle, markdown: markdown, items: items, coauthors: coauthors, displayAs: displayAs, audience: audience, series: series, topics: topics); return .success(()) }
         #endif
         guard let core else { return .failure(.couldNotMake) }

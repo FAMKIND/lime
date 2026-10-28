@@ -44,7 +44,9 @@ struct JamDiscoverList: View {
         let items = store.discoverList(topic: topic)
         VStack(spacing: 0) {
             if !store.discoverTopics.isEmpty { chips }
-            if items.isEmpty {
+            if items.isEmpty && !store.discoverLoaded {
+                SkeletonFeed()
+            } else if items.isEmpty {
                 Text(topic == nil ? "Nothing here yet. Posts teachers share with everyone show up here." : "No posts match.")
                     .font(Theme.body).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
                     .padding(.horizontal, 40).padding(.top, 60).accessibilityIdentifier("discover-empty")
@@ -187,7 +189,7 @@ struct OpenPostPage: View {
             } else if failed {
                 Text("This post is no longer available.").font(Theme.body).foregroundStyle(Theme.textSecondary).frame(maxWidth: .infinity, maxHeight: .infinity).accessibilityIdentifier("open-post-gone")
             } else {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                PostPageSkeleton().frame(maxHeight: .infinity, alignment: .top)
             }
         }
         .background(Theme.canvas)

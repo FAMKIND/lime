@@ -176,6 +176,8 @@ final class LiveAuthService: AuthService, @unchecked Sendable {
 
     private func profile(from json: [String: Any]) -> Profile? {
         guard let name = json["display_name"] as? String else { return nil }
+        // The day the account was made, from the server: Everyone opens 7 days after it (LIME-210d, fixed in LIME-242).
+        if let since = (json["since"] as? Double) ?? (json["since"] as? Int).map(Double.init) { AccountAge.noteCreated(Date(timeIntervalSince1970: since / 1000)) }
         return Profile(displayName: name, username: json["username"] as? String, school: json["school"] as? String,
                        aboutEmoji: json["about_emoji"] as? String, aboutText: json["about_text"] as? String,
                        hideFromSearch: json["hide_from_search"] as? Bool ?? false)

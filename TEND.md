@@ -8599,3 +8599,21 @@ On other people's phones (not reachable): their chats with the account, jam post
 - **Item 6:** a video podcast in **Listen** now uses exactly the audio layout (info block, timeline, circle controls, no volume slider); **Watch** brings the video layout back. One layout per mode, whatever the post type.
 - Visual change, no new test (you check on the phones); `Player235UITests` and `Player235cUITests` still pass (the two known-failing Watch-toggle tests stay skipped).
 - **Installed:** with LIME-243.
+
+## LIME-242 — step titles; About renders its text; small fixes (items 1–13)
+
+1. **Step titles:** step 2's navigation title is **"Step 2 of 2"** (the small label under it is gone; the summary stays; VoiceOver still hears "Step 2 of 2, before you publish"); step 1 reads **"Step 1 of 2"** for posts, articles, Edit and, on its own header, the podcast details page ("New post" and the like are gone). A co-author in a shared draft keeps his old titles (no step 2).
+2. **About renders the description** with the post renderer (headings, lists, bold, links): no more "## …". 
+3. **"Captions · 1 line"** / "2 lines".
+4. + 11. **Podcast details page:** the preview is **centred**; **Add cover sits under the Post-as row** (as in the article editor), so the author's name shows in full.
+5. **The photo viewer** (jam post photos) centres the photo between the top and the action pill (fit, not fill).
+6. **"Everyone opens Nov 4":** the 7-day rule used **the day this phone first registered**, which for the existing accounts was the first launch of that build. It now uses **the account's creation date from the server** (the profile's `since`, saved when the profile loads); until that is known the choice is available (the server's first-week limit of 10 open posts a day still applies). **On the 13 mini, Everyone should now be available** once the profile has loaded once.
+7. **Audience menu:** one clear line, "Everyone on lime", or for a really new account "Everyone · from Nov 4" (disabled); the cut-off sentence is gone.
+8. **One sheet pattern:** Subject and grade, Series, co-authors/co-hosts, Post as, Captions and the privacy guidance use About's header: a round **✕** on the left, the title centred, **no Done**; changes apply as you make them (Series now applies as you pick/type; ✕ just closes).
+9. **Tags sheet:** sections **Subjects**, **Grades**, **Your tags** (the jam's and your own, "Add your own" at the bottom), chips on one margin, selected ones in the lime tint with a check, "3 of 8" under the title.
+10. **Co-authors/co-hosts picker:** the rows use the app's list background and separators.
+12. **Step 2's summary** has the cover thumbnail with the title and the subtitle beside it, like the player's info block.
+13. **The video-podcast bug:** the studio no longer closes itself when you press Publish; it asks the post to go and the **whole flow closes when it has gone** (on failure the reason shows on step 2 and nothing is lost).
+- **Tests:** `Fix242UITests` (titles as a pair, an old account's Everyone available, About without "##", the spinner and where it lands for a video podcast and a quick post); `Post240`, `Studio241` and `Privacy210d` updated ("Step 2 of 2", the margin, "from <date>"). Not tested: "1 line" (needs a caption run) and the photo viewer's centring (you check on the phone).
+- **Flaky, not from this:** `Jam188q/r/m` and `Jam188n` fail on the article-body keyboard focus in some runs (one of the two `Jam188r` tests passes in each run); `Jam188b`'s subtitle-cap check shows 161 mid-trim now and then.
+- **Installed:** with LIME-243.

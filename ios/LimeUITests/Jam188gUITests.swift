@@ -35,7 +35,7 @@ final class Jam188gUITests: LimeUITestCase {
         let sam = app.buttons["jam-coauthor-choice-sam"]
         XCTAssertTrue(sam.waitForExistence(timeout: 5), "co-hosts come from your contacts")
         sam.tap()
-        app.buttons["jam-coauthor-done"].tap()
+        app.buttons["sheet-close"].tap()
         publishPodcast(app)
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Sunday planning'")).firstMatch.waitForExistence(timeout: 8))
         XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'jam-audio-card-' OR identifier == 'jam-video'")).firstMatch.waitForExistence(timeout: 5), "the recording is a card")

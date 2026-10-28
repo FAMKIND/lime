@@ -15,7 +15,7 @@ extension ConversationStore {
         discoverLoading = true
         discoverAsked = Date()
         defer { discoverLoading = false }
-        guard let token = try? await link.token() else { return }
+        guard let token = try? await link.token() else { discoverLoaded = true; return }
         for _ in 0..<4 {
             let since = discoverCursor
             guard let page = try? await Task.detached(priority: .utility, operation: { try core.fetchOpenFeed(transport: link.transport, authToken: token, since: since) }).value else { return }
@@ -27,6 +27,7 @@ extension ConversationStore {
             discoverCursor = page.cursor
             if page.items.count + page.gone.count < 50 { break }
         }
+        discoverLoaded = true
     }
 
     /// One open post, whole and verified on this phone (nil when it is gone or does not check out).
@@ -91,6 +92,21 @@ extension ConversationStore {
         let readable = Set(jamFeed.map(\.postId))
         return openPostCache.values.filter { !readable.contains($0.postId) && SearchText.matches([$0.title, $0.subtitle, $0.plain].joined(separator: " "), query: query) }
             .map { JamHit(postID: $0.postId, title: $0.title, from: openWriterName($0.authorId), marked: SearchText.mark($0.title.isEmpty ? $0.plain : $0.title, query: query), date: Date(timeIntervalSince1970: Double($0.created) / 1000), kind: $0.kind, open: true) }
+    }
+
+    /// After a post went out (LIME-243): jam opens on it, scrolled to and briefly highlighted in the feed; an article opens on its page. Never back to New post.
+    func landOnPost(_ postID: String, article: Bool) {
+        section = .jam
+        jamSegment = .all
+        jamFilter = JamFilter()
+        jamPath = NavigationPath()
+        jamScrollTarget = postID
+        jamHighlight = postID
+        Task {
+            if article { try? await Task.sleep(for: .milliseconds(450)); jamPath.append(JamPostRoute(postID: postID)) }
+            try? await Task.sleep(for: .milliseconds(2800))
+            if jamHighlight == postID { jamHighlight = nil }
+        }
     }
 
     /// Sets the subject, grade and topic chips of one of my posts (Edit).

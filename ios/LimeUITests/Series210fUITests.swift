@@ -48,12 +48,13 @@ final class Series210fUITests: LimeUITestCase {
         let name = app.textFields["series-title"]
         XCTAssertTrue(name.waitForExistence(timeout: 5))
         name.tap(); name.typeText("Fractions")
-        app.buttons["series-done"].tap()
+        app.buttons["sheet-close"].tap()
         XCTAssertTrue(any(app, "jam-series").waitForExistence(timeout: 5))
         XCTAssertEqual(any(app, "jam-series").label, "Series: Fractions, Part 1")
         app.buttons["jam-post"].tap()
-        let card = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'jam-card-series-'")).firstMatch
-        XCTAssertTrue(card.waitForExistence(timeout: 10))
-        XCTAssertTrue(card.label.hasPrefix("Part 1 of the series Fractions"), card.label)
+        // The article opens on its own page (LIME-243); its series line is above the title and says Part 1.
+        let line = any(app, "jam-article-series")
+        XCTAssertTrue(line.waitForExistence(timeout: 12))
+        XCTAssertTrue(line.label.contains("Part 1"), line.label)
     }
 }

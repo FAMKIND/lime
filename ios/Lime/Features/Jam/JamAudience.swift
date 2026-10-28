@@ -18,12 +18,10 @@ struct AudienceChip: View {
         Menu {
             Button { choose("subscribers") } label: { Label("Subscribers", systemImage: !everyone ? "checkmark" : "lock") }
                 .accessibilityIdentifier("audience-subscribers")
-            Button { choose("everyone") } label: { Label(opensOn.map { "Everyone opens \($0.formatted(.dateTime.month(.abbreviated).day()))" } ?? "Everyone on lime", systemImage: everyone ? "checkmark" : "globe") }
+            // A new account waits 7 days: one clear line with the date, never a cut-off sentence (LIME-242).
+            Button { choose("everyone") } label: { Label(opensOn.map { "Everyone \u{00B7} from \($0.formatted(.dateTime.month(.abbreviated).day()))" } ?? "Everyone on lime", systemImage: everyone ? "checkmark" : "globe") }
                 .disabled(opensOn != nil && !everyone)
                 .accessibilityIdentifier("audience-everyone")
-            if let opensOn {
-                Text("New accounts can post to everyone after 7 days (\(opensOn.formatted(.dateTime.month(.abbreviated).day()))).").accessibilityIdentifier("audience-opens")
-            }
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: everyone ? "globe" : "lock").font(.system(size: 13, weight: .medium)).accessibilityHidden(true)
@@ -78,39 +76,101 @@ struct TopicsChip: View {
 
 struct TopicsPickerSheet: View {
     @Binding var topics: [String]
-    @Environment(\.dismiss) private var dismiss
+    @Environment(ConversationStore.self) private var store
     @State private var custom = ""
-    private static let suggestions = ["Maths", "Reading", "Writing", "Science", "Social studies", "Art", "Music", "Special needs", "Kindergarten", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6"]
+    static let subjects = ["Maths", "Reading", "Writing", "Science", "Social studies", "Art", "Music", "Special needs"]
+    static let grades = ["Kindergarten", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6"]
+    private static let limit = 8
+
+    /// Your tags: the jam's own and the ones you add, apart from the subjects and grades above.
+    private var yours: [String] {
+        let known = Set(Self.subjects + Self.grades)
+        var out: [String] = []
+        for t in store.jamsMine.first?.topics ?? [] + topics where !known.contains(t) && !out.contains(t) { out.append(t) }
+        return out
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    FlowChips(items: Array((topics + Self.suggestions.filter { !topics.contains($0) }).prefix(24)), selected: Set(topics)) { toggle($0) }
-                    HStack {
-                        TextField("Add your own", text: $custom).font(Theme.body).onSubmit(addCustom).accessibilityIdentifier("topics-custom")
-                        Button("Add", action: addCustom).disabled(custom.trimmingCharacters(in: .whitespaces).isEmpty || topics.count >= 8).accessibilityIdentifier("topics-add")
+                VStack(alignment: .leading, spacing: 22) {
+                    Text("\(topics.count) of \(Self.limit)").font(Theme.secondary).foregroundStyle(Theme.textSecondary).frame(maxWidth: .infinity).accessibilityIdentifier("topics-count")
+                    section("Subjects", Self.subjects)
+                    section("Grades", Self.grades)
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Your tags").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.textSecondary).accessibilityAddTraits(.isHeader)
+                        if !yours.isEmpty { chips(yours) }
+                        HStack {
+                            TextField("Add your own", text: $custom).font(Theme.body).onSubmit(addCustom).accessibilityIdentifier("topics-custom")
+                            Button("Add", action: addCustom).disabled(custom.trimmingCharacters(in: .whitespaces).isEmpty || topics.count >= Self.limit).accessibilityIdentifier("topics-add")
+                        }
+                        .padding(.horizontal, 14).frame(minHeight: 48).background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
-                    .padding(.horizontal, 14).frame(minHeight: 48).background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    Text("Up to 8. People find this post by these.").font(Theme.caption).foregroundStyle(Theme.textSecondary)
                 }
-                .padding(20)
+                .padding(.horizontal, 20).padding(.vertical, 16)
             }
             .background(Theme.canvas)
-            .navigationTitle("Subject and grade").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.fontWeight(.semibold).accessibilityIdentifier("topics-done") } }
+            .sheetHeader("Subject and grade")
         }
         .presentationDetents([.medium, .large])
     }
 
+    private func section(_ title: String, _ items: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.textSecondary).accessibilityAddTraits(.isHeader)
+            chips(items)
+        }
+    }
+
+    private func chips(_ items: [String]) -> some View {
+        FlowLayout(spacing: 8) {
+            ForEach(items, id: \.self) { item in
+                let on = topics.contains(item)
+                Button { toggle(item) } label: {
+                    HStack(spacing: 6) {
+                        if on { Image(systemName: "checkmark").font(.system(size: 12, weight: .bold)).accessibilityHidden(true) }
+                        Text(item).font(Theme.secondary)
+                    }
+                    .foregroundStyle(Theme.text).padding(.horizontal, 14).frame(minHeight: 40)
+                    .background(on ? Theme.accent.opacity(0.28) : Theme.surface, in: Capsule())
+                    .overlay { if on { Capsule().strokeBorder(Theme.accent, lineWidth: 1.5) } }
+                }
+                .buttonStyle(.plain).accessibilityAddTraits(on ? [.isSelected] : []).accessibilityIdentifier("jam-topic-\(item)")
+            }
+        }
+    }
+
     private func toggle(_ topic: String) {
-        if let i = topics.firstIndex(of: topic) { topics.remove(at: i) } else if topics.count < 8 { topics.append(topic) }
+        if let i = topics.firstIndex(of: topic) { topics.remove(at: i) } else if topics.count < Self.limit { topics.append(topic) }
     }
 
     private func addCustom() {
         let clean = custom.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         defer { custom = "" }
-        guard !clean.isEmpty, clean.count <= 30, topics.count < 8, !topics.contains(where: { $0.caseInsensitiveCompare(clean) == .orderedSame }) else { return }
+        guard !clean.isEmpty, clean.count <= 30, topics.count < Self.limit, !topics.contains(where: { $0.caseInsensitiveCompare(clean) == .orderedSame }) else { return }
         topics.append(clean)
     }
+}
+
+/// The one sheet header (LIME-242), About's: a round ✕ on the left and the title centred. No Done: whatever you change applies as you make it, and ✕ just closes.
+private struct LimeSheetHeader: ViewModifier {
+    let title: String
+    @Environment(\.dismiss) private var dismiss
+
+    func body(content: Content) -> some View {
+        content
+            .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark").font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.text).frame(width: 36, height: 36).background(Theme.surface, in: Circle()).frame(width: 44, height: 44)
+                    }
+                    .accessibilityLabel("Close").accessibilityIdentifier("sheet-close")
+                }
+            }
+    }
+}
+
+extension View {
+    func sheetHeader(_ title: String) -> some View { modifier(LimeSheetHeader(title: title)) }
 }

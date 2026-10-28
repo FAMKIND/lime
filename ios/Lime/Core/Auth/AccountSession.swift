@@ -136,7 +136,6 @@ final class AccountSession {
             let transport = URLSessionTransport(baseURL: config.url, apiKey: config.apiKey)
             let device = try await store.registerDevice(transport: transport, token: token)
             deviceRegistered = true
-            AccountAge.noteRegistered()
             userID = device.userId
             await goLive(device: device, transport: transport, config: config)
         } catch {

@@ -82,7 +82,7 @@ final class Jam188qUITests: LimeUITestCase {
         app.buttons["jam-add-coauthor"].tap()
         let sam = app.buttons["jam-coauthor-choice-sam"]
         XCTAssertTrue(sam.waitForExistence(timeout: 5)); sam.tap()
-        app.buttons["jam-coauthor-done"].tap()
+        app.buttons["sheet-close"].tap()
         XCTAssertTrue(app.buttons["jam-coauthors"].waitForExistence(timeout: 5))
         XCTAssertGreaterThan(app.buttons["jam-add-coauthor"].frame.minX, app.buttons["jam-coauthors"].frame.minX, "the icon sits to the right of the authors")
         app.buttons["jam-post-as"].tap()

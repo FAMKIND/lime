@@ -4,21 +4,22 @@ import Vision
 /// When an account may post to Everyone (LIME-210d, choice (g)): a new account waits **7 days** after sign-up, the plainest brake on a throwaway account
 /// posting to the world. Kept on this phone; the server's own first-week limit (10 open posts a day) stays as well.
 enum AccountAge {
-    static let key = "lime.account.since"
+    static let key = "lime.account.created"
     static let waitDays = 7
 
-    /// Remembered the first time this phone registers an account.
-    static func noteRegistered() {
-        if UserDefaults.standard.object(forKey: key) == nil { UserDefaults.standard.set(Date(), forKey: key) }
+    /// The day the account was made, as the server says (its profile carries it). Not this phone's first launch: an old account on a new phone is not new.
+    static func noteCreated(_ date: Date) {
+        UserDefaults.standard.set(date, forKey: key)
     }
 
-    /// The day Everyone opens for this account, or nil when it is open already.
+    /// The day Everyone opens for this account, or nil when it is open already (or the account's age is not known yet: the server's own first-week limit
+    /// of 10 open posts a day still applies).
     static func everyoneOpensOn(now: Date = Date()) -> Date? {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-lime-demo-new-account") { return Calendar.current.date(byAdding: .day, value: 3, to: now) }
         if ProcessInfo.processInfo.arguments.contains("-lime-demo-chat") { return nil }
         #endif
-        guard let since = UserDefaults.standard.object(forKey: key) as? Date, let opens = Calendar.current.date(byAdding: .day, value: waitDays, to: since) else { return nil }
+        guard let created = UserDefaults.standard.object(forKey: key) as? Date, let opens = Calendar.current.date(byAdding: .day, value: waitDays, to: created) else { return nil }
         return opens > now ? opens : nil
     }
 }
@@ -112,8 +113,7 @@ struct StudentPrivacyGuide: View {
                 .padding(20)
             }
             .background(Theme.canvas)
-            .navigationTitle("Sharing students").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.accessibilityIdentifier("privacy-guide-done") } }
+            .sheetHeader("Sharing students")
         }
         .accessibilityIdentifier("privacy-guide")
     }

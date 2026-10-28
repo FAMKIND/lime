@@ -316,8 +316,12 @@ private struct JamPhoto: View {
                     .fullScreenCover(isPresented: $opened) {
                         ZStack(alignment: .topTrailing) {
                             Color.black.ignoresSafeArea()
-                            Image(uiImage: image).resizable().scaledToFit().ignoresSafeArea()
-                            VStack { Spacer(); JamViewerBar(postID: postID) }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                            // Centred between the top and the action pill, fitted not filled (LIME-242).
+                            VStack(spacing: 0) {
+                                Image(uiImage: image).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: .infinity).padding(.top, 56)
+                                JamViewerBar(postID: postID)
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                             Button { opened = false } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 30)).foregroundStyle(.white).frame(width: 44, height: 44) }
                                 .padding().accessibilityLabel("Close").accessibilityIdentifier("jam-photo-close")
                         }
