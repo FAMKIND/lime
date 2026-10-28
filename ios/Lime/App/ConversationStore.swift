@@ -1010,8 +1010,8 @@ final class ConversationStore {
         demoJamPages = ["sam": JamPageInfo(jamId: "demo-sam-jam", writerId: "sam", title: "Fractions that stick", about: "Short lessons for grades 3 to 5", topics: ["Maths", "Grade 4"], postCount: 3, subscriberCount: 12)]
         // Their public profiles, as the server would answer (UI tests and screenshots).
         publicProfiles = [
-            "sam": PublicProfile(userId: "sam", displayName: "Sam Park", username: "sam.park", school: "Lincoln Elementary", aboutEmoji: "📚", aboutText: "Fourth grade, loves fractions", since: 1_762_000_000_000),
-            "lee": PublicProfile(userId: "lee", displayName: "Lee Wong", username: "lee.wong", school: nil, aboutEmoji: nil, aboutText: nil, since: nil),
+            "sam": PublicProfile(userId: "sam", displayName: "Sam Park", username: "sam.park", school: "Lincoln Elementary", aboutEmoji: "📚", aboutText: "Fourth grade, loves fractions", since: 1_762_000_000_000, hasJam: false),
+            "lee": PublicProfile(userId: "lee", displayName: "Lee Wong", username: "lee.wong", school: nil, aboutEmoji: nil, aboutText: nil, since: nil, hasJam: false),
         ]
         // Something shared with Sam, for the profile's Shared section.
         if let sam = conversations.firstIndex(where: { $0.id == "dm:sam" }) {

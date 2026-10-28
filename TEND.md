@@ -8501,3 +8501,13 @@ On other people's phones (not reachable): their chats with the account, jam post
   4. Open lime: the jam tab shows **Discover**, and the composer shows the audience chip (after the app next asks the feed). Try one Everyone post from an account older than 7 days, open it on another phone from Discover.
   5. To turn it off again: the same statement with `false`. Existing open posts stay readable; new ones are refused with "not available yet".
 - **Installed:** with the final build.
+
+## LIME-210e — contacts follow each other's jams
+
+- **Core:** a paced pass in `sync` (`client/follow.rs`): every **accepted 1:1 chat** is looked at (at most **20 contacts a minute**, each again after a day). The look is the profile fetch the phone already makes, which now answers **`has_jam`** (server: `profile-get`, a live jam; the page is public to any signed-in user already); only a contact with a jam costs a second request (the jam's page), then the ordinary quiet `jam.subscribe` (free, no prompt). So: accepting a chat follows (both ways, each phone does its own side), a contact who **starts a jam later** is noticed on the next day's look, and **existing contacts at upgrade** are covered by the same paced run (a first look at all of them, 20 a minute).
+- **Unsubscribing sticks:** `jam_follow_off` (set when I unsubscribe by hand) is never followed again, also if the contact is added again; a jam I have any row for (`removed` by the writer, `full`, `left`) counts as decided and is left alone. Subscribers count toward the jam's 1,000 as any subscriber (a full jam answers quietly).
+- **iOS:** one quiet line in Settings → Privacy: "Your contacts follow your jam, and you follow theirs. Unsubscribe and it stays that way."
+- **What each party learns:** as `docs/jam.md` 13.6: the server sees a profile fetch and a jam-page lookup by an account for someone in their chats, and a `jam.subscribe` which is an ordinary Olm message between two people who already chat; the writer learns that a contact follows (as any subscriber).
+- **Tests:** core: accepting a chat follows (bob follows alice's jam, the writer takes them in), a jam started later is noticed (and alice follows bob's), unsubscribing by hand sticks even after a new check, the pass takes 20 a minute and re-looks after a day and never a chat that is only a request. Server: `chat_test` now also expects `has_jam` and `since` in another person's profile (it had been failing since `since` was added). Core **385 pass**.
+- **Known:** server tests 114 pass, 1 fails and is not from this: `blobs_test` public avatars "the bucket refuses more than 1 MB" (the local Storage limit).
+- **Installed:** with the final build.

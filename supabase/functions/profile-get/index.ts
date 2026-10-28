@@ -26,6 +26,9 @@ Deno.serve(handler(async (req) => {
     .select("user_id, display_name, username, school, about_emoji, about_text, hide_from_search, created_at").eq("user_id", wanted).maybeSingle();
   if (error) throw new HttpError(500, "internal");
   if (!data) throw new HttpError(404, "not_found", "No such profile.");
+  // Whether this person has a live jam (LIME-210e): so a phone follows a contact's jam without asking `jam-page` about every contact. The jam's page is
+  // public to any signed-in user already, so this tells nothing new.
+  const { count: liveJams } = await admin().from("jams").select("jam_id", { count: "exact", head: true }).eq("writer_id", wanted).is("ended_at", null).is("taken_down_at", null);
   return json({
     profile: {
       user_id: data.user_id,
@@ -36,6 +39,7 @@ Deno.serve(handler(async (req) => {
       about_text: data.hide_from_search ? null : data.about_text,
       // "On lime since <month year>" (LIME-214): the month the account was made, for people who are findable.
       since: data.hide_from_search ? null : Date.parse(data.created_at as string),
+      has_jam: (liveJams ?? 0) > 0,
     },
   });
 }));

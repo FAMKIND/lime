@@ -38,6 +38,7 @@ pub(crate) mod profile;
 pub(crate) mod groups;
 pub(crate) mod jam;
 pub(crate) mod open;
+pub(crate) mod follow;
 pub(crate) mod moderation;
 mod account;
 pub(crate) mod draft_sync;
@@ -383,6 +384,8 @@ impl LimeStore {
         if received > 0 {
             self.refresh_names(&transport, &auth_token);
         }
+        // Contacts follow each other's jams (LIME-210e): a paced batch, quiet.
+        self.follow_contacts_jams(&transport, &auth_token, &me);
         self.take_undelivered(&transport, &auth_token);
         let waiting = self.with_conn(pending::count)?;
         Ok(SyncReport {

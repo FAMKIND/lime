@@ -13,6 +13,8 @@ pub struct PublicProfile {
     pub about_text: Option<String>,
     /// When the account was made (milliseconds since the Unix epoch); none for someone who hid from search (LIME-214: "On lime since").
     pub since: Option<i64>,
+    /// They have a live jam (LIME-210e).
+    pub has_jam: bool,
 }
 
 #[uniffi::export]
@@ -34,6 +36,7 @@ impl LimeStore {
             about_emoji: text("about_emoji"),
             about_text: text("about_text"),
             since: profile.get("since").and_then(Value::as_i64).filter(|n| *n > 0),
+            has_jam: profile.get("has_jam").and_then(Value::as_bool).unwrap_or(false),
         }))
     }
 }

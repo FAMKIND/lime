@@ -804,7 +804,8 @@ impl FakeServer {
             "profile-get" => match state.profiles.get(&text("user_id")) {
                 Some((name, username)) => respond(
                     200,
-                    json!({ "profile": { "user_id": text("user_id"), "display_name": name, "username": username, "school": null } }),
+                    json!({ "profile": { "user_id": text("user_id"), "display_name": name, "username": username, "school": null,
+                                         "has_jam": state.jam_pages.values().any(|(owner, _, _, ended)| *owner == text("user_id") && !*ended) } }),
                 ),
                 None => respond(404, json!({ "error": "not_found" })),
             },

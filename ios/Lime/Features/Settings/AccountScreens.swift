@@ -147,6 +147,7 @@ struct PrivacyScreen: View {
                 SettingsRow(symbol: "nosign", title: "Blocked", value: blockedCount.map { $0 == 0 ? "None" : "\($0)" }, route: .blocked, id: "privacy-blocked")
                 SettingsRow(symbol: "key.viewfinder", title: "Safety Numbers", route: .keys, id: "privacy-keys", showsDivider: false)
             }
+            SettingsFootnote(text: "Your contacts follow your jam, and you follow theirs. Unsubscribe and it stays that way.").accessibilityIdentifier("privacy-follow-note")
             SettingsCard {
                 Toggle(isOn: $linkPreviews) {
                     Text("Generate link previews").font(Theme.body).foregroundStyle(Theme.text)

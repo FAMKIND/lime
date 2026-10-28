@@ -431,6 +431,8 @@ impl LimeStore {
         self.with_conn(|conn| {
             let jam = jam_store::get(conn, &jam_id)?.filter(|j| !j.mine).ok_or(StoreError::NotFound)?;
             conn.execute("UPDATE jams SET status = 'left' WHERE jam_id = ?1", params![jam_id]).map_err(db_err)?;
+            // By hand: this jam is never followed automatically again (LIME-210e).
+            conn.execute("INSERT OR IGNORE INTO jam_follow_off (jam_id) VALUES (?1)", params![jam_id]).map_err(db_err)?;
             let op = signed_op(conn, &state, "jam.unsubscribe", &jam_id, None, json!({ "jam_id": jam_id }), now)?;
             queue_op(conn, &jam_id, &jam.writer, &op)
         })

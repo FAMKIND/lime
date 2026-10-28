@@ -84,7 +84,7 @@ Deno.test("profile-get of another person: public fields only; hidden shows the n
     assertEquals(seen.status, 200);
     assertEquals(seen.body.profile.display_name, "Bob B");
     assertEquals(seen.body.profile.school, "Bay School");
-    assertEquals(Object.keys(seen.body.profile).sort(), ["about_emoji", "about_text", "display_name", "school", "user_id", "username"], "never an email or phone");
+    assertEquals(Object.keys(seen.body.profile).sort(), ["about_emoji", "about_text", "display_name", "has_jam", "school", "since", "user_id", "username"], "never an email or phone");
 
     const masked = await call("profile-get", alice.token, { user_id: hidden.id });
     assertEquals(masked.body.profile.display_name, "Hidden H");

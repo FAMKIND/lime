@@ -120,7 +120,7 @@ struct ProfileView: View {
     /// Their public profile; for me, what my own account says.
     private var profile: PublicProfile? {
         if route.isMe, let mine = session.profile {
-            return PublicProfile(userId: route.userID, displayName: mine.displayName, username: mine.username, school: mine.school, aboutEmoji: mine.aboutEmoji, aboutText: mine.aboutText, since: store.publicProfiles[route.userID]?.since)
+            return PublicProfile(userId: route.userID, displayName: mine.displayName, username: mine.username, school: mine.school, aboutEmoji: mine.aboutEmoji, aboutText: mine.aboutText, since: store.publicProfiles[route.userID]?.since, hasJam: false)
         }
         return store.publicProfiles[route.userID]
     }

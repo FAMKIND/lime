@@ -894,6 +894,10 @@ const MIGRATIONS: &[&str] = &[
          next_at   INTEGER NOT NULL DEFAULT 0,
          blocked   TEXT
      );",
+    // 58 (LIME-210e): contacts follow each other's jams. `jam_follow_off` is a jam this phone's owner unsubscribed from by hand: never followed
+    // automatically again (also if the contact is added again). `contact_jam_checks` is when each contact was last looked at.
+    "CREATE TABLE jam_follow_off (jam_id TEXT PRIMARY KEY NOT NULL);
+     CREATE TABLE contact_jam_checks (user_id TEXT PRIMARY KEY NOT NULL, checked_at INTEGER NOT NULL);",
 ];
 
 /// The schema version this build writes.

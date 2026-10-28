@@ -1479,7 +1479,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
              DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP INDEX olm_sessions_by_peer; DROP TABLE received_ciphertexts; DROP TABLE emergency_messages; DROP TABLE emergency_settings; DROP TABLE mesh_outbox; DROP TABLE mesh_packets; DROP TABLE mesh_seen; DROP TABLE mesh_uploaded; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
-             DROP TABLE draft_files; DROP TABLE draft_outbox; DROP TABLE draft_authors; DROP TABLE draft_chunks; DROP TABLE drafts; DROP TABLE deleted_peers; DROP TABLE session_repairs; DROP TABLE profile_key_requests; DROP TABLE my_extra; DROP TABLE extras; DROP TRIGGER jam_posts_fts_insert; DROP TRIGGER jam_posts_fts_update; DROP TRIGGER jam_posts_fts_delete; DROP TABLE jam_fts; DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_credits; DROP TABLE jam_credit_requests; DROP TABLE jam_credit_wires; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_blob_deletes; DROP TABLE jam_reactions; DROP TABLE jam_my_reactions; DROP TABLE jam_comments; DROP TABLE jam_counts; DROP TABLE jam_counts_out; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; DROP TABLE open_outbox; PRAGMA user_version = 9;",
+             DROP TABLE draft_files; DROP TABLE draft_outbox; DROP TABLE draft_authors; DROP TABLE draft_chunks; DROP TABLE drafts; DROP TABLE deleted_peers; DROP TABLE session_repairs; DROP TABLE profile_key_requests; DROP TABLE my_extra; DROP TABLE extras; DROP TRIGGER jam_posts_fts_insert; DROP TRIGGER jam_posts_fts_update; DROP TRIGGER jam_posts_fts_delete; DROP TABLE jam_fts; DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_credits; DROP TABLE jam_credit_requests; DROP TABLE jam_credit_wires; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_blob_deletes; DROP TABLE jam_reactions; DROP TABLE jam_my_reactions; DROP TABLE jam_comments; DROP TABLE jam_counts; DROP TABLE jam_counts_out; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; DROP TABLE open_outbox; DROP TABLE jam_follow_off; DROP TABLE contact_jam_checks; PRAGMA user_version = 9;",
         )
         .unwrap();
     }
@@ -7226,4 +7226,86 @@ fn a_co_written_draft_published_to_everyone_goes_out_as_a_signed_open_post_of_th
     let open = carol.store.fetch_open_post(transport, post).unwrap();
     assert_eq!((open.title.as_str(), open.author_id.as_str()), ("Plans", "alice"));
     assert!(open.markdown.contains("The intro paragraph."));
+}
+
+// ---------------------------------------------------------------- LIME-210e: contacts follow each other's jams
+
+fn forget_contact_checks(p: &Party) {
+    p.store.with_conn(|conn| conn.execute("UPDATE contact_jam_checks SET checked_at = 0", []).map(|_| ()).map_err(crate::store::db_err)).unwrap();
+}
+
+#[test]
+fn accepting_a_chat_follows_each_others_jams_quietly_and_a_jam_started_later_is_noticed() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    server.state.lock().unwrap().profiles.insert("alice".into(), ("Alice A".into(), None));
+    server.state.lock().unwrap().profiles.insert("bob".into(), ("Bob B".into(), None));
+    let alice_jam = new_jam(&alice);
+    deliver(&alice, &transport); // her page goes up
+    befriend(&alice, &bob, &transport);
+    // Bob's phone looks at Alice (she has a jam) and subscribes, with no prompt; Alice has no one to follow yet.
+    sync(&bob, &transport); deliver(&bob, &transport);
+    deliver(&alice, &transport);
+    let followed = bob.store.jam(alice_jam.clone()).unwrap().expect("bob follows alice's jam");
+    assert_eq!((followed.mine, followed.writer.as_str()), (false, "alice"));
+    sync(&alice, &transport); deliver(&alice, &transport); sync(&bob, &transport);
+    assert_eq!(bob.store.jam(alice_jam.clone()).unwrap().unwrap().status, "active", "the writer's phone took her in");
+    assert_eq!(alice.store.list_my_jams().unwrap()[0].subscriber_count, 1);
+    // Bob starts a jam later: Alice's phone notices (a day on, or here by forgetting the check) and follows it.
+    let bob_jam = new_jam(&bob);
+    deliver(&bob, &transport);
+    forget_contact_checks(&alice);
+    sync(&alice, &transport); deliver(&alice, &transport);
+    assert!(alice.store.jam(bob_jam).unwrap().is_some(), "alice follows bob's new jam");
+}
+
+#[test]
+fn unsubscribing_by_hand_sticks_even_after_a_new_check() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    server.state.lock().unwrap().profiles.insert("alice".into(), ("Alice A".into(), None));
+    let jam = new_jam(&alice);
+    deliver(&alice, &transport);
+    befriend(&alice, &bob, &transport);
+    sync(&bob, &transport); deliver(&bob, &transport);
+    assert!(bob.store.jam(jam.clone()).unwrap().is_some());
+    bob.store.unsubscribe_from_jam(jam.clone()).unwrap();
+    // Forget the row, as if this phone had never followed: only the "off" mark is left to say no.
+    bob.store.with_conn(|conn| conn.execute("DELETE FROM jams WHERE jam_id = ?1", params![jam]).map(|_| ()).map_err(crate::store::db_err)).unwrap();
+    forget_contact_checks(&bob);
+    sync(&bob, &transport); deliver(&bob, &transport);
+    assert!(bob.store.jam(jam).unwrap().is_none(), "never followed again");
+}
+
+#[test]
+fn the_follow_pass_looks_at_twenty_contacts_a_minute_and_each_again_after_a_day() {
+    let server = FakeServer::new();
+    let (alice, _) = party(&server, "alice", 1);
+    alice
+        .store
+        .with_conn(|conn| {
+            for n in 0..25 {
+                conn.execute("INSERT INTO conversations (id, title, is_group, is_pinned, unread, request_state) VALUES (?1, 'x', 0, 0, 0, 'accepted')", params![format!("dm:u{n:02}")]).map_err(crate::store::db_err)?;
+            }
+            conn.execute("INSERT INTO conversations (id, title, is_group, is_pinned, unread, request_state) VALUES ('dm:pending', 'x', 0, 0, 0, 'pending')", []).map_err(crate::store::db_err)?;
+            let now = 10_000_000_000i64;
+            let first = crate::client::follow::due_contacts(conn, now)?;
+            assert_eq!(first.len(), 20, "a batch is twenty");
+            for u in &first {
+                conn.execute("INSERT OR REPLACE INTO contact_jam_checks (user_id, checked_at) VALUES (?1, ?2)", params![u, now]).map_err(crate::store::db_err)?;
+            }
+            assert!(crate::client::follow::due_contacts(conn, now + 30_000)?.is_empty(), "not again within a minute");
+            let second = crate::client::follow::due_contacts(conn, now + 61_000)?;
+            assert_eq!(second.len(), 5, "the rest of them, not the ones just looked at, and never a chat that is only a request");
+            assert!(second.iter().all(|u| !first.contains(u)) && !second.contains(&"pending".to_string()));
+            for u in &second {
+                conn.execute("INSERT OR REPLACE INTO contact_jam_checks (user_id, checked_at) VALUES (?1, ?2)", params![u, now + 61_000]).map_err(crate::store::db_err)?;
+            }
+            assert!(crate::client::follow::due_contacts(conn, now + 200_000)?.is_empty(), "all looked at: nothing due for a day");
+            assert_eq!(crate::client::follow::due_contacts(conn, now + 61_000 + 86_400_001)?.len(), 20, "a day on, they come round again, twenty at a time");
+            Ok(())
+        })
+        .unwrap();
 }
