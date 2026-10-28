@@ -1,16 +1,18 @@
 import SwiftUI
 
-/// The status icon in a cut-out notch at an avatar's bottom-right: a green dot (available), a yellow moon (away), a red badge
-/// with a "z" (do not disturb), or a hollow grey ring (offline, LIME-180). Nothing for a contact who has not shared one.
+/// The status icon in a round notch cut out of an avatar's corner (LIME-238, as Slack's): a green dot (available), a yellow moon (away), a red badge
+/// with a "z" (do not disturb), or an **empty outline ring** (offline, LIME-180): the notch is real (`statusNotch` removes that part of the avatar), so
+/// whatever is behind the avatar (the page, the sheet, the hero photo) shows in the gap and through the ring. The ring is white on dark backgrounds and
+/// the dark ink on light ones (3:1 or better either way). Nothing for a contact who has not shared a status.
 struct StatusBadge: View {
     let state: UserStatus
     var size: CGFloat = 16
+    /// The badge is over a photo (the profile hero): the ring is white whatever the app's appearance.
+    var onPhoto = false
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         ZStack {
-            // The notch: the page colour around the icon, so it reads as cut out of the avatar. Offline has none: it is an empty ring, transparent inside
-            // (the photo shows through), with a thin outline in the page colour so it reads on light and dark photos.
-            if state != .offline { Circle().fill(Theme.canvas).frame(width: size + 4, height: size + 4) }
             switch state {
             case .available:
                 Circle().fill(Color(red: 0.20, green: 0.72, blue: 0.36)).frame(width: size - 2, height: size - 2)
@@ -22,9 +24,8 @@ struct StatusBadge: View {
                 Circle().fill(Color(red: 0.88, green: 0.28, blue: 0.30)).frame(width: size - 1, height: size - 1)
                     .overlay(Text("z").font(.system(size: size * 0.72, weight: .black, design: .rounded)).foregroundStyle(.white).offset(y: -0.5))
             case .offline:
-                // Hollow, not filled: the cue is the shape, not only the colour (WCAG 1.4.11), and the notch behind it gives it contrast.
-                Circle().strokeBorder(Theme.canvas.opacity(0.9), lineWidth: max(1.5, size * 0.18) + 2).frame(width: size + 1, height: size + 1)
-                Circle().strokeBorder(Theme.textSecondary, lineWidth: max(1.5, size * 0.18)).frame(width: size - 1, height: size - 1)
+                // Hollow: nothing inside, the cue is the shape (WCAG 1.4.11) and the colour that contrasts with what is behind.
+                Circle().strokeBorder(onPhoto || scheme == .dark ? Color.white : Theme.text, lineWidth: max(1.5, size * 0.16)).frame(width: size - 1, height: size - 1)
             }
         }
         .frame(width: size + 4, height: size + 4)
@@ -32,7 +33,28 @@ struct StatusBadge: View {
     }
 }
 
+/// Cuts a round notch out of a view's bottom-trailing corner for a status badge: a circle `box` points wide whose centre is `inset` points in from the
+/// corner both ways (the badge's own frame and offset), so the badge sits in a hole in the avatar.
+private struct StatusNotch: ViewModifier {
+    let box: CGFloat
+    let inset: CGFloat
+
+    func body(content: Content) -> some View {
+        content.mask {
+            Rectangle().overlay(alignment: .bottomTrailing) {
+                Circle().frame(width: box, height: box).offset(x: box / 2 - inset, y: box / 2 - inset).blendMode(.destinationOut)
+            }
+            .compositingGroup()
+        }
+    }
+}
+
 extension View {
+    /// A round notch for a status badge (see `StatusNotch`); `active` false leaves the view whole.
+    @ViewBuilder func statusNotch(_ active: Bool, box: CGFloat, inset: CGFloat) -> some View {
+        if active { modifier(StatusNotch(box: box, inset: inset)) } else { self }
+    }
+
     /// Puts a person's status badge on their avatar (nothing when they have none).
     /// `keepsColours` is for an avatar inside an iOS 26 toolbar button, whose glass paints a label in one translucent colour: the badge is then drawn as a picture that keeps its own (LIME-179).
     func statusBadge(_ userID: String?, size: CGFloat, keepsColours: Bool = false) -> some View {
@@ -56,9 +78,11 @@ private struct StatusBadgeModifier: ViewModifier {
     }
 
     func body(content: Content) -> some View {
-        content.overlay(alignment: .bottomTrailing) {
-            if let userID, let status = store.status(of: userID) {
-                let size = max(9, min(avatarSize * 0.32, 18))
+        let status = userID.flatMap { store.status(of: $0) }
+        let size = max(9, min(avatarSize * 0.32, 18))
+        // The badge's box is size + 4 and sits 3 pt past the corner: its centre is (size + 4) / 2 - 3 in from the corner; the avatar loses the same circle.
+        return content.statusNotch(status != nil, box: size + 4, inset: (size + 4) / 2 - 3).overlay(alignment: .bottomTrailing) {
+            if let userID, let status {
                 Group {
                     if keepsColours { badgeImage(status.state, size: size) } else { StatusBadge(state: status.state, size: size) }
                 }

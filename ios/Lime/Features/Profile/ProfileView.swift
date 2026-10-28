@@ -486,9 +486,11 @@ struct ProfileView: View {
             Group {
                 if shaped { LimeShapedAvatar(person: person, size: 104) } else { AvatarView(person: person, size: 96) }
             }
+            // The badge's notch is cut out of the avatar: the photo behind shows through the gap (and through the offline ring).
+            .statusNotch(true, box: 28, inset: 12)
             .overlay(alignment: .bottomTrailing) {
                 Button { showStatus = true } label: {
-                    StatusBadge(state: state, size: 24).frame(width: 44, height: 44)
+                    StatusBadge(state: state, size: 24, onPhoto: true).frame(width: 44, height: 44)
                 }
                 .buttonStyle(.plain)
                 .offset(x: 10, y: 10)
@@ -508,9 +510,10 @@ struct ProfileView: View {
             }
         } else if shaped {
             LimeShapedAvatar(person: person, size: 104)
+                .statusNotch(store.status(of: route.userID) != nil, box: 26, inset: 9)
                 .overlay(alignment: .bottomTrailing) {
                     if let status = store.status(of: route.userID) {
-                        StatusBadge(state: status.state, size: 22).offset(x: 4, y: 4)
+                        StatusBadge(state: status.state, size: 22, onPhoto: true).offset(x: 4, y: 4)
                             .accessibilityElement(children: .ignore).accessibilityLabel(status.state.title)
                             .accessibilityIdentifier("status-badge-\(route.userID)")
                     }
