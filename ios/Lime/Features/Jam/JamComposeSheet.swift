@@ -32,6 +32,9 @@ struct JamComposeSheet: View {
     /// The article's shared draft (LIME-233c): made on the first change of an article, or found for a post being edited.
     @State private var coedit: CoEditSession?
     @State private var showingAuthors = false
+    /// Landscape on an iPhone, or any window short of height: the cards move into the keyboard bar's row so nothing floats over the text (LIME-236d).
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    private var compact: Bool { verticalSizeClass == .compact }
     /// Where this author's caret is in the title and subtitle (characters), for the other authors' screens.
     @State private var titleCaret = (caret: 0, end: 0)
     @State private var subtitleCaret = (caret: 0, end: 0)
@@ -243,7 +246,36 @@ struct JamComposeSheet: View {
     }
 
     /// A quick post: your name, the words at the top growing down, photos under them.
-    private var quickPage: some View {
+    @ViewBuilder private var quickPage: some View {
+        if compact {
+            // Short of height (landscape): the page scrolls, as an article's does, so the Post-as row stays under the top bar and the field is never
+            // squeezed to nothing between the two; the text view grows with its text and the page keeps the caret in view.
+            ScrollView {
+                VStack(spacing: 0) {
+                    quickHead
+                    problemText
+                    if hasClip { clipsRow }
+                    captionsRow
+                    ZStack(alignment: .topLeading) {
+                        RichComposerField(model: composer, selfSizing: true)
+                            .onAppear { composer.hasText = false; composer.isPost = true }
+                        if !composer.hasText {
+                            Text("What\u{2019}s on your mind?").font(Theme.body).foregroundStyle(Theme.placeholder)
+                                .padding(.leading, 4).padding(.top, 8).allowsHitTesting(false).accessibilityHidden(true)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    if !photos.isEmpty { photosRow }
+                    if let link { linkRow(link) }
+                }
+            }
+            .scrollDismissesKeyboard(.interactively)
+        } else {
+            quickPageTall
+        }
+    }
+
+    private var quickPageTall: some View {
         VStack(spacing: 0) {
             quickHead
             problemText
@@ -324,7 +356,7 @@ struct JamComposeSheet: View {
             postLine
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 20).padding(.top, 12)
+        .padding(.horizontal, 20).padding(.top, compact ? 0 : 12)
     }
 
     /// Who the post is from: you, or your jam (LIME-188q).
@@ -588,7 +620,7 @@ struct JamComposeSheet: View {
                 }
                 .buttonStyle(.plain).padding(.bottom, 6).accessibilityIdentifier("jam-exit-article")
             }
-            if !article && editing == nil {
+            if !article && editing == nil && !compact {
                 // Two cards side by side, lined up with the photo icon below; they scroll sideways when they do not fit, and the last one ends with room to spare.
                 let itemWidth = min(44, (UIScreen.main.bounds.width - 32) / 7)
                 ScrollView(.horizontal, showsIndicators: false) { pillRow.padding(.leading, 16 + (itemWidth - 25) / 2).padding(.trailing, 20) }
@@ -601,26 +633,56 @@ struct JamComposeSheet: View {
             // the first glyph lines up under Cancel's edge and the keyboard under Post's (LIME-197).
             let items: CGFloat = article ? 6 : 7
             let width = min(44, (UIScreen.main.bounds.width - 32) / items)
+            let inline = compact && !article && editing == nil
             HStack(spacing: 0) {
-                if article {
-                    plusMenu(width: width).padding(.leading, (width - 32) / 2 * -1)
+                if inline {
+                    // The pills live here, at the leading end after photo and camera; the row scrolls sideways when it is short of room, the keyboard key stays put.
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 0) {
+                            leadingTools(width: width)
+                            compactPill("Write article", spoken: "Write an article", system: "square.and.pencil", id: "jam-write-article") { setArticle(true) }.padding(.leading, 4)
+                            compactPill("Record podcast", spoken: "Record a podcast", system: "waveform", id: "jam-record") { recordMode = 1 }.padding(.horizontal, 8)
+                            trailingTools(width: width)
+                        }
+                    }
                 } else {
-                    tool("photo.on.rectangle", "Add photos", id: "jam-add-photo", width: width) { choose(.library) }
-                    tool("camera", "Camera", id: "jam-add-camera", width: width) { choose(.camera) }
+                    leadingTools(width: width)
+                    trailingTools(width: width)
+                    Spacer(minLength: 0)
                 }
-                formattingButton(width: width)
-                headingButton(width: width)
-                tool("arrow.uturn.backward", "Undo", id: "jam-undo", width: width) { composer.undo() }
-                    .disabled(!composer.format.canUndo).opacity(composer.format.canUndo ? 1 : 0.35)
-                tool("arrow.uturn.forward", "Redo", id: "jam-redo", width: width) { composer.redo() }
-                    .disabled(!composer.format.canRedo).opacity(composer.format.canRedo ? 1 : 0.35)
-                Spacer(minLength: 0)
                 tool(composer.editing ? "keyboard.chevron.compact.down" : "keyboard", composer.editing ? "Hide keyboard" : "Show keyboard", id: "jam-hide-keyboard", width: width) { composer.toggleKeyboard() }
                     .padding(.trailing, -(width - 28) / 2)
             }
             .padding(.horizontal, 16).frame(minHeight: 48)
             .background(.bar)
         }
+    }
+
+    @ViewBuilder private func leadingTools(width: CGFloat) -> some View {
+        if article {
+            plusMenu(width: width).padding(.leading, (width - 32) / 2 * -1)
+        } else {
+            tool("photo.on.rectangle", "Add photos", id: "jam-add-photo", width: width) { choose(.library) }
+            tool("camera", "Camera", id: "jam-add-camera", width: width) { choose(.camera) }
+        }
+    }
+
+    @ViewBuilder private func trailingTools(width: CGFloat) -> some View {
+        formattingButton(width: width)
+        headingButton(width: width)
+        tool("arrow.uturn.backward", "Undo", id: "jam-undo", width: width) { composer.undo() }
+            .disabled(!composer.format.canUndo).opacity(composer.format.canUndo ? 1 : 0.35)
+        tool("arrow.uturn.forward", "Redo", id: "jam-redo", width: width) { composer.redo() }
+            .disabled(!composer.format.canRedo).opacity(composer.format.canRedo ? 1 : 0.35)
+    }
+
+    /// The compact layout's one-line warm-grey pill.
+    private func compactPill(_ label: String, spoken: String, system: String, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(label, systemImage: system).font(Theme.font(.footnote, weight: .medium)).foregroundStyle(Theme.text).lineLimit(1).fixedSize()
+                .padding(.horizontal, 12).frame(minHeight: 36).background(Theme.surface, in: Capsule()).frame(minHeight: 44).contentShape(Capsule())
+        }
+        .buttonStyle(.plain).accessibilityLabel(spoken).accessibilityIdentifier(id)
     }
 
     /// Aa opens the strip of text styles (B I U S link code lists quote indent): it also appears under a selection.
