@@ -451,7 +451,8 @@ struct JamVideoScreen: View {
     private func stage(_ item: (postID: String, file: JamAttachmentInfo, controller: PodcastController), _ post: JamPostInfo?) -> some View {
         let playing = item.controller.isPlaying
         // Playing: full size, a small radius. Paused: it settles back to 80 % with a larger radius; the stage's box does not change, so nothing else moves.
-        let scale: CGFloat = playing || reduceMotion ? 1 : 0.8
+        // (LIME-241 item 5: playing ~82 % of the width, within 16 pt of room above and below; paused it settles to about 70 %, as before.)
+        let scale: CGFloat = playing || reduceMotion ? 1 : 0.86
         GeometryReader { geo in
             if watch {
                 let ratio = JamVideoRatio.of(item.file)
@@ -472,7 +473,7 @@ struct JamVideoScreen: View {
                     .aspectRatio(1, contentMode: .fit)
                     .clipShape(RoundedRectangle(cornerRadius: playing ? 12 : 24, style: .continuous))
                     .scaleEffect(scale)
-                    .frame(maxWidth: geo.size.width * 0.88, maxHeight: geo.size.height)
+                    .frame(maxWidth: geo.size.width * 0.82, maxHeight: max(geo.size.height - 32, 60))
                     .frame(width: geo.size.width, height: geo.size.height)
                     .animation(reduceMotion ? nil : .spring(duration: 0.35), value: playing)
                     .accessibilityLabel("Cover").accessibilityHidden(false).accessibilityIdentifier("jam-audio-cover")
@@ -497,7 +498,8 @@ struct JamVideoScreen: View {
     private func lower(_ item: (postID: String, file: JamAttachmentInfo, controller: PodcastController), _ post: JamPostInfo?) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             if captionsOn { CaptionLine(controller: item.controller, cues: shownCues) }
-            if isAudio {
+            // One layout per mode, whatever the post type (LIME-241 item 6): Listen is the audio layout even for a video podcast; Watch is the video layout.
+            if isAudio || !watch {
                 // The same order as a video podcast: the info block, the timeline, the controls (old and new podcasts alike).
                 if let post { infoBlock(post, cover: 82) }
                 timeline(item.controller)

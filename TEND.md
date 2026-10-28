@@ -8592,3 +8592,10 @@ On other people's phones (not reachable): their chats with the account, jam post
 - **Tests:** `Studio241UITests` (2): the preview is about 45% wide, preview, Post as, title, subtitle and description start at one x, the playhead moves when the track is dragged; Next → Before you publish (Series, Audience, Tags) → Everyone asks the confirmation → Publish. `Studio239aUITests`: the toggle is centred at the top with no "Preview mode", the timer sits just under it while recording and the toggle is held still, the mic menu lists the inputs and remembers the choice. The older podcast tests (239b, 227, Jam188g/o/212, Open210h) were moved to the two steps with a `publishPodcast` helper; Jam188o had been failing since 239b (the title field became a text view) and is fixed.
 - **Not tested on a phone:** the real microphone list (AirPods, USB), the real scrub playback and the real trim export (the demo has no media).
 - **Installed (both 240 and 241):** the 13 mini, the iPad and Jean's 12 mini, all three.
+
+## LIME-241 follow-up — the audio player's spacing; a video in Listen uses the audio layout (items 5 and 6)
+
+- **Item 5:** the cover while playing is ~82 % of the width (was 88 %) and never taller than the stage minus 32 pt, so there are at least 16 pt below the top icons and above the info block; paused it settles to the same size as before (0.86 of the playing size, about 70 % of the width).
+- **Item 6:** a video podcast in **Listen** now uses exactly the audio layout (info block, timeline, circle controls, no volume slider); **Watch** brings the video layout back. One layout per mode, whatever the post type.
+- Visual change, no new test (you check on the phones); `Player235UITests` and `Player235cUITests` still pass (the two known-failing Watch-toggle tests stay skipped).
+- **Installed:** with LIME-243.
