@@ -8746,3 +8746,4 @@ A tiny avatar before the author on the audio podcast card. **Brief:** LIME-252.
 - `JamPodcastCard.swift`: the byline line is now `[18 pt BylineAvatar] ORG · date` (6 pt gap, centred): the org's picture or tile for a post shown as the org (the tile only, with no co-author circles at that size), the writer's photo or initials otherwise. Decorative for VoiceOver (`BylineAvatar` hides itself; the text still reads the name). The card is one view, so feed, filters, profile/org tabs and Discover all get it.
 - Seen on the iOS 27 simulator: `docs/qa-shots/252/podcast-card.png` (a writer's podcast, "SAM PARK · Oct 29"). The org case (the picture or tile) wasn't screenshotted. No test (visual).
 - The same screenshot shows 248's video card: video first, then the title with ⋯, then the writer row.
+- **Installed (250, 251, 252):** all three, the iPad, Shem's 13 mini and Jean's 12 mini, first try.
