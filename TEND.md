@@ -8717,3 +8717,6 @@ A trial: jam's tab icon is the system symbol `pencil.and.outline` (`TabSymbols.j
 - Checked on the iOS 27 simulator (iPhone 17): it draws as an outline, selected and unselected, like link and call (the tab bar keeps symbol variants off, so nothing fills). The VoiceOver label stays "jam".
 - Revert is one line: `TabSymbols.jam = "book.pages"` plus the test.
 - **Installed (249):** all three, the iPad, Shem's 13 mini and Jean's 12 mini, first try.
+
+## Jam tab icon trial 2 (asked directly, no brief)
+The user asked to try `quote.closing` for jam's tab icon in place of `pencil.and.outline` (LIME-249). I used the system symbol by that name (the SVG path they gave sat in a protected temporary folder I could not read; the system symbol is the same glyph). `TabSymbols.jam = "quote.closing"`, test updated and passing. On the iOS 27 simulator it shows as two solid quote marks (the glyph has no outline form), the same in both states. Revert: `"book.pages"` (the original) or `"pencil.and.outline"`.

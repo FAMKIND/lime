@@ -157,7 +157,7 @@ private struct SignedInView: View {
 enum TabSymbols {
     static let link = "message"
     static let call = "phone"
-    static let jam = "pencil.and.outline"
+    static let jam = "quote.closing"
     static let all = [link, call, jam]
 }
 
