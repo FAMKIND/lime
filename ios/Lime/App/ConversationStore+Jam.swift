@@ -125,17 +125,44 @@ extension ConversationStore {
 
     // MARK: My jam
 
+    /// My own jam: the oldest I have (made on my first post). A publication made later (LIME-254) is never "my jam"; `jamsMine` is newest first.
+    var myOwnJam: JamInfo? { jamsMine.min { $0.created < $1.created } }
+
+    /// The jams I own besides my own: the publications I made (LIME-254).
+    var myPublications: [JamInfo] { let own = myOwnJam?.jamId; return jamsMine.filter { $0.jamId != own } }
+
     /// My jam, made on my first post: named for me, with my profile's about line; edited later from my profile.
     func myJamID(about: String) async -> String? {
-        if let jam = jamsMine.first { return jam.jamId }
+        if let jam = myOwnJam { return jam.jamId }
         #if DEBUG
-        if isDemo { demoStartJam(title: meProvider().name, about: about, topics: []); return jamsMine.first?.jamId }
+        if isDemo { demoStartJam(title: meProvider().name, about: about, topics: []); return myOwnJam?.jamId }
         #endif
         guard let core else { return nil }
         let name = String(meProvider().name.prefix(60))
         _ = try? await Task.detached { try core.createJam(title: name.isEmpty ? "My jam" : name, about: String(about.prefix(500)), topics: []) }.value
         refreshJams()
-        return jamsMine.first?.jamId
+        return myOwnJam?.jamId
+    }
+
+    /// Makes a publication (LIME-254): another jam of mine, with its own name, about, tags and picture. My own jam is made first if I have none yet.
+    /// Returns the new jam's id, or nil when it could not be made.
+    func createPublication(title: String, about: String, topics: [String], picture: Data?) async -> String? {
+        guard await myJamID(about: "") != nil else { return nil }
+        let before = Set(jamsMine.map(\.jamId))
+        #if DEBUG
+        if isDemo {
+            let id = demoCreateJam(title: title, about: about, topics: topics)
+            if let picture { AvatarCache.shared.set(picture, for: Self.jamPictureKey(id)) }
+            return id
+        }
+        #endif
+        guard let core else { return nil }
+        guard (try? await Task.detached { try core.createJam(title: title, about: about, topics: topics) }.value) != nil else { return nil }
+        refreshJams()
+        guard let id = jamsMine.first(where: { !before.contains($0.jamId) })?.jamId else { return nil }
+        if let picture { _ = await setJamPicture(id, jpeg: picture) }
+        await deliverNow()
+        return id
     }
 
     @discardableResult

@@ -86,7 +86,7 @@ struct TopicsPickerSheet: View {
     private var yours: [String] {
         let known = Set(Self.subjects + Self.grades)
         var out: [String] = []
-        for t in store.jamsMine.first?.topics ?? [] + topics where !known.contains(t) && !out.contains(t) { out.append(t) }
+        for t in store.myOwnJam?.topics ?? [] + topics where !known.contains(t) && !out.contains(t) { out.append(t) }
         return out
     }
 

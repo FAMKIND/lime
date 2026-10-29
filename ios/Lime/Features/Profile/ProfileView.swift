@@ -145,7 +145,7 @@ struct ProfileView: View {
     private var ownPosts: [JamPostInfo] { jamPage.map { store.profilePosts(jamID: $0.jamId, isMe: route.isMe) } ?? [] }
     /// Someone else's posts are readable once you subscribe: before that, Posts says so.
     private var postsLocked: Bool { jamPage.map { !route.isMe && !store.isFollowing($0.jamId) } ?? false }
-    private var orgs: [JamPageInfo] { store.profileOrgs(page: jamPage, personName: displayName) }
+    private var orgs: [JamPageInfo] { store.profileOrgs(page: jamPage, personName: displayName, isMe: route.isMe) }
     private var sections: [Section] {
         var list: [Section] = [.info]
         let kinds = Set(ownPosts.map(\.kind))
@@ -433,7 +433,7 @@ struct ProfileView: View {
     }
 
     private func loadJam() async {
-        if route.isMe { jamPage = store.jamsMine.first.map { JamPageInfo(jamId: $0.jamId, writerId: $0.writer, title: $0.title, about: $0.about, topics: $0.topics, postCount: $0.postCount, subscriberCount: $0.subscriberCount, hasCommunity: $0.community, pictureVersion: nil) } }
+        if route.isMe { jamPage = store.myOwnJam.map { JamPageInfo(jamId: $0.jamId, writerId: $0.writer, title: $0.title, about: $0.about, topics: $0.topics, postCount: $0.postCount, subscriberCount: $0.subscriberCount, hasCommunity: $0.community, pictureVersion: nil) } }
         else { jamPage = await store.jamPage(of: route.userID) }
     }
 

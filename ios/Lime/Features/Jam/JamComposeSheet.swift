@@ -63,6 +63,7 @@ struct JamComposeSheet: View {
     @State private var choosingCoauthors = false
     @State private var editingButton: Int?
     @State private var postingAs = false
+    @State private var creatingPublication = false
     /// nil: posted as me; otherwise the id of my jam (LIME-188q).
     @State private var postAsJam: String?
     /// Who can read the post (LIME-210c): `subscribers` (the default) or `everyone`.
@@ -176,6 +177,7 @@ struct JamComposeSheet: View {
                 Button("Cancel", role: .cancel) {}
             }
             .fullScreenCover(item: Binding(get: { recordMode.map(RecordMode.init) }, set: { recordMode = $0?.mode })) { mode in recorderView(mode) }
+            .sheet(isPresented: $creatingPublication) { CreatePublicationSheet { id in publicationMade(id) } }
             .fullScreenCover(item: $chooser) { which in
                 switch which {
                 case .library:
@@ -595,7 +597,8 @@ struct JamComposeSheet: View {
                         HStack(spacing: 0) {
                             leadingTools(width: width)
                             compactPill("Write article", spoken: "Write an article", system: "square.and.pencil", id: "jam-write-article") { setArticle(true) }.padding(.leading, 4)
-                            compactPill("Record podcast", spoken: "Record a podcast", system: "waveform", id: "jam-record") { recordMode = 0 }.padding(.horizontal, 8)
+                            compactPill("Record podcast", spoken: "Record a podcast", system: "waveform", id: "jam-record") { recordMode = 0 }.padding(.leading, 8)
+                            compactPill("Create publication", spoken: "Create a publication", system: "book.pages", id: "jam-create-publication") { creatingPublication = true }.padding(.horizontal, 8)
                             trailingTools(width: width)
                         }
                     }
@@ -722,6 +725,7 @@ struct JamComposeSheet: View {
         HStack(spacing: 10) {
             chip("Write article", spoken: "Write an article", system: "square.and.pencil", id: "jam-write-article") { setArticle(true) }
             chip("Record podcast", spoken: "Record a podcast", system: "waveform", id: "jam-record") { recordMode = 0 }
+            chip("Create publication", spoken: "Create a publication", system: "book.pages", id: "jam-create-publication") { creatingPublication = true }
         }
     }
 
@@ -924,6 +928,15 @@ struct JamComposeSheet: View {
 
     // MARK: Closing and posting
 
+    /// A publication was made (LIME-254): this sheet closes (the draft is kept) and the publication's page opens, with a hint about posting as it.
+    private func publicationMade(_ jamID: String) {
+        guard let made = store.jamsMine.first(where: { $0.jamId == jamID }) else { return }
+        let page = JamPageInfo(jamId: made.jamId, writerId: made.writer, title: made.title, about: made.about, topics: made.topics, postCount: made.postCount,
+                               subscriberCount: made.subscriberCount, hasCommunity: made.community, pictureVersion: nil)
+        close()
+        store.openOrg(page, isMe: true, fresh: true)
+    }
+
     private func close() {
         coedit?.stop()
         if editing != nil || openDraft != nil { if let coedit, let view = composer.textView { coedit.syncNow(title: title, subtitle: subtitle, markdown: coedit.draftMarkdown(from: view.textStorage)) }; dismiss(); return }
@@ -961,7 +974,7 @@ struct JamComposeSheet: View {
 
     /// What the sheet starts with: the jam's topics, a post being edited, a shared draft opened from an invitation.
     private func loadInitialState() async {
-        if !topicsSet, editing == nil { topicsSet = true; topics = store.jamsMine.first?.topics ?? [] }
+        if !topicsSet, editing == nil { topicsSet = true; topics = store.myOwnJam?.topics ?? [] }
         #if DEBUG
         // Tests: a photo already in the post.
         if ProcessInfo.processInfo.arguments.contains("-lime-demo-compose-photo"), editing == nil, photos.isEmpty {

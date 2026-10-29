@@ -8763,3 +8763,13 @@ Link, call and jam keep one bubble; no frosted band behind the bar. **Brief:** L
 - **Checked and left alone:** `limechat.org` and other domains; bundle ids (`org.famkind…`); code comments; the Post as sheet (it says no "Org").
 - **Tests:** words asserted by `Jam188t/v`, `Jam194`, `Org245` follow; `Jam188d` now also asserts the tab reads "Publications". These and `Org216` pass on the iOS 27 simulator.
 - **Installed (255, 253):** all three, the iPad, Shem's 13 mini and Jean's 12 mini (the 13 mini missed the script's three tries and took one retry by hand).
+
+## LIME-254
+Create publication from jam's +. **Brief:** LIME-254.
+- **Phase 1 (server):** `jam-page` `set` upserts by `jam_id`; `jams` has only a non-unique index on `writer_id`; no per-writer count limit. Several jams per writer are allowed, no server change. **One thing to decide:** `by_writer` (how other teachers load someone's jam page) returns the **newest** jam (`order created_at desc limit 1`). Once a teacher makes a publication, others viewing their profile would get the publication as "their jam". The fix is one word (`ascending: true`, oldest = own jam) in `jam-page`, a deploy, so it waits for the user's go. Also, others see only that one page on a profile, so a teacher's publications show on **their own** profile's Publications tab only for now.
+- **The card:** third card "Create publication" (`book.pages`) in the card row and in the inline pill row; the row already scrolls sideways, the third card peeks at the right edge (`docs/qa-shots/254/254-cards.png`, iPhone 17; 13 mini is narrower so it peeks more).
+- **The flow:** `CreatePublicationSheet` (`Features/Jam/CreatePublication.swift`): "Step 1 of 2" picture (camera circle: Add / Take Photo / Remove, then the crop) + Name (required, 60) + About (500); "Step 2 of 2" Tags, Create ("Creating…", announced to VoiceOver). It closes, the composer closes (draft kept) and the publication's page opens with "Post as <name> from New post."
+- **My jam vs publications:** `store.myOwnJam` (the oldest of `jamsMine`) replaces the `jamsMine.first` uses (`myJamID`, profile load, tag defaults); `myPublications` is the rest. If I have no jam yet, my own jam is made first. `profileOrgs(isMe:)` adds my publications after the legacy one. Post as already listed every jam.
+- **Not touched:** `PostAsSheet`, `PodcastRecorder` and others use `first(where: jamId)` and are right as they are.
+- **Tests:** `Publication254UITests` (the card after Record podcast; name required; create → page + hint; Post as lists 2 rows). `Composer236` and `Org245` still pass on the iOS 27 simulator.
+- **Not checked:** a real create against the server (demo only); the picture on a real create; iPad.

@@ -6,11 +6,13 @@ struct OrgRoute: Hashable {
     let isMe: Bool
     /// Opens already editing (from a row's Edit).
     var editing = false
+    /// Just made (LIME-254): the page says where to post as it.
+    var fresh = false
 }
 
 extension ConversationStore {
-    func openOrg(_ page: JamPageInfo, isMe: Bool, editing: Bool = false) {
-        let route = OrgRoute(page: page, isMe: isMe, editing: editing)
+    func openOrg(_ page: JamPageInfo, isMe: Bool, editing: Bool = false, fresh: Bool = false) {
+        let route = OrgRoute(page: page, isMe: isMe, editing: editing, fresh: fresh)
         switch section {
         case .link: path.append(route)
         case .call: callPath.append(route)
@@ -198,6 +200,10 @@ struct OrgProfileView: View {
         ScrollView {
             VStack(spacing: 18) {
                 headBlock
+                if route.fresh && isMe && !editingNow {
+                    Text("Post as \(page.title) from New post.").font(Theme.secondary).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
+                        .accessibilityIdentifier("org-fresh-hint")
+                }
                 if editingNow { editRows } else { content(following: following) }
             }
             .padding(.horizontal, 16).padding(.bottom, 40)

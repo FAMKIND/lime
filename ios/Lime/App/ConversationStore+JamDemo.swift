@@ -10,6 +10,16 @@ extension ConversationStore {
         jamPosts["demo-my-jam"] = []
     }
 
+    /// Another jam of mine (a publication, LIME-254), newer than my own.
+    func demoCreateJam(title: String, about: String, topics: [String]) -> String {
+        let id = "demo-pub-\(UUID().uuidString.prefix(8).lowercased())"
+        let made = JamInfo(jamId: id, conversationId: "jam:\(id)", writer: meProvider().id, title: title, about: about, topics: topics, tiers: ["free", "subscribers"],
+                           mine: true, status: "active", ended: false, community: false, communityState: nil, communityGroup: nil, subscriberCount: 0, postCount: 0, created: Int64(Date().timeIntervalSince1970 * 1000))
+        jamsMine.insert(made, at: 0)
+        jamPosts[id] = []
+        return id
+    }
+
     func demoEditJam(_ jamID: String, title: String, about: String, topics: [String]) {
         guard let i = jamsMine.firstIndex(where: { $0.jamId == jamID }) else { return }
         let old = jamsMine[i]
