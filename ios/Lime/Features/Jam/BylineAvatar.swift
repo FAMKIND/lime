@@ -31,6 +31,8 @@ struct BylineAvatar: View {
     let people: [Person]
     /// The jam's name when the post is shown as the jam.
     var jam: String?
+    /// That jam's id, to show its picture (LIME-194).
+    var jamId: String?
     var size: CGFloat = 40
     /// For the writer only: people asked to be co-authors who have not answered, drawn dimmed (LIME-215).
     var pending: [Person] = []
@@ -40,7 +42,7 @@ struct BylineAvatar: View {
             if let jam {
                 // The org's rounded-square tile with the writer and each co-author as small overlapping circles at its bottom right (up to 3, then "+n").
                 ZStack(alignment: .bottomTrailing) {
-                    JamInitialTile(title: jam, size: size)
+                    JamInitialTile(title: jam, jamId: jamId, size: size)
                     let crew = people.map { ($0, false) } + pending.map { ($0, true) }
                     let shown = Array(crew.prefix(3))
                     let small = size * (crew.count > 1 ? 0.42 : 0.5)

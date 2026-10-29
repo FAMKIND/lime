@@ -583,7 +583,7 @@ struct PodcastRecorder: View {
                         Image(systemName: "person.fill").font(.system(size: 70)).foregroundStyle(.white.opacity(0.25))
                     }
                 } else {
-                    if let editing, coverImage == nil, !removeCover { PostCover(postID: editing.postId) } else { CoverArt(image: coverImage, person: store.meProvider(), org: jamTitle) }
+                    if let editing, coverImage == nil, !removeCover { PostCover(postID: editing.postId) } else { CoverArt(image: coverImage, person: store.meProvider(), org: jamTitle, orgId: postAsJam) }
                 }
                 Image(systemName: take.playing ? "pause.fill" : "play.fill").font(.system(size: 22)).foregroundStyle(.white)
                     .frame(width: 52, height: 52).background(.black.opacity(0.45), in: Circle()).opacity(take.playing ? 0.0 : 1)
@@ -709,7 +709,7 @@ struct PodcastRecorder: View {
             HStack(spacing: 8) {
                 Button { postingAs = true } label: {
                     HStack(spacing: 8) {
-                        if let jamTitle { BylineAvatar(people: [store.meProvider()] + coauthors, jam: jamTitle, size: 32).frame(width: 42, height: 32, alignment: .leading) } else { AvatarView(person: store.meProvider(), size: 30).accessibilityHidden(true) }
+                        if let jamTitle { BylineAvatar(people: [store.meProvider()] + coauthors, jam: jamTitle, jamId: postAsJam, size: 32).frame(width: 42, height: 32, alignment: .leading) } else { AvatarView(person: store.meProvider(), size: 30).accessibilityHidden(true) }
                         Text(jamTitle ?? store.meProvider().name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
                         Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.textSecondary)
                     }
@@ -874,7 +874,7 @@ struct PodcastRecorder: View {
     private var coverLayer: some View {
         Group {
             if let editing, coverImage == nil, !removeCover { PostCover(postID: editing.postId) }
-            else { CoverArt(image: coverImage, person: store.meProvider(), org: jamTitle) }
+            else { CoverArt(image: coverImage, person: store.meProvider(), org: jamTitle, orgId: postAsJam) }
         }
             .accessibilityHidden(true)
             // A marker of exactly the stage's box (a picture that fills reports its own, larger, frame).
@@ -974,7 +974,7 @@ struct PodcastRecorder: View {
         HStack(spacing: 8) {
             Button { postingAs = true } label: {
                 HStack(spacing: 8) {
-                    if let jamTitle { BylineAvatar(people: [store.meProvider()] + coauthors, jam: jamTitle, size: 32).frame(width: 42, height: 32, alignment: .leading) } else { AvatarView(person: store.meProvider(), size: 30).accessibilityHidden(true) }
+                    if let jamTitle { BylineAvatar(people: [store.meProvider()] + coauthors, jam: jamTitle, jamId: postAsJam, size: 32).frame(width: 42, height: 32, alignment: .leading) } else { AvatarView(person: store.meProvider(), size: 30).accessibilityHidden(true) }
                     Text(jamTitle ?? store.meProvider().name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
                     Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(0.7))
                 }

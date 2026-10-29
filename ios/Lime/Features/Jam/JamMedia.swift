@@ -552,7 +552,7 @@ struct JamVideoScreen: View {
     private func writerRow(_ post: JamPostInfo, withDate: Bool) -> some View {
         let writer = store.teacher(post.author)
         return HStack(spacing: 10) {
-            if let org = store.orgName(post) { JamInitialTile(title: org, size: 36).accessibilityHidden(true) } else { AvatarView(person: writer, size: 36).accessibilityHidden(true) }
+            if let org = store.orgName(post) { JamInitialTile(title: org, jamId: post.jamId, size: 36).accessibilityHidden(true) } else { AvatarView(person: writer, size: 36).accessibilityHidden(true) }
             VStack(alignment: .leading, spacing: 0) {
                 Text(store.authorName(post)).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(.white)
                 if withDate { Text(JamDates.text(post.created)).font(Theme.caption).foregroundStyle(.white.opacity(0.7)) }
@@ -581,7 +581,7 @@ struct JamVideoScreen: View {
                     // The avatar and name open the writer's profile; the rest of the block opens About.
                     Button { viewProfile(of: post) } label: {
                         HStack(spacing: 6) {
-                            if let org = store.orgName(post) { JamInitialTile(title: org, size: 24).accessibilityHidden(true) } else { AvatarView(person: store.teacher(post.author), size: 24).accessibilityHidden(true) }
+                            if let org = store.orgName(post) { JamInitialTile(title: org, jamId: post.jamId, size: 24).accessibilityHidden(true) } else { AvatarView(person: store.teacher(post.author), size: 24).accessibilityHidden(true) }
                             Text(store.authorName(post)).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
                         }
                     }

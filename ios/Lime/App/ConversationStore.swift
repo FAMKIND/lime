@@ -128,6 +128,8 @@ final class ConversationStore {
     var deletedPeers: Set<String> = []
     /// Bumped when hearts, comments or counts change (LIME-189c): what shows them redraws.
     var jamEngagement = 0
+    /// When each jam's public picture was last looked at on the server (LIME-194), so a feed does not ask again and again.
+    var jamPictureChecked: [String: Date] = [:]
     var demoEngagement = DemoEngagement()
     var jamSubscribers: [String: [JamSubscriberInfo]] = [:]
     var jamLastKick = Date.distantPast
@@ -1021,7 +1023,7 @@ final class ConversationStore {
         isLoaded = true
         refreshStorageState()
         statuses = ["sam": PeerStatus(state: .dnd, until: nil), "lee": PeerStatus(state: .away, until: nil)]
-        demoJamPages = ["sam": JamPageInfo(jamId: "demo-sam-jam", writerId: "sam", title: "Fractions that stick", about: "Short lessons for grades 3 to 5", topics: ["Maths", "Grade 4"], postCount: 3, subscriberCount: 12, hasCommunity: false)]
+        demoJamPages = ["sam": JamPageInfo(jamId: "demo-sam-jam", writerId: "sam", title: "Fractions that stick", about: "Short lessons for grades 3 to 5", topics: ["Maths", "Grade 4"], postCount: 3, subscriberCount: 12, hasCommunity: false, pictureVersion: nil)]
         // Their public profiles, as the server would answer (UI tests and screenshots).
         publicProfiles = [
             "sam": PublicProfile(userId: "sam", displayName: "Sam Park", username: "sam.park", school: "Lincoln Elementary", aboutEmoji: "📚", aboutText: "Fourth grade, loves fractions", since: 1_762_000_000_000, hasJam: false),
@@ -1155,6 +1157,12 @@ final class ConversationStore {
             UserDefaults.standard.removeObject(forKey: JamRead.key)   // every demo run starts with everything unread
             if screen == "jam-following", let page = demoJamPages["sam"] { demoSubscribe(page) }
             if screen == "jam-mine" || screen == "jam-mine-profile" || screen == "jam-mine-asjam" || screen == "jam-mine-podcast" { demoMineWithPost() }
+            if ProcessInfo.processInfo.arguments.contains("-lime-demo-jam-picture") {   // my demo jam already has a picture (LIME-194)
+                let tile = UIGraphicsImageRenderer(size: CGSize(width: 64, height: 64)).jpegData(withCompressionQuality: 0.8) { c in
+                    UIColor.systemOrange.setFill(); c.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
+                }
+                AvatarCache.shared.set(tile, for: Self.jamPictureKey("demo-my-jam"))
+            }
             if screen == "jam-mine-asjam" {
                 let long = (1...30).map { "Paragraph \($0): we read aloud together and talked about what we noticed." }.joined(separator: "\n\n")
                 demoPublish("demo-my-jam", kind: "article", title: "How we read together", subtitle: "A term of circles", markdown: long, items: [], coauthors: ["sam", "lee"], displayAs: "jam")

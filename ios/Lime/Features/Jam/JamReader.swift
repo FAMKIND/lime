@@ -46,7 +46,7 @@ struct JamPostView: View {
                     }
                     Button { store.openProfile(ProfileRoute(userID: writer.id, name: writer.name, isMe: writer.id == store.meProvider().id)) } label: {
                         HStack(spacing: 10) {
-                            BylineAvatar(people: store.bylinePeople(post), jam: post.displayAs == "jam" ? store.jamTitle(post.jamId) : nil, size: 36)
+                            BylineAvatar(people: store.bylinePeople(post), jam: post.displayAs == "jam" ? store.jamTitle(post.jamId) : nil, jamId: post.displayAs == "jam" ? post.jamId : nil, size: 36)
                             VStack(alignment: .leading, spacing: 0) {
                                 Text(post.displayAs == "jam" ? store.jamTitle(post.jamId) : writer.name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
                                 Text([post.displayAs == "jam" ? "by \(writer.name)" : nil, store.byline(post), JamDates.text(post.created), post.editedAt > 0 ? "Edited \(JamDates.text(post.editedAt))" : nil].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary)

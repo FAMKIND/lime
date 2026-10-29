@@ -189,6 +189,8 @@ struct CoverArt: View {
     let person: Person
     /// A post shown as a jam has the jam's tile in place of the writer's face (LIME-201).
     var org: String? = nil
+    /// That jam's id, for its picture (LIME-194).
+    var orgId: String? = nil
 
     var body: some View {
         // The art fills what it is given and never asks for more (a picture that fills is bigger than its frame): it is an overlay on a clear
@@ -204,11 +206,11 @@ struct CoverArt: View {
                         let side = max(min(geo.size.width, geo.size.height), 1)
                         ZStack {
                             Group {
-                                if let org { JamInitialTile(title: org, size: side * 1.5) } else { AvatarView(person: person, size: side * 1.6) }
+                                if let org { JamInitialTile(title: org, jamId: orgId, size: side * 1.5) } else { AvatarView(person: person, size: side * 1.6) }
                             }
                             .frame(width: geo.size.width, height: geo.size.height).blur(radius: side * 0.14).overlay(Color.black.opacity(0.14)).clipped()
                             if let org {
-                                JamInitialTile(title: org, size: side * 0.66)
+                                JamInitialTile(title: org, jamId: orgId, size: side * 0.66)
                             } else {
                                 AvatarView(person: person, size: side * 0.66)
                             }

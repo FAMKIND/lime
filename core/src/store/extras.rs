@@ -17,6 +17,8 @@ pub(crate) const LINKS: &str = "links";
 pub(crate) const BACKGROUND: &str = "background";
 /// A short silent clip behind the profile (LIME-226a); the still in `BACKGROUND` is its poster and is always there with it.
 pub(crate) const BACKGROUND_VIDEO: &str = "background_video";
+/// A jam page's public picture (LIME-194), cached here under the owner `jam:<jam_id>`; never a profile slot, so `is_slot` does not accept it.
+pub(crate) const JAM_PICTURE: &str = "jam_picture";
 const NONCE_BYTES: usize = 12;
 
 pub(crate) fn is_slot(slot: &str) -> bool {
@@ -28,6 +30,7 @@ pub(crate) fn max_bytes(slot: &str) -> usize {
     match slot {
         LINKS => 8 * 1024,
         BACKGROUND_VIDEO => 6 * 1024 * 1024,
+        // The background and a jam's picture are both a 1 MiB image.
         _ => 1024 * 1024,
     }
 }

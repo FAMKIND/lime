@@ -319,7 +319,7 @@ struct JamComposeSheet: View {
         let name = jam?.title ?? store.meProvider().name
         return Button { postingAs = true } label: {
             HStack(spacing: 8) {
-                if let jam { BylineAvatar(people: [store.meProvider()] + coauthors, jam: jam.title, size: 34, pending: pendingHosts).frame(width: 44, height: 34, alignment: .leading) } else { AvatarView(person: store.meProvider(), size: 32).accessibilityHidden(true) }
+                if let jam { BylineAvatar(people: [store.meProvider()] + coauthors, jam: jam.title, jamId: jam.jamId, size: 34, pending: pendingHosts).frame(width: 44, height: 34, alignment: .leading) } else { AvatarView(person: store.meProvider(), size: 32).accessibilityHidden(true) }
                 Text(name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
                 Image(systemName: "chevron.down").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.textSecondary)
             }
@@ -1156,7 +1156,7 @@ struct PostAsSheet: View {
                     Button { selection = jam.jamId; dismiss() } label: {
                         HStack(spacing: 12) {
                             // Its tile with its writers' circles at the bottom right, you included (LIME-215b).
-                            BylineAvatar(people: store.jamAuthors(jam.jamId), jam: jam.title, size: 44).frame(width: 52, height: 44, alignment: .leading)
+                            BylineAvatar(people: store.jamAuthors(jam.jamId), jam: jam.title, jamId: jam.jamId, size: 44).frame(width: 52, height: 44, alignment: .leading)
                             VStack(alignment: .leading, spacing: 0) {
                                 Text(jam.title).font(Theme.font(.callout, weight: .medium)).foregroundStyle(Theme.text).lineLimit(1).minimumScaleFactor(0.85)
                                 Text((["You"] + store.jamAuthors(jam.jamId).dropFirst().map(\.name)).joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
@@ -1176,17 +1176,26 @@ struct PostAsSheet: View {
     }
 }
 
-/// A jam has no picture yet: its first letter on a soft tint.
+/// A jam's picture (LIME-194) in a rounded square; with none, its first letter on a soft tint.
 struct JamInitialTile: View {
     let title: String
+    /// The jam, when known: its public picture is shown when there is one (and looked for once in a while).
+    var jamId: String?
     var size: CGFloat = 40
+    @Environment(ConversationStore.self) private var store
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: size * 0.28, style: .continuous).fill(Theme.accent.opacity(0.35))
-            Text(String(title.trimmingCharacters(in: .whitespaces).prefix(1)).uppercased()).font(.system(size: size * 0.45, weight: .bold)).foregroundStyle(Theme.text)
+            if let jamId, let picture = AvatarCache.shared.image(for: ConversationStore.jamPictureKey(jamId)) {
+                Image(uiImage: picture).resizable().scaledToFill().frame(width: size, height: size)
+                    .clipShape(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
+            } else {
+                RoundedRectangle(cornerRadius: size * 0.28, style: .continuous).fill(Theme.accent.opacity(0.35))
+                Text(String(title.trimmingCharacters(in: .whitespaces).prefix(1)).uppercased()).font(.system(size: size * 0.45, weight: .bold)).foregroundStyle(Theme.text)
+            }
         }
         .frame(width: size, height: size)
+        .task(id: jamId) { if let jamId { await store.ensureJamPicture(jamId) } }
     }
 }
 

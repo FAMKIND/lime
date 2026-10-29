@@ -154,7 +154,7 @@ extension ConversationStore {
     func demoDiscover() {
         openPostsEnabled = true
         let now = Int64(Date().timeIntervalSince1970 * 1000)
-        func page(_ id: String, _ title: String, _ topics: [String]) -> JamPageInfo { JamPageInfo(jamId: "demo-\(id)-jam", writerId: id, title: title, about: "", topics: topics, postCount: 3, subscriberCount: 12, hasCommunity: false) }
+        func page(_ id: String, _ title: String, _ topics: [String]) -> JamPageInfo { JamPageInfo(jamId: "demo-\(id)-jam", writerId: id, title: title, about: "", topics: topics, postCount: 3, subscriberCount: 12, hasCommunity: false, pictureVersion: nil) }
         openWriterPages = ["sam": demoJamPages["sam"] ?? page("sam", "Fractions that stick", ["Maths", "Grade 4"]), "lee": page("lee", "Reading circles", ["Reading", "Grade 3"]), "priya.nair": page("priya.nair", "Practice, not homework", ["Practice"])]
         var items: [OpenFeedItem] = []
         func add(_ id: String, _ author: String, _ title: String, _ subtitle: String, _ body: String, _ topics: [String], preview: Bool = false, ago: Int64) {

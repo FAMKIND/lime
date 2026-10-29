@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Edit your jam page (LIME-188b: reached from your profile): a title, a few lines about it, and up to eight topics. The jam itself is made on your first post.
 struct JamDetailsSheet: View {
@@ -12,6 +13,16 @@ struct JamDetailsSheet: View {
     @State private var saving = false
     /// A group chat subscribers can join (LIME-210g).
     @State private var community = false
+    /// The picture (LIME-194): saved at once when chosen or removed, not with Save.
+    @State private var pictureStep: PictureStep?
+    @State private var cropping: UIImage?
+    @State private var pictureBusy = false
+
+    private enum PictureStep: String, Identifiable { case library, camera; var id: String { rawValue } }
+    private struct CropItem: Identifiable {
+        let image: UIImage
+        var id: ObjectIdentifier { ObjectIdentifier(image) }
+    }
 
     private static let suggestions = ["Maths", "Reading", "Writing", "Science", "Social studies", "Art", "Music", "Special needs", "Kindergarten", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6"]
     private var canSave: Bool { !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && title.count <= 60 && about.count <= 500 && !saving }
@@ -20,6 +31,7 @@ struct JamDetailsSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
+                    picture
                     field("Title", footnote: "\(title.count)/60") {
                         TextField("What is your jam called?", text: $title)
                             .font(Theme.body).textInputAutocapitalization(.sentences)
@@ -68,6 +80,58 @@ struct JamDetailsSheet: View {
             }
         }
         .presentationDetents([.large])
+    }
+
+    private var hasPicture: Bool { AvatarCache.shared.image(for: ConversationStore.jamPictureKey(editing.jamId)) != nil }
+
+    /// The jam's picture: Add (or Change) from Photos or the camera, then a square crop; Remove brings back the first letter.
+    private var picture: some View {
+        VStack(spacing: 10) {
+            JamInitialTile(title: title.isEmpty ? editing.title : title, jamId: editing.jamId, size: 88).accessibilityHidden(true)
+            HStack(spacing: 10) {
+                pictureButton("photo.on.rectangle", hasPicture ? "Change picture" : "Add picture", id: "jam-picture-add") { pictureStep = .library }
+                if CameraPicker.isAvailable { pictureButton("camera", "Take Photo", id: "jam-picture-camera") { pictureStep = .camera } }
+                if hasPicture { pictureButton("trash", "Remove", id: "jam-picture-remove") { removePicture() } }
+            }
+            Text("Your jam's picture is public, like its name.").font(Theme.caption).foregroundStyle(Theme.textSecondary)
+        }
+        .frame(maxWidth: .infinity)
+        .disabled(pictureBusy)
+        .fullScreenCover(item: $pictureStep) { step in
+            switch step {
+            case .library: LibraryPicker(onPick: { picked in pictureStep = nil; cropping = picked }, onCancel: { pictureStep = nil }).ignoresSafeArea()
+            case .camera: CameraPicker(onPick: { picked in pictureStep = nil; cropping = picked }, onCancel: { pictureStep = nil }).ignoresSafeArea()
+            }
+        }
+        .fullScreenCover(item: Binding(get: { cropping.map(CropItem.init) }, set: { if $0 == nil { cropping = nil } })) { item in
+            PhotoCropScreen(image: item.image, onSave: { cropped in cropping = nil; savePicture(cropped) }, onCancel: { cropping = nil })
+        }
+    }
+
+    private func pictureButton(_ symbol: String, _ label: String, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(label, systemImage: symbol).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
+                .padding(.horizontal, 14).frame(minHeight: 44).background(Theme.surface, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(id)
+    }
+
+    private func savePicture(_ image: UIImage) {
+        guard let jpeg = PhotoProcessing.jpeg(image) else { return }
+        pictureBusy = true
+        Task {
+            _ = await store.setJamPicture(editing.jamId, jpeg: jpeg)
+            pictureBusy = false
+        }
+    }
+
+    private func removePicture() {
+        pictureBusy = true
+        Task {
+            _ = await store.removeJamPicture(editing.jamId)
+            pictureBusy = false
+        }
     }
 
     private func field<Content: View>(_ label: String, footnote: String, @ViewBuilder content: () -> Content) -> some View {

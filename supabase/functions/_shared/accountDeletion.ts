@@ -11,6 +11,9 @@ const AVATAR_OBJECTS = (u: string) => [`${u}.jpg`, `${u}-links.json`, `${u}-back
 export async function deleteAccountNow(userId: string): Promise<void> {
   const db = admin();
   for (const name of AVATAR_OBJECTS(userId)) await removeObject(AVATAR_BUCKET, name);
+  // The pictures of the account's jam pages (LIME-194).
+  const { data: jams } = await db.from("jams").select("jam_id").eq("writer_id", userId).limit(1000);
+  for (const jam of jams ?? []) await removeObject(AVATAR_BUCKET, `jam-${jam.jam_id}.jpg`);
   for (let page = 0; page < 20; page++) {
     const { data: blobs } = await db.from("blobs").select("id").eq("owner", userId).limit(500);
     if (!blobs || blobs.length === 0) break;

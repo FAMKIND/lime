@@ -174,7 +174,7 @@ struct PostCover: View {
     var body: some View {
         let post = store.jamPost(postID)
         let src = source()
-        CoverArt(image: image, person: store.teacher(post?.author ?? ""), org: store.orgName(post))
+        CoverArt(image: image, person: store.teacher(post?.author ?? ""), org: store.orgName(post), orgId: post?.jamId)
             .task(id: key(src)) {
                 switch src {
                 case .none: image = nil
@@ -201,7 +201,7 @@ extension ConversationStore {
     /// The jam's page for a post shown as the jam (mine from my jam, someone's from their public page).
     func jamPageInfo(for post: JamPostInfo) async -> JamPageInfo? {
         if let mine = jamsMine.first(where: { $0.jamId == post.jamId }) {
-            return JamPageInfo(jamId: mine.jamId, writerId: mine.writer, title: mine.title, about: mine.about, topics: mine.topics, postCount: mine.postCount, subscriberCount: mine.subscriberCount, hasCommunity: false)
+            return JamPageInfo(jamId: mine.jamId, writerId: mine.writer, title: mine.title, about: mine.about, topics: mine.topics, postCount: mine.postCount, subscriberCount: mine.subscriberCount, hasCommunity: false, pictureVersion: nil)
         }
         return await jamPage(of: post.author)
     }

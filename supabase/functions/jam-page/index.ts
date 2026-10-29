@@ -4,14 +4,21 @@
 //        has_community is the one public bit of a community chat, LIME-210g).
 //   get  { jam_id }                                      -> { jam }: any signed-in user.
 //   end  { jam_id }                                      -> { ok, removed }: marks the page ended and deletes all of the jam's posts (the ciphertext).
+//   picture_put { jam_id, size } -> { url }: a signed upload URL for MY jam's picture (JPEG, at most 1 MiB; LIME-194). Public, like the title: the server and any signed-in teacher can see it.
+//   picture_commit { jam_id }    -> { version }: verifies the upload and makes it visible (`picture_version` on the page).
+//   picture_get { jam_id }       -> { url, version }: a signed download URL, any signed-in user (404 if none).
+//   picture_remove { jam_id }    -> { ok }: deletes it. Ending a jam deletes it too.
 //   by_writer { writer_id }                              -> { jam }: that teacher's live (not ended) page, or { jam: null }. Any signed-in user, the same trust
 //                                                           as reading their profile (the server learns that this account looked).
 
 import { admin, requireUser } from "../_shared/db.ts";
 import { isUuid } from "../_shared/bytes.ts";
 import { handler, HttpError, json, readJson } from "../_shared/http.ts";
-import { BLOB_BUCKET, removeObject } from "../_shared/storage.ts";
+import { AVATAR_BUCKET, BLOB_BUCKET, MAX_AVATAR_BYTES, objectSize, removeObject, signedDownload, signedUpload } from "../_shared/storage.ts";
 import { rateLimit } from "../_shared/db.ts";
+
+/** A jam's picture lives beside the profile photos, under the jam's id (a user id is a UUID without this prefix, so the keys never meet). */
+const pictureKey = (jamId: string) => `jam-${jamId}.jpg`;
 
 function clean(value: unknown, max: number, allowEmpty = false): string {
   const text = typeof value === "string" ? value.trim() : "";
@@ -25,7 +32,7 @@ Deno.serve(handler(async (req) => {
   await rateLimit(`jam-page:${me}`, 1, 120, 60);
   if (body.action === "by_writer") {
     if (!isUuid(body.writer_id)) throw new HttpError(400, "bad_request", "writer_id must be a UUID.");
-    const { data, error } = await admin().from("jams").select("jam_id, writer_id, title, about, topics, post_count, subscriber_count, has_community, created_at")
+    const { data, error } = await admin().from("jams").select("jam_id, writer_id, title, about, topics, post_count, subscriber_count, has_community, picture_version, created_at")
       .eq("writer_id", (body.writer_id as string).toLowerCase()).is("ended_at", null).is("taken_down_at", null).order("created_at", { ascending: false }).limit(1);
     if (error) throw new HttpError(500, "internal");
     return json({ jam: data?.[0] ?? null });
@@ -34,7 +41,7 @@ Deno.serve(handler(async (req) => {
   const jamId = (body.jam_id as string).toLowerCase();
   const db = admin();
   const { data: existing } = await db.from("jams").select("jam_id, writer_id, ended_at").eq("jam_id", jamId).maybeSingle();
-  if (body.action !== "get" && existing && existing.writer_id !== me) throw new HttpError(409, "id_taken", "That jam belongs to someone else.");
+  if (body.action !== "get" && body.action !== "picture_get" && existing && existing.writer_id !== me) throw new HttpError(409, "id_taken", "That jam belongs to someone else.");
 
   switch (body.action) {
     case "set": {
@@ -53,11 +60,43 @@ Deno.serve(handler(async (req) => {
       return json({ ok: true });
     }
     case "get": {
-      const { data, error } = await db.from("jams").select("jam_id, writer_id, title, about, topics, post_count, subscriber_count, has_community, created_at, ended_at, taken_down_at").eq("jam_id", jamId).maybeSingle();
+      const { data, error } = await db.from("jams").select("jam_id, writer_id, title, about, topics, post_count, subscriber_count, has_community, picture_version, created_at, ended_at, taken_down_at").eq("jam_id", jamId).maybeSingle();
       if (error) throw new HttpError(500, "internal");
       if (!data) throw new HttpError(404, "not_found", "No such jam.");
       if (data.taken_down_at) throw new HttpError(410, "taken_down", "That jam was taken down.");
       return json({ jam: data });
+    }
+    case "picture_put": {
+      if (!existing || existing.ended_at) throw new HttpError(404, "not_found", "No such jam.");
+      if (typeof body.size !== "number" || !Number.isInteger(body.size) || body.size < 1 || body.size > MAX_AVATAR_BYTES) {
+        throw new HttpError(400, "bad_request", "Your picture is too large.");
+      }
+      return json({ url: (await signedUpload(AVATAR_BUCKET, pictureKey(jamId))).url });
+    }
+    case "picture_commit": {
+      if (!existing || existing.ended_at) throw new HttpError(404, "not_found", "No such jam.");
+      const size = await objectSize(AVATAR_BUCKET, pictureKey(jamId));
+      if (size === null || size < 1) throw new HttpError(409, "not_uploaded", "Upload the picture first.");
+      if (size > MAX_AVATAR_BYTES) {
+        await removeObject(AVATAR_BUCKET, pictureKey(jamId));
+        throw new HttpError(413, "too_large", "Your picture is too large.");
+      }
+      const version = Date.now();
+      const { error } = await db.from("jams").update({ picture_version: version }).eq("jam_id", jamId);
+      if (error) throw new HttpError(500, "internal");
+      return json({ version });
+    }
+    case "picture_get": {
+      const { data } = await db.from("jams").select("picture_version, taken_down_at").eq("jam_id", jamId).maybeSingle();
+      if (!data || data.picture_version === null || data.taken_down_at) throw new HttpError(404, "not_found", "Nothing public.");
+      return json({ url: await signedDownload(AVATAR_BUCKET, pictureKey(jamId)), version: data.picture_version });
+    }
+    case "picture_remove": {
+      if (!existing) throw new HttpError(404, "not_found", "No such jam.");
+      await removeObject(AVATAR_BUCKET, pictureKey(jamId));
+      const { error } = await db.from("jams").update({ picture_version: null }).eq("jam_id", jamId);
+      if (error) throw new HttpError(500, "internal");
+      return json({ ok: true });
     }
     case "end": {
       if (!existing) throw new HttpError(404, "not_found", "No such jam.");
@@ -67,7 +106,8 @@ Deno.serve(handler(async (req) => {
         await removeObject(BLOB_BUCKET, row.id);
         await db.from("blobs").delete().eq("id", row.id);
       }
-      const { error: endError } = await db.from("jams").update({ ended_at: new Date().toISOString(), post_count: 0 }).eq("jam_id", jamId);
+      await removeObject(AVATAR_BUCKET, pictureKey(jamId));
+      const { error: endError } = await db.from("jams").update({ ended_at: new Date().toISOString(), post_count: 0, picture_version: null }).eq("jam_id", jamId);
       if (endError) throw new HttpError(500, "internal");
       return json({ ok: true, removed: (posts ?? []).length });
     }

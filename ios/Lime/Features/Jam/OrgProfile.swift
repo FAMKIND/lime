@@ -111,7 +111,7 @@ struct JamOrgsSection: View {
         return HStack(spacing: 12) {
             Button { store.openOrg(org, isMe: isMe) } label: {
                 HStack(spacing: 12) {
-                    BylineAvatar(people: authors, jam: org.title, size: 52).frame(width: 60, height: 56, alignment: .leading)
+                    BylineAvatar(people: authors, jam: org.title, jamId: org.jamId, size: 52).frame(width: 60, height: 56, alignment: .leading)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(org.title).font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
                         Text(names).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(1)
@@ -265,7 +265,7 @@ struct OrgProfileView: View {
         let sides = windowSideInsets
         return VStack(spacing: 0) {
             VStack(spacing: 6) {
-                BylineAvatar(people: authors, jam: page.title, size: 104).frame(width: 104, height: 104)
+                BylineAvatar(people: authors, jam: page.title, jamId: page.jamId, size: 104).frame(width: 104, height: 104)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(authors.count > 1 ? "\(page.title), with \(authors.dropFirst().map(\.name).joined(separator: ", "))" : page.title)
                     .padding(.top, 12).padding(.bottom, 14)   // room for the writers' circles that hang below the tile

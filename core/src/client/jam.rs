@@ -19,6 +19,7 @@ use super::attachments::OutgoingAttachment;
 use super::groups::GROUP_WIRE;
 use super::photos::raw;
 use super::*;
+use crate::store::extras;
 use crate::store::jam as jam_store;
 use crate::store::jam::{TIER_FREE, TIER_SUBSCRIBERS};
 
@@ -188,6 +189,20 @@ pub struct JamPageInfo {
     pub subscriber_count: u32,
     /// The writer has a community chat (the one public bit of it, LIME-210g).
     pub has_community: bool,
+    /// The version of the page's public picture, or `None` when it has none (LIME-194).
+    pub picture_version: Option<i64>,
+}
+
+/// A jam's picture is kept in the profile-extras cache, under this owner and slot (a user id never starts with `jam:`).
+const JAM_PICTURE: &str = extras::JAM_PICTURE;
+
+fn jam_picture_owner(jam_id: &str) -> String {
+    format!("jam:{jam_id}")
+}
+
+fn forget_jam_picture(conn: &rusqlite::Connection, jam_id: &str) -> Result<(), StoreError> {
+    conn.execute("DELETE FROM extras WHERE user_id = ?1 AND slot = ?2", rusqlite::params![jam_picture_owner(jam_id), JAM_PICTURE]).map_err(crate::store::db_err)?;
+    Ok(())
 }
 
 /// The largest file in a jam post (the server's blob cap is 25 MiB, and the sealed form is a little larger).
@@ -1179,7 +1194,64 @@ impl LimeStore {
             post_count: jam.get("post_count").and_then(Value::as_u64).unwrap_or(0) as u32,
             subscriber_count: jam.get("subscriber_count").and_then(Value::as_u64).unwrap_or(0) as u32,
             has_community: jam.get("has_community").and_then(Value::as_bool).unwrap_or(false),
+            picture_version: jam.get("picture_version").and_then(Value::as_i64),
         }))
+    }
+
+    /// A jam's public picture (LIME-194), if this phone holds one: the JPEG bytes. Cached like a profile's, under the jam's id.
+    pub fn jam_picture(&self, jam_id: String) -> Result<Option<Vec<u8>>, StoreError> {
+        self.with_conn(|conn| Ok(extras::cached(conn, &jam_picture_owner(&jam_id), JAM_PICTURE)?.map(|c| c.bytes).filter(|b| !b.is_empty())))
+    }
+
+    /// Puts a new public picture (a JPEG of at most 1 MiB) on MY jam's page. The server and any signed-in teacher can see it, like the title.
+    pub fn set_jam_picture(&self, transport: Arc<dyn Transport>, auth_token: String, jam_id: String, jpeg: Vec<u8>) -> Result<(), StoreError> {
+        if jpeg.is_empty() || jpeg.len() > extras::max_bytes(JAM_PICTURE) {
+            return Err(StoreError::Rejected);
+        }
+        let (status, body) = call(&transport, Some(&auth_token), "jam-page", &json!({ "action": "picture_put", "jam_id": jam_id, "size": jpeg.len() }))?;
+        check(status)?;
+        let url = body.get("url").and_then(Value::as_str).ok_or(StoreError::BadMessage)?;
+        let (put, _) = raw(&transport, "PUT", url, Some("image/jpeg"), jpeg.clone())?;
+        check(put)?;
+        let (status, body) = call(&transport, Some(&auth_token), "jam-page", &json!({ "action": "picture_commit", "jam_id": jam_id }))?;
+        check(status)?;
+        let version = body.get("version").and_then(Value::as_i64).unwrap_or(0);
+        self.with_conn(|conn| extras::save_cached(conn, &jam_picture_owner(&jam_id), JAM_PICTURE, &jpeg, "public", version, now_ms()))
+    }
+
+    /// Takes the picture off MY jam's page.
+    pub fn remove_jam_picture(&self, transport: Arc<dyn Transport>, auth_token: String, jam_id: String) -> Result<(), StoreError> {
+        let (status, _) = call(&transport, Some(&auth_token), "jam-page", &json!({ "action": "picture_remove", "jam_id": jam_id }))?;
+        if status != 404 {
+            check(status)?;
+        }
+        self.with_conn(|conn| forget_jam_picture(conn, &jam_id))
+    }
+
+    /// Looks at a jam's public picture on the server and keeps what this phone holds in step: downloads it when its version changed, forgets it when the
+    /// jam has none. `true` when what this phone holds changed. A network failure keeps what is held.
+    pub fn refresh_jam_picture(&self, transport: Arc<dyn Transport>, auth_token: String, jam_id: String) -> Result<bool, StoreError> {
+        let owner = jam_picture_owner(&jam_id);
+        let (status, body) = call(&transport, Some(&auth_token), "jam-page", &json!({ "action": "picture_get", "jam_id": jam_id }))?;
+        if status == 404 || status == 410 {
+            let had = self.with_conn(|conn| Ok(extras::cached(conn, &owner, JAM_PICTURE)?.is_some_and(|c| !c.bytes.is_empty())))?;
+            self.with_conn(|conn| forget_jam_picture(conn, &jam_id))?;
+            return Ok(had);
+        }
+        check(status)?;
+        let version = body.get("version").and_then(Value::as_i64).unwrap_or(0);
+        let url = body.get("url").and_then(Value::as_str).ok_or(StoreError::BadMessage)?;
+        let held = self.with_conn(|conn| extras::cached(conn, &owner, JAM_PICTURE))?;
+        if held.as_ref().is_some_and(|c| c.version == version && !c.bytes.is_empty()) {
+            return Ok(false);
+        }
+        let (got, bytes) = raw(&transport, "GET", url, None, Vec::new())?;
+        check(got)?;
+        if bytes.is_empty() || bytes.len() > extras::max_bytes(JAM_PICTURE) {
+            return Ok(false);
+        }
+        self.with_conn(|conn| extras::save_cached(conn, &owner, JAM_PICTURE, &bytes, "public", version, now_ms()))?;
+        Ok(true)
     }
 
     /// How much of what is queued for this jam has gone ("sending to 412 of 1,000"). Both zero when nothing waits.

@@ -433,7 +433,7 @@ struct ProfileView: View {
     }
 
     private func loadJam() async {
-        if route.isMe { jamPage = store.jamsMine.first.map { JamPageInfo(jamId: $0.jamId, writerId: $0.writer, title: $0.title, about: $0.about, topics: $0.topics, postCount: $0.postCount, subscriberCount: $0.subscriberCount, hasCommunity: $0.community) } }
+        if route.isMe { jamPage = store.jamsMine.first.map { JamPageInfo(jamId: $0.jamId, writerId: $0.writer, title: $0.title, about: $0.about, topics: $0.topics, postCount: $0.postCount, subscriberCount: $0.subscriberCount, hasCommunity: $0.community, pictureVersion: nil) } }
         else { jamPage = await store.jamPage(of: route.userID) }
     }
 
@@ -692,7 +692,7 @@ struct ProfileView: View {
                     ForEach(Array(orgs.enumerated()), id: \.element.jamId) { index, org in
                         Button { store.openOrg(org, isMe: route.isMe) } label: {
                             HStack(spacing: 12) {
-                                JamInitialTile(title: org.title, size: 36).accessibilityHidden(true)
+                                JamInitialTile(title: org.title, jamId: org.jamId, size: 36).accessibilityHidden(true)
                                 Text(org.title).font(Theme.body).foregroundStyle(Theme.text).lineLimit(1)
                                 Spacer(minLength: 8)
                                 Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.textSecondary).accessibilityHidden(true)

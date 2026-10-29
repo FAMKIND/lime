@@ -59,6 +59,8 @@ pub(crate) struct ServerState {
     pub jam_blobs: HashMap<String, String>,
     /// jam id to (writer, title, post_count, ended): the public pages
     pub jam_pages: HashMap<String, (String, String, i64, bool)>,
+    /// jam id to the version of its public picture (LIME-194); the bytes are the object `public-avatars/jam-<id>.jpg`
+    pub jam_pictures: HashMap<String, i64>,
     /// jam id to its published subscriber count
     pub jam_subscribers: HashMap<String, i64>,
     /// `jam-blob-get` requests that carried a user token (there must be none) and how many were made
@@ -686,8 +688,15 @@ impl FakeServer {
             "jam-page" if body.get("action").and_then(Value::as_str) == Some("by_writer") => {
                 let writer = text("writer_id");
                 match state.jam_pages.iter().find(|(_, (owner, _, _, ended))| *owner == writer && !*ended) {
-                    Some((id, (_, title, count, _))) => respond(200, json!({ "jam": { "jam_id": id, "writer_id": writer, "title": title, "about": "", "topics": [], "post_count": count, "subscriber_count": state.jam_subscribers.get(id).copied().unwrap_or(0) } })),
+                    Some((id, (_, title, count, _))) => respond(200, json!({ "jam": { "jam_id": id, "writer_id": writer, "title": title, "about": "", "topics": [], "post_count": count, "subscriber_count": state.jam_subscribers.get(id).copied().unwrap_or(0), "picture_version": state.jam_pictures.get(id) } })),
                     None => respond(200, json!({ "jam": null })),
+                }
+            }
+            "jam-page" if body.get("action").and_then(Value::as_str) == Some("picture_get") => {
+                let jam = text("jam_id");
+                match state.jam_pictures.get(&jam) {
+                    Some(version) => respond(200, json!({ "url": format!("/storage/v1/object/sign/public-avatars/jam-{jam}.jpg?token=t"), "version": version })),
+                    None => respond(404, json!({ "error": "not_found" })),
                 }
             }
             "jam-page" => {
@@ -705,10 +714,30 @@ impl FakeServer {
                         state.jam_pages.insert(jam, (user, text("title"), body.get("post_count").and_then(Value::as_i64).unwrap_or(0), false));
                         respond(200, json!({ "ok": true }))
                     }
+                    "picture_put" => match existing {
+                        Some((_, _, _, false)) => respond(200, json!({ "url": format!("/storage/v1/object/upload/sign/public-avatars/jam-{jam}.jpg?token=t") })),
+                        _ => respond(404, json!({ "error": "not_found" })),
+                    },
+                    "picture_commit" => {
+                        if !state.objects.contains_key(&format!("public-avatars/jam-{jam}.jpg")) {
+                            return respond(409, json!({ "error": "not_uploaded" }));
+                        }
+                        state.clock += 1;
+                        let version = state.clock;
+                        state.jam_pictures.insert(jam, version);
+                        respond(200, json!({ "version": version }))
+                    }
+                    "picture_remove" => {
+                        state.objects.remove(&format!("public-avatars/jam-{jam}.jpg"));
+                        state.jam_pictures.remove(&jam);
+                        respond(200, json!({ "ok": true }))
+                    }
                     "end" => {
                         if existing.is_none() {
                             return respond(404, json!({ "error": "not_found" }));
                         }
+                        state.objects.remove(&format!("public-avatars/jam-{jam}.jpg"));
+                        state.jam_pictures.remove(&jam);
                         let gone: Vec<String> = state.jam_blobs.iter().filter(|(_, j)| **j == jam).map(|(b, _)| b.clone()).collect();
                         for blob in &gone {
                             state.jam_blobs.remove(blob);

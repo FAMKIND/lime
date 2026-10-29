@@ -225,7 +225,7 @@ struct JamPostCard: View {
             let detail = [store.byline(post), JamDates.short(post.created), post.editedAt > 0 ? "Edited" : nil].compactMap { $0 }.joined(separator: " \u{00B7} ")
             HStack(spacing: 10) {
                 Button { openWriter(writer) } label: {
-                    BylineAvatar(people: store.bylinePeople(post), jam: asJam ? name : nil, size: 40, pending: store.pendingCoauthors(post))
+                    BylineAvatar(people: store.bylinePeople(post), jam: asJam ? name : nil, jamId: asJam ? post.jamId : nil, size: 40, pending: store.pendingCoauthors(post))
                 }
                 .buttonStyle(.plain).accessibilityLabel(asJam ? "\(name), by \(writer.name)" : name).accessibilityHint("Opens their profile").accessibilityIdentifier("jam-card-avatar-\(post.postId)")
                 VStack(alignment: .leading, spacing: 0) {

@@ -5445,6 +5445,51 @@ fn a_page_is_found_by_its_writer_and_not_once_the_jam_ended() {
 }
 
 #[test]
+fn a_jams_picture_is_set_by_its_writer_seen_by_a_teacher_refetched_on_a_new_version_and_gone_when_the_jam_ends() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let jam = new_jam(&alice);
+    deliver(&alice, &transport);
+    let page = |p: &Party| p.store.fetch_jam_page(transport.clone(), p.token.clone(), alice.user.clone()).unwrap().unwrap();
+    assert_eq!(page(&bob).picture_version, None, "no picture yet");
+    assert!(!bob.store.refresh_jam_picture(transport.clone(), bob.token.clone(), jam.clone()).unwrap(), "nothing to fetch");
+    assert_eq!(bob.store.jam_picture(jam.clone()).unwrap(), None);
+
+    // Too big or empty is refused before anything is sent.
+    assert!(alice.store.set_jam_picture(transport.clone(), alice.token.clone(), jam.clone(), vec![0; 1024 * 1024 + 1]).is_err());
+    assert!(alice.store.set_jam_picture(transport.clone(), alice.token.clone(), jam.clone(), Vec::new()).is_err());
+
+    alice.store.set_jam_picture(transport.clone(), alice.token.clone(), jam.clone(), vec![1, 2, 3]).unwrap();
+    assert_eq!(alice.store.jam_picture(jam.clone()).unwrap(), Some(vec![1, 2, 3]), "the writer holds it at once");
+    let first = page(&bob).picture_version.expect("the page carries the picture's version");
+    assert!(bob.store.refresh_jam_picture(transport.clone(), bob.token.clone(), jam.clone()).unwrap());
+    assert_eq!(bob.store.jam_picture(jam.clone()).unwrap(), Some(vec![1, 2, 3]));
+    let downloads = server.state.lock().unwrap().chunk_downloads;
+    assert!(!bob.store.refresh_jam_picture(transport.clone(), bob.token.clone(), jam.clone()).unwrap(), "same version: unchanged");
+    assert_eq!(server.state.lock().unwrap().chunk_downloads, downloads, "and not downloaded again");
+
+    // A new picture is a new version, and a refresh fetches it.
+    alice.store.set_jam_picture(transport.clone(), alice.token.clone(), jam.clone(), vec![9, 9]).unwrap();
+    assert_ne!(page(&bob).picture_version, Some(first));
+    assert!(bob.store.refresh_jam_picture(transport.clone(), bob.token.clone(), jam.clone()).unwrap());
+    assert_eq!(bob.store.jam_picture(jam.clone()).unwrap(), Some(vec![9, 9]));
+
+    // Removed: the reader forgets it on the next look.
+    alice.store.remove_jam_picture(transport.clone(), alice.token.clone(), jam.clone()).unwrap();
+    assert_eq!(alice.store.jam_picture(jam.clone()).unwrap(), None);
+    assert!(bob.store.refresh_jam_picture(transport.clone(), bob.token.clone(), jam.clone()).unwrap());
+    assert_eq!(bob.store.jam_picture(jam.clone()).unwrap(), None);
+
+    // Ending the jam takes a picture with it.
+    alice.store.set_jam_picture(transport.clone(), alice.token.clone(), jam.clone(), vec![5]).unwrap();
+    alice.store.end_jam(jam.clone()).unwrap();
+    deliver(&alice, &transport);
+    assert!(bob.store.refresh_jam_picture(transport.clone(), bob.token.clone(), jam.clone()).unwrap() || bob.store.jam_picture(jam.clone()).unwrap().is_none());
+    assert_eq!(bob.store.jam_picture(jam).unwrap(), None);
+}
+
+#[test]
 fn quick_posts_articles_and_recordings_keep_their_kind_and_the_rules_for_each_hold() {
     let server = FakeServer::new();
     let (alice, transport) = party(&server, "alice", 1);

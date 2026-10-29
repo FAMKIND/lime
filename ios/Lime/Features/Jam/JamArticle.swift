@@ -116,7 +116,7 @@ struct JamArticleCover: View {
     var body: some View {
         let writer = store.teacher(post.author)
         ZStack(alignment: .bottomLeading) {
-            CoverArt(image: image, person: writer, org: store.orgName(post))
+            CoverArt(image: image, person: writer, org: store.orgName(post), orgId: post.jamId)
             if JamRead.isUnread(post, me: store.meProvider().id) {
                 VStack { HStack { Circle().fill(.white).frame(width: 12, height: 12).overlay(Circle().stroke(.black.opacity(0.35), lineWidth: 1)).padding(14).accessibilityElement().accessibilityLabel("Unread").accessibilityIdentifier("jam-unread-\(post.postId)"); Spacer() }; Spacer() }
             }
@@ -300,7 +300,7 @@ struct JamArticlePage: View {
             if !post.subtitle.isEmpty { Text(post.subtitle).font(font.font(size: size + 2)).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("jam-reader-subtitle") }
             Button { store.openProfile(ProfileRoute(userID: writer.id, name: writer.name, isMe: writer.id == store.meProvider().id)) } label: {
                 HStack(spacing: 10) {
-                    BylineAvatar(people: store.bylinePeople(post), jam: post.displayAs == "jam" ? store.jamTitle(post.jamId) : nil, size: 40)
+                    BylineAvatar(people: store.bylinePeople(post), jam: post.displayAs == "jam" ? store.jamTitle(post.jamId) : nil, jamId: post.displayAs == "jam" ? post.jamId : nil, size: 40)
                     VStack(alignment: .leading, spacing: 0) {
                         Text(post.displayAs == "jam" ? store.jamTitle(post.jamId) : writer.name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
                         // Who it is by, on its own line; the date is the line under (LIME-222).
@@ -436,7 +436,7 @@ struct JamArticlePage: View {
         var entries: [(label: String, person: Person)] = asJam ? [(store.jamTitle(post.jamId), people[0])] : [(people[0].name, people[0])]
         entries += people.dropFirst().map { ($0.name, $0) }
         let label = HStack(spacing: 8) {
-            BylineAvatar(people: people, jam: asJam ? store.jamTitle(post.jamId) : nil, size: 32)
+            BylineAvatar(people: people, jam: asJam ? store.jamTitle(post.jamId) : nil, jamId: asJam ? post.jamId : nil, size: 32)
             VStack(alignment: .leading, spacing: 0) {
                 if asJam {
                     // Posted as an org: its name first, like a group's header, then the article's title (LIME-188z).

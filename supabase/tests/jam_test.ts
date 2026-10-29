@@ -17,8 +17,8 @@ async function withUsers<T>(count: number, fn: (users: TestUser[]) => Promise<T>
   }
 }
 
-async function put(url: string, bytes: Uint8Array): Promise<number> {
-  const res = await fetch(API_URL + url, { method: "PUT", headers: { "content-type": "application/octet-stream", apikey: ANON_KEY }, body: bytes as unknown as BodyInit });
+async function put(url: string, bytes: Uint8Array, type = "application/octet-stream"): Promise<number> {
+  const res = await fetch(API_URL + url, { method: "PUT", headers: { "content-type": type, apikey: ANON_KEY }, body: bytes as unknown as BodyInit });
   await res.body?.cancel();
   return res.status;
 }
@@ -194,5 +194,55 @@ Deno.test("jam-page by_writer: a signed-in teacher finds the live page, none onc
     assertEquals((await call("jam-page", other.token, { action: "by_writer", writer_id: "nope" })).status, 400);
     assertEquals((await call("jam-page", writer.token, { action: "end", jam_id: jamId })).status, 200);
     assertEquals((await call("jam-page", other.token, { action: "by_writer", writer_id: writer.id })).body.jam, null, "ended: none");
+  });
+});
+
+// LIME-194: a picture for a jam, on its public page.
+Deno.test("a jam's picture: put, commit, get on the page and by writer, only the writer, size limits, remove, and ending the jam deletes it", opts, async () => {
+  await withUsers(2, async ([writer, other]) => {
+    const jamId = crypto.randomUUID();
+    assertEquals((await call("jam-page", writer.token, { action: "set", jam_id: jamId, title: "Conscious collective", about: "", topics: [], post_count: 0 })).status, 200);
+    // No picture yet.
+    assertEquals((await call("jam-page", other.token, { action: "picture_get", jam_id: jamId })).status, 404);
+    assertEquals((await call("jam-page", other.token, { action: "get", jam_id: jamId })).body.jam.picture_version, null);
+    // Only the writer can put one; the size must be 1 byte to 1 MiB.
+    assertEquals((await call("jam-page", other.token, { action: "picture_put", jam_id: jamId, size: 100 })).status, 409);
+    assertEquals((await call("jam-page", writer.token, { action: "picture_put", jam_id: jamId, size: 0 })).status, 400);
+    assertEquals((await call("jam-page", writer.token, { action: "picture_put", jam_id: jamId, size: 1024 * 1024 + 1 })).status, 400);
+    // Commit before an upload fails.
+    assertEquals((await call("jam-page", writer.token, { action: "picture_commit", jam_id: jamId })).status, 409);
+    const jpeg = randomBytes(5000);
+    const started = await call("jam-page", writer.token, { action: "picture_put", jam_id: jamId, size: jpeg.length });
+    assertEquals(started.status, 200, JSON.stringify(started.body));
+    assertEquals(await put(started.body.url, jpeg, "image/jpeg"), 200);
+    // Another teacher cannot commit it.
+    assertEquals((await call("jam-page", other.token, { action: "picture_commit", jam_id: jamId })).status, 409);
+    const committed = await call("jam-page", writer.token, { action: "picture_commit", jam_id: jamId });
+    assertEquals(committed.status, 200, JSON.stringify(committed.body));
+    // Any signed-in teacher sees the version on the page and by writer, and downloads the bytes.
+    assertEquals((await call("jam-page", other.token, { action: "get", jam_id: jamId })).body.jam.picture_version, committed.body.version);
+    assertEquals((await call("jam-page", other.token, { action: "by_writer", writer_id: writer.id })).body.jam.picture_version, committed.body.version);
+    const got = await call("jam-page", other.token, { action: "picture_get", jam_id: jamId });
+    assertEquals(got.status, 200, JSON.stringify(got.body));
+    assertEquals(got.body.version, committed.body.version);
+    assertEquals((await download(got.body.url)).bytes, jpeg);
+    // A page update keeps the picture.
+    assertEquals((await call("jam-page", writer.token, { action: "set", jam_id: jamId, title: "Conscious collective", about: "x", topics: [], post_count: 1 })).status, 200);
+    assertEquals((await call("jam-page", other.token, { action: "get", jam_id: jamId })).body.jam.picture_version, committed.body.version);
+    // Only the writer removes it.
+    assertEquals((await call("jam-page", other.token, { action: "picture_remove", jam_id: jamId })).status, 409);
+    assertEquals((await call("jam-page", writer.token, { action: "picture_remove", jam_id: jamId })).status, 200);
+    assertEquals((await call("jam-page", other.token, { action: "picture_get", jam_id: jamId })).status, 404);
+    assertEquals((await call("jam-page", other.token, { action: "get", jam_id: jamId })).body.jam.picture_version, null);
+    // Ending the jam deletes a new picture.
+    const again = await call("jam-page", writer.token, { action: "picture_put", jam_id: jamId, size: jpeg.length });
+    assertEquals(await put(again.body.url, jpeg, "image/jpeg"), 200);
+    assertEquals((await call("jam-page", writer.token, { action: "picture_commit", jam_id: jamId })).status, 200);
+    assertEquals((await call("jam-page", writer.token, { action: "end", jam_id: jamId })).status, 200);
+    assertEquals((await call("jam-page", other.token, { action: "picture_get", jam_id: jamId })).status, 404);
+    const { data } = await admin.storage.from("public-avatars").list("", { search: `jam-${jamId}.jpg` });
+    assertEquals((data ?? []).length, 0);
+    // An ended jam takes no new picture.
+    assertEquals((await call("jam-page", writer.token, { action: "picture_put", jam_id: jamId, size: 100 })).status, 404);
   });
 });
