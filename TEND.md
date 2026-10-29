@@ -8653,5 +8653,5 @@ On other people's phones (not reachable): their chats with the account, jam post
 - **Tests:** updated to go through the profile / group details: the label tests, the mute test, the block test (the profile's confirmation has its own words), `ProfileUITests` (the name opens the profile), `EmergencyUITests` (the group's ⋯ in group details), `TabBarUITests` and the unread-badge tests (the chat is open when search is there). New in `LimeUITestsQARound`: the header is the name, then search, then call, no ⋯, the name at the left; tapping the name opens the profile whose ⋯ has Mute and a label; in a group it opens group details with Mute and, in its ⋯, Leave group. Ran Messages, QARound, SearchAndNotifications, GroupsAndSignIn, ProfileUITests, EmergencyUITests, TabBarUITests: all pass (1 skipped, as before).
 - **Looked at:** the simulator (which uses the legacy header) shows ‹ · avatar + name · 🔍 · 📹. **The iOS 26 toolbar path is not seen by me**: that is the gate.
 - **Gate:** on the 13 mini: a 1:1 chat and a group: ‹ · avatar + name · 🔍 · 📹; a long name shows more than before (and truncates rather than overlapping the circles); tap the name → profile / group details with Mute; search and calls still work.
-- **Installed:** see the commit that follows.
+- **Installed:** the iPad, Shem's 13 mini and Jean's 12 mini (all three, first try).
 
