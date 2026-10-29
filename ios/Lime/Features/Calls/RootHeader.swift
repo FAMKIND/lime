@@ -32,13 +32,11 @@ struct RootHeader: ViewModifier {
                             }
                             .accessibilityLabel("lime menu")
                         }
-                        CircleToolbarItem {
+                        // Link, call and jam keep one glass bubble for search and your avatar: you are searching all of your information (LIME-255).
+                        ToolbarItemGroup(placement: .topBarTrailing) {
                             Button(action: search) { ToolIconLabel(symbol: "magnifyingglass") }
                                 .accessibilityLabel("Search")
                                 .accessibilityIdentifier(searchID)
-                        }
-                        ToolbarSpacer(.fixed, placement: .topBarTrailing)
-                        ToolbarItem(placement: .topBarTrailing) {
                             Button { store.openMyProfile() } label: { AvatarView(person: session.mePerson, size: 30, showsStatus: true, badgeKeepsColours: true) }
                                 .accessibilityLabel("Settings")
                                 .accessibilityIdentifier("settings-button")

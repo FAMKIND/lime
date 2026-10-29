@@ -8747,3 +8747,12 @@ A tiny avatar before the author on the audio podcast card. **Brief:** LIME-252.
 - Seen on the iOS 27 simulator: `docs/qa-shots/252/podcast-card.png` (a writer's podcast, "SAM PARK · Oct 29"). The org case (the picture or tile) wasn't screenshotted. No test (visual).
 - The same screenshot shows 248's video card: video first, then the title with ⋯, then the writer row.
 - **Installed (250, 251, 252):** all three, the iPad, Shem's 13 mini and Jean's 12 mini, first try.
+
+## LIME-255
+Link, call and jam keep one bubble; no frosted band behind the bar. **Brief:** LIME-255.
+- **One bubble:** `RootHeader.swift` (call and jam) and `MessagesView.swift` (link) are back to one `ToolbarItemGroup(.topBarTrailing)` holding search and your avatar (search uses 247c's `ToolIconLabel`, 44 pt, 18 pt regular). Every other screen keeps 247c's separate circles.
+- **The band:** reproduced on the iOS 27 simulator (own profile, Articles tab, scrolled): a lighter rectangle ends under ‹ · Edit · ⋯ and cuts across the hero. Cause: the bar's default scroll edge effect (the hard one), even with the bar background hidden. **Fix: one shared modifier `limeTopFade()`** (`Theme/CircleToolbar.swift`), applied inside `limeBack`, so every page with our ‹ gets it: it hides the bar background and sets `.scrollEdgeEffectStyle(.soft, for: .top)`.
+- **A difference from the brief:** I did **not** use `TopFade`. That view is the iOS 17–25 veil (it has a blurred material in it) and its own comment says iOS 26 uses the system's soft scroll edge effect. The gradient link, call and jam show on iOS 26 *is* that soft effect, so I gave the other screens the same one. `TopFade` stays for iOS 17–25 as before.
+- **Screenshots** (`docs/qa-shots/255/`; `before-*` are with `limeTopFade` off, the rest with it on): `link`, `call`, `jam` (one bubble); `profile-scrolled` (the user's case: band gone, soft gradient over the hero); `chat`, `settings` (Privacy; the hard line under the bar became a soft fade), `group`. The group and Settings pages are short in the demo, so they barely scroll under the bar; the profile case is the clear one.
+- **Not checked:** iOS 17–25 (unchanged); the iPad; a profile with a photo hero scrolled on the 13 mini.
+- **Tests:** the tab bar tests and the chat header test pass on the iOS 27 simulator (no new test: visual).

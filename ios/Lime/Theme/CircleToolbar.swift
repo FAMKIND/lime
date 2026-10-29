@@ -33,6 +33,7 @@ private struct LimeBackModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            .limeTopFade()
             .navigationBarBackButtonHidden(true)
             .swipeBackEnabled()
             .toolbar {
@@ -51,5 +52,14 @@ extension View {
     @ViewBuilder
     func limeBack(showsBack: Bool = true) -> some View {
         if #available(iOS 26, *) { modifier(LimeBackModifier(showsBack: showsBack)) } else { navigationBarBackButtonHidden(!showsBack) }
+    }
+}
+
+extension View {
+    /// No frosted band behind the bar (LIME-255): the system's bar background is hidden and the scroll edge effect is the soft one link, call and jam use, so a
+    /// page scrolling under the buttons fades out instead of showing a grey rectangle. iOS 26 only; before that the system bar and `TopFade` stay as they were.
+    @ViewBuilder
+    func limeTopFade() -> some View {
+        if #available(iOS 26, *) { toolbarBackground(.hidden, for: .navigationBar).scrollEdgeEffectStyle(.soft, for: .top) } else { self }
     }
 }

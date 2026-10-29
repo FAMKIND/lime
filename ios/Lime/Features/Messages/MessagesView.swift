@@ -104,13 +104,11 @@ struct MessagesView: View {
                 .accessibilityLabel("lime menu")
                 .accessibilityHint("Press and hold for About lime")
             }
-            CircleToolbarItem {
+            // One glass bubble for search and your avatar (LIME-255).
+            ToolbarItemGroup(placement: .topBarTrailing) {
                 Button { store.path.append(MessagesRoute.search) } label: { ToolIconLabel(symbol: "magnifyingglass") }
                     .accessibilityLabel("Search")
                     .accessibilityIdentifier("messages-search-button")
-            }
-            ToolbarSpacer(.fixed, placement: .topBarTrailing)
-            ToolbarItem(placement: .topBarTrailing) {
                 Button { store.openMyProfile() } label: { AvatarView(person: session.mePerson, size: 30, showsStatus: true, badgeKeepsColours: true) }
                     .accessibilityLabel("Settings")
                     .accessibilityIdentifier("settings-button")
