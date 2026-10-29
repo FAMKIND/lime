@@ -4,11 +4,13 @@ import SwiftUI
 struct OrgRoute: Hashable {
     let page: JamPageInfo
     let isMe: Bool
+    /// Opens already editing (from a row's Edit).
+    var editing = false
 }
 
 extension ConversationStore {
-    func openOrg(_ page: JamPageInfo, isMe: Bool) {
-        let route = OrgRoute(page: page, isMe: isMe)
+    func openOrg(_ page: JamPageInfo, isMe: Bool, editing: Bool = false) {
+        let route = OrgRoute(page: page, isMe: isMe, editing: editing)
         switch section {
         case .link: path.append(route)
         case .call: callPath.append(route)
@@ -44,14 +46,14 @@ private struct OrgActionHost: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .sheet(item: Binding(get: { if case .edit = action { action } else { nil } }, set: { if $0 == nil { action = nil } })) { act in
-                if case .edit(let page) = act, let mine = store.jamsMine.first(where: { $0.jamId == page.jamId }) { JamDetailsSheet(editing: mine) }
+            .onChange(of: action?.id) { _, _ in
+                if case .edit(let page) = action { action = nil; store.openOrg(page, isMe: true, editing: true) }
             }
             .sheet(item: Binding(get: { if case .subscribers = action { action } else { nil } }, set: { if $0 == nil { action = nil } })) { act in
                 if case .subscribers(let page) = act { NavigationStack { JamSubscribersView(jamID: page.jamId) }.onAppear { store.loadJamSubscribers(page.jamId) } }
             }
-            .confirmSheet("End this jam?", isPresented: Binding(get: { if case .end = action { true } else { false } }, set: { if !$0, case .end = action { action = nil } })) {
-                Button("End jam", role: .destructive) {
+            .confirmSheet("Close this org?", isPresented: Binding(get: { if case .end = action { true } else { false } }, set: { if !$0, case .end = action { action = nil } })) {
+                Button("Close org", role: .destructive) {
                     if case .end(let page) = action { Task { await store.endJam(page.jamId); if closesPageAfterEnd { dismiss() } } }
                     action = nil
                 }.accessibilityIdentifier("jam-end-confirm")
@@ -67,7 +69,7 @@ extension View {
 }
 
 /// The Orgs tab (LIME-216): rounded-square tile with its writers' circles, title, authors, one line of description and the subscribers; swipe left for Edit,
-/// Subscribers and End jam (an owner's), right for Share; the same in the long-press menu and as VoiceOver actions. A tap opens the org's profile.
+/// Subscribers and Close org (an owner's), right for Share; the same in the long-press menu and as VoiceOver actions. A tap opens the org's profile.
 struct JamOrgsSection: View {
     let orgs: [JamPageInfo]
     let isMe: Bool
@@ -84,7 +86,7 @@ struct JamOrgsSection: View {
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         if isMe {
                             // Red, but not the `.destructive` role: that makes the list remove the row at once, before the confirmation has been answered.
-                            Button { action = .end(org) } label: { Label("End jam", systemImage: "xmark.circle") }.tint(.red).accessibilityIdentifier("org-swipe-end-\(org.jamId)")
+                            Button { action = .end(org) } label: { Label("Close org", systemImage: "xmark.circle") }.tint(.red).accessibilityIdentifier("org-swipe-end-\(org.jamId)")
                             Button { action = .subscribers(org) } label: { Label("Subscribers", systemImage: "person.2") }.tint(.gray).accessibilityIdentifier("org-swipe-subscribers-\(org.jamId)")
                             Button { action = .edit(org) } label: { Label("Edit", systemImage: "pencil") }.tint(.blue).accessibilityIdentifier("org-swipe-edit-\(org.jamId)")
                         }
@@ -130,7 +132,7 @@ struct JamOrgsSection: View {
                 if isMe {
                     Button { action = .edit(org) } label: { Label("Edit", systemImage: "pencil") }
                     Button { action = .subscribers(org) } label: { Label("Subscribers", systemImage: "person.2") }
-                    Button(role: .destructive) { action = .end(org) } label: { Label("End jam", systemImage: "xmark.circle") }
+                    Button(role: .destructive) { action = .end(org) } label: { Label("Close org", systemImage: "xmark.circle") }
                 }
                 if let share = shareURL(org) { ShareLink(item: share, message: Text("\(org.title) on lime")) { Label("Share", systemImage: "square.and.arrow.up") } }
             }
@@ -150,40 +152,53 @@ private struct OrgAccessibilityActions: ViewModifier {
             content
                 .accessibilityAction(named: "Edit") { action = .edit(org) }
                 .accessibilityAction(named: "Subscribers") { action = .subscribers(org) }
-                .accessibilityAction(named: "End jam") { action = .end(org) }
+                .accessibilityAction(named: "Close org") { action = .end(org) }
         } else { content }
     }
 }
 
-/// The tabs of an org's profile.
-private enum OrgTab: String, CaseIterable { case all = "All", posts = "Posts", articles = "Articles", podcasts = "Podcasts", info = "Info"
-    var segment: JamSegment? { switch self { case .all: .all; case .posts: .posts; case .articles: .articles; case .podcasts: .podcasts; case .info: nil } }
-}
-
-/// An org as a profile (LIME-216): the person profile's hero (its default from the org's colour, blurred), a rounded-square avatar with its writers' small
-/// circles, the name, its authors, topics and subscribers, Subscribe as a pill under them, the tabs All · Posts · Articles · Podcasts · Info.
+/// An org as a profile (LIME-216, 245): the person profile's hero (its default from the org's colour, blurred), a rounded-square avatar with its writers' small
+/// circles, the name, its authors, tags and subscribers, Subscribe as a pill under them, the profile's glass tabs Info · Posts · Articles · Podcasts. An owner's
+/// Edit turns the page into its own editor: the camera circle on the picture and the fields as rows, each in a small sheet.
 struct OrgProfileView: View {
     let route: OrgRoute
     @Environment(ConversationStore.self) private var store
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
-    @State private var tab: OrgTab = .all
+    @State private var tab: ProfileView.Section = .info
     @State private var reading: JamPostRoute?
     @State private var action: OrgAction?
     @State private var reporting: ReportTarget?
     @State private var confirmingUnsubscribe = false
+    @State private var editing: Bool
+    @State private var fieldSheet: OrgField?
+    @State private var pictureSheet = false
     @State private var topInset: CGFloat = 0
     @State private var windowHeight: CGFloat = 0
 
-    private var page: JamPageInfo { route.page }
+    init(route: OrgRoute) {
+        self.route = route
+        _editing = State(initialValue: route.editing && route.isMe)
+    }
+
+    /// What you see: for the owner, what this phone holds now (so an edit shows at once); otherwise what was opened.
+    private var page: JamPageInfo {
+        if isMe, let mine = store.jamsMine.first(where: { $0.jamId == route.page.jamId }) {
+            return JamPageInfo(jamId: mine.jamId, writerId: mine.writer, title: mine.title, about: mine.about, topics: mine.topics, postCount: mine.postCount,
+                               subscriberCount: mine.subscriberCount, hasCommunity: mine.community, pictureVersion: route.page.pictureVersion)
+        }
+        return route.page
+    }
     private var isMe: Bool { route.isMe }
+    private var editingNow: Bool { isMe && editing }
+    private static let sections: [ProfileView.Section] = [.info, .posts, .articles, .podcasts]
 
     var body: some View {
         let following = store.isFollowing(page.jamId)
         ScrollView {
             VStack(spacing: 18) {
                 headBlock
-                content(following: following)
+                if editingNow { editRows } else { content(following: following) }
             }
             .padding(.horizontal, 16).padding(.bottom, 40)
         }
@@ -198,8 +213,11 @@ struct OrgProfileView: View {
         .toolbarColorScheme(.light, for: .navigationBar)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
+        .navigationBarBackButtonHidden(editingNow)
         .toolbar { toolbarItems }
         .sheet(item: $reading) { route in NavigationStack { JamPostView(postID: route.postID).toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { reading = nil } } } } }
+        .sheet(item: $fieldSheet) { OrgFieldSheet(page: page, field: $0) }
+        .sheet(isPresented: $pictureSheet) { OrgPictureSheet(jamId: page.jamId, title: page.title) }
         .orgActions($action, closesPageAfterEnd: true)
         .reportSheet($reporting)
         .confirmSheet("Unsubscribe from \(page.title)?", isPresented: $confirmingUnsubscribe) {
@@ -216,34 +234,51 @@ struct OrgProfileView: View {
         if #available(iOS 26, *) { modernItems } else { legacyItems }
     }
 
+    /// Normal: Edit · ⋯ (an owner's Edit; everyone's ⋯). Editing: ‹ back to the page · Done (LIME-229's pattern; an org has no cover to edit).
     @ToolbarContentBuilder
     private var legacyItems: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarTrailing) {
-            if isMe { editButton }
-            moreMenu
+            if editingNow { doneButton } else {
+                if isMe { editButton }
+                moreMenu
+            }
         }
+        ToolbarItem(placement: .topBarLeading) { if editingNow { backToOrg } }
     }
 
     @available(iOS 26, *)
     @ToolbarContentBuilder
     private var modernItems: some ToolbarContent {
-        if isMe {
-            ToolbarItem(placement: .topBarTrailing) { editButton }
-            ToolbarSpacer(.fixed, placement: .topBarTrailing)
+        if editingNow {
+            ToolbarItem(placement: .topBarLeading) { backToOrg }
+            ToolbarItem(placement: .topBarTrailing) { doneButton }
+        } else {
+            if isMe {
+                ToolbarItem(placement: .topBarTrailing) { editButton }
+                ToolbarSpacer(.fixed, placement: .topBarTrailing)
+            }
+            ToolbarItem(placement: .topBarTrailing) { moreMenu }
         }
-        ToolbarItem(placement: .topBarTrailing) { moreMenu }
     }
 
     private var editButton: some View {
-        Button { action = .edit(page) } label: { Image(systemName: "pencil") }
-            .accessibilityLabel("Edit jam page").accessibilityIdentifier("jam-edit-page")
+        Button("Edit") { editing = true }.accessibilityLabel("Edit org").accessibilityIdentifier("jam-edit-page")
+    }
+
+    private var doneButton: some View {
+        Button("Done") { editing = false }.fontWeight(.semibold).accessibilityLabel("Done editing").accessibilityIdentifier("org-done")
+    }
+
+    /// While editing, ‹ goes back to the org's page, not out of it.
+    private var backToOrg: some View {
+        Button { editing = false } label: { Image(systemName: "chevron.left") }.accessibilityLabel("Back to the org").accessibilityIdentifier("org-edit-back")
     }
 
     private var moreMenu: some View {
         Menu {
             if isMe {
                 Button { action = .subscribers(page) } label: { Label("Subscribers", systemImage: "person.2") }.accessibilityIdentifier("jam-subscribers")
-                Button(role: .destructive) { action = .end(page) } label: { Label("End jam", systemImage: "xmark.circle") }.accessibilityIdentifier("jam-end")
+                Button(role: .destructive) { action = .end(page) } label: { Label("Close org", systemImage: "xmark.circle") }.accessibilityIdentifier("jam-end")
             }
             if let username = store.publicProfiles[page.writerId]?.username, let url = URL(string: InviteLink.url(username: username)) {
                 ShareLink(item: url, message: Text("\(page.title) on lime")) { Label("Share", systemImage: "square.and.arrow.up") }.accessibilityIdentifier("org-share")
@@ -268,6 +303,17 @@ struct OrgProfileView: View {
                 BylineAvatar(people: authors, jam: page.title, jamId: page.jamId, size: 104).frame(width: 104, height: 104)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(authors.count > 1 ? "\(page.title), with \(authors.dropFirst().map(\.name).joined(separator: ", "))" : page.title)
+                    // In edit mode the picture gets a camera circle, as a person's photo does (LIME-225).
+                    .overlay(alignment: .topTrailing) {
+                        if editingNow {
+                            Button { pictureSheet = true } label: {
+                                Image(systemName: "camera.fill").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.text)
+                                    .frame(width: 34, height: 34).background(Theme.surface.opacity(0.92), in: Circle()).frame(width: 44, height: 44).contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain).offset(x: 12, y: -12)
+                            .accessibilityLabel("Change org picture").accessibilityIdentifier("org-edit-picture")
+                        }
+                    }
                     .padding(.top, 12).padding(.bottom, 14)   // room for the writers' circles that hang below the tile
                 Text(page.title).font(Theme.font(.title2, weight: .semibold)).foregroundStyle(.white).multilineTextAlignment(.center)
                     .accessibilityAddTraits(.isHeader).accessibilityIdentifier("profile-jam-row")
@@ -281,7 +327,9 @@ struct OrgProfileView: View {
             }
             .padding(.top, HeroShape.avatarTopPadding(screen: screen, inset: inset, avatar: 104) - 12)
             Spacer(minLength: HeroShape.textToPills(screen: screen))
-            OrgTabs(selection: $tab)
+            if editingNow { Color.clear.frame(height: HeroShape.pillsRow) } else {
+                ProfileTabs(sections: Self.sections, selection: $tab)
+            }
         }
         .frame(maxWidth: .infinity, minHeight: HeroShape.blockHeight(screen: screen, inset: inset))
         .background(alignment: .top) {
@@ -324,12 +372,80 @@ struct OrgProfileView: View {
         .accessibilityIdentifier("profile-org-page-subscribe")
     }
 
+    // MARK: Edit in place
+
+    /// Under the hero, the tabs give way to the fields as grouped rows with a pencil; each opens its own small sheet.
+    @ViewBuilder
+    private var editRows: some View {
+        VStack(spacing: 16) {
+            SettingsCard {
+                editRow("person", page.title, id: "org-edit-name", label: "Edit name, \(page.title)") { fieldSheet = .name }
+                editRow("text.alignleft", page.about.isEmpty ? "About" : page.about, id: "org-edit-about", dim: page.about.isEmpty, divider: false,
+                        label: "Edit about, \(page.about.isEmpty ? "none" : page.about)") { fieldSheet = .about }
+            }
+            SettingsFootnote(text: "Your org\u{2019}s name, about and picture are public.")
+            SettingsCard {
+                editRow("tag", page.topics.isEmpty ? "Tags" : page.topics.joined(separator: " \u{00B7} "), id: "org-edit-tags", dim: page.topics.isEmpty, divider: false,
+                        label: "Edit tags, \(page.topics.isEmpty ? "none" : page.topics.joined(separator: ", "))") { fieldSheet = .tags }
+            }
+            SettingsFootnote(text: "Up to 8. Teachers find your org by these.")
+            SettingsCard {
+                HStack(spacing: 14) {
+                    Image(systemName: "person.2").font(.system(size: 20)).frame(width: 28).foregroundStyle(Theme.text).accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Owners").font(Theme.body).foregroundStyle(Theme.text)
+                        Text(store.orgAuthorNames(page)).font(Theme.secondary).foregroundStyle(Theme.textSecondary)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 18).frame(minHeight: 58)
+                .accessibilityElement(children: .combine).accessibilityIdentifier("org-edit-owners")
+            }
+            SettingsFootnote(text: "Everyone you credit on a post as \(page.title) shows here.")
+            SettingsCard {
+                Toggle(isOn: Binding(get: { page.hasCommunity }, set: { on in Task { _ = await store.setCommunity(page.jamId, on: on) } })) {
+                    Text("Community chat").font(Theme.body).foregroundStyle(Theme.text)
+                }
+                .tint(Theme.accent).padding(.horizontal, 18).frame(minHeight: 58)
+                .accessibilityIdentifier("jam-community-toggle")
+            }
+            SettingsFootnote(text: "Subscribers can join a group chat with you. Up to 100 people.")
+            SettingsCard {
+                Button { action = .end(page) } label: {
+                    HStack { Text("Close org").font(Theme.body).foregroundStyle(Color.red); Spacer(minLength: 0) }
+                        .padding(.horizontal, 18).frame(minHeight: 58).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).accessibilityIdentifier("jam-end")
+            }
+            SettingsFootnote(text: "Subscribers keep what they have.")
+        }
+    }
+
+    private func editRow(_ symbol: String, _ title: String, id: String, dim: Bool = false, divider: Bool = true, label: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 0) {
+                HStack(spacing: 14) {
+                    Image(systemName: symbol).font(.system(size: 20)).frame(width: 28).foregroundStyle(Theme.text).accessibilityHidden(true)
+                    Text(title).font(Theme.body).foregroundStyle(dim ? Theme.textSecondary : Theme.text).lineLimit(2).multilineTextAlignment(.leading)
+                    Spacer(minLength: 8)
+                    Image(systemName: "pencil").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.textSecondary).accessibilityHidden(true)
+                }
+                .padding(.horizontal, 18).frame(minHeight: 58)
+                if divider { Divider().overlay(Theme.hairline).padding(.leading, 60) }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier(id)
+    }
+
     // MARK: Content
 
     @ViewBuilder
     private func content(following: Bool) -> some View {
         if tab == .info { info } else if isMe || following {
-            let segment = tab.segment ?? .all
+            let segment: JamSegment = tab == .articles ? .articles : tab == .podcasts ? .podcasts : .posts
             let posts = store.posts(of: page.jamId).filter { $0.displayAs == "jam" && segment.includes(kind: $0.kind) }
             if posts.isEmpty {
                 Text("Posts shared as \(page.title) show here. Choose \(page.title) in Post as when you post.").font(Theme.body).foregroundStyle(Theme.textSecondary)
@@ -348,13 +464,13 @@ struct OrgProfileView: View {
         }
     }
 
-    /// Info: what it is about, its topics, its authors, since when.
+    /// Info (everyone): what it is about, its tags, its owners, the community chat, how many subscribe and since when.
     @ViewBuilder
     private var info: some View {
         VStack(alignment: .leading, spacing: 16) {
             if !page.about.isEmpty { infoCard("About") { Text(page.about).font(Theme.body).foregroundStyle(Theme.text).frame(maxWidth: .infinity, alignment: .leading).padding(18) } }
-            if !page.topics.isEmpty { infoCard("Topics") { Text(page.topics.joined(separator: " \u{00B7} ")).font(Theme.body).foregroundStyle(Theme.text).frame(maxWidth: .infinity, alignment: .leading).padding(18) } }
-            infoCard("Authors") {
+            if !page.topics.isEmpty { infoCard("Tags") { Text(page.topics.joined(separator: " \u{00B7} ")).font(Theme.body).foregroundStyle(Theme.text).frame(maxWidth: .infinity, alignment: .leading).padding(18) } }
+            infoCard("Owners") {
                 VStack(spacing: 0) {
                     let authors = store.orgAuthors(page)
                     ForEach(Array(authors.enumerated()), id: \.element.id) { index, person in
@@ -371,10 +487,10 @@ struct OrgProfileView: View {
                     }
                 }
             }
-            if let first = store.posts(of: page.jamId).map(\.created).min() {
-                Text("Since \(Date(timeIntervalSince1970: Double(first) / 1000).formatted(.dateTime.month(.wide).year()))").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
-                    .frame(maxWidth: .infinity).accessibilityIdentifier("org-since")
-            }
+            if !isMe && page.hasCommunity { CommunityJoinRow(jamID: page.jamId) }
+            let count = page.subscriberCount == 1 ? "1 subscriber" : "\(page.subscriberCount) subscribers"
+            let started = store.posts(of: page.jamId).map(\.created).min().map { " \u{00B7} Started \(Date(timeIntervalSince1970: Double($0) / 1000).formatted(.dateTime.month(.abbreviated).year()))" } ?? ""
+            Text(count + started).font(Theme.secondary).foregroundStyle(Theme.textSecondary).frame(maxWidth: .infinity).accessibilityIdentifier("org-since")
         }
     }
 
@@ -383,30 +499,5 @@ struct OrgProfileView: View {
             Text(title).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.textSecondary).padding(.leading, 6)
             content().background(Theme.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
-    }
-}
-
-/// All · Posts · Articles · Podcasts · Info, as the person profile's tab pills (no shadow).
-private struct OrgTabs: View {
-    @Binding var selection: OrgTab
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 4) {
-                ForEach(Array(OrgTab.allCases.enumerated()), id: \.element) { index, tab in
-                    let on = selection == tab
-                    Button { selection = tab } label: {
-                        Text(tab.rawValue).font(Theme.font(.subheadline, weight: on ? .semibold : .regular)).foregroundStyle(on ? Theme.text : Theme.textSecondary)
-                            .padding(.horizontal, 14).frame(minHeight: 44)
-                            .background { if on { Capsule().fill(Theme.surface.opacity(0.92)) } }
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("\(tab.rawValue), tab, \(index + 1) of \(OrgTab.allCases.count)")
-                    .accessibilityAddTraits(on ? [.isSelected] : [])
-                    .accessibilityIdentifier("org-tab-\(tab.rawValue)")
-                }
-            }
-            .padding(4)
-        }
-        .accessibilityIdentifier("profile-org-segments")
     }
 }

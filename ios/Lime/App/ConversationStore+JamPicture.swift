@@ -1,7 +1,7 @@
 import Foundation
 import UIKit
 
-/// A jam's public picture (LIME-194): set by its writer from Edit jam page, fetched like a profile photo, and shown in the jam's tile everywhere.
+/// A jam's public picture (LIME-194): set by its writer from the org page's Edit, fetched like a profile photo, and shown in the jam's tile everywhere.
 /// It is kept in `AvatarCache` under `jam:<id>`; the server and any signed-in teacher can see it, as they can the jam's title.
 extension ConversationStore {
     static func jamPictureKey(_ jamID: String) -> String { "jam:\(jamID)" }

@@ -1,6 +1,6 @@
 import XCTest
 
-/// LIME-194: a picture for a jam, from Edit jam page. (The Photos picker itself is the system's; the demo starts with a picture already set.)
+/// LIME-194: a picture for a jam, from the org page's Edit. (The Photos picker itself is the system's; the demo starts with a picture already set.)
 @MainActor
 final class Jam194UITests: LimeUITestCase {
     private func any(_ app: XCUIApplication, _ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
@@ -14,6 +14,8 @@ final class Jam194UITests: LimeUITestCase {
         any(app, "profile-org-demo-my-jam").tap()
         XCTAssertTrue(app.buttons["jam-edit-page"].waitForExistence(timeout: 8))
         app.buttons["jam-edit-page"].tap()
+        XCTAssertTrue(app.buttons["org-edit-picture"].waitForExistence(timeout: 8), "the camera circle")
+        app.buttons["org-edit-picture"].tap()
         XCTAssertTrue(app.buttons["jam-picture-add"].waitForExistence(timeout: 8))
         return app
     }
@@ -22,7 +24,7 @@ final class Jam194UITests: LimeUITestCase {
         let app = editPage([])
         XCTAssertEqual(app.buttons["jam-picture-add"].label, "Add picture")
         XCTAssertFalse(app.buttons["jam-picture-remove"].exists)
-        XCTAssertTrue(app.staticTexts["Your jam's picture is public, like its name."].exists, "says it is public")
+        XCTAssertTrue(app.staticTexts["Your org's picture is public, like its name."].exists, "says it is public")
     }
 
     func testAJamWithAPictureOffersChangeAndRemoveAndRemoveBringsBackAdd() {

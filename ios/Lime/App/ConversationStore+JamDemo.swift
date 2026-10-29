@@ -14,7 +14,7 @@ extension ConversationStore {
         guard let i = jamsMine.firstIndex(where: { $0.jamId == jamID }) else { return }
         let old = jamsMine[i]
         jamsMine[i] = JamInfo(jamId: old.jamId, conversationId: old.conversationId, writer: old.writer, title: title, about: about, topics: topics, tiers: old.tiers, mine: true,
-                              status: "active", ended: false, community: false, communityState: nil, communityGroup: nil, subscriberCount: old.subscriberCount, postCount: old.postCount, created: old.created)
+                              status: "active", ended: false, community: old.community, communityState: nil, communityGroup: nil, subscriberCount: old.subscriberCount, postCount: old.postCount, created: old.created)
     }
 
     /// The bytes of demo files that are not pictures (a post's captions), by attachment id.
@@ -43,7 +43,7 @@ extension ConversationStore {
         if let i = jamsMine.firstIndex(where: { $0.jamId == jamID }) {
             let old = jamsMine[i]
             jamsMine[i] = JamInfo(jamId: old.jamId, conversationId: old.conversationId, writer: old.writer, title: old.title, about: old.about, topics: old.topics, tiers: old.tiers, mine: true,
-                                  status: "active", ended: false, community: false, communityState: nil, communityGroup: nil, subscriberCount: old.subscriberCount, postCount: old.postCount + 1, created: old.created)
+                                  status: "active", ended: false, community: old.community, communityState: nil, communityGroup: nil, subscriberCount: old.subscriberCount, postCount: old.postCount + 1, created: old.created)
         }
     }
 
@@ -117,7 +117,7 @@ extension ConversationStore {
         if let i = jamsMine.firstIndex(where: { $0.postCount > 0 && jamPosts[$0.jamId] != nil }) {
             let old = jamsMine[i]
             jamsMine[i] = JamInfo(jamId: old.jamId, conversationId: old.conversationId, writer: old.writer, title: old.title, about: old.about, topics: old.topics, tiers: old.tiers, mine: true,
-                                  status: "active", ended: false, community: false, communityState: nil, communityGroup: nil, subscriberCount: old.subscriberCount, postCount: max(0, old.postCount - 1), created: old.created)
+                                  status: "active", ended: false, community: old.community, communityState: nil, communityGroup: nil, subscriberCount: old.subscriberCount, postCount: max(0, old.postCount - 1), created: old.created)
         }
     }
 

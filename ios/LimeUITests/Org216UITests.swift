@@ -36,14 +36,15 @@ final class Org216UITests: LimeUITestCase {
         any(app, "profile-org-demo-my-jam").tap()
         XCTAssertTrue(app.staticTexts["profile-jam-row"].waitForExistence(timeout: 8), "the org's name")
         XCTAssertEqual(app.staticTexts["profile-jam-row"].label, "Reading circles")
-        XCTAssertTrue(app.buttons["jam-edit-page"].exists, "✎ Edit for the owner")
+        XCTAssertTrue(app.buttons["jam-edit-page"].exists, "Edit for the owner")
         XCTAssertTrue(app.buttons["profile-org-more"].exists, "⋯")
-        for tab in ["All", "Posts", "Articles", "Podcasts", "Info"] { XCTAssertTrue(app.buttons["org-tab-\(tab)"].exists, tab) }
+        for tab in ["Info", "Posts", "Articles", "Podcasts"] { XCTAssertTrue(app.buttons["profile-tab-\(tab)"].exists, tab) }
         XCTAssertTrue(app.staticTexts["org-authors"].exists, "the authors under the name")
         XCTAssertTrue(app.descendants(matching: .any)["profile-hero-default"].exists, "the profile's hero, with the org's colour as its default")
         XCTAssertFalse(app.navigationBars.buttons["Done"].exists, "pushed, not a sheet")
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Welcome from the circle'")).firstMatch.waitForExistence(timeout: 8) || app.staticTexts["Welcome from the circle"].exists, "a post made as the org shows under All")
-        // The ⋯ has Subscribers and End jam.
+        app.buttons["profile-tab-Posts"].tap()
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Welcome from the circle'")).firstMatch.waitForExistence(timeout: 8) || app.staticTexts["Welcome from the circle"].exists, "a post made as the org shows under Posts")
+        // The ⋯ has Subscribers and Close org.
         app.buttons["profile-org-more"].tap()
         XCTAssertTrue(app.buttons["jam-subscribers"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["jam-end"].exists)
@@ -56,6 +57,8 @@ final class Org216UITests: LimeUITestCase {
         XCTAssertTrue(app.buttons["profile-tab-Orgs"].waitForExistence(timeout: 10))
         app.buttons["profile-tab-Orgs"].tap()
         any(app, "profile-org-demo-my-jam").tap()
+        XCTAssertTrue(app.buttons["profile-tab-Posts"].waitForExistence(timeout: 8))
+        app.buttons["profile-tab-Posts"].tap()
         XCTAssertTrue(any(app, "org-empty").waitForExistence(timeout: 8))
         XCTAssertTrue(any(app, "org-empty").label.contains("in Post as"), any(app, "org-empty").label)
     }
@@ -73,7 +76,7 @@ final class Org216UITests: LimeUITestCase {
         XCTAssertTrue(subscribe.waitForExistence(timeout: 8), "Subscribe is a pill under the name")
         XCTAssertGreaterThan(subscribe.frame.minY, app.staticTexts["profile-jam-row"].frame.maxY, "under the name, not in the header")
         XCTAssertFalse(app.buttons["jam-edit-page"].exists, "no Edit for a visitor")
-        app.buttons["org-tab-Info"].tap()
+        // Info is where it opens.
         XCTAssertTrue(app.staticTexts["Short lessons for grades 3 to 5"].waitForExistence(timeout: 5), "Info: what it is about")
         XCTAssertTrue(any(app, "org-author-sam").exists, "and its authors")
     }

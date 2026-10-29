@@ -59,7 +59,7 @@ struct ModerationScreen: View {
     }
 
     static func kindName(_ kind: String) -> String {
-        ["message": "Message", "person": "Person", "group": "Group", "jam_post": "Post", "comment": "Comment", "jam": "Jam page", "org": "Org", "profile_item": "Profile picture"][kind] ?? kind
+        ["message": "Message", "person": "Person", "group": "Group", "jam_post": "Post", "comment": "Comment", "jam": "Org", "org": "Org", "profile_item": "Profile picture"][kind] ?? kind
     }
 }
 
