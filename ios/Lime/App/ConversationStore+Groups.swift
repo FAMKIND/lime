@@ -48,6 +48,17 @@ extension ConversationStore {
         Task { await deliverNow() }
     }
 
+    /// Makes a member an admin, or takes it away (the owner's call).
+    func setGroupAdmin(_ id: Conversation.ID, user: String, admin: Bool) async {
+        #if DEBUG
+        if isDemo { if let i = demoGroups[id]?.people.firstIndex(where: { $0.id == user }) { demoGroups[id]?.people[i].role = admin ? "admin" : "member" }; return }
+        #endif
+        guard let core else { return }
+        try? await Task.detached(priority: .userInitiated) { try core.setGroupAdmin(conversationId: id, userId: user, admin: admin) }.value
+        await reload()
+        Task { await deliverNow() }
+    }
+
     /// `false` when the name is not allowed (empty, over 50 characters) or you may not rename.
     func renameGroup(_ id: Conversation.ID, to name: String) async -> Bool {
         #if DEBUG

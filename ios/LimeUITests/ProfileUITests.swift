@@ -149,14 +149,16 @@ final class ProfileUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["profile-name"].label, "Lee Wong")
     }
 
-    func testGroupDetailsMemberRowsOpenProfilesAndTheSharedCardOpensAList() {
+    func testGroupDetailsMemberRowsOpenProfilesAndTheMediaFilesLinksTabsShowWhatWasShared() {
         let app = app(["-lime-demo-screen", "group-details"])
         let row = app.buttons["group-member-open-lee"]
         XCTAssertTrue(row.waitForExistence(timeout: 10))
-        XCTAssertTrue(any(app, "group-shared-media").exists && any(app, "group-shared-files").exists && any(app, "group-shared-links").exists, "the Shared card")
-        any(app, "group-shared-links").tap()
-        XCTAssertTrue(any(app, "shared-list").waitForExistence(timeout: 5), "opens the group's list")
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        // LIME-251: Media, Files and Links are tabs on the page now (this demo group has shared nothing).
+        for tab in ["Media", "Files", "Links"] {
+            app.buttons["profile-tab-\(tab)"].tap()
+            XCTAssertTrue(any(app, "group-shared-empty").waitForExistence(timeout: 5), tab)
+        }
+        app.buttons["profile-tab-Members"].tap()
         row.tap()
         XCTAssertTrue(any(app, "profile-screen").waitForExistence(timeout: 8))
     }

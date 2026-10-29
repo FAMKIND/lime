@@ -793,8 +793,11 @@ final class LimeUITestsQARound: LimeUITestCase {
     func testAGroupsPictureCanBeEditedFromItsDetailsAsAnEmojiOrAPhoto() {
         let app = threadApp("group-details")
         app.launch()
-        let avatar = app.buttons["group-details-avatar"]
-        XCTAssertTrue(avatar.waitForExistence(timeout: 10))
+        // LIME-251: Edit puts a camera circle on the avatar.
+        XCTAssertTrue(app.buttons["group-edit"].waitForExistence(timeout: 10))
+        app.buttons["group-edit"].tap()
+        let avatar = app.buttons["group-edit-picture"]
+        XCTAssertTrue(avatar.waitForExistence(timeout: 5))
         avatar.tap()
         XCTAssertTrue(app.segmentedControls["group-avatar-mode"].waitForExistence(timeout: 5), "Emoji or Photo")
         let emoji = app.textFields["group-emoji-field"]
@@ -2362,19 +2365,24 @@ final class LimeUITestsGroupsAndSignIn: LimeUITestCase {
     func testGroupDetailsRenameRemoveAddAndLeave() {
         let app = threadApp("group-details")
         app.launch()
-        XCTAssertTrue(app.buttons["group-details-name"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["group-edit"].waitForExistence(timeout: 10))
         XCTAssertEqual(app.staticTexts["group-details-count"].label, "4 members")
-        // Rename.
-        app.buttons["group-details-name"].tap()
+        // Rename: Edit, the Name row, its sheet, Done.
+        app.buttons["group-edit"].tap()
+        app.buttons["group-edit-name"].tap()
         let field = app.textFields["group-rename-field"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.clearAndType("Fourth Grade")
         XCTAssertEqual(field.value as? String, "Fourth Grade", "the field holds the new name")
         app.buttons["group-rename-save"].tap()
-        expectation(for: NSPredicate(format: "label CONTAINS 'Fourth Grade'"), evaluatedWith: app.buttons["group-details-name"])
+        XCTAssertTrue(app.buttons["group-edit-name"].waitForExistence(timeout: 5))
+        app.buttons["group-done"].tap()
+        expectation(for: NSPredicate(format: "label CONTAINS 'Fourth Grade'"), evaluatedWith: app.staticTexts["group-details-name"])
         waitForExpectations(timeout: 5)
-        // Remove someone (asks first).
-        XCTAssertTrue(app.buttons["group-remove-sam"].exists)
+        // Remove someone from the row's menu (asks first).
+        XCTAssertTrue(app.buttons["group-member-menu-sam"].exists)
+        app.buttons["group-member-menu-sam"].tap()
+        XCTAssertTrue(app.buttons["group-remove-sam"].waitForExistence(timeout: 3))
         app.buttons["group-remove-sam"].tap()
         let confirm = app.buttons.matching(identifier: "group-remove-confirm").firstMatch
         XCTAssertTrue(confirm.waitForExistence(timeout: 3))
@@ -2382,7 +2390,7 @@ final class LimeUITestsGroupsAndSignIn: LimeUITestCase {
         XCTAssertTrue(app.staticTexts["group-details-count"].waitForExistence(timeout: 3))
         expectation(for: NSPredicate(format: "label == '3 members'"), evaluatedWith: app.staticTexts["group-details-count"])
         waitForExpectations(timeout: 5)
-        XCTAssertFalse(app.buttons["group-remove-sam"].exists)
+        XCTAssertFalse(app.buttons["group-member-menu-sam"].exists)
         // Add someone from the teachers you message.
         app.buttons["group-add"].tap()
         XCTAssertTrue(app.buttons["group-pick-ben.okafor"].waitForExistence(timeout: 5))
@@ -2391,8 +2399,9 @@ final class LimeUITestsGroupsAndSignIn: LimeUITestCase {
         app.buttons["group-next"].tap()
         expectation(for: NSPredicate(format: "label == '4 members'"), evaluatedWith: app.staticTexts["group-details-count"])
         waitForExpectations(timeout: 5)
-        // Leave (asks first), and the group is gone from Messages.
-        app.buttons["group-leave"].tap()
+        // Leave (asks first), from the ⋯, and the group is gone from Messages.
+        app.buttons["group-more"].tap()
+        app.buttons["group-more-leave"].tap()
         let leave = app.buttons.matching(identifier: "group-leave-confirm").firstMatch
         XCTAssertTrue(leave.waitForExistence(timeout: 3))
         leave.tap()

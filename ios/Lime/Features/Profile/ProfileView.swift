@@ -834,7 +834,7 @@ struct CallLine: View {
     }
 }
 
-private struct MediaCell: View {
+struct MediaCell: View {
     let item: AttachmentItem
     @Environment(ConversationStore.self) private var store
     /// The picture itself when this phone already has it (never fetched just to fill the grid).
@@ -868,7 +868,7 @@ private struct MediaCell: View {
     }
 }
 
-private struct FileRow: View {
+struct FileRow: View {
     let message: Message
     var body: some View {
         let file = message.attachments.first { $0.kind != .image && $0.kind != .video }
@@ -885,7 +885,7 @@ private struct FileRow: View {
     }
 }
 
-private struct LinkRow: View {
+struct LinkRow: View {
     let message: Message
     private var url: String {
         message.linkPreview?.url ?? message.text.split(whereSeparator: \.isWhitespace).map(String.init).first { $0.lowercased().hasPrefix("http") } ?? ""
@@ -938,11 +938,11 @@ struct SharedListView: View {
 
 /// The sections of a profile as one row of tabs (LIME-188d): it scrolls sideways when it is wider than the screen, and the chosen tab sits in a
 /// Liquid Glass capsule. For VoiceOver each reads "Posts, tab, 3 of 7".
-struct ProfileTabs: View {
-    let sections: [ProfileView.Section]
-    @Binding var selection: ProfileView.Section
+struct ProfileTabs<Tab: Hashable & RawRepresentable>: View where Tab.RawValue == String {
+    let sections: [Tab]
+    @Binding var selection: Tab
     /// Tabs with something new (a quiet dot), LIME-189c.
-    var badged: Set<ProfileView.Section> = []
+    var badged: Set<Tab> = []
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
