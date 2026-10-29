@@ -234,6 +234,8 @@ struct SettingsRow: View {
 /// A pushed Settings page: the canvas, a title in the navigation bar, scrolling content.
 struct SettingsPage<Content: View>: View {
     let title: String
+    /// False on a page whose own content names it (a group's details, under its three header circles): the bar shows no title to squeeze to "…" (LIME-250).
+    var showsTitle = true
     @ViewBuilder var content: Content
     var body: some View {
         ScrollView {
@@ -241,7 +243,7 @@ struct SettingsPage<Content: View>: View {
                 .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 32)
         }
         .background(Theme.canvas.ignoresSafeArea())
-        .navigationTitle(title)
+        .navigationTitle(showsTitle ? title : "")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
         .limeBack()

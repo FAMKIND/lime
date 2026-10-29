@@ -246,7 +246,7 @@ struct GroupDetailsView: View {
     @State private var editingAvatar = false
 
     var body: some View {
-        SettingsPage(title: "Details") {
+        SettingsPage(title: "Details", showsTitle: false) {
             if let details {
                 header(details)
                 sharedCard
