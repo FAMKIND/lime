@@ -8693,3 +8693,4 @@ On other people's phones (not reachable): their chats with the account, jam post
 - **Limits:** the width formula is for portrait phone widths; not looked at on iPad or landscape. A long name truncating was not screenshotted (the width is bounded, so it truncates).
 - **Gate:** on the 13 mini: a 1:1 chat shows the avatar, the full name and the status line; a group shows the avatars, the name and "N members"; 🔍 and 📹 are round; a long name truncates with "…".
 - **Installed (247b, `682e700`):** Jean's 12 mini only. The 13 mini failed ("not able to fulfill the requested usage assertion", error 4016: usually asleep or locked) and the iPad was locked; both need `bash $TMPDIR/install.sh` once unlocked. The earlier 244/245 build is still on the iPad's old build too (it was locked then as well).
+- **Installed (247b, 244, 245 build):** all three, the iPad, Shem's 13 mini and Jean's 12 mini, on the first try, once unlocked. Supersedes the line above.
