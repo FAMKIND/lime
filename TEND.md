@@ -8681,3 +8681,14 @@ On other people's phones (not reachable): their chats with the account, jam post
 - **Gate:** on the 13 mini open Conscious collective: glass tabs, Info first, the word Edit; Edit → camera circle + rows → change About in its sheet → Done. On Jean's phone: Subscribe shows, then Subscribed ✓.
 
 **LIME-244 and LIME-245 installed (one build, `0eb01e8`):** Shem's 13 mini and Jean's 12 mini. **The iPad failed: it was locked** ("device has not been unlocked recently"); it takes `bash $TMPDIR/install.sh` again once unlocked. (`$TMPDIR/install.sh` had been cleaned away and was rewritten from the session log; the SwiftPM cache of the WebRTC/LiveKit xcframeworks had also lost their `Info.plist`s and was re-resolved.)
+
+## LIME-247b — the chat header on iOS 26: the name is back, the circles are round
+
+**Looked at first (the brief's step 1).** The simulator I used for 247 was the iPhone 16 Pro on iOS 18.3, which draws the legacy header. This Mac also has an **iOS 27.0 runtime** (iPhone 17, `8AC7DD22-…`), which takes the `#available(iOS 26)` path, so the bug was reproduced there. Screenshots (1206 × 2622, an iPhone 17, not a 13 mini): `docs/qa-shots/247b/before-dm.png`, `before-group.png`, `after-dm.png`, `after-group.png`. **Before:** only the avatar beside ‹ (name and status gone), and 🔍 / 📹 as the system's wide capsules.
+
+1. **Name back:** the title is now a `.principal` item with a fixed width worked out from the screen (`screen width − 196`), left-aligned, so it sits beside ‹ and truncates rather than vanishing. A first try (`.principal` with `maxWidth: .infinity`) centred it once the circles were 44 pt; `.topBarLeading` (247) was the one that dropped the name. Option (c) of the brief, then.
+2. **True circles:** both trailing items hide the system's shared background and draw our own `limeGlass(in: Circle())`, each `fixedSize` then 44 × 44 (without that the toolbar shrank them to 36 pt; the new header test caught it: 44.0 × 44.0 measured now). A fixed gap between them; the live-call button keeps its own lime glass; in select mode Cancel keeps the system pill.
+3. **Legacy header (iOS 17-25):** untouched.
+- **Tests:** the 247 header test (`testTheChatHeaderIs…`) passes on the iOS 27 simulator; the rest of `LimeUITestsQARound` passed on it too before the last size tweak (one failure was the 36 pt width, now fixed). No new tests (visual fix).
+- **Limits:** the width formula is for portrait phone widths; not looked at on iPad or landscape. A long name truncating was not screenshotted (the width is bounded, so it truncates).
+- **Gate:** on the 13 mini: a 1:1 chat shows the avatar, the full name and the status line; a group shows the avatars, the name and "N members"; 🔍 and 📹 are round; a long name truncates with "…".
