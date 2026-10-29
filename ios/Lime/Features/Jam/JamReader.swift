@@ -90,11 +90,11 @@ struct JamPostView: View {
         .toolbar {
             // The writer's own post: Edit and Delete in a ⋯ (until the cards have theirs, LIME-199).
             if let post, post.author == store.meProvider().id {
-                ToolbarItem(placement: .topBarTrailing) {
+                CircleToolbarItem {
                     Menu {
                         Section { Button { editingPost = post } label: { Label("Edit", systemImage: "pencil") }.accessibilityIdentifier("options-edit") }
                         Section { Button(role: .destructive) { confirmingDelete = true } label: { Label("Delete post", systemImage: "trash") }.accessibilityIdentifier("options-delete") }
-                    } label: { Image(systemName: "ellipsis") }
+                    } label: { ToolIconLabel(symbol: "ellipsis") }
                         .accessibilityLabel("More").accessibilityIdentifier("jam-post-more")
                 }
             }

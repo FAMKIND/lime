@@ -244,6 +244,7 @@ struct SettingsPage<Content: View>: View {
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
+        .limeBack()
     }
 }
 

@@ -32,10 +32,13 @@ struct RootHeader: ViewModifier {
                             }
                             .accessibilityLabel("lime menu")
                         }
-                        ToolbarItemGroup(placement: .topBarTrailing) {
-                            Button(action: search) { Image(systemName: "magnifyingglass") }
+                        CircleToolbarItem {
+                            Button(action: search) { ToolIconLabel(symbol: "magnifyingglass") }
                                 .accessibilityLabel("Search")
                                 .accessibilityIdentifier(searchID)
+                        }
+                        ToolbarSpacer(.fixed, placement: .topBarTrailing)
+                        ToolbarItem(placement: .topBarTrailing) {
                             Button { store.openMyProfile() } label: { AvatarView(person: session.mePerson, size: 30, showsStatus: true, badgeKeepsColours: true) }
                                 .accessibilityLabel("Settings")
                                 .accessibilityIdentifier("settings-button")

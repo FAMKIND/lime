@@ -26,16 +26,16 @@ struct JamPage: View {
                 .overlay(alignment: .bottom) { if store.draftSelecting { DraftSelectionBar() } }
                 .navigationDestination(for: ProfileRoute.self) { ProfileView(route: $0) }
                 .navigationDestination(for: OrgRoute.self) { OrgProfileView(route: $0) }
-                .navigationDestination(for: SharedListRoute.self) { SharedListView(route: $0) }
+                .navigationDestination(for: SharedListRoute.self) { SharedListView(route: $0).limeBack() }
                 .navigationDestination(for: JamPostRoute.self) { JamPostView(postID: $0.postID, toComments: $0.toComments) }
-                .navigationDestination(for: OpenPostRoute.self) { OpenPostPage(postID: $0.postID) }
-                .navigationDestination(for: SeriesRoute.self) { SeriesPage(seriesID: $0.seriesID) }
-                .navigationDestination(for: JamSubscribersRoute.self) { JamSubscribersView(jamID: $0.jamID) }
+                .navigationDestination(for: OpenPostRoute.self) { OpenPostPage(postID: $0.postID).limeBack() }
+                .navigationDestination(for: SeriesRoute.self) { SeriesPage(seriesID: $0.seriesID).limeBack() }
+                .navigationDestination(for: JamSubscribersRoute.self) { JamSubscribersView(jamID: $0.jamID).limeBack() }
                 .navigationDestination(for: Conversation.ID.self) { id in ChatView(conversationID: id).toolbar(.hidden, for: .tabBar) }
                 .navigationDestination(for: ChatTarget.self) { target in
                     ChatView(conversationID: target.conversationID, focusMessageID: target.messageID, focusWords: target.words).toolbar(.hidden, for: .tabBar)
                 }
-                .navigationDestination(for: ThreadTarget.self) { target in ThreadView(target: target).toolbar(.hidden, for: .tabBar) }
+                .navigationDestination(for: ThreadTarget.self) { target in ThreadView(target: target).limeBack().toolbar(.hidden, for: .tabBar) }
                 .navigationDestination(isPresented: Binding(get: { store.jamSearching }, set: { store.jamSearching = $0 })) {
                     MessageSearchScreen(jamFirst: true)
                 }

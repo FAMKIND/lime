@@ -356,45 +356,66 @@ struct GroupDetailsView: View {
     /// Top right, as on a profile (LIME-152h): Mute (the bell, with the same durations), Pin or Unpin, and ⋯ with what this page already offers.
     @ToolbarContentBuilder
     private var toolbarItems: some ToolbarContent {
-        ToolbarItemGroup(placement: .topBarTrailing) {
+        if #available(iOS 26, *) {
+            // Each icon is its own circle (LIME-247c).
             if let conversation = store.conversation(target.conversationID), !conversation.isRequest {
-                let muted = notifications.settings.isMuted(conversation.id)
-                Button {
-                    if muted { notifications.settings.unmute(conversation.id) } else { confirmingMute = true }
-                } label: { Image(systemName: muted ? "bell.slash" : "bell") }
-                .accessibilityLabel(muted ? "Unmute" : "Mute").accessibilityIdentifier("group-mute")
-                Button { Task { await store.setPinned(conversation.id, !conversation.isPinned) } } label: {
-                    Image(systemName: conversation.isPinned ? "pin.slash" : "pin")
-                }
-                .accessibilityLabel(conversation.isPinned ? "Unpin" : "Pin").accessibilityIdentifier("group-pin")
+                CircleToolbarItem { muteButton(conversation) }
+                ToolbarSpacer(.fixed, placement: .topBarTrailing)
+                CircleToolbarItem { pinButton(conversation) }
+                ToolbarSpacer(.fixed, placement: .topBarTrailing)
             }
-            if let details {
-                Menu {
-                    if details.canAdd {
-                        Button { adding = true } label: { Label("Add members", systemImage: "person.badge.plus") }
-                            .accessibilityIdentifier("group-more-add")
-                    }
-                    if details.canRename {
-                        Button {
-                            newName = details.name
-                            renaming = true
-                        } label: { Label("Rename group", systemImage: "pencil") }
-                            .accessibilityIdentifier("group-more-rename")
-                    }
-                    Divider()
-                    if details.myRole == "owner" {
-                        Button(role: .destructive) { deletingForEveryone = true } label: { Label("Delete group", systemImage: "trash") }
-                            .accessibilityIdentifier("group-more-delete")
-                    } else {
-                        Button(role: .destructive) { clearing = true } label: { Label("Clear messages", systemImage: "eraser") }
-                            .accessibilityIdentifier("group-more-clear")
-                    }
-                    Button(role: .destructive) { leaving = true } label: { Label("Leave group", systemImage: "rectangle.portrait.and.arrow.right") }
-                        .accessibilityIdentifier("group-more-leave")
-                } label: { Image(systemName: "ellipsis") }
-                .accessibilityLabel("More").accessibilityIdentifier("group-more")
+            if let details { CircleToolbarItem { moreMenu(details) } }
+        } else {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                if let conversation = store.conversation(target.conversationID), !conversation.isRequest {
+                    muteButton(conversation)
+                    pinButton(conversation)
+                }
+                if let details { moreMenu(details) }
             }
         }
+    }
+
+    private func muteButton(_ conversation: Conversation) -> some View {
+        let muted = notifications.settings.isMuted(conversation.id)
+        return Button {
+            if muted { notifications.settings.unmute(conversation.id) } else { confirmingMute = true }
+        } label: { ToolIconLabel(symbol: muted ? "bell.slash" : "bell") }
+            .accessibilityLabel(muted ? "Unmute" : "Mute").accessibilityIdentifier("group-mute")
+    }
+
+    private func pinButton(_ conversation: Conversation) -> some View {
+        Button { Task { await store.setPinned(conversation.id, !conversation.isPinned) } } label: {
+            ToolIconLabel(symbol: conversation.isPinned ? "pin.slash" : "pin")
+        }
+        .accessibilityLabel(conversation.isPinned ? "Unpin" : "Pin").accessibilityIdentifier("group-pin")
+    }
+
+    private func moreMenu(_ details: GroupDetails) -> some View {
+        Menu {
+            if details.canAdd {
+                Button { adding = true } label: { Label("Add members", systemImage: "person.badge.plus") }
+                    .accessibilityIdentifier("group-more-add")
+            }
+            if details.canRename {
+                Button {
+                    newName = details.name
+                    renaming = true
+                } label: { Label("Rename group", systemImage: "pencil") }
+                    .accessibilityIdentifier("group-more-rename")
+            }
+            Divider()
+            if details.myRole == "owner" {
+                Button(role: .destructive) { deletingForEveryone = true } label: { Label("Delete group", systemImage: "trash") }
+                    .accessibilityIdentifier("group-more-delete")
+            } else {
+                Button(role: .destructive) { clearing = true } label: { Label("Clear messages", systemImage: "eraser") }
+                    .accessibilityIdentifier("group-more-clear")
+            }
+            Button(role: .destructive) { leaving = true } label: { Label("Leave group", systemImage: "rectangle.portrait.and.arrow.right") }
+                .accessibilityIdentifier("group-more-leave")
+        } label: { ToolIconLabel(symbol: "ellipsis") }
+        .accessibilityLabel("More").accessibilityIdentifier("group-more")
     }
 
     private func header(_ details: GroupDetails) -> some View {

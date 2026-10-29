@@ -194,11 +194,11 @@ struct OpenPostPage: View {
         }
         .background(Theme.canvas)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            CircleToolbarItem {
                 if let post, store.jamPost(postID) == nil {
                     Menu {
                         Button(role: .destructive) { reporting = store.reportTarget(openPost: post) } label: { Label("Report", systemImage: "flag") }.accessibilityIdentifier("open-post-report")
-                    } label: { Image(systemName: "ellipsis") }
+                    } label: { ToolIconLabel(symbol: "ellipsis") }
                     .accessibilityLabel("More").accessibilityIdentifier("open-post-more")
                 }
             }

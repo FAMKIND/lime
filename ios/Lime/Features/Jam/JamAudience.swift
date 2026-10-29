@@ -161,11 +161,9 @@ private struct LimeSheetHeader: ViewModifier {
         content
             .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { dismiss() } label: {
-                        Image(systemName: "xmark").font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.text).frame(width: 36, height: 36).background(Theme.surface, in: Circle()).frame(width: 44, height: 44)
-                    }
-                    .accessibilityLabel("Close").accessibilityIdentifier("sheet-close")
+                CircleToolbarItem(placement: .topBarLeading) {
+                    Button { dismiss() } label: { ToolIconLabel(symbol: "xmark") }
+                        .accessibilityLabel("Close").accessibilityIdentifier("sheet-close")
                 }
             }
     }

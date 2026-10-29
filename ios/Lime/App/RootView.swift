@@ -112,10 +112,10 @@ private struct SignedInView: View {
                     ChatView(conversationID: id).toolbar(.hidden, for: .tabBar)
                 }
                 .navigationDestination(for: GroupTarget.self) { target in
-                    GroupDetailsView(target: target).callMiniPlayerInset().toolbar(.hidden, for: .tabBar)
+                    GroupDetailsView(target: target).callMiniPlayerInset().limeBack().toolbar(.hidden, for: .tabBar)
                 }
                 .navigationDestination(for: ThreadTarget.self) { target in
-                    ThreadView(target: target).toolbar(.hidden, for: .tabBar)
+                    ThreadView(target: target).limeBack().toolbar(.hidden, for: .tabBar)
                 }
                 .navigationDestination(for: ChatTarget.self) { target in
                     ChatView(conversationID: target.conversationID, focusMessageID: target.messageID, focusWords: target.words)
@@ -123,10 +123,10 @@ private struct SignedInView: View {
                 }
                 .navigationDestination(for: ProfileRoute.self) { ProfileView(route: $0).callMiniPlayerInset() }
                 .navigationDestination(for: OrgRoute.self) { OrgProfileView(route: $0).callMiniPlayerInset() }
-                .navigationDestination(for: SharedListRoute.self) { SharedListView(route: $0).callMiniPlayerInset() }
+                .navigationDestination(for: SharedListRoute.self) { SharedListView(route: $0).callMiniPlayerInset().limeBack() }
                 .navigationDestination(for: MessagesRoute.self) { route in
                     switch route {
-                    case .requests: RequestsView().callMiniPlayerInset()
+                    case .requests: RequestsView().callMiniPlayerInset().limeBack()
                     case .search: MessageSearchScreen().callMiniPlayerInset()
                     }
                 }
@@ -141,13 +141,13 @@ private struct SignedInView: View {
                 .navigationDestination(for: ChatTarget.self) { target in
                     ChatView(conversationID: target.conversationID, focusMessageID: target.messageID, focusWords: target.words).toolbar(.hidden, for: .tabBar)
                 }
-                .navigationDestination(for: ThreadTarget.self) { target in ThreadView(target: target).toolbar(.hidden, for: .tabBar) }
+                .navigationDestination(for: ThreadTarget.self) { target in ThreadView(target: target).limeBack().toolbar(.hidden, for: .tabBar) }
                 .navigationDestination(for: GroupTarget.self) { target in
-                    GroupDetailsView(target: target).callMiniPlayerInset().toolbar(.hidden, for: .tabBar)
+                    GroupDetailsView(target: target).callMiniPlayerInset().limeBack().toolbar(.hidden, for: .tabBar)
                 }
                 .navigationDestination(for: ProfileRoute.self) { ProfileView(route: $0).callMiniPlayerInset() }
                 .navigationDestination(for: OrgRoute.self) { OrgProfileView(route: $0).callMiniPlayerInset() }
-                .navigationDestination(for: SharedListRoute.self) { SharedListView(route: $0).callMiniPlayerInset() }
+                .navigationDestination(for: SharedListRoute.self) { SharedListView(route: $0).callMiniPlayerInset().limeBack() }
         }
     }
 }

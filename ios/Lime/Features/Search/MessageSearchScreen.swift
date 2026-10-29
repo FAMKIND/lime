@@ -309,7 +309,7 @@ struct SearchHeader: View {
     var body: some View {
         HStack(spacing: 8) {
             Button(action: back) {
-                Image(systemName: "chevron.left").font(.system(size: 18, weight: .medium)).foregroundStyle(Theme.text)
+                Image(systemName: "chevron.left").font(.system(size: 18)).foregroundStyle(Theme.text)
                     .frame(width: 48, height: 48).limeGlass()
             }
             .accessibilityLabel("Back").accessibilityIdentifier("search-back")

@@ -193,7 +193,7 @@ struct ProfileView: View {
         .toolbarColorScheme(.light, for: .navigationBar)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
-        .navigationBarBackButtonHidden(editingNow)
+        .limeBack(showsBack: !editingNow)
         .toolbar { toolbarItems }
         .task { await store.loadProfile(route.userID) }
         .task(id: route.userID) { await loadJam() }
@@ -536,7 +536,7 @@ struct ProfileView: View {
             if route.isMe {
                 if editing { editCoverButton; doneButton } else { editButton }
             } else if accepted {
-                Button { store.openFromNotification("dm:\(route.userID)", thread: nil) } label: { Image(systemName: "message") }
+                Button { store.openFromNotification("dm:\(route.userID)", thread: nil) } label: { ToolIconLabel(symbol: "message") }
                     .accessibilityLabel("Message \(displayName)").accessibilityIdentifier("profile-message")
                 CallMenuButton(name: displayName, id: "profile-call", style: .toolbar,
                                voice: { Task { _ = await store.calls.start(peerID: route.userID, name: displayName, video: false) } },
@@ -553,31 +553,31 @@ struct ProfileView: View {
         if route.isMe {
             // Normal: Edit · ⋯. Editing: Edit Cover · Done, and ‹ back to the profile (LIME-229).
             if editing {
-                ToolbarItem(placement: .topBarLeading) { backToProfile }
+                CircleToolbarItem(placement: .topBarLeading) { backToProfile }
                 ToolbarItem(placement: .topBarTrailing) { editCoverButton }
                 ToolbarSpacer(.fixed, placement: .topBarTrailing)
                 ToolbarItem(placement: .topBarTrailing) { doneButton }
             } else {
                 ToolbarItem(placement: .topBarTrailing) { editButton }
                 ToolbarSpacer(.fixed, placement: .topBarTrailing)
-                ToolbarItem(placement: .topBarTrailing) { moreMenu }
+                CircleToolbarItem { moreMenu }
             }
         } else if accepted {
             // Three separate bubbles (LIME-224): Message · Call (Voice or Video) · More.
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { store.openFromNotification("dm:\(route.userID)", thread: nil) } label: { Image(systemName: "message") }
+            CircleToolbarItem {
+                Button { store.openFromNotification("dm:\(route.userID)", thread: nil) } label: { ToolIconLabel(symbol: "message") }
                     .accessibilityLabel("Message \(displayName)").accessibilityIdentifier("profile-message")
             }
             ToolbarSpacer(.fixed, placement: .topBarTrailing)
-            ToolbarItem(placement: .topBarTrailing) {
+            CircleToolbarItem {
                 CallMenuButton(name: displayName, id: "profile-call", style: .toolbar,
                                voice: { Task { _ = await store.calls.start(peerID: route.userID, name: displayName, video: false) } },
                                video: { Task { _ = await store.calls.start(peerID: route.userID, name: displayName, video: true) } })
             }
             ToolbarSpacer(.fixed, placement: .topBarTrailing)
-            ToolbarItem(placement: .topBarTrailing) { moreMenu }
+            CircleToolbarItem { moreMenu }
         } else {
-            ToolbarItem(placement: .topBarTrailing) { moreMenu }
+            CircleToolbarItem { moreMenu }
         }
     }
 
@@ -597,7 +597,7 @@ struct ProfileView: View {
 
     /// While editing, ‹ goes back to your profile, not out of it.
     private var backToProfile: some View {
-        Button { editing = false } label: { Image(systemName: "chevron.left") }.accessibilityLabel("Back to your profile").accessibilityIdentifier("profile-edit-back")
+        Button { editing = false } label: { ToolIconLabel(symbol: "chevron.left") }.accessibilityLabel("Back to your profile").accessibilityIdentifier("profile-edit-back")
     }
 
     private func subscribePill(_ page: JamPageInfo) -> some View {
@@ -655,7 +655,7 @@ struct ProfileView: View {
                 Button(role: .destructive) { confirmingDelete = true } label: { Label("Delete chat", systemImage: "trash") }
                     .accessibilityIdentifier("profile-delete")
             }
-        } label: { Image(systemName: "ellipsis") }
+        } label: { ToolIconLabel(symbol: "ellipsis") }
         .accessibilityLabel("More").accessibilityIdentifier("profile-more")
     }
 

@@ -162,10 +162,12 @@ struct ThreadView: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("replies-title")
             }
-            ToolbarItem(placement: .topBarTrailing) {
-                if selection != nil {
+            if selection != nil {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button("Cancel") { selection = nil }.font(Theme.title).foregroundStyle(Theme.text).accessibilityIdentifier("select-cancel")
-                } else {
+                }
+            } else {
+                CircleToolbarItem {
                     Button { startFinding() } label: { ToolIconLabel(symbol: "magnifyingglass") }
                         .accessibilityLabel("Search in Replies")
                         .accessibilityIdentifier("replies-search-button")

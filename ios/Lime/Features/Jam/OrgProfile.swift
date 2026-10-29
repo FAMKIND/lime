@@ -213,7 +213,7 @@ struct OrgProfileView: View {
         .toolbarColorScheme(.light, for: .navigationBar)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
-        .navigationBarBackButtonHidden(editingNow)
+        .limeBack(showsBack: !editingNow)
         .toolbar { toolbarItems }
         .sheet(item: $reading) { route in NavigationStack { JamPostView(postID: route.postID).toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { reading = nil } } } } }
         .sheet(item: $fieldSheet) { OrgFieldSheet(page: page, field: $0) }
@@ -250,14 +250,14 @@ struct OrgProfileView: View {
     @ToolbarContentBuilder
     private var modernItems: some ToolbarContent {
         if editingNow {
-            ToolbarItem(placement: .topBarLeading) { backToOrg }
+            CircleToolbarItem(placement: .topBarLeading) { backToOrg }
             ToolbarItem(placement: .topBarTrailing) { doneButton }
         } else {
             if isMe {
                 ToolbarItem(placement: .topBarTrailing) { editButton }
                 ToolbarSpacer(.fixed, placement: .topBarTrailing)
             }
-            ToolbarItem(placement: .topBarTrailing) { moreMenu }
+            CircleToolbarItem { moreMenu }
         }
     }
 
@@ -271,7 +271,7 @@ struct OrgProfileView: View {
 
     /// While editing, ‹ goes back to the org's page, not out of it.
     private var backToOrg: some View {
-        Button { editing = false } label: { Image(systemName: "chevron.left") }.accessibilityLabel("Back to the org").accessibilityIdentifier("org-edit-back")
+        Button { editing = false } label: { ToolIconLabel(symbol: "chevron.left") }.accessibilityLabel("Back to the org").accessibilityIdentifier("org-edit-back")
     }
 
     private var moreMenu: some View {
@@ -286,7 +286,7 @@ struct OrgProfileView: View {
             if !isMe {
                 Button(role: .destructive) { reporting = store.reportTarget(page: page) } label: { Label("Report", systemImage: "flag") }.accessibilityIdentifier("org-report")
             }
-        } label: { Image(systemName: "ellipsis") }
+        } label: { ToolIconLabel(symbol: "ellipsis") }
             .accessibilityLabel("More").accessibilityIdentifier("profile-org-more")
     }
 

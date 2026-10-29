@@ -103,6 +103,7 @@ struct ChatView: View {
         .safeAreaBar(edge: .bottom) { bottomBar(conversation) }
         .safeAreaInset(edge: .top) { if finding { findBar }  }
         .navigationBarTitleDisplayMode(.inline)
+        .limeBack()
         .toolbar {
             // The avatar and name sit beside the system ‹, with no glass of their own, left-aligned in a width worked out from the screen's (the room between ‹ and the two circles; .principal would centre it);
             // the name truncates rather than vanishing (LIME-247, 247b).
@@ -110,13 +111,13 @@ struct ChatView: View {
                 .sharedBackgroundVisibility(.hidden)
             // Search and the call button are two 44 pt circles of our own glass (the system's would be a capsule), last; a fixed gap keeps them apart.
             ToolbarItem(placement: .topBarTrailing) {
-                if selection != nil { cancelSelectButton } else { searchButton.fixedSize().frame(width: 44, height: 44).limeGlass(in: Circle()) }
+                if selection != nil { cancelSelectButton } else { searchButton.limeCircleIcon() }
             }
             .sharedBackgroundVisibility(selection != nil ? .visible : .hidden)
             ToolbarSpacer(.fixed, placement: .topBarTrailing)
             ToolbarItem(placement: .topBarTrailing) {
                 if selection == nil {
-                    if headerCall(conversation) == nil { callMenu(conversation).fixedSize().frame(width: 44, height: 44).limeGlass(in: Circle()) } else { callCircle(conversation) }
+                    if headerCall(conversation) == nil { callMenu(conversation).limeCircleIcon() } else { callCircle(conversation) }
                 }
             }
             .sharedBackgroundVisibility(.hidden)
@@ -526,7 +527,7 @@ struct ChatView: View {
         HStack(spacing: 8) {
             Button { dismiss() } label: {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 18, weight: .medium))
+                    .font(.system(size: 18))
                     .foregroundStyle(Theme.text)
                     .frame(width: 48, height: 48)
                     .limeGlass()
@@ -1346,7 +1347,7 @@ struct CallMenuButton: View {
             CallChoiceRows(voice: voice, video: video, idPrefix: id)
         } label: {
             switch style {
-            case .toolbar: Image(systemName: "video")
+            case .toolbar: ToolIconLabel(symbol: "video")
             case .circle:
                 Image(systemName: "video").font(.system(size: 16)).foregroundStyle(Theme.text)
                     .frame(width: 40, height: 40).overlay(Circle().stroke(Theme.textSecondary.opacity(0.5), lineWidth: 1))

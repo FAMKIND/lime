@@ -20,7 +20,7 @@ struct OnboardingScaffold<Content: View>: View {
                 if showsBack {
                     Button(action: onBack) {
                         Image(systemName: "chevron.left")
-                            .font(.system(size: 18, weight: .medium))
+                            .font(.system(size: 18))
                             .foregroundStyle(Theme.text)
                             .frame(width: 48, height: 48)
                             .limeGlass()

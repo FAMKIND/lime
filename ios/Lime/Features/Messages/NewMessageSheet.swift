@@ -364,7 +364,7 @@ struct SheetHeader<Trailing: View>: View {
                     .accessibilityLabel("Close").accessibilityIdentifier("new-message-cancel")
                 case .back(let action):
                     Button(action: action) {
-                        Image(systemName: "chevron.left").font(.system(size: 17, weight: .medium)).foregroundStyle(Theme.text)
+                        Image(systemName: "chevron.left").font(.system(size: 18)).foregroundStyle(Theme.text)
                             .frame(width: 44, height: 44).limeGlass(in: Circle())
                     }
                     .accessibilityLabel("Back").accessibilityIdentifier("find-back")

@@ -474,7 +474,7 @@ struct JamArticlePage: View {
 
     private func circle(_ symbol: String, label: String, id: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.text).frame(width: 44, height: 44).limeGlass(in: Circle())
+            Image(systemName: symbol).font(symbol == "chevron.left" ? .system(size: 18) : .system(size: 16, weight: .semibold)).foregroundStyle(Theme.text).frame(width: 44, height: 44).limeGlass(in: Circle())
         }
         .accessibilityLabel(label).accessibilityIdentifier(id)
     }
@@ -598,7 +598,7 @@ struct ReaderDisplaySheet: View {
             }
             .background(Theme.canvas)
             .navigationTitle("Display settings").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { Image(systemName: "xmark") }.accessibilityLabel("Close") } }
+            .toolbar { CircleToolbarItem(placement: .cancellationAction) { Button { dismiss() } label: { ToolIconLabel(symbol: "xmark") }.accessibilityLabel("Close") } }
         }
         .presentationDetents([.medium])
     }
