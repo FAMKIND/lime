@@ -8704,3 +8704,9 @@ Every single-icon toolbar button is its own 44 × 44 glass circle, and ‹ is ou
 - **Left alone:** screens whose bar is hidden and draw their own header (legacy header, Messages, search, new message, group picker); iOS 17–25 keeps the system ‹ and its grouped icons.
 - **Checked on the iOS 27 simulator (iPhone 17):** screenshots in `docs/qa-shots/247c/` (`profile`, `org`, `org-edit`, `chat`, `jam`). A temporary UI test (not committed) swiped from the left edge and went back from a chat, a profile and the org page. Existing tests for the header, profile, org 216/245 pass (18 tests).
 - **Not checked:** the 13 mini itself; iPad; landscape; VoiceOver's two-finger scrub; a Settings page's ‹ by eye.
+
+## LIME-248
+A video podcast's card now shows the video first. **Brief:** LIME-248.
+- `JamPage.swift` `videoPodcast(_:)`: video → title (title3 semibold) with ⋯ (`JamPostMenu`) beside it, top-aligned → subtitle (secondary, ≤ 2 lines, hidden when empty) → series line → writer row → action row. The ⋯ no longer overlays the video. One view serves every place the card shows (feed, filters, profile and org tabs, Discover).
+- Test `Jam212bUITests` renamed to `…StartsWithTheVideoThenTheTitleThenTheWriterRow` and asserts the new order; 200/203/212b pass on the iOS 27 simulator (203's title-tap test was already skipped).
+- Not checked by eye: how the ⋯ sits beside a two-line title; no screenshot taken (visual change, you check on the phone).
