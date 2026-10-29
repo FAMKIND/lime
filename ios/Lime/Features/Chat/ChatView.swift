@@ -14,10 +14,7 @@ struct ChatView: View {
     /// "Waiting for internet": the one-line reason (LIME-142).
     @State private var offlineReason: String?
     @State private var confirmingBlock = false
-    @State private var confirmingLeave = false
     @State private var showingSeal = false
-    @State private var labelling = false
-    @State private var labelText = ""
     // In-chat find (the header's magnifier): the matches, which one is current, and where to scroll.
     @State private var finding = false
     @State private var findQuery = ""
@@ -68,18 +65,6 @@ struct ChatView: View {
                     legacyContent(conversation)
                 }
             }
-            .confirmSheet("Leave \(conversation.title)?", isPresented: $confirmingLeave) {
-                Button("Leave group", role: .destructive) {
-                    Task {
-                        await store.leaveGroup(conversation.id)
-                        store.path = NavigationPath()
-                    }
-                }
-                .accessibilityIdentifier("chat-leave-confirm")
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("You won't get new messages from this group. Someone can add you back.")
-            }
             .confirmSheet(conversation.isGroup ? "Call \(conversation.title) again?" : "Call \(conversation.title) back?", isPresented: Binding(get: { callBack != nil }, set: { if !$0 { callBack = nil } })) {
                 // The same two rows, icons and order as the header's call menu (one pattern everywhere).
                 CallChoiceRows(voice: { startCall(conversation, video: false) }, video: { startCall(conversation, video: true) }, idPrefix: "call-back")
@@ -88,13 +73,7 @@ struct ChatView: View {
             .messageActions(actions, conversationID: conversationID, selection: $selection) { message in
                 store.path.append(ThreadTarget(conversationID: conversationID, rootID: message.id))
             }
-            .sheet(isPresented: $labelling) {
-                LabelSheet(name: conversation.title, text: $labelText) { saved in
-                    labelling = false
-                    if saved, let person = conversation.members.first { Task { await store.setLabel(labelText, for: person.id) } }
-                }
-            }
-            // One confirmation for both ways in: the request bar's Block and the ⋯ menu's "Block <Name>".
+            // The request bar's Block (blocking someone you already chat with is in their profile's ⋯).
             .confirmSheet("Block \(conversation.title)?", isPresented: $confirmingBlock) {
                 Button("Block", role: .destructive) {
                     Task {
@@ -125,16 +104,16 @@ struct ChatView: View {
         .safeAreaInset(edge: .top) { if finding { findBar }  }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .principal) { titlePill(conversation) }
-            // The call button is always its own circle (glass; lime while a group call is live) beside the capsule.
+            // The avatar and name sit beside the system ‹, with no glass of their own and all the room up to the buttons (LIME-247).
+            ToolbarItem(placement: .topBarLeading) { titlePill(conversation) }
+                .sharedBackgroundVisibility(.hidden)
+            // Search and the call button are two circles, last; a fixed gap keeps the system from merging their glass.
+            ToolbarItem(placement: .topBarTrailing) {
+                if selection != nil { cancelSelectButton } else { searchButton }
+            }
+            ToolbarSpacer(.fixed, placement: .topBarTrailing)
             ToolbarItem(placement: .topBarTrailing) { if selection == nil { callCircle(conversation) } }
                 .sharedBackgroundVisibility(headerCall(conversation) == nil ? .visible : .hidden)
-            // A fixed gap, so the system does not merge the call circle's glass with the capsule's: they stay two shapes.
-            ToolbarSpacer(.fixed, placement: .topBarTrailing)
-            // One item (so one glass pill), with the icons close together.
-            ToolbarItem(placement: .topBarTrailing) {
-                if selection != nil { cancelSelectButton } else { toolGroup(conversation) }
-            }
         }
     }
 
@@ -432,6 +411,7 @@ struct ChatView: View {
         }
         .accessibilityElement(children: conversation.verified ? .contain : .combine)
         .accessibilityAddTraits(conversation.isGroup || canOpenProfile(conversation) ? .isButton : [])
+        .accessibilityHint(conversation.isGroup ? "Opens group details" : canOpenProfile(conversation) ? "Opens profile" : "")
         .accessibilityIdentifier("chat-title")
         .alert("Verified in person", isPresented: $showingSeal) {
             Button("OK", role: .cancel) {}
@@ -440,7 +420,7 @@ struct ChatView: View {
         }
     }
 
-    /// A one-to-one chat's header (the avatar or the name), and the ⋯ menu's Profile, open the person's profile; in Note to Self, your own.
+    /// A one-to-one chat's header (the avatar or the name) opens the person's profile; in Note to Self, your own.
     private func canOpenProfile(_ conversation: Conversation) -> Bool {
         !conversation.isGroup && !conversation.isRequest && conversation.members.first != nil
     }
@@ -555,75 +535,21 @@ struct ChatView: View {
 
             Spacer(minLength: 0)
 
-            if selection == nil {
+            if selection != nil {
+                cancelSelectButton.padding(.horizontal, 2).limeGlass()
+            } else {
+                searchButton.limeGlass(in: Circle())
                 if headerCall(conversation) == nil {
                     callCircle(conversation).limeGlass(in: Circle())
                 } else {
                     callCircle(conversation)
                 }
             }
-
-            Group {
-                if selection != nil { cancelSelectButton } else { toolGroup(conversation) }
-            }
-            .padding(.horizontal, 2)
-            .limeGlass()
         }
         .padding(.horizontal, 12)
         .padding(.top, 4)
         // The bar of buttons keeps to a size that fits one line across the screen; the messages below follow the full size (LIME-168).
         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-    }
-
-    /// The ⋯ menu: mute this chat's notifications (1 hour, 8 hours, 1 week, always), or unmute it.
-    private func moreMenu<Icon: View>(_ conversation: Conversation, @ViewBuilder label: () -> Icon) -> some View {
-        let settings = notifications.settings
-        return Menu {
-            if canOpenProfile(conversation) {
-                Button { openProfile(conversation) } label: { Label("Profile", systemImage: "person.crop.circle") }
-                    .accessibilityIdentifier("chat-profile")
-            }
-            if settings.isMuted(conversation.id), let until = settings.activeMutes().first(where: { $0.conversationID == conversation.id })?.until {
-                Button { settings.unmute(conversation.id) } label: {
-                    Label("Unmute (\(MuteText.until(until).lowercased()))", systemImage: "bell")
-                }
-                .accessibilityIdentifier("chat-unmute")
-            } else {
-                Menu {
-                    ForEach(MuteDuration.allCases) { duration in
-                        Button(duration.title) { settings.mute(conversation.id, for: duration) }
-                            .accessibilityIdentifier("mute-\(duration.rawValue)")
-                    }
-                } label: { Label("Mute", systemImage: "bell.slash") }
-                .accessibilityIdentifier("chat-mute")
-            }
-            Divider()
-            if conversation.isGroup {
-                Button { store.path.append(GroupTarget(conversationID: conversation.id)) } label: {
-                    Label("Group details", systemImage: "person.2")
-                }
-                .accessibilityIdentifier("chat-group-details")
-                Button(role: .destructive) { confirmingLeave = true } label: {
-                    Label("Leave group", systemImage: "rectangle.portrait.and.arrow.right")
-                }
-                .accessibilityIdentifier("chat-leave")
-            } else if conversation.id != store.selfChatID {   // nothing to block or label in my own chat
-                if let person = conversation.members.first {
-                    Button {
-                        labelText = person.label ?? ""
-                        labelling = true
-                    } label: { Label(person.label == nil ? "Add a label" : "Edit label", systemImage: "tag") }
-                    .accessibilityIdentifier("chat-label-button")
-                }
-                // Blocking someone you already chat with (the request bar's Block is only for strangers).
-                Button(role: .destructive) { confirmingBlock = true } label: {
-                    Label("Block \(conversation.title)", systemImage: "hand.raised")
-                }
-                .accessibilityIdentifier("chat-block")
-            }
-        } label: { label() }
-        .accessibilityLabel("More")
-        .accessibilityIdentifier("chat-more")
     }
 
     private var cancelSelectButton: some View {
@@ -633,12 +559,9 @@ struct ChatView: View {
             .accessibilityIdentifier("select-cancel")
     }
 
-    /// Search, call and ⋯ close together: each icon keeps a 44 pt target, and the targets overlap by 6 pt so the icons sit 38 pt apart.
-    private func toolGroup(_ conversation: Conversation) -> some View {
-        HStack(spacing: -6) {
-            toolIcon("magnifyingglass", label: "Search in chat", id: "chat-search-button") { startFinding() }
-            moreMenu(conversation) { ToolIconLabel(symbol: "ellipsis") }
-        }
+    /// Search in this chat, its own circle in the header.
+    private var searchButton: some View {
+        toolIcon("magnifyingglass", label: "Search in chat", id: "chat-search-button") { startFinding() }
     }
 
     /// The call that is on in this group, for the header's own call button (nil: the ordinary phone menu).

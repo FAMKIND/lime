@@ -75,6 +75,13 @@ class LimeUITestCase: XCTestCase {
         return linkBadge(app) == text
     }
 
+    /// The chat's name opens the profile (LIME-247); its ⋯ is where the chat's menu now lives.
+    func openProfileMenu(_ app: XCUIApplication) {
+        app.descendants(matching: .any)["chat-title"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["profile-more"].waitForExistence(timeout: 8))
+        app.buttons["profile-more"].tap()
+    }
+
     func goBack(_ app: XCUIApplication) {
         let custom = app.buttons["back-button"]
         (custom.exists ? custom : app.navigationBars.buttons.element(boundBy: 0)).tap()
@@ -664,49 +671,74 @@ final class LimeUITestsQARound: LimeUITestCase {
         XCTAssertTrue(app.buttons["conversation-row-dm:rae"].waitForExistence(timeout: 5) || app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'conversation-row-'")).firstMatch.exists, "Back again reaches Messages")
     }
 
-    func testTheHeaderToolsAreCloserTogetherButStillBigEnoughToTap() {
+    /// LIME-247: ‹ · avatar + name · 🔍 · 📹, each button its own circle, and no ⋯.
+    func testTheChatHeaderIsTheNameThenSearchThenCallAndNoMoreMenu() {
         let app = threadApp("thread")
         app.launch()
-        let search = app.buttons["chat-search-button"], call = app.buttons["chat-call-button"], more = app.buttons["chat-more"]
+        let title = app.descendants(matching: .any)["chat-title"], search = app.buttons["chat-search-button"], call = app.buttons["chat-call-button"]
         XCTAssertTrue(search.waitForExistence(timeout: 10))
-        XCTAssertTrue(call.exists && more.exists)
-        // LIME-146b: the call button is always its own circle, beside a search and ⋯ capsule whose two icons sit closer than the old 44 pt.
-        XCTAssertLessThanOrEqual(more.frame.midX - search.frame.midX, 42, "search and ⋯ sit close together in their own capsule")
-        XCTAssertLessThan(call.frame.midX, search.frame.midX, "the call circle is separate, before the capsule")
-        XCTAssertGreaterThanOrEqual(search.frame.midX - call.frame.midX, 44, "and not inside it: a full target away")
-        // Every target is a full 44 pt wide (they overlap a little, which is how the icons sit closer).
-        for button in [search, call, more] { XCTAssertGreaterThanOrEqual(button.frame.width, 43.5, "a finger target is at least 44 pt wide") }
+        XCTAssertTrue(title.exists && call.exists)
+        XCTAssertFalse(app.buttons["chat-more"].exists, "the ⋯ is gone")
+        XCTAssertLessThan(title.frame.midX, search.frame.midX, "the name is on the left of search")
+        XCTAssertLessThan(search.frame.midX, call.frame.midX, "search, then the call circle last")
+        XCTAssertLessThan(title.frame.minX, 120, "the name sits beside the back button, not in the middle")
+        for button in [search, call] { XCTAssertGreaterThanOrEqual(button.frame.width, 43.5, "a finger target is at least 44 pt wide") }
         search.tap()
         XCTAssertTrue(app.textFields["find-field"].waitForExistence(timeout: 5), "Search opens")
     }
 
-    func testTheMenuSaysMuteAndOffersALabel() {
+    /// LIME-247: tapping the name opens the person's profile, whose ⋯ has Mute and a label.
+    func testTappingTheChatNameOpensTheProfileWhoseMenuHasMuteAndALabel() {
         let app = demoApp()
         app.launch()
         app.buttons["conversation-row-dm:sam"].tap()
-        app.buttons["chat-more"].tap()
+        app.descendants(matching: .any)["chat-title"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["profile-more"].waitForExistence(timeout: 8))
+        app.buttons["profile-more"].tap()
+        XCTAssertTrue(app.buttons["profile-mute"].waitForExistence(timeout: 5), "Mute is in the profile's ⋯")
+        XCTAssertTrue(app.buttons["profile-label-button"].exists, "and Add a label")
+    }
+
+    /// LIME-247: in a group, tapping the name opens the group's details, with Mute and (in its ⋯) Leave group.
+    func testTappingAGroupsNameOpensItsDetailsWithMuteAndLeave() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-screen", "groups-rows"]
+        app.launch()
+        app.buttons["conversation-row-grp:demo1"].tap()
+        app.descendants(matching: .any)["chat-title"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["group-mute"].waitForExistence(timeout: 8), "Mute on the group's details")
+        app.buttons["group-more"].tap()
+        XCTAssertTrue(app.buttons["group-more-leave"].waitForExistence(timeout: 5), "and Leave group")
+    }
+
+    func testTheProfileMenuSaysMuteAndOffersALabel() {
+        let app = demoApp()
+        app.launch()
+        app.buttons["conversation-row-dm:sam"].tap()
+        openProfileMenu(app)
         // A mute from an earlier test is remembered on this phone: undo it first so the menu offers Mute.
-        if app.buttons["chat-unmute"].waitForExistence(timeout: 2) {
-            app.buttons["chat-unmute"].tap()
-            app.buttons["chat-more"].tap()
+        if app.buttons["profile-mute"].label == "Unmute" {
+            app.buttons["profile-mute"].tap()
+            app.buttons["profile-more"].tap()
         }
-        let mute = app.buttons["chat-mute"]
+        let mute = app.buttons["profile-mute"]
         XCTAssertTrue(mute.waitForExistence(timeout: 5))
         XCTAssertEqual(mute.label, "Mute", "not \"Mute Notifications\"")
-        XCTAssertTrue(app.buttons["chat-label-button"].waitForExistence(timeout: 5), "Add a label is in the menu")
+        XCTAssertTrue(app.buttons["profile-label-button"].waitForExistence(timeout: 5), "Add a label is in the menu")
     }
 
     func testAPrivateLabelShowsInTheHeaderTheListAndNewMessageAndCanBeRemoved() {
         let app = demoApp()
         app.launch()
         app.buttons["conversation-row-dm:sam"].tap()
-        app.buttons["chat-more"].tap()
-        app.buttons["chat-label-button"].tap()
+        openProfileMenu(app)
+        app.buttons["profile-label-button"].tap()
         let field = app.textFields["label-field"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.typeText("Grade 4 · Lincoln and a very long extra part")
         XCTAssertEqual(app.staticTexts["label-count"].label, "30/30", "at most 30 characters")
         app.buttons["label-save"].tap()
+        goBack(app)   // the profile, back to the chat
         XCTAssertTrue(app.staticTexts["chat-label"].waitForExistence(timeout: 5), "the label shows in the chat header")
         goBack(app)
         XCTAssertTrue(app.staticTexts["row-label-dm:sam"].waitForExistence(timeout: 5), "and in the Messages list")
@@ -721,10 +753,11 @@ final class LimeUITestsQARound: LimeUITestCase {
         app.buttons["new-message-cancel"].tap()
         // Remove it.
         app.buttons["conversation-row-dm:sam"].tap()
-        app.buttons["chat-more"].tap()
-        app.buttons["chat-label-button"].tap()
+        openProfileMenu(app)
+        app.buttons["profile-label-button"].tap()
         XCTAssertTrue(app.buttons["label-remove"].waitForExistence(timeout: 5))
         app.buttons["label-remove"].tap()
+        goBack(app)
         XCTAssertTrue(app.staticTexts["chat-label"].waitForNonExistence(timeout: 5))
     }
 
@@ -1155,7 +1188,7 @@ final class LimeUITestsStatusAndGroupRows: LimeUITestCase {
         XCTAssertTrue(app.descendants(matching: .any)["count-badge-dm:sam"].waitForExistence(timeout: 5))
         XCTAssertTrue(waitForLinkBadge(app, "1"))
         app.buttons["conversation-row-dm:sam"].tap()
-        XCTAssertTrue(app.buttons["chat-more"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["chat-search-button"].waitForExistence(timeout: 5))
         goBack(app)
         XCTAssertTrue(app.descendants(matching: .any)["count-badge-dm:sam"].waitForNonExistence(timeout: 5), "opening clears a hand-made mark")
         XCTAssertTrue(waitForLinkBadge(app, ""), "and the badge follows")
@@ -1170,7 +1203,7 @@ final class LimeUITestsStatusAndGroupRows: LimeUITestCase {
         let hit = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'staff meeting'")).firstMatch
         XCTAssertTrue(hit.waitForExistence(timeout: 8))
         hit.tap()
-        XCTAssertTrue(app.buttons["chat-more"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["chat-search-button"].waitForExistence(timeout: 8))
         goBack(app)
         app.buttons["search-back"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["count-badge-dm:sam"].waitForNonExistence(timeout: 5), "opened from search clears it too")
@@ -1814,19 +1847,19 @@ final class LimeUITestsSearchAndNotifications: LimeUITestCase {
         app.launch()
         XCTAssertTrue(app.buttons["conversation-row-dm:lee"].waitForExistence(timeout: 10))
         app.buttons["conversation-row-dm:lee"].tap()
-        XCTAssertTrue(app.buttons["chat-more"].waitForExistence(timeout: 5))
-        app.buttons["chat-more"].tap()
-        app.buttons["chat-mute"].tap()
+        openProfileMenu(app)
+        app.buttons["profile-mute"].tap()
         for title in ["For 1 hour", "For 8 hours", "For 1 week", "Always"] {
             XCTAssertTrue(app.buttons[title].waitForExistence(timeout: 3), title)
         }
         app.buttons["For 1 hour"].tap()
-        app.buttons["chat-more"].tap()
-        XCTAssertTrue(app.buttons["chat-unmute"].waitForExistence(timeout: 3), "the menu now offers to unmute")
-        app.buttons["chat-unmute"].tap()
-        app.buttons["chat-more"].tap()
-        app.buttons["chat-mute"].tap()
+        app.buttons["profile-more"].tap()
+        XCTAssertEqual(app.buttons["profile-mute"].label, "Unmute", "the menu now offers to unmute")
+        app.buttons["profile-mute"].tap()
+        app.buttons["profile-more"].tap()
+        app.buttons["profile-mute"].tap()
         app.buttons["Always"].tap()
+        goBack(app)
         goBack(app)
         XCTAssertTrue(app.descendants(matching: .any)["muted-dm:lee"].waitForExistence(timeout: 5), "a bell on the muted chat")
         openSettingsFromAvatar(app)
@@ -1906,14 +1939,13 @@ final class LimeUITestsSearchAndNotifications: LimeUITestCase {
         app.launch()
         XCTAssertTrue(app.buttons["conversation-row-dm:sam"].waitForExistence(timeout: 10))
         app.buttons["conversation-row-dm:sam"].tap()
-        XCTAssertTrue(app.buttons["chat-more"].waitForExistence(timeout: 5))
-        app.buttons["chat-more"].tap()
-        XCTAssertTrue(app.buttons["chat-block"].waitForExistence(timeout: 3), "the menu offers Block")
-        XCTAssertEqual(app.buttons["chat-block"].label, "Block Sam Park")
-        app.buttons["chat-block"].tap()
-        let confirm = app.buttons.matching(identifier: "request-block-confirm").firstMatch
+        openProfileMenu(app)
+        XCTAssertTrue(app.buttons["profile-block"].waitForExistence(timeout: 3), "the profile's menu offers Block")
+        XCTAssertEqual(app.buttons["profile-block"].label, "Block Sam Park")
+        app.buttons["profile-block"].tap()
+        let confirm = app.buttons.matching(identifier: "profile-block-confirm").firstMatch
         XCTAssertTrue(confirm.waitForExistence(timeout: 5), "blocking asks first")
-        XCTAssertTrue(app.staticTexts["Their new messages won't be shown on this phone."].exists)
+        XCTAssertTrue(app.staticTexts["They will no longer be able to message or call you."].exists)
         confirm.tap()
         XCTAssertTrue(app.descendants(matching: .any)["messages-list"].waitForExistence(timeout: 5), "back on Messages")
         XCTAssertFalse(app.buttons["conversation-row-dm:sam"].exists)

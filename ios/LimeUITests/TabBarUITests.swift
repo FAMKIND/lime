@@ -32,7 +32,7 @@ final class TabBarUITests: XCTestCase {
         let app = demoApp()
         XCTAssertTrue(app.buttons["conversation-row-dm:sam"].waitForExistence(timeout: 10))
         app.buttons["conversation-row-dm:sam"].tap()
-        XCTAssertTrue(app.buttons["chat-more"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["chat-search-button"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.tabBars.firstMatch.isHittable, "the tab bar is hidden in a chat so the composer keeps the bottom")
         // The bar is hidden in a chat, so go to call from Messages: back out, switch, and come back.
         goBack(app)
@@ -125,7 +125,7 @@ final class TabBarUITests: XCTestCase {
         app.swipeDown(velocity: .fast)
         XCTAssertTrue(app.buttons["conversation-row-dm:sam"].waitForExistence(timeout: 5))
         app.buttons["conversation-row-dm:sam"].tap()
-        XCTAssertTrue(app.buttons["chat-more"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["chat-search-button"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["new-message-button"].isHittable, "the + is not in a chat")
     }
 

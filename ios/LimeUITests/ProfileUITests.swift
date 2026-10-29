@@ -27,13 +27,11 @@ final class ProfileUITests: XCTestCase {
         XCTAssertTrue(app.buttons["profile-handle"].exists && app.buttons["profile-label"].exists, "the details card")
     }
 
-    func testTheMoreMenusProfileItemOpensIt() {
+    func testTappingTheChatNameOpensTheProfile() {
         let app = app()
         app.buttons["conversation-row-dm:sam"].tap()
-        XCTAssertTrue(app.buttons["chat-more"].waitForExistence(timeout: 8))
-        app.buttons["chat-more"].tap()
-        XCTAssertTrue(app.buttons["chat-profile"].waitForExistence(timeout: 5))
-        app.buttons["chat-profile"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["chat-title"].firstMatch.waitForExistence(timeout: 8))
+        app.descendants(matching: .any)["chat-title"].firstMatch.tap()
         XCTAssertTrue(any(app, "profile-screen").waitForExistence(timeout: 8))
     }
 

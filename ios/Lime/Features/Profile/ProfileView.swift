@@ -639,6 +639,11 @@ struct ProfileView: View {
                     Label(conversation.isPinned ? "Unpin" : "Pin", systemImage: conversation.isPinned ? "pin.slash" : "pin")
                 }
                 .accessibilityIdentifier("profile-pin")
+                Button {
+                    labelText = person.label ?? ""
+                    labelling = true
+                } label: { Label(person.label == nil ? "Add a label" : "Edit label", systemImage: "tag") }
+                    .accessibilityIdentifier("profile-label-button")
                 Button { verifying = true } label: { Label("Verify in person", systemImage: "qrcode.viewfinder") }
                     .accessibilityIdentifier("profile-verify")
                 Button { showStorage = true } label: { Label("Storage", systemImage: "internaldrive") }
