@@ -8773,3 +8773,4 @@ Create publication from jam's +. **Brief:** LIME-254.
 - **Not touched:** `PostAsSheet`, `PodcastRecorder` and others use `first(where: jamId)` and are right as they are.
 - **Tests:** `Publication254UITests` (the card after Record podcast; name required; create → page + hint; Post as lists 2 rows). `Composer236` and `Org245` still pass on the iOS 27 simulator.
 - **Not checked:** a real create against the server (demo only); the picture on a real create; iPad.
+- **Installed (254):** all three, the iPad, Shem's 13 mini and Jean's 12 mini.
