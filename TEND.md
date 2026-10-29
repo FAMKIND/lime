@@ -8711,3 +8711,8 @@ A video podcast's card now shows the video first. **Brief:** LIME-248.
 - Test `Jam212bUITests` renamed to `…StartsWithTheVideoThenTheTitleThenTheWriterRow` and asserts the new order; 200/203/212b pass on the iOS 27 simulator (203's title-tap test was already skipped).
 - Not checked by eye: how the ⋯ sits beside a two-line title; no screenshot taken (visual change, you check on the phone).
 - **Installed (247c, 248):** all three, the iPad, Shem's 13 mini and Jean's 12 mini, first try.
+
+## LIME-249
+A trial: jam's tab icon is the system symbol `pencil.and.outline` (`TabSymbols.jam` in `RootView.swift`; `TabSymbolsTests` updated and passing). **Brief:** LIME-249.
+- Checked on the iOS 27 simulator (iPhone 17): it draws as an outline, selected and unselected, like link and call (the tab bar keeps symbol variants off, so nothing fills). The VoiceOver label stays "jam".
+- Revert is one line: `TabSymbols.jam = "book.pages"` plus the test.
