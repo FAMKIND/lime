@@ -52,8 +52,8 @@ private struct OrgActionHost: ViewModifier {
             .sheet(item: Binding(get: { if case .subscribers = action { action } else { nil } }, set: { if $0 == nil { action = nil } })) { act in
                 if case .subscribers(let page) = act { NavigationStack { JamSubscribersView(jamID: page.jamId) }.onAppear { store.loadJamSubscribers(page.jamId) } }
             }
-            .confirmSheet("Close this org?", isPresented: Binding(get: { if case .end = action { true } else { false } }, set: { if !$0, case .end = action { action = nil } })) {
-                Button("Close org", role: .destructive) {
+            .confirmSheet("Close this publication?", isPresented: Binding(get: { if case .end = action { true } else { false } }, set: { if !$0, case .end = action { action = nil } })) {
+                Button("Close publication", role: .destructive) {
                     if case .end(let page) = action { Task { await store.endJam(page.jamId); if closesPageAfterEnd { dismiss() } } }
                     action = nil
                 }.accessibilityIdentifier("jam-end-confirm")
@@ -86,7 +86,7 @@ struct JamOrgsSection: View {
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         if isMe {
                             // Red, but not the `.destructive` role: that makes the list remove the row at once, before the confirmation has been answered.
-                            Button { action = .end(org) } label: { Label("Close org", systemImage: "xmark.circle") }.tint(.red).accessibilityIdentifier("org-swipe-end-\(org.jamId)")
+                            Button { action = .end(org) } label: { Label("Close publication", systemImage: "xmark.circle") }.tint(.red).accessibilityIdentifier("org-swipe-end-\(org.jamId)")
                             Button { action = .subscribers(org) } label: { Label("Subscribers", systemImage: "person.2") }.tint(.gray).accessibilityIdentifier("org-swipe-subscribers-\(org.jamId)")
                             Button { action = .edit(org) } label: { Label("Edit", systemImage: "pencil") }.tint(.blue).accessibilityIdentifier("org-swipe-edit-\(org.jamId)")
                         }
@@ -132,7 +132,7 @@ struct JamOrgsSection: View {
                 if isMe {
                     Button { action = .edit(org) } label: { Label("Edit", systemImage: "pencil") }
                     Button { action = .subscribers(org) } label: { Label("Subscribers", systemImage: "person.2") }
-                    Button(role: .destructive) { action = .end(org) } label: { Label("Close org", systemImage: "xmark.circle") }
+                    Button(role: .destructive) { action = .end(org) } label: { Label("Close publication", systemImage: "xmark.circle") }
                 }
                 if let share = shareURL(org) { ShareLink(item: share, message: Text("\(org.title) on lime")) { Label("Share", systemImage: "square.and.arrow.up") } }
             }
@@ -152,7 +152,7 @@ private struct OrgAccessibilityActions: ViewModifier {
             content
                 .accessibilityAction(named: "Edit") { action = .edit(org) }
                 .accessibilityAction(named: "Subscribers") { action = .subscribers(org) }
-                .accessibilityAction(named: "Close org") { action = .end(org) }
+                .accessibilityAction(named: "Close publication") { action = .end(org) }
         } else { content }
     }
 }
@@ -262,7 +262,7 @@ struct OrgProfileView: View {
     }
 
     private var editButton: some View {
-        Button("Edit") { editing = true }.accessibilityLabel("Edit org").accessibilityIdentifier("jam-edit-page")
+        Button("Edit") { editing = true }.accessibilityLabel("Edit publication").accessibilityIdentifier("jam-edit-page")
     }
 
     private var doneButton: some View {
@@ -271,14 +271,14 @@ struct OrgProfileView: View {
 
     /// While editing, ‹ goes back to the org's page, not out of it.
     private var backToOrg: some View {
-        Button { editing = false } label: { ToolIconLabel(symbol: "chevron.left") }.accessibilityLabel("Back to the org").accessibilityIdentifier("org-edit-back")
+        Button { editing = false } label: { ToolIconLabel(symbol: "chevron.left") }.accessibilityLabel("Back to the publication").accessibilityIdentifier("org-edit-back")
     }
 
     private var moreMenu: some View {
         Menu {
             if isMe {
                 Button { action = .subscribers(page) } label: { Label("Subscribers", systemImage: "person.2") }.accessibilityIdentifier("jam-subscribers")
-                Button(role: .destructive) { action = .end(page) } label: { Label("Close org", systemImage: "xmark.circle") }.accessibilityIdentifier("jam-end")
+                Button(role: .destructive) { action = .end(page) } label: { Label("Close publication", systemImage: "xmark.circle") }.accessibilityIdentifier("jam-end")
             }
             if let username = store.publicProfiles[page.writerId]?.username, let url = URL(string: InviteLink.url(username: username)) {
                 ShareLink(item: url, message: Text("\(page.title) on lime")) { Label("Share", systemImage: "square.and.arrow.up") }.accessibilityIdentifier("org-share")
@@ -311,7 +311,7 @@ struct OrgProfileView: View {
                                     .frame(width: 34, height: 34).background(Theme.surface.opacity(0.92), in: Circle()).frame(width: 44, height: 44).contentShape(Rectangle())
                             }
                             .buttonStyle(.plain).offset(x: 12, y: -12)
-                            .accessibilityLabel("Change org picture").accessibilityIdentifier("org-edit-picture")
+                            .accessibilityLabel("Change publication picture").accessibilityIdentifier("org-edit-picture")
                         }
                     }
                     .padding(.top, 12).padding(.bottom, 14)   // room for the writers' circles that hang below the tile
@@ -383,12 +383,12 @@ struct OrgProfileView: View {
                 editRow("text.alignleft", page.about.isEmpty ? "About" : page.about, id: "org-edit-about", dim: page.about.isEmpty, divider: false,
                         label: "Edit about, \(page.about.isEmpty ? "none" : page.about)") { fieldSheet = .about }
             }
-            SettingsFootnote(text: "Your org\u{2019}s name, about and picture are public.")
+            SettingsFootnote(text: "Your publication\u{2019}s name, about and picture are public.")
             SettingsCard {
                 editRow("tag", page.topics.isEmpty ? "Tags" : page.topics.joined(separator: " \u{00B7} "), id: "org-edit-tags", dim: page.topics.isEmpty, divider: false,
                         label: "Edit tags, \(page.topics.isEmpty ? "none" : page.topics.joined(separator: ", "))") { fieldSheet = .tags }
             }
-            SettingsFootnote(text: "Up to 8. Teachers find your org by these.")
+            SettingsFootnote(text: "Up to 8. Teachers find your publication by these.")
             SettingsCard {
                 HStack(spacing: 14) {
                     Image(systemName: "person.2").font(.system(size: 20)).frame(width: 28).foregroundStyle(Theme.text).accessibilityHidden(true)
@@ -412,7 +412,7 @@ struct OrgProfileView: View {
             SettingsFootnote(text: "Subscribers can join a group chat with you. Up to 100 people.")
             SettingsCard {
                 Button { action = .end(page) } label: {
-                    HStack { Text("Close org").font(Theme.body).foregroundStyle(Color.red); Spacer(minLength: 0) }
+                    HStack { Text("Close publication").font(Theme.body).foregroundStyle(Color.red); Spacer(minLength: 0) }
                         .padding(.horizontal, 18).frame(minHeight: 58).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain).accessibilityIdentifier("jam-end")

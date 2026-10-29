@@ -24,6 +24,7 @@ final class Jam188dUITests: LimeUITestCase {
             XCTAssertGreaterThan(tab.frame.minX, last, "\(name) comes after the one before it")
             last = tab.frame.minX
         }
+        XCTAssertTrue(app.buttons["profile-tab-Orgs"].label.hasPrefix("Publications"), "the tab says Publications (LIME-253); its id stays")
         XCTAssertTrue(app.buttons["profile-tab-Info"].isSelected, "Info is the default")
         XCTAssertTrue(any(app, "profile-about").exists || any(app, "profile-handle").exists || any(app, "profile-name").exists)
         XCTAssertFalse(app.staticTexts["profile-jam-row"].exists, "no jam parts in the header or Info")

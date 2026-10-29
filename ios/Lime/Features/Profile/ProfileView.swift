@@ -287,7 +287,7 @@ struct ProfileView: View {
             // Room under the text for the start of the blend, so the white text is always on the photo and never on the canvas (LIME-217e).
             Spacer(minLength: HeroShape.textToPills(screen: screen))
             if editingNow { Color.clear.frame(height: HeroShape.pillsRow) } else {
-                ProfileTabs(sections: available, selection: $section, badged: route.isMe && store.jamHasUnseen() ? [.activity] : [])
+                ProfileTabs(sections: available, selection: $section, badged: route.isMe && store.jamHasUnseen() ? [.activity] : [], titles: [.orgs: "Publications"])
             }
         }
         .frame(maxWidth: .infinity, minHeight: HeroShape.blockHeight(screen: screen, inset: inset))
@@ -692,7 +692,7 @@ struct ProfileView: View {
         }
         if !links.isEmpty { ProfileLinksCard(links: links) }
         if !orgs.isEmpty {
-            titledCard("Orgs") {
+            titledCard("Publications") {
                 VStack(spacing: 0) {
                     ForEach(Array(orgs.enumerated()), id: \.element.jamId) { index, org in
                         Button { store.openOrg(org, isMe: route.isMe) } label: {
@@ -943,6 +943,8 @@ struct ProfileTabs<Tab: Hashable & RawRepresentable>: View where Tab.RawValue ==
     @Binding var selection: Tab
     /// Tabs with something new (a quiet dot), LIME-189c.
     var badged: Set<Tab> = []
+    /// What a tab says when it differs from its raw value (its id stays the raw value), e.g. "Publications" for the one that was "Orgs".
+    var titles: [Tab: String] = [:]
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
@@ -950,13 +952,13 @@ struct ProfileTabs<Tab: Hashable & RawRepresentable>: View where Tab.RawValue ==
                     ForEach(Array(sections.enumerated()), id: \.element) { index, section in
                         let on = selection == section
                         Button { selection = section } label: {
-                            Text(section.rawValue).font(Theme.font(.subheadline, weight: on ? .semibold : .regular)).foregroundStyle(on ? Theme.text : Theme.textSecondary)
+                            Text(titles[section] ?? section.rawValue).font(Theme.font(.subheadline, weight: on ? .semibold : .regular)).foregroundStyle(on ? Theme.text : Theme.textSecondary)
                                 .padding(.horizontal, 14).frame(minHeight: 44)
                                 .background { if on { Capsule().fill(.clear).limeGlass(in: Capsule()) } }
                                 .overlay(alignment: .topTrailing) { if badged.contains(section) { Circle().fill(Theme.accent).frame(width: 8, height: 8).padding(.top, 8).padding(.trailing, 6).accessibilityIdentifier("profile-tab-dot-\(section.rawValue)") } }
                         }
                         .buttonStyle(.plain).id(section)
-                        .accessibilityLabel("\(section.rawValue)\(badged.contains(section) ? ", new" : ""), tab, \(index + 1) of \(sections.count)")
+                        .accessibilityLabel("\(titles[section] ?? section.rawValue)\(badged.contains(section) ? ", new" : ""), tab, \(index + 1) of \(sections.count)")
                         .accessibilityAddTraits(on ? [.isSelected] : [])
                         .accessibilityIdentifier("profile-tab-\(section.rawValue)")
                     }

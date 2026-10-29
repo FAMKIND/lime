@@ -99,7 +99,7 @@ struct JamFilterRow: View {
                 Section("Show") {
                     Toggle("Co-authored", isOn: $filter.coauthored)
                     Toggle("Subscribed", isOn: $filter.subscribed)
-                    Toggle("Orgs", isOn: $filter.orgs)
+                    Toggle("Publications", isOn: $filter.orgs)
                     Toggle("Saved", isOn: $filter.saved).accessibilityIdentifier("\(idPrefix)-saved")
                 }
                 if filter.isOn {

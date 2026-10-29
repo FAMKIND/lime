@@ -8756,3 +8756,9 @@ Link, call and jam keep one bubble; no frosted band behind the bar. **Brief:** L
 - **Screenshots** (`docs/qa-shots/255/`; `before-*` are with `limeTopFade` off, the rest with it on): `link`, `call`, `jam` (one bubble); `profile-scrolled` (the user's case: band gone, soft gradient over the hero); `chat`, `settings` (Privacy; the hard line under the bar became a soft fade), `group`. The group and Settings pages are short in the demo, so they barely scroll under the bar; the profile case is the clear one.
 - **Not checked:** iOS 17–25 (unchanged); the iPad; a profile with a photo hero scrolled on the 13 mini.
 - **Tests:** the tab bar tests and the chat header test pass on the iOS 27 simulator (no new test: visual).
+
+## LIME-253
+"Org" is called "Publication" everywhere a teacher reads it. **Brief:** LIME-253. Words only; ids, types and file names (`OrgProfile`, `org-*`, `profile-tab-Orgs`) are unchanged.
+- **Changed:** the profile tab and its Info card "Publications" (`ProfileTabs` got a `titles` map so the tab's id stays `profile-tab-Orgs`); the jam filter toggle "Publications"; "Edit publication", "Close publication" (row swipe, menu, edit page, VoiceOver action), "Close this publication?", "Back to the publication", "Change publication picture", "Publication picture" (sheet title), "Your publication's name, about and picture are public.", "Up to 8. Teachers find your publication by these.", "What is your publication called?", "Your publication's picture is public, like its name.", Moderation's kind "Publication", the article's "View publication", and the delete-account line "Your profile, jam and publication pages, …".
+- **Checked and left alone:** `limechat.org` and other domains; bundle ids (`org.famkind…`); code comments; the Post as sheet (it says no "Org").
+- **Tests:** words asserted by `Jam188t/v`, `Jam194`, `Org245` follow; `Jam188d` now also asserts the tab reads "Publications". These and `Org216` pass on the iOS 27 simulator.

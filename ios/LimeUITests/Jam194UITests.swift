@@ -24,7 +24,7 @@ final class Jam194UITests: LimeUITestCase {
         let app = editPage([])
         XCTAssertEqual(app.buttons["jam-picture-add"].label, "Add picture")
         XCTAssertFalse(app.buttons["jam-picture-remove"].exists)
-        XCTAssertTrue(app.staticTexts["Your org's picture is public, like its name."].exists, "says it is public")
+        XCTAssertTrue(app.staticTexts["Your publication's picture is public, like its name."].exists, "says it is public")
     }
 
     func testAJamWithAPictureOffersChangeAndRemoveAndRemoveBringsBackAdd() {

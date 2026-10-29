@@ -55,7 +55,7 @@ struct OrgFieldSheet: View {
                 VStack(alignment: .leading, spacing: 12) {
                     switch field {
                     case .name:
-                        pill { TextField("What is your org called?", text: $text).font(Theme.body).textInputAutocapitalization(.sentences).focused($focused)
+                        pill { TextField("What is your publication called?", text: $text).font(Theme.body).textInputAutocapitalization(.sentences).focused($focused)
                             .submitLabel(.done).onSubmit { if canSave { save() } }.accessibilityIdentifier("jam-title-field") }
                         count("\(text.count)/60", over: text.count > 60)
                     case .about:
@@ -69,7 +69,7 @@ struct OrgFieldSheet: View {
                         }
                         .padding(.horizontal, 14).frame(minHeight: 48)
                         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        Text("Up to 8. Teachers find your org by these.").font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                        Text("Up to 8. Teachers find your publication by these.").font(Theme.caption).foregroundStyle(Theme.textSecondary)
                     }
                 }
                 .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 16)
@@ -136,7 +136,7 @@ struct OrgPictureSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SheetHeader(title: "Org picture", leading: .close { dismiss() })
+            SheetHeader(title: "Publication picture", leading: .close { dismiss() })
             VStack(spacing: 14) {
                 JamInitialTile(title: title, jamId: jamId, size: 96).accessibilityHidden(true)
                 HStack(spacing: 10) {
@@ -144,7 +144,7 @@ struct OrgPictureSheet: View {
                     if CameraPicker.isAvailable { button("camera", "Take Photo", id: "jam-picture-camera") { pictureStep = .camera } }
                 }
                 if hasPicture { button("trash", "Remove", id: "jam-picture-remove") { remove() } }
-                Text("Your org's picture is public, like its name.").font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                Text("Your publication's picture is public, like its name.").font(Theme.caption).foregroundStyle(Theme.textSecondary)
             }
             .frame(maxWidth: .infinity).padding(.top, 8)
             .disabled(busy)
