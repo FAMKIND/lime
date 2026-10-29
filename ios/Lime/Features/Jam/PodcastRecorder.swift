@@ -251,6 +251,7 @@ struct PodcastRecorder: View {
     @State private var pickingCover = false
     @State private var confirmingRerecord = false
     @State private var confirmingDiscard = false
+    @State private var confirmingClose = false
     @State private var torchOn = false
     // The details page (LIME-239b)
     @State private var descModel = RichComposerModel()
@@ -314,6 +315,10 @@ struct PodcastRecorder: View {
             Button("Discard", role: .destructive) { cancel() }.accessibilityIdentifier("podcast-discard-confirm")
             Button("Keep recording", role: .cancel) {}
         } message: { Text("What you recorded is thrown away.") }
+        .confirmSheet("Discard this podcast?", isPresented: $confirmingClose) {
+            Button("Discard", role: .destructive) { cancel() }.accessibilityIdentifier("podcast-close-confirm")
+            Button("Keep editing", role: .cancel) {}
+        } message: { Text("Your recording and what you\u{2019}ve written will be deleted.") }
         .alert("Can\u{2019}t record", isPresented: Binding(get: { problem != nil }, set: { if !$0 { problem = nil } })) {
             Button("OK", role: .cancel) {}
         } message: { Text(problem ?? "") }
@@ -540,24 +545,22 @@ struct PodcastRecorder: View {
         .onChange(of: descModel.plainText) { _, _ in details = descModel.markdown() }
     }
 
-    /// ‹ (back to the recorder, asking first; when editing, closes) · Post or Update, both glass.
+    /// ✕ (closes the whole flow, asking first; when editing, closes) · Next or Update, both glass. Record again is in the menu (LIME-244).
     private var detailsTop: some View {
         HStack {
-            Button { if editing != nil { cancel() } else { confirmingRerecord = true } } label: {
-                Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.text).frame(width: 44, height: 44).limeGlass(in: Circle())
+            Button { if editing != nil { cancel() } else { confirmingClose = true } } label: {
+                Image(systemName: "xmark").font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.text).frame(width: 44, height: 44).limeGlass(in: Circle())
             }
-            .buttonStyle(.plain).accessibilityLabel(editing != nil ? "Close" : "Back to the recorder").accessibilityIdentifier("podcast-back")
+            .buttonStyle(.plain).accessibilityLabel("Close").accessibilityIdentifier("podcast-close")
             Spacer()
             Text("Step 1 of 2").font(Theme.font(.headline, weight: .semibold)).foregroundStyle(Theme.text).accessibilityAddTraits(.isHeader).accessibilityIdentifier("podcast-step")
             Spacer()
-            if editing != nil {
-                Menu {
-                    Button { confirmingRerecord = true } label: { Label("Record again", systemImage: "arrow.counterclockwise") }.accessibilityIdentifier("podcast-again")
-                } label: {
-                    Image(systemName: "ellipsis").font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.text).frame(width: 44, height: 44).limeGlass(in: Circle())
-                }
-                .accessibilityLabel("More").accessibilityIdentifier("podcast-more")
+            Menu {
+                Button { confirmingRerecord = true } label: { Label("Record again", systemImage: "arrow.counterclockwise") }.accessibilityIdentifier("podcast-again")
+            } label: {
+                Image(systemName: "ellipsis").font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.text).frame(width: 44, height: 44).limeGlass(in: Circle())
             }
+            .accessibilityLabel("More").accessibilityIdentifier("podcast-more")
             Button { focus = nil; descModel.textView?.resignFirstResponder(); step2 = true } label: {
                 Text("Next").font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text)
                     .padding(.horizontal, 18).frame(minHeight: 44).limeGlass(in: Capsule()).opacity(canSend ? 1 : 0.45)

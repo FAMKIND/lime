@@ -8655,3 +8655,13 @@ On other people's phones (not reachable): their chats with the account, jam post
 - **Gate:** on the 13 mini: a 1:1 chat and a group: ‹ · avatar + name · 🔍 · 📹; a long name shows more than before (and truncates rather than overlapping the circles); tap the name → profile / group details with Mute; search and calls still work.
 - **Installed:** the iPad, Shem's 13 mini and Jean's 12 mini (all three, first try).
 
+
+## LIME-244 — close a podcast from the details page
+
+**Survey.** As the brief says (`PodcastRecorder.swift` `detailsTop`: ‹ asked "Record again?"; only the recorder had ✕). Articles already hold: step 1 has Cancel (it keeps a draft, so nothing is thrown away) and step 2 is a pushed screen with the system ‹ back (nothing lost); posts likewise. **Nothing changed there.**
+
+1. **Details page ("Step 1 of 2"):** the top-left is now ✕ (round glass, "Close", id `podcast-close`). It asks **"Discard this podcast?"** ("Your recording and what you've written will be deleted.") with **Discard** (red, `podcast-close-confirm`) and **Keep editing**; Discard closes the whole flow like the recorder's ✕ (`cancel()`). The details page always has a take, so the "closes at once with no take" case does not arise here (the recorder's ✕ already does it).
+2. **Record again** is now in the details page's ⋯ for a new podcast too (it was only there when editing); the "Back to the recorder" ‹ is gone. Editing a published podcast: unchanged (✕ closes).
+3. **Step 2** keeps ‹ (the system back to the details).
+- **Tests:** `Studio227UITests` (renamed `testCloseAsksBeforeDiscardingThePodcastAndPostMakesIt`: ✕ asks, Keep editing keeps the take, the menu's Record again asks "Record again?", then Post makes the podcast) and `Studio239bUITests` (✕ asks) updated from `podcast-back`; both classes pass (5 tests). Not tested: Discard itself closing the New post sheet (the same `cancel()` as the recorder's ✕).
+- **Gate:** record a short take → details → ✕ → Discard: back in jam in one tap + one confirm; ✕ → Keep editing: nothing lost; ⋯ → Record again still works; step 2 ‹ returns to the details.

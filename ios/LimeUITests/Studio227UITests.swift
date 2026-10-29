@@ -40,17 +40,23 @@ final class Studio227UITests: LimeUITestCase {
         XCTAssertEqual(field(app, "podcast-title").value as? String, "Pine")
     }
 
-    func testBackAsksBeforeDiscardingTheTakeAndPostMakesThePodcast() {
+    func testCloseAsksBeforeDiscardingThePodcastAndPostMakesIt() {
         let app = studio()
         app.buttons["jam-record"].tap()
         app.buttons["podcast-record"].tap()
         sleep(1)
         app.buttons["podcast-stop"].tap()
         XCTAssertTrue(app.buttons["podcast-play"].waitForExistence(timeout: 8), "the preview plays the take")
-        app.buttons["podcast-back"].tap()
+        app.buttons["podcast-close"].tap()
+        XCTAssertTrue(app.buttons["podcast-close-confirm"].firstMatch.waitForExistence(timeout: 5), "Discard this podcast?")
+        app.buttons["Keep editing"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["podcast-play"].exists, "kept")
+        // Record again is one tap away in the menu.
+        app.buttons["podcast-more"].tap()
+        XCTAssertTrue(app.buttons["podcast-again"].waitForExistence(timeout: 3))
+        app.buttons["podcast-again"].tap()
         XCTAssertTrue(app.buttons["podcast-rerecord-confirm"].firstMatch.waitForExistence(timeout: 5), "Record again? This take will be discarded")
         app.buttons["Keep it"].firstMatch.tap()
-        XCTAssertTrue(app.buttons["podcast-play"].exists, "kept")
         let title = field(app, "podcast-title")
         title.tap(); title.typeText("Pine walk")
         publishPodcast(app)

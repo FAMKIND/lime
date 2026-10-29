@@ -15,7 +15,7 @@ final class Studio239bUITests: LimeUITestCase {
         sleep(2)
         app.buttons["podcast-stop"].tap()
         XCTAssertTrue(app.buttons["podcast-play"].waitForExistence(timeout: 8), "the preview")
-        for id in ["podcast-trim-start", "podcast-trim-end", "podcast-post-as", "podcast-add-cover", "podcast-title", "podcast-subtitle", "podcast-description", "podcast-back", "podcast-next"] {
+        for id in ["podcast-trim-start", "podcast-trim-end", "podcast-post-as", "podcast-add-cover", "podcast-title", "podcast-subtitle", "podcast-description", "podcast-close", "podcast-next"] {
             XCTAssertTrue(any(app, id).waitForExistence(timeout: 3), id)
         }
         XCTAssertEqual(app.buttons["podcast-add-cover"].label, "Add cover")
@@ -24,10 +24,10 @@ final class Studio239bUITests: LimeUITestCase {
         let end = any(app, "podcast-trim-end")
         end.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.1, thenDragTo: any(app, "podcast-trim-start").coordinate(withNormalizedOffset: CGVector(dx: 3, dy: 0.5)))
         XCTAssertNotEqual(length.value as? String, before, "dragging the end handle changes the length: \(before) -> \(String(describing: length.value))")
-        // ‹ asks before discarding the take.
-        app.buttons["podcast-back"].tap()
-        XCTAssertTrue(app.buttons["podcast-rerecord-confirm"].firstMatch.waitForExistence(timeout: 3))
-        app.buttons["Keep it"].firstMatch.tap()
+        // ✕ asks before discarding the podcast.
+        app.buttons["podcast-close"].tap()
+        XCTAssertTrue(app.buttons["podcast-close-confirm"].firstMatch.waitForExistence(timeout: 3))
+        app.buttons["Keep editing"].firstMatch.tap()
     }
 
     func testEditOnAPodcastOpensTheSamePageWithTheTrimBar() {
