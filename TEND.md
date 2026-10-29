@@ -8710,3 +8710,4 @@ A video podcast's card now shows the video first. **Brief:** LIME-248.
 - `JamPage.swift` `videoPodcast(_:)`: video → title (title3 semibold) with ⋯ (`JamPostMenu`) beside it, top-aligned → subtitle (secondary, ≤ 2 lines, hidden when empty) → series line → writer row → action row. The ⋯ no longer overlays the video. One view serves every place the card shows (feed, filters, profile and org tabs, Discover).
 - Test `Jam212bUITests` renamed to `…StartsWithTheVideoThenTheTitleThenTheWriterRow` and asserts the new order; 200/203/212b pass on the iOS 27 simulator (203's title-tap test was already skipped).
 - Not checked by eye: how the ⋯ sits beside a two-line title; no screenshot taken (visual change, you check on the phone).
+- **Installed (247c, 248):** all three, the iPad, Shem's 13 mini and Jean's 12 mini, first try.
