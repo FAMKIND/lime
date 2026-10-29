@@ -8716,3 +8716,4 @@ A video podcast's card now shows the video first. **Brief:** LIME-248.
 A trial: jam's tab icon is the system symbol `pencil.and.outline` (`TabSymbols.jam` in `RootView.swift`; `TabSymbolsTests` updated and passing). **Brief:** LIME-249.
 - Checked on the iOS 27 simulator (iPhone 17): it draws as an outline, selected and unselected, like link and call (the tab bar keeps symbol variants off, so nothing fills). The VoiceOver label stays "jam".
 - Revert is one line: `TabSymbols.jam = "book.pages"` plus the test.
+- **Installed (249):** all three, the iPad, Shem's 13 mini and Jean's 12 mini, first try.
