@@ -8947,3 +8947,5 @@ A video podcast's card: the writer row back above the video. **Brief:** LIME-262
 - **Order now:** writer row (avatar(s), band or writer, date) → the video → title → subtitle (2 lines) → series line → actions. The ⋯ is no longer beside the title: it sits at the card's top right, on the writer row, as on the other cards. Same card everywhere it shows.
 - **Tests:** `Jam212bUITests`' order test now asserts writer row above video above title (renamed); `Jam212b`, `Jam203`, `Jam200` pass (one existing skip).
 - **Not screenshotted** (a re-order; you check on the phone). **Gate:** in jam's feed a video podcast reads avatar · name · date (⋯ right), the video, then the title and description.
+
+- **Installed (262):** all three, the 13 mini, the iPad and Jean's 12 mini.
