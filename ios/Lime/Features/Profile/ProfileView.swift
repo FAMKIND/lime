@@ -287,7 +287,7 @@ struct ProfileView: View {
             // Room under the text for the start of the blend, so the white text is always on the photo and never on the canvas (LIME-217e).
             Spacer(minLength: HeroShape.textToPills(screen: screen))
             if editingNow { Color.clear.frame(height: HeroShape.pillsRow) } else {
-                ProfileTabs(sections: available, selection: $section, badged: route.isMe && store.jamHasUnseen() ? [.activity] : [], titles: [.orgs: "Publications"])
+                ProfileTabs(sections: available, selection: $section, badged: route.isMe && store.jamHasUnseen() ? [.activity] : [], titles: [.orgs: "Bands"])
             }
         }
         .frame(maxWidth: .infinity, minHeight: HeroShape.blockHeight(screen: screen, inset: inset))
@@ -692,7 +692,7 @@ struct ProfileView: View {
         }
         if !links.isEmpty { ProfileLinksCard(links: links) }
         if !orgs.isEmpty {
-            titledCard("Publications") {
+            titledCard("Bands") {
                 VStack(spacing: 0) {
                     ForEach(Array(orgs.enumerated()), id: \.element.jamId) { index, org in
                         Button { store.openOrg(org, isMe: route.isMe) } label: {
@@ -943,7 +943,7 @@ struct ProfileTabs<Tab: Hashable & RawRepresentable>: View where Tab.RawValue ==
     @Binding var selection: Tab
     /// Tabs with something new (a quiet dot), LIME-189c.
     var badged: Set<Tab> = []
-    /// What a tab says when it differs from its raw value (its id stays the raw value), e.g. "Publications" for the one that was "Orgs".
+    /// What a tab says when it differs from its raw value (its id stays the raw value), e.g. "Bands" for the one that was "Orgs".
     var titles: [Tab: String] = [:]
     var body: some View {
         ScrollViewReader { proxy in

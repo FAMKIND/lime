@@ -598,7 +598,7 @@ struct JamComposeSheet: View {
                             leadingTools(width: width)
                             compactPill("Write article", spoken: "Write an article", system: "square.and.pencil", id: "jam-write-article") { setArticle(true) }.padding(.leading, 4)
                             compactPill("Record podcast", spoken: "Record a podcast", system: "waveform", id: "jam-record") { recordMode = 0 }.padding(.leading, 8)
-                            compactPill("Create publication", spoken: "Create a publication", system: "book.pages", id: "jam-create-publication") { creatingPublication = true }.padding(.horizontal, 8)
+                            compactPill("Create band", spoken: "Create a band", system: "book.pages", id: "jam-create-publication") { creatingPublication = true }.padding(.horizontal, 8)
                             trailingTools(width: width)
                         }
                     }
@@ -725,7 +725,7 @@ struct JamComposeSheet: View {
         HStack(spacing: 10) {
             chip("Write article", spoken: "Write an article", system: "square.and.pencil", id: "jam-write-article") { setArticle(true) }
             chip("Record podcast", spoken: "Record a podcast", system: "waveform", id: "jam-record") { recordMode = 0 }
-            chip("Create publication", spoken: "Create a publication", system: "book.pages", id: "jam-create-publication") { creatingPublication = true }
+            chip("Create band", spoken: "Create a band", system: "book.pages", id: "jam-create-publication") { creatingPublication = true }
         }
     }
 

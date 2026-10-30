@@ -14,7 +14,7 @@ final class Org245UITests: LimeUITestCase {
         any(app, "profile-org-demo-my-jam").tap()
         let edit = app.buttons["jam-edit-page"]
         XCTAssertTrue(edit.waitForExistence(timeout: 8))
-        XCTAssertEqual(edit.label, "Edit publication")
+        XCTAssertEqual(edit.label, "Edit band")
         XCTAssertTrue(app.buttons["profile-tab-Info"].exists, "the profile's tabs")
         edit.tap()
         XCTAssertTrue(app.buttons["org-edit-picture"].waitForExistence(timeout: 5), "the camera circle")
@@ -45,8 +45,8 @@ final class Org245UITests: LimeUITestCase {
         any(app, "profile-org-demo-my-jam").tap()
         app.buttons["jam-edit-page"].tap()
         app.buttons["jam-end"].tap()
-        XCTAssertTrue(app.buttons["jam-end-confirm"].firstMatch.waitForExistence(timeout: 5), "Close publication asks first")
-        XCTAssertEqual(app.buttons["jam-end-confirm"].firstMatch.label, "Close publication")
+        XCTAssertTrue(app.buttons["jam-end-confirm"].firstMatch.waitForExistence(timeout: 5), "Close band asks first")
+        XCTAssertEqual(app.buttons["jam-end-confirm"].firstMatch.label, "Close band")
         app.buttons["Cancel"].firstMatch.tap()
         XCTAssertTrue(app.buttons["org-done"].waitForExistence(timeout: 5), "cancelled: still editing")
     }

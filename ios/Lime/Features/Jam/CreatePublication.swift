@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// Making a publication from jam's + (LIME-254), in a sheet as New group is: step 1 the picture, the name (required, 60) and an optional about; step 2 the tags, then Create.
+/// Making a band (a publication) from jam's + (LIME-254), in a sheet as New group is: step 1 the picture, the name (required, 60) and an optional about; step 2 the tags, then Create.
 /// It ends on the new publication's page, which says where to post as it. The picture, name, about and tags are public, the owner's choice, as for any jam page.
 struct CreatePublicationSheet: View {
     /// Called with the new jam's id once it exists; the sheet has closed itself.
@@ -70,7 +70,7 @@ struct CreatePublicationSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack { Spacer(); pictureTile; Spacer() }
             VStack(alignment: .leading, spacing: 6) {
-                TextField("What is your publication called?", text: Binding(get: { name }, set: { name = String($0.prefix(Self.nameLimit)) }))
+                TextField("What is your band called?", text: Binding(get: { name }, set: { name = String($0.prefix(Self.nameLimit)) }))
                     .font(Theme.body).selectionTint().focused($focused).submitLabel(.next).onSubmit { if canNext { step = 2 } }
                     .padding(.horizontal, 16).frame(minHeight: 52)
                     .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -85,6 +85,11 @@ struct CreatePublicationSheet: View {
                     .accessibilityLabel("About").accessibilityIdentifier("publication-about-field")
                 Text("The picture, name and about are public.").font(Theme.caption).foregroundStyle(Theme.textSecondary).padding(.horizontal, 6)
             }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Band together.").font(Theme.font(.footnote, weight: .semibold)).foregroundStyle(Theme.text)
+                Text("A band is teachers playing together: a school team, a co-op, a union, a publication.").font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                    .accessibilityIdentifier("band-explainer")
+            }
         }
     }
 
@@ -98,7 +103,7 @@ struct CreatePublicationSheet: View {
             }
             .padding(.horizontal, 14).frame(minHeight: 48)
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            Text("Up to 8. Teachers find your publication by these.").font(Theme.caption).foregroundStyle(Theme.textSecondary)
+            Text("Up to 8. Teachers find your band by these.").font(Theme.caption).foregroundStyle(Theme.textSecondary)
         }
     }
 
@@ -121,7 +126,7 @@ struct CreatePublicationSheet: View {
                 Image(systemName: "camera.fill").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.text)
                     .frame(width: 34, height: 34).background(Theme.surface.opacity(0.92), in: Circle()).frame(width: 44, height: 44).contentShape(Rectangle())
             }
-            .offset(x: 12, y: -12).accessibilityLabel("Publication picture").accessibilityIdentifier("publication-picture")
+            .offset(x: 12, y: -12).accessibilityLabel("Band picture").accessibilityIdentifier("publication-picture")
         }
         .padding(.top, 8)
     }

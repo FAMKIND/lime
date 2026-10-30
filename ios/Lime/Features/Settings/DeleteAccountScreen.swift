@@ -75,7 +75,7 @@ struct DeleteAccountScreen: View {
                 VStack(alignment: .leading, spacing: 14) {
                     Text("This deletes your lime account for good.").font(Theme.title).foregroundStyle(Theme.text)
                         .accessibilityIdentifier("delete-title")
-                    point("Your profile, jam and publication pages, posts on lime\u{2019}s server and your account are deleted.")
+                    point("Your profile, jam and band pages, posts on lime\u{2019}s server and your account are deleted.")
                     point("Your contacts are told. Your chats with them show \u{201C}This account was deleted\u{201D}.")
                     point("What other people already have on their phones stays there: messages and posts they downloaded. lime can\u{2019}t reach into their phones.")
                     point("You\u{2019}ll be signed out on every device, and this iPhone forgets everything.")

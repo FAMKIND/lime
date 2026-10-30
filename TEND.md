@@ -8774,3 +8774,9 @@ Create publication from jam's +. **Brief:** LIME-254.
 - **Tests:** `Publication254UITests` (the card after Record podcast; name required; create → page + hint; Post as lists 2 rows). `Composer236` and `Org245` still pass on the iOS 27 simulator.
 - **Not checked:** a real create against the server (demo only); the picture on a real create; iPad.
 - **Installed (254):** all three, the iPad, Shem's 13 mini and Jean's 12 mini.
+
+## LIME-253b
+"Publication" becomes "Band". **Brief:** LIME-253b. Words only; ids, types and file names (`publication-*`, `jam-create-publication`, `CreatePublicationSheet`, `profile-tab-Orgs`) unchanged.
+- **Changed:** the profile tab and Info card "Bands"; the jam filter toggle; "Create band" (the + card, spoken "Create a band"); "Edit band", "Close band" / "Close this band?", "Back to the band", "Change band picture", "Band picture", "Your band's picture is public, like its name.", "Your band’s name, about and picture are public.", "What is your band called?", "Up to 8. Teachers find your band by these.", moderation's kind "Band", the article's "View band", the delete-account line.
+- **The explainer:** under the Create band sheet's step 1 fields: "Band together." / "A band is teachers playing together: a school team, a co-op, a union, a publication." The Bands tab only exists when there is a band, so it has no empty state to add it to. The jam's "Community chat" is untouched.
+- **Tests:** the words in `Jam188d/t/v`, `Jam194`, `Org245`, `Publication254` follow (the last also asserts the explainer). These, `Org216` and all of `Jam188d` pass on the iOS 27 simulator.

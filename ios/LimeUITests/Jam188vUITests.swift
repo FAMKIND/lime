@@ -59,7 +59,7 @@ final class Jam188vUITests: LimeUITestCase {
         let control = app.descendants(matching: .any).matching(identifier: "jam-filter-segments").firstMatch
         XCTAssertTrue(control.waitForExistence(timeout: 10))
         app.buttons["jam-filter-button"].tap()
-        let toggle = app.buttons["Publications"]
+        let toggle = app.buttons["Bands"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
         toggle.tap()
         XCTAssertTrue(app.staticTexts["Welcome from the circle"].waitForExistence(timeout: 5) || app.buttons.matching(NSPredicate(format: "label CONTAINS 'Welcome from the circle'")).firstMatch.exists, "the post shown as the jam")

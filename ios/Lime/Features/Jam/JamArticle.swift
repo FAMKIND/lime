@@ -666,7 +666,7 @@ struct ReaderOptionsSheet: View {
                     row("magnifyingglass", "Search in post", id: "options-search") { find() }
                     row("textformat.size", "Display settings", chevron: true, id: "options-display") { openDisplay() }
                     row(ArticleSpeaker.shared.active ? "speaker.slash" : "headphones", ArticleSpeaker.shared.active ? "Stop listening" : "Listen", id: "options-listen") { listen() }
-                    row("person.crop.circle", post.displayAs == "jam" ? "View publication" : "View jam", chevron: true, id: "options-viewjam") {
+                    row("person.crop.circle", post.displayAs == "jam" ? "View band" : "View jam", chevron: true, id: "options-viewjam") {
                         let writer = store.teacher(post.author)
                         dismiss()
                         store.openProfile(ProfileRoute(userID: writer.id, name: writer.name, isMe: writer.id == store.meProvider().id))

@@ -60,7 +60,7 @@ final class Jam188tUITests: LimeUITestCase {
         control.buttons["All"].tap()
         app.buttons["jam-filter-button"].tap()
         XCTAssertTrue(app.buttons["Photos"].exists && app.buttons["Video"].exists && app.buttons["Audio"].exists)
-        XCTAssertTrue(app.buttons["Co-authored"].exists && app.buttons["Subscribed"].exists && app.buttons["Publications"].exists && app.buttons["Saved"].exists, "the filters")
+        XCTAssertTrue(app.buttons["Co-authored"].exists && app.buttons["Subscribed"].exists && app.buttons["Bands"].exists && app.buttons["Saved"].exists, "the filters")
         app.buttons["Audio"].tap()
         XCTAssertTrue(any(app, "jam-audio-card-demo-audio-1").waitForExistence(timeout: 5), "the audio recording")
         XCTAssertFalse(app.buttons["jam-post-demo-post-2"].exists)
