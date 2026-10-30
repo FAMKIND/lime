@@ -269,6 +269,8 @@ struct PodcastRecorder: View {
     @State private var removeCover = false
     @State private var saving = false
     @State private var initialHosts: [String] = []
+    /// Co-hosts who were asked and have not answered (LIME-266): drawn faded with a clock.
+    @State private var waitingHosts: Set<String> = []
     @FocusState private var focus: Line?
     private enum Line: Hashable { case title, subtitle, details }
 
@@ -712,13 +714,15 @@ struct PodcastRecorder: View {
             HStack(spacing: 8) {
                 Button { postingAs = true } label: {
                     HStack(spacing: 8) {
-                        if let jamTitle { BylineAvatar(people: [store.meProvider()] + coauthors, jam: jamTitle, jamId: postAsJam, size: 32).frame(width: 42, height: 32, alignment: .leading) } else { AvatarView(person: store.meProvider(), size: 30).accessibilityHidden(true) }
+                        if let jamTitle { BylineAvatar(people: [store.meProvider()], jam: jamTitle, jamId: postAsJam, size: 32).frame(width: 42, height: 32, alignment: .leading) } else { AvatarView(person: store.meProvider(), size: 30).accessibilityHidden(true) }
                         Text(jamTitle ?? store.meProvider().name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
                         Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.textSecondary)
                     }
                     .frame(minHeight: 44)
                 }
                 .buttonStyle(.plain).accessibilityLabel("Posting as \(jamTitle ?? store.meProvider().name)").accessibilityIdentifier("podcast-post-as")
+                .layoutPriority(0)
+                hostsStrip(ring: Theme.canvas)
                 Button { choosingHosts = true } label: {
                     Image(systemName: "person.badge.plus").font(.system(size: 18)).foregroundStyle(Theme.textSecondary).frame(width: 44, height: 44)
                 }
@@ -972,18 +976,43 @@ struct PodcastRecorder: View {
         .frame(minHeight: 44)
     }
 
+    /// The co-hosts as small overlapping circles beside who the post is from, always drawn (posted as yourself or as a band), never squeezed out by a
+    /// long name. Asked but not yet answered: faded, with a small clock (LIME-266).
+    @ViewBuilder
+    private func hostsStrip(ring: Color) -> some View {
+        if !coauthors.isEmpty {
+            Button { choosingHosts = true } label: {
+                HStack(spacing: -8) {
+                    ForEach(coauthors) { person in
+                        let waiting = waitingHosts.contains(person.id)
+                        AvatarView(person: person, size: 28).opacity(waiting ? 0.5 : 1)
+                            .overlay(alignment: .bottomTrailing) {
+                                if waiting { Image(systemName: "clock.fill").font(.system(size: 9)).foregroundStyle(.white).padding(2).background(Color.gray, in: Circle()) }
+                            }
+                            .overlay(Circle().strokeBorder(ring, lineWidth: 2)).accessibilityHidden(true)
+                    }
+                }
+                .frame(minHeight: 44)
+            }
+            .buttonStyle(.plain).fixedSize().layoutPriority(2)
+            .accessibilityLabel("Co-hosts: " + coauthors.map { waitingHosts.contains($0.id) ? "\($0.name), waiting for them to accept" : $0.name }.joined(separator: ", "))
+            .accessibilityHint("Opens the list to change them").accessibilityIdentifier("podcast-host-avatars")
+        }
+    }
+
     /// Who it is from, the co-hosts and (for audio) the cover.
     private var postRow: some View {
         HStack(spacing: 8) {
             Button { postingAs = true } label: {
                 HStack(spacing: 8) {
-                    if let jamTitle { BylineAvatar(people: [store.meProvider()] + coauthors, jam: jamTitle, jamId: postAsJam, size: 32).frame(width: 42, height: 32, alignment: .leading) } else { AvatarView(person: store.meProvider(), size: 30).accessibilityHidden(true) }
+                    if let jamTitle { BylineAvatar(people: [store.meProvider()], jam: jamTitle, jamId: postAsJam, size: 32).frame(width: 42, height: 32, alignment: .leading) } else { AvatarView(person: store.meProvider(), size: 30).accessibilityHidden(true) }
                     Text(jamTitle ?? store.meProvider().name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
                     Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(0.7))
                 }
                 .padding(.horizontal, 10).frame(minHeight: 44).background(.white.opacity(0.12), in: Capsule())
             }
             .buttonStyle(.plain).accessibilityLabel("Posting as \(jamTitle ?? store.meProvider().name)").accessibilityIdentifier("podcast-post-as")
+            hostsStrip(ring: .black)
             Button { choosingHosts = true } label: {
                 Image(systemName: "person.badge.plus").font(.system(size: 17)).foregroundStyle(.white).frame(width: 44, height: 44).background(.white.opacity(0.12), in: Circle())
             }
@@ -1170,8 +1199,12 @@ struct PodcastRecorder: View {
         var text = post.markdown
         if let at = files.firstIndex(where: JamCover.isCover) { text = text.replacingOccurrences(of: "![](attachment:\(at))", with: "").trimmingCharacters(in: .whitespacesAndNewlines) }
         details = text
-        initialHosts = post.coauthors
-        coauthors = Array(store.bylinePeople(post).dropFirst())
+        // LIME-266: people still asked are co-hosts of the edit too. Left out, saving after any change to the list took their invitation back, and their
+        // Accept then found nothing to answer.
+        let waiting = store.pendingCoauthors(post)
+        initialHosts = post.coauthors + waiting.map(\.id)
+        waitingHosts = Set(waiting.map(\.id))
+        coauthors = Array(store.bylinePeople(post).dropFirst()) + waiting
         postAsJam = post.displayAs == "jam" && post.jamId != store.myOwnJam?.jamId ? post.jamId : nil
     }
 

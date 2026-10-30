@@ -100,13 +100,17 @@ extension ConversationStore {
         jamHiddenChanged += 1
     }
 
-    /// "with Jean Chung and Lee Wong" for the co-authors who accepted, or nil.
+    /// "with Jean Chung and Lee Wong" for the co-authors who accepted, or nil. On the writer's own phone the people still asked follow, faded in
+    /// the avatar and in words here: "with FAM · waiting" (LIME-266); to everyone else an invitation is not a credit.
     func byline(_ post: JamPostInfo) -> String? {
         let names = post.coauthors.map { teacherName($0) }
-        switch names.count {
-        case 0: return nil
-        case 1: return "with \(names[0])"
-        default: return "with \(names.dropLast().joined(separator: ", ")) and \(names.last ?? "")"
+        let waiting = pendingCoauthors(post).map(\.name)
+        func list(_ n: [String]) -> String { n.count < 2 ? (n.first ?? "") : "\(n.dropLast().joined(separator: ", ")) and \(n.last ?? "")" }
+        switch (names.isEmpty, waiting.isEmpty) {
+        case (true, true): return nil
+        case (false, true): return "with \(list(names))"
+        case (true, false): return "with \(list(waiting)) \u{00B7} waiting"
+        case (false, false): return "with \(list(names)) \u{00B7} \(list(waiting)) waiting"
         }
     }
 

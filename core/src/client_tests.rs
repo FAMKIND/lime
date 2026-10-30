@@ -5721,6 +5721,34 @@ fn a_co_author_is_credited_only_after_accepting_and_the_credit_reaches_the_subsc
 }
 
 #[test]
+fn an_accepted_co_host_of_a_video_podcast_shown_as_the_jam_reaches_the_writer_and_a_subscriber() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    let jam = new_jam(&alice);
+    join_jam(&alice, &bob, &jam, &transport);
+    let video = crate::OutgoingAttachment { bytes: vec![7; 5_000], name: "Video.mp4".into(), mime: "video/mp4".into(), width: Some(720), height: Some(1280), duration_ms: Some(6_000), thumb: vec![7; 400], poster: vec![7; 2_000] };
+    let post = alice
+        .store
+        .publish_jam_post_as(jam.clone(), "record".into(), "Sway".into(), String::new(), String::new(), "free".into(), vec![video], vec![carol.user.clone()], "jam".into())
+        .unwrap();
+    for _ in 0..3 {
+        catch_up(&alice, &[&bob, &carol], &transport);
+    }
+    assert_eq!(carol.store.list_coauthor_requests().unwrap().len(), 1, "the invitation arrives");
+    assert_eq!(alice.store.list_pending_coauthors(post.clone()).unwrap(), vec![carol.user.clone()], "the writer sees who is waiting");
+    carol.store.answer_coauthor_request(post.clone(), true).unwrap();
+    for _ in 0..3 {
+        catch_up(&carol, &[&alice], &transport);
+        catch_up(&alice, &[&bob], &transport);
+    }
+    assert_eq!(alice.store.read_jam_post(post.clone()).unwrap().unwrap().coauthors, vec![carol.user.clone()], "the writer's own card");
+    assert_eq!(bob.store.read_jam_post(post.clone()).unwrap().unwrap().coauthors, vec![carol.user.clone()], "the subscriber's card");
+    assert!(alice.store.list_pending_coauthors(post).unwrap().is_empty(), "no longer waiting");
+}
+
+#[test]
 fn a_post_shown_as_the_jam_arrives_so_and_an_ordinary_post_is_shown_as_the_person() {
     let server = FakeServer::new();
     let (alice, transport) = party(&server, "alice", 1);

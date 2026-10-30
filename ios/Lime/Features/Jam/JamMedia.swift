@@ -602,6 +602,10 @@ struct JamVideoScreen: View {
                         .accessibilityIdentifier("jam-video-subscribe")
                     }
                 }
+                if let with = store.byline(post) {
+                    Text(with).font(Theme.font(.caption)).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
+                        .accessibilityLabel(with.replacingOccurrences(of: " \u{00B7} waiting", with: ", waiting for them to accept")).accessibilityIdentifier("jam-info-with")
+                }
                 Button { about = true } label: {
                     VStack(alignment: .leading, spacing: 0) {
                         if !post.title.isEmpty { MarqueeText(text: post.title, font: Theme.font(.headline)) }
@@ -1188,7 +1192,13 @@ struct PlayerAboutSheet: View {
                                 .accessibilityIdentifier("jam-about-description")
                         }
                         let hosts = store.bylinePeople(post).dropFirst().map(\.name)
-                        if !hosts.isEmpty { Text("With " + hosts.joined(separator: ", ")).font(Theme.caption).foregroundStyle(.white.opacity(0.7)).accessibilityIdentifier("jam-about-hosts") }
+                        let waiting = store.pendingCoauthors(post).map(\.name)
+                        if !hosts.isEmpty || !waiting.isEmpty {
+                            let line = (hosts + waiting.map { "\($0) \u{00B7} waiting" }).joined(separator: ", ")
+                            Text("Co-hosts: " + line).font(Theme.caption).foregroundStyle(.white.opacity(0.7))
+                                .accessibilityLabel("Co-hosts: " + (hosts + waiting.map { "\($0), waiting for them to accept" }).joined(separator: ", "))
+                                .accessibilityIdentifier("jam-about-hosts")
+                        }
                         if duration > 0 { Text("Length \(VoiceFormat.clock(duration))").font(Theme.caption).foregroundStyle(.white.opacity(0.7)).accessibilityIdentifier("jam-about-length") }
                     }
                 }
