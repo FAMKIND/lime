@@ -5,7 +5,8 @@
 //!   lists as one (they may post as the band; today's co-authors become writers); *member*. Cap 100, the group's.
 //! - **Joining** by invite code: the code carries the jam, its writer and a random token that lives only in the members group's state. The joiner sends
 //!   `jam.org.join` (Olm) to the writer; the writer's phone checks the token and adds the person **by itself** when it next runs (the community pattern),
-//!   answering `jam.org.reply` (`joined`, `full` or `refused`). The server sees an ordinary group and ordinary Olm items, nothing of the band.
+//!   answering `jam.org.reply` (`joined`, `full` or `refused`). The code also names the other owners (LIME-246d: `jam.writer.token[.owner,owner…]`, at most 4), and the
+//!   request goes to each of them as well; whichever owner's phone runs first adds the person, and the others find them already in (no double add). The server sees an ordinary group and ordinary Olm items, nothing of the band.
 //! - **Members follow the band's jam** on their own phones, paced (a member who leaves, or has unfollowed by hand, is not followed again).
 
 use super::jam::{queue_op, signed_op};
@@ -16,6 +17,8 @@ use crate::store::jam as jam_store;
 
 /// Joins answered in one pass.
 const ORG_JOINS_PER_PASS: usize = 5;
+/// Owners besides the writer that a code names.
+const MAX_INVITE_OWNERS: usize = 4;
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct OrgMemberInfo {
@@ -46,6 +49,8 @@ pub struct OrgInvite {
     pub jam_id: String,
     pub writer_id: String,
     pub token: String,
+    /// The other owners (admins) when the code was made, so a join reaches every owner and not only the writer (LIME-246d).
+    pub owners: Vec<String>,
 }
 
 fn role_name(state: &crate::protocol::group::GroupState, user: &str) -> &'static str {
@@ -190,6 +195,7 @@ impl LimeStore {
             return Err(StoreError::Rejected);
         }
         let writer = group.members.iter().find(|m| m.role == Role::Owner).map(|m| m.user.clone()).unwrap_or(me.clone());
+        let owners: Vec<String> = group.members.iter().filter(|m| m.role == Role::Admin && m.user != writer).map(|m| m.user.clone()).take(MAX_INVITE_OWNERS).collect();
         let token = match group.invite {
             Some(token) => token,
             None => {
@@ -198,7 +204,7 @@ impl LimeStore {
                 token
             }
         };
-        Ok(format!("{jam_id}.{writer}.{token}"))
+        Ok(if owners.is_empty() { format!("{jam_id}.{writer}.{token}") } else { format!("{jam_id}.{writer}.{token}.{}", owners.join(",")) })
     }
 
     /// Turns the invite link off (`false`) or makes a new one that replaces the old (`true`; owners only). Returns the new code when on.
@@ -216,8 +222,11 @@ impl LimeStore {
     /// Reads an invite code (`jam.writer.token`); `None` when it is not one.
     pub fn parse_org_invite(&self, code: String) -> Option<OrgInvite> {
         let parts: Vec<&str> = code.trim().split('.').collect();
-        (parts.len() == 3 && parts.iter().all(|p| !p.is_empty() && p.len() <= 64))
-            .then(|| OrgInvite { jam_id: parts[0].to_owned(), writer_id: parts[1].to_owned(), token: parts[2].to_owned() })
+        if !(parts.len() == 3 || parts.len() == 4) || !parts.iter().all(|p| !p.is_empty() && p.len() <= 64 * (MAX_INVITE_OWNERS + 1)) {
+            return None;
+        }
+        let owners: Vec<String> = parts.get(3).map(|o| o.split(',').filter(|u| !u.is_empty() && u.len() <= 64).take(MAX_INVITE_OWNERS).map(str::to_owned).collect()).unwrap_or_default();
+        Some(OrgInvite { jam_id: parts[0].to_owned(), writer_id: parts[1].to_owned(), token: parts[2].to_owned(), owners })
     }
 
     /// Asks to join with an invite code. Nothing is shown to the owner to approve; their phone adds me when it next runs.
@@ -238,8 +247,14 @@ impl LimeStore {
                 params![invite.jam_id, now],
             )
             .map_err(db_err)?;
-            let op = signed_op(conn, &state, "jam.org.join", &invite.jam_id, None, json!({ "jam_id": invite.jam_id, "token": invite.token }), now)?;
-            queue_op(conn, &invite.jam_id, &invite.writer_id, &op)
+            // To the writer and to every other owner the code names: any of their phones may add me.
+            let mut targets = vec![invite.writer_id.clone()];
+            targets.extend(invite.owners.iter().filter(|o| **o != me && **o != invite.writer_id).cloned());
+            for target in targets {
+                let op = signed_op(conn, &state, "jam.org.join", &invite.jam_id, None, json!({ "jam_id": invite.jam_id, "token": invite.token }), now)?;
+                queue_op(conn, &invite.jam_id, &target, &op)?;
+            }
+            Ok(())
         })
     }
 
@@ -381,6 +396,13 @@ impl LimeStore {
                 return;
             }
         }
+    }
+
+    /// Whether I am an owner (the band's owner or an admin) of this band's members group on this phone.
+    pub(super) fn is_org_owner(&self, conn: &Connection, jam_id: &str, me: &str) -> bool {
+        let Ok(Some(conversation)) = org_conversation(conn, jam_id) else { return false };
+        let Some(group_id) = groups::group_id_of(&conversation) else { return false };
+        groups::state_of(conn, group_id).is_ok_and(|g| g.may_manage(me))
     }
 
     /// An owner's phone receives a join request (`jam.org.join`), checked later against the token.

@@ -64,6 +64,8 @@ final class QRScanModel {
 
     private(set) var state: State = .scanning
     private var handling = false
+    /// Closes the scanner (a band's code hands over to the join sheet).
+    var finish: (() -> Void)?
 
     func restart() { state = .scanning; handling = false }
 
@@ -71,6 +73,13 @@ final class QRScanModel {
     func handle(_ text: String, store: ConversationStore) async {
         guard !handling else { return }
         handling = true
+        // A band's code (LIME-246d): the scanner closes and the app asks "Join <band>?" (a sheet cannot open over another, so it waits for this one to go).
+        if let invite = store.bandInvite(fromScan: text) {
+            finish?()
+            try? await Task.sleep(for: .milliseconds(600))
+            store.joiningBand = invite
+            return
+        }
         guard let payload = QRPayload.decode(text) else { state = .notLime; return }
         state = .checking
         do {
@@ -102,7 +111,7 @@ struct ScanQRScreen: View {
             SheetHeader(title: "Scan QR Code", leading: .back { dismiss() })
             switch model.state {
             case .scanning:
-                CameraScanner { text in Task { await model.handle(text, store: store) } }
+                CameraScanner { text in model.finish = closeSheet; Task { await model.handle(text, store: store) } }
                     .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                     .padding(.horizontal, 16)
                     .accessibilityIdentifier("scan-camera")
@@ -136,7 +145,7 @@ struct ScanQRScreen: View {
         .toolbar(.hidden, for: .navigationBar)
         .swipeBackEnabled()
         #if DEBUG
-        .task { if let code = store.demoScanCode { await model.handle(code, store: store) } }
+        .task { model.finish = closeSheet; if let code = store.demoScanCode { await model.handle(code, store: store) } }
         #endif
     }
 

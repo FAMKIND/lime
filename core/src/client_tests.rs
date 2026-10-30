@@ -7655,6 +7655,111 @@ fn the_hundred_and_first_member_is_refused() {
     assert!(alice.store.add_org_members(jam.clone(), vec!["one-too-many".into()]).is_err());
 }
 
+// ---------------------------------------------------------------- LIME-246d: joins reach every owner; the co-author migration
+
+#[test]
+fn a_join_is_added_by_a_second_owner_while_the_writer_is_offline_and_not_twice_when_both_run() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    let (dave, _) = party(&server, "dave", 4);
+    let jam = new_jam(&alice);
+    deliver(&alice, &transport);
+    // Bob becomes an owner (an admin of the members group); the code then names him.
+    member_joins_org(&alice, &bob, &jam, &transport);
+    alice.store.set_org_role(jam.clone(), "bob".into(), "owner".into()).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    let code = alice.store.org_invite_code(jam.clone()).unwrap();
+    // The invite token is part of the group's state: bob's phone gets it before alice's goes quiet.
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    let invite = alice.store.parse_org_invite(code.clone()).unwrap();
+    assert_eq!((invite.writer_id.as_str(), invite.owners.clone()), ("alice", vec!["bob".to_string()]));
+    // An older three-part code still reads (no other owners).
+    assert!(alice.store.parse_org_invite(format!("{jam}.alice.tok")).unwrap().owners.is_empty());
+    // Carol joins while alice's phone does not run: bob's phone adds her.
+    carol.store.join_org(code.clone()).unwrap();
+    deliver(&carol, &transport);
+    sync(&bob, &transport);
+    deliver(&bob, &transport);
+    deliver(&bob, &transport);
+    sync(&carol, &transport);
+    deliver(&carol, &transport);
+    assert_eq!(carol.store.org_join_state(jam.clone()).unwrap().as_deref(), Some("joined"), "added by the second owner");
+    // Alice's phone wakes: she has the same request, finds carol in, and adds nobody twice.
+    sync(&alice, &transport);
+    deliver(&alice, &transport);
+    deliver(&alice, &transport);
+    let carols = |p: &Party| p.store.org_members(jam.clone()).unwrap().into_iter().filter(|m| m.user_id == "carol").count();
+    assert_eq!(carols(&alice), 1);
+    assert_eq!(alice.store.org_members(jam.clone()).unwrap().len(), 3, "alice, bob, carol");
+    // Dave joins while both phones run at once: still once.
+    dave.store.join_org(code).unwrap();
+    deliver(&dave, &transport);
+    sync(&alice, &transport);
+    sync(&bob, &transport);
+    deliver(&alice, &transport);
+    deliver(&bob, &transport);
+    deliver(&alice, &transport);
+    deliver(&bob, &transport);
+    sync(&alice, &transport);
+    sync(&bob, &transport);
+    sync(&dave, &transport);
+    deliver(&dave, &transport);
+    assert_eq!(dave.store.org_join_state(jam.clone()).unwrap().as_deref(), Some("joined"));
+    for p in [&alice, &bob] {
+        assert_eq!(p.store.org_members(jam.clone()).unwrap().iter().filter(|m| m.user_id == "dave").count(), 1, "dave once on {}", p.user);
+    }
+}
+
+/// Alice adds `who` to the band's members directly (so `who` holds the members group).
+fn member_joins_org(alice: &Party, who: &Party, jam: &str, transport: &Arc<dyn Transport>) {
+    alice.store.add_org_members(jam.to_owned(), vec![who.user.clone()]).unwrap();
+    deliver(alice, transport);
+    sync(who, transport);
+    deliver(who, transport);
+}
+
+#[test]
+fn an_accepted_co_author_becomes_a_writer_of_a_new_members_group() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    let jam = new_jam(&alice);
+    join_jam(&alice, &bob, &jam, &transport);
+    assert!(alice.store.my_orgs().unwrap().is_empty(), "no members group before anyone is credited");
+    alice
+        .store
+        .publish_jam_post(jam.clone(), "article".into(), "Written together".into(), String::new(), "Words".into(), "free".into(), vec![], vec![carol.user.clone(), alice.user.clone()])
+        .unwrap();
+    for _ in 0..3 {
+        catch_up(&alice, &[&bob, &carol], &transport);
+    }
+    carol.store.answer_coauthor_request(jam_post_id(&alice, &jam), true).unwrap();
+    for _ in 0..4 {
+        catch_up(&alice, &[&bob, &carol], &transport);
+        sync(&alice, &transport);
+        deliver(&alice, &transport);
+    }
+    let orgs = alice.store.my_orgs().unwrap();
+    assert_eq!(orgs.len(), 1, "the migration made the members group");
+    assert_eq!(org_role(&alice, &jam, "carol").as_deref(), Some("writer"), "the co-author is a writer");
+    assert!(alice.store.org_can_post_as(jam.clone(), "carol".into()).unwrap());
+    // Run again: nothing is made twice.
+    for _ in 0..2 {
+        catch_up(&alice, &[&bob, &carol], &transport);
+    }
+    assert_eq!(alice.store.my_orgs().unwrap().len(), 1);
+    assert_eq!(alice.store.org_members(jam.clone()).unwrap().iter().filter(|m| m.user_id == "carol").count(), 1);
+}
+
+fn jam_post_id(writer: &Party, jam: &str) -> String {
+    writer.store.list_jam_posts(jam.to_owned()).unwrap().into_iter().find(|p| p.title == "Written together").unwrap().post_id
+}
+
 // ---------------------------------------------------------------- LIME-246b: members-only posts and a band's groups
 
 /// Alice (the band's owner) adds `who`; they hear, follow the jam by themselves, and alice's phone makes them members of the tier.

@@ -1057,7 +1057,7 @@ final class ConversationStore {
         if args.contains("-lime-demo-band-picture") { AvatarCache.shared.set(Self.demoHeroPhoto("green"), for: Self.jamPictureKey("demo-sam-jam")) }
         if let i = args.firstIndex(of: "-lime-demo-band-tone"), i + 1 < args.count, let t = Int(args[i + 1]) { jamTones["demo-sam-jam"] = t }
         // An invite opened from a link (LIME-246c), when a test asks.
-        if ProcessInfo.processInfo.arguments.contains("-lime-demo-join-band") { joiningBand = OrgInvite(jamId: "demo-sam-band-1", writerId: "sam", token: "demotoken") }
+        if ProcessInfo.processInfo.arguments.contains("-lime-demo-join-band") { joiningBand = OrgInvite(jamId: "demo-sam-band-1", writerId: "sam", token: "demotoken", owners: []) }
         // I belong to Sam's band (LIME-246c), when a test asks.
         if ProcessInfo.processInfo.arguments.contains("-lime-demo-band-member") { demoSeedOrg("demo-sam-band-1", mine: false) }
         // Their public profiles, as the server would answer (UI tests and screenshots).
@@ -1245,6 +1245,20 @@ final class ConversationStore {
             let theirs = demoMakeGroup(name: "Staff Social", emoji: "🎉", memberIDs: ["lee", "priya.nair"], owner: false)
             demoAddMessages(to: mine, [("lee", "Field trip on Friday?")])
             demoAddMessages(to: theirs, [("lee", "Pizza at noon")])
+        case "band-group-rows":
+            // A group inside Sam's band next to an ordinary one (LIME-246d): the band's picture is a badge on its avatar.
+            loadDemoTeachers()
+            let inBand = demoMakeGroup(name: "Science", emoji: "🔬", memberIDs: ["lee", "sam"], owner: false)
+            let plain = demoMakeGroup(name: "Staff Social", emoji: "🎉", memberIDs: ["lee", "priya.nair"], owner: false)
+            demoAddMessages(to: inBand, [("lee", "Lab on Thursday?")])
+            demoAddMessages(to: plain, [("lee", "Pizza at noon")])
+            orgGroupsByJam["demo-sam-band-1"] = [OrgGroupInfo(conversationId: inBand, name: "Science", open: true, joined: true, mine: false)]
+            AvatarCache.shared.set(Self.demoHeroPhoto("green"), for: Self.jamPictureKey("demo-sam-band-1"))
+        case "scan-band":
+            // A band's QR code seen by the scanner (LIME-246d): it closes and asks "Join <band>?".
+            loadDemoTeachers()
+            demoSheet = "scan"
+            demoScanCode = Self.bandLink(code: "demo-sam-band-1.sam.demotoken")
         case "scan-verified", "scan-mismatch":
             loadDemoTeachers()
             demoSheet = "scan"

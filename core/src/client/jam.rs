@@ -1493,12 +1493,15 @@ impl LimeStore {
                 }
             }
             "jam.org.join" => {
-                let Some(jam) = jam.filter(|j| j.mine && j.writer == me) else { return Ok(()) };
                 if sender == me {
                     return Ok(());
                 }
+                // The band's writer, or any other owner of its members group (LIME-246d), keeps the request for its next run.
+                if !(jam.as_ref().is_some_and(|j| j.mine && j.writer == me) || self.is_org_owner(conn, jam_id, &me)) {
+                    return Ok(());
+                }
                 let token = op.payload.get("token").and_then(Value::as_str).unwrap_or_default();
-                self.note_org_join(conn, &jam.jam_id, sender, token, now)
+                self.note_org_join(conn, jam_id, sender, token, now)
             }
             // The writer's answer to my join of their band.
             "jam.org.reply" => {

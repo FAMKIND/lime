@@ -8925,3 +8925,15 @@ Living backgrounds that adapt: the picture's own colours, the chosen colour wins
 - **Demo args for screenshots:** `-lime-demo-band-picture` (a lime-green picture for Sam's band) and `-lime-demo-band-tone <n>`.
 - **Screenshots:** `docs/qa-shots/261b/` — `band-green-nochoice`, `band-green-orange`, `band-green-dark`, `profile-colourful`, `profile-pale`, `profile-nophoto`, `group-light`, `group-dark`; the 261 versions are in `docs/qa-shots/261/`.
 - **For your eyes:** the first-time fade and the cache (the simulator cannot show the flash the way a phone does); the orange read as a muted amber-brown at the brightness cap; whether 0.70 is too dark for pale pictures.
+
+## LIME-246d
+
+Band members, finished. **Brief:** LIME-246d. Core + iOS; no server change.
+
+- **Joins reach every owner (tend's choice: the owners' ids go in the code, the smaller change).** The code is `jam.writer.token[.owner,owner…]` (at most 4 other owners = the members group's admins, taken from its state each time the code is shown; a link shared before an owner was added just doesn't name them; the old three-part codes still work). `join_org` sends one `jam.org.join` to the writer and one to each named owner. Any phone that is the writer **or** an owner of the members group keeps the request (`is_org_owner`); whichever runs first adds the person; the others find them already in and only answer "joined" (`make_org_join` was already idempotent). `OrgInvite` gained `owners` (the Swift side and the demo args follow).
+- **What each party learns:** nothing new for the server (more Olm items, as to the writer today). Each named owner learns a join request.
+- **Scan a band code:** the existing scanner (Scan QR Code) recognises a band link or bare code, closes, and the app asks "Join <band>?" (the join sheet waits 0.6 s for the scanner to go). Not a teacher's code, so those are unchanged.
+- **The band's picture on its groups:** a small badge (38 % of the avatar) at the avatar's bottom trailing corner in link's chat list for a group I'm in that sits inside a band (`orgGroupsByJam`; the band's picture, else its colour and initial). Decorative and hidden from VoiceOver. `docs/qa-shots/246d/chat-list-badge.png`.
+- **Tests:** core 402 pass (new: a join added by a second owner while the writer is offline and not twice when both run; the co-author → writer migration, run twice makes nothing twice). UI: `Band246dUITests` (2: scan opens the join sheet; the badge shows on the band's group only); `Band246UITests` still pass.
+- **Not done / flags:** the group-join request (`jam.org.group_join`) still goes to the group's owner only, as before. The badge has no VoiceOver text (the band's name is on the group's details); say if you want it spoken.
+- **Gate (two phones + the iPad):** make the iPad's account an owner of lime juice (Members → set role to owner), then make a new link (the old one doesn't name the iPad). With the 13 mini's lime closed, Jean joins by that link: the iPad adds her.

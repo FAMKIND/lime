@@ -14,6 +14,24 @@ extension ConversationStore {
         return nil
     }
 
+    /// The band a group belongs to (a group I am in that its owners made inside a band), if any.
+    func orgParent(ofGroup conversationID: String) -> String? {
+        for (jam, groups) in orgGroupsByJam where groups.contains(where: { $0.conversationId == conversationID && $0.joined }) { return jam }
+        return nil
+    }
+
+    /// A band's name, for its badge's initial.
+    func bandName(_ jamID: String) -> String {
+        orgs.first { $0.jamId == jamID }?.name ?? jamsMine.first { $0.jamId == jamID }?.title ?? "B"
+    }
+
+    /// A band's invite read from what a camera saw: its link or the bare code; nil for anything else (a teacher's QR code, say).
+    func bandInvite(fromScan text: String) -> OrgInvite? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let url = URL(string: trimmed), let code = Self.bandCode(from: url) { return parseBandInvite(code) }
+        return nil
+    }
+
     /// My role in a band: `owner` for one I own (or run as an owner), `writer`, `member`; nil when I am not in it.
     func bandRole(_ jamID: String) -> String? {
         if jamsMine.contains(where: { $0.jamId == jamID }) { return "owner" }
@@ -127,13 +145,15 @@ extension ConversationStore {
     /// Reads an invite from its code, if it is one.
     func parseBandInvite(_ code: String) -> OrgInvite? {
         let parts = code.split(separator: ".", omittingEmptySubsequences: false).map(String.init)
-        guard parts.count == 3, parts.allSatisfy({ !$0.isEmpty && $0.count <= 64 }) else { return nil }
-        return OrgInvite(jamId: parts[0], writerId: parts[1], token: parts[2])
+        guard parts.count == 3 || parts.count == 4, parts.prefix(3).allSatisfy({ !$0.isEmpty && $0.count <= 64 }) else { return nil }
+        // The fourth part names the other owners (LIME-246d), so a join reaches every one of them.
+        let owners = parts.count == 4 ? parts[3].split(separator: ",").map(String.init).filter { !$0.isEmpty && $0.count <= 64 }.prefix(4).map { $0 } : []
+        return OrgInvite(jamId: parts[0], writerId: parts[1], token: parts[2], owners: owners)
     }
 
     /// Asks to join with an invite: the owner's phone adds me when it next runs.
     func joinOrg(_ invite: OrgInvite) async {
-        let code = "\(invite.jamId).\(invite.writerId).\(invite.token)"
+        let code = "\(invite.jamId).\(invite.writerId).\(invite.token)" + (invite.owners.isEmpty ? "" : "." + invite.owners.joined(separator: ","))
         #if DEBUG
         if isDemo { orgJoinStates[invite.jamId] = "asked"; return }
         #endif

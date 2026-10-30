@@ -45,6 +45,31 @@ struct ConversationAvatar: View {
     var size: CGFloat = 52
 
     var body: some View {
+        base.overlay(alignment: .bottomTrailing) { bandBadge }
+    }
+
+    /// The band's picture (or its colour and initial) as a small badge on the avatar of a group that is inside a band (LIME-246d); nothing for any other chat.
+    @ViewBuilder
+    private var bandBadge: some View {
+        if conversation.isGroup, let store, let jam = store.orgParent(ofGroup: conversation.id) {
+            let side = max(18, size * 0.38)
+            Group {
+                if let picture = AvatarCache.shared.image(for: ConversationStore.jamPictureKey(jam)) {
+                    Image(uiImage: picture).resizable().scaledToFill()
+                } else {
+                    Circle().fill(Theme.avatar(store.jamTone(jam))).overlay(Text(String(store.bandName(jam).prefix(1)).uppercased()).font(.system(size: side * 0.5, weight: .semibold)).foregroundStyle(Theme.text))
+                }
+            }
+            .frame(width: side, height: side).clipShape(Circle())
+            .overlay(Circle().stroke(Theme.canvas, lineWidth: 2))
+            .offset(x: side * 0.12, y: side * 0.12)
+            .accessibilityHidden(true)
+            .accessibilityIdentifier("band-badge-\(conversation.id)")
+        }
+    }
+
+    @ViewBuilder
+    private var base: some View {
         if let only = conversation.members.first, !conversation.isGroup {
             AvatarView(person: only, size: size, showsStatus: true)
         } else if let photo = AvatarCache.shared.image(for: conversation.id) {
