@@ -17,15 +17,15 @@ final class Org216UITests: LimeUITestCase {
 
     func testAnOwnersOrgRowSwipesLeftForEditSubscribersAndEndJamAndRightForShare() {
         let app = myOrgsTab()
-        let row = any(app, "profile-org-demo-my-jam")
+        let row = any(app, "profile-org-demo-band-demo-my-jam")
         XCTAssertTrue(row.waitForExistence(timeout: 8))
         XCTAssertTrue(row.label.contains("Reading circles"), row.label)
         row.swipeLeft()
-        XCTAssertTrue(app.buttons["org-swipe-edit-demo-my-jam"].waitForExistence(timeout: 5), "Edit")
-        XCTAssertTrue(app.buttons["org-swipe-subscribers-demo-my-jam"].exists, "Subscribers")
-        XCTAssertTrue(app.buttons["org-swipe-end-demo-my-jam"].exists, "End jam (red)")
+        XCTAssertTrue(app.buttons["org-swipe-edit-demo-band-demo-my-jam"].waitForExistence(timeout: 5), "Edit")
+        XCTAssertTrue(app.buttons["org-swipe-subscribers-demo-band-demo-my-jam"].exists, "Subscribers")
+        XCTAssertTrue(app.buttons["org-swipe-end-demo-band-demo-my-jam"].exists, "End jam (red)")
         // End jam asks first.
-        app.buttons["org-swipe-end-demo-my-jam"].tap()
+        app.buttons["org-swipe-end-demo-band-demo-my-jam"].tap()
         XCTAssertTrue(app.buttons["jam-end-confirm"].firstMatch.waitForExistence(timeout: 5), "End jam asks before it ends")
         app.buttons["Cancel"].firstMatch.tap()
         XCTAssertTrue(row.waitForExistence(timeout: 5), "cancelled: the org stays")
@@ -33,7 +33,7 @@ final class Org216UITests: LimeUITestCase {
 
     func testTheOrgPageIsAPushedProfileWithItsHeaderTabsAndItsPosts() {
         let app = myOrgsTab()
-        any(app, "profile-org-demo-my-jam").tap()
+        any(app, "profile-org-demo-band-demo-my-jam").tap()
         XCTAssertTrue(app.staticTexts["profile-jam-row"].waitForExistence(timeout: 8), "the org's name")
         XCTAssertEqual(app.staticTexts["profile-jam-row"].label, "Reading circles")
         XCTAssertTrue(app.buttons["jam-edit-page"].exists, "Edit for the owner")
@@ -56,7 +56,7 @@ final class Org216UITests: LimeUITestCase {
         app.launch()
         XCTAssertTrue(app.buttons["profile-tab-Orgs"].waitForExistence(timeout: 10))
         app.buttons["profile-tab-Orgs"].tap()
-        any(app, "profile-org-demo-my-jam").tap()
+        any(app, "profile-org-demo-band-demo-my-jam").tap()
         XCTAssertTrue(app.buttons["profile-tab-Posts"].waitForExistence(timeout: 8))
         app.buttons["profile-tab-Posts"].tap()
         XCTAssertTrue(any(app, "org-empty").waitForExistence(timeout: 8))
@@ -71,7 +71,7 @@ final class Org216UITests: LimeUITestCase {
         any(app, "chat-title").tap()
         app.buttons["profile-tab-Orgs"].waitForExistence(timeout: 10)
         app.buttons["profile-tab-Orgs"].tap()
-        any(app, "profile-org-demo-sam-jam").tap()
+        any(app, "profile-org-demo-sam-band-1").tap()
         let subscribe = app.buttons["profile-org-page-subscribe"]
         XCTAssertTrue(subscribe.waitForExistence(timeout: 8), "Subscribe is a pill under the name")
         XCTAssertGreaterThan(subscribe.frame.minY, app.staticTexts["profile-jam-row"].frame.maxY, "under the name, not in the header")

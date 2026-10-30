@@ -147,7 +147,7 @@ struct ProfileView: View {
     private var ownPosts: [JamPostInfo] { jamPage.map { store.profilePosts(jamID: $0.jamId, isMe: route.isMe) } ?? [] }
     /// Someone else's posts are readable once you subscribe: before that, Posts says so.
     private var postsLocked: Bool { jamPage.map { !route.isMe && !store.isFollowing($0.jamId) } ?? false }
-    private var orgs: [JamPageInfo] { store.profileOrgs(page: jamPage, personName: displayName, isMe: route.isMe, bands: bands) }
+    private var orgs: [JamPageInfo] { store.profileOrgs(isMe: route.isMe, bands: bands) }
     private var sections: [Section] {
         var list: [Section] = [.info]
         let kinds = Set(ownPosts.map(\.kind))

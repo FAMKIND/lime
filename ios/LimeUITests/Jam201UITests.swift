@@ -1,9 +1,9 @@
 import XCTest
 
-/// LIME-201: changing "Post as" in Edit sticks, and the chip starts on the post's current author.
+/// LIME-201: the chip starts on the post's current author; editing a post offers only the jam it is in (LIME-259).
 @MainActor
 final class Jam201UITests: LimeUITestCase {
-    func testEditingTheAuthorToTheJamShowsTheJamOnThePageAndTheChipStartsThere() {
+    func testEditingAPostInMyOwnSpaceOffersOnlyMeAndTheChipStartsOnMe() {
         let app = XCUIApplication()
         app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-screen", "jam-mine"]
         app.launch()
@@ -20,14 +20,8 @@ final class Jam201UITests: LimeUITestCase {
         XCTAssertTrue(chip.waitForExistence(timeout: 8))
         XCTAssertFalse(chip.label.contains("Reading circles"), "starts on you: \(chip.label)")
         chip.tap()
-        let jam = app.buttons["jam-post-as-jam-demo-my-jam"]
-        XCTAssertTrue(jam.waitForExistence(timeout: 5)); jam.tap()
-        postNow(app, id: "jam-update")
-        let byline = app.staticTexts["jam-reader-byline"]
-        XCTAssertTrue(byline.waitForExistence(timeout: 8))
-        XCTAssertTrue(byline.label.hasPrefix("by "), "the page names the jam first, then \"by <writer>\": \(byline.label)")
-        edit()
-        XCTAssertTrue(app.buttons["jam-post-as"].waitForExistence(timeout: 8))
-        XCTAssertTrue(app.buttons["jam-post-as"].label.contains("Reading circles"), "the chip starts on the current author: \(app.buttons["jam-post-as"].label)")
+        // A post stays in the jam it was made in (LIME-259): a post in my own space can only be mine, so no band is offered.
+        XCTAssertTrue(app.buttons["jam-post-as-me"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["jam-post-as-jam-demo-band-demo-my-jam"].exists, "no band to move it to")
     }
 }

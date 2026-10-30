@@ -85,6 +85,10 @@ final class ConversationStore {
     var jamHighlight: String?
     /// The feed has been read from the core once (until then it shows skeletons), and how many cards it shows so far (it loads a page at a time).
     var jamsLoaded = false
+    /// The one-time cleanup of an old-style band is running (LIME-259).
+    var cleaningBands = false
+    var demoCleanupState: String?
+    var demoBandNotes: Set<String> = []
     var jamVisibleCount = 20
     var openPostsEnabled = false
     var discoverItems: [OpenFeedItem] = []
@@ -1029,7 +1033,7 @@ final class ConversationStore {
         refreshStorageState()
         statuses = ["sam": PeerStatus(state: .dnd, until: nil), "lee": PeerStatus(state: .away, until: nil)]
         demoJamPages = ["sam": JamPageInfo(jamId: "demo-sam-jam", writerId: "sam", title: "Fractions that stick", about: "Short lessons for grades 3 to 5", topics: ["Maths", "Grade 4"], postCount: 3, subscriberCount: 12, hasCommunity: false, pictureVersion: nil)]
-        demoJamBands = ["sam": [JamPageInfo(jamId: "demo-sam-band-1", writerId: "sam", title: "Science Corner", about: "", topics: ["Science"], postCount: 0, subscriberCount: 4, hasCommunity: false, pictureVersion: nil),
+        demoJamBands = ["sam": [JamPageInfo(jamId: "demo-sam-band-1", writerId: "sam", title: "Fractions that stick", about: "Short lessons for grades 3 to 5", topics: ["Maths", "Grade 4"], postCount: 3, subscriberCount: 12, hasCommunity: false, pictureVersion: nil),
                                 JamPageInfo(jamId: "demo-sam-band-2", writerId: "sam", title: "Reading Co-op", about: "", topics: ["Reading"], postCount: 0, subscriberCount: 9, hasCommunity: false, pictureVersion: nil)]]
         // Their public profiles, as the server would answer (UI tests and screenshots).
         publicProfiles = [
@@ -1168,14 +1172,14 @@ final class ConversationStore {
                 let tile = UIGraphicsImageRenderer(size: CGSize(width: 64, height: 64)).jpegData(withCompressionQuality: 0.8) { c in
                     UIColor.systemOrange.setFill(); c.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
                 }
-                AvatarCache.shared.set(tile, for: Self.jamPictureKey("demo-my-jam"))
+                AvatarCache.shared.set(tile, for: Self.jamPictureKey(jamsMine.contains { $0.jamId == "demo-band-demo-my-jam" } ? "demo-band-demo-my-jam" : "demo-my-jam"))
             }
             if screen == "jam-mine-asjam" {
                 let long = (1...30).map { "Paragraph \($0): we read aloud together and talked about what we noticed." }.joined(separator: "\n\n")
-                demoPublish("demo-my-jam", kind: "article", title: "How we read together", subtitle: "A term of circles", markdown: long, items: [], coauthors: ["sam", "lee"], displayAs: "jam")
+                demoPublish("demo-band-demo-my-jam", kind: "article", title: "How we read together", subtitle: "A term of circles", markdown: long, items: [], coauthors: ["sam", "lee"], displayAs: "jam")
                 demoPublish("demo-my-jam", kind: "article", title: "Notes from the circle", subtitle: "", markdown: long, items: [])
                 demoPublish("demo-my-jam", kind: "quick", title: "", subtitle: "", markdown: (1...14).map { "Line \($0) of a long note" }.joined(separator: "\n\n"), items: [])
-                demoPublish("demo-my-jam", kind: "quick", title: "", subtitle: "", markdown: "Welcome from the circle", items: [], displayAs: "jam")
+                demoPublish("demo-band-demo-my-jam", kind: "quick", title: "", subtitle: "", markdown: "Welcome from the circle", items: [], displayAs: "jam")
             }
             if screen == "jam-mine-podcast" {
                 // A recording of mine, with a cover (LIME-212).

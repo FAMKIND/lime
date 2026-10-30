@@ -329,7 +329,7 @@ struct JamComposeSheet: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Posting as \(name)").accessibilityHint("Choose who this post is from").accessibilityIdentifier("jam-post-as")
-        .sheet(isPresented: $postingAs) { PostAsSheet(selection: $postAsJam) }
+        .sheet(isPresented: $postingAs) { PostAsSheet(selection: $postAsJam, postJam: editing?.jamId) }
     }
 
     /// One line: who the post is from, the people added as small overlapping avatars (tap to change them), and the person-with-plus **last**, so it
@@ -985,7 +985,7 @@ struct JamComposeSheet: View {
         if let editing {
             // The post's own words, in its own layout (a recording shows its title, subtitle and description on the article page).
             article = editing.kind != "quick"; title = editing.title; subtitle = editing.subtitle
-            postAsJam = editing.displayAs == "jam" ? editing.jamId : nil   // the chip starts on the post's current author (LIME-201)
+            postAsJam = editing.displayAs == "jam" && editing.jamId != store.myOwnJam?.jamId ? editing.jamId : nil   // the chip starts on the post's current author (LIME-201); a post in my own space is mine
             audience = editing.audience; series = editing.series; topics = savedTopics(of: editing)
             coauthors = Array(store.bylinePeople(editing).dropFirst()); pendingHosts = store.pendingCoauthors(editing)
             if let stored = store.jamAttachments(editing.postId).first(where: JamCover.isCover), let data = await store.jamAttachmentData(editing.postId, stored.attachmentId) { coverImage = UIImage(data: data) }
@@ -1127,7 +1127,7 @@ struct JamComposeSheet: View {
         if hasClip, markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { markdown = recordDetails.trimmingCharacters(in: .whitespacesAndNewlines) }
         problem = nil
         posting = true
-        let result = await store.publishJamPost(kind: kind, title: headline, subtitle: article ? subtitle : hasClip ? recordSubtitle : "", markdown: markdown, items: files, coauthors: coauthors.map(\.id), displayAs: postAsJam == nil ? "person" : "jam", audience: audience, series: article || hasClip ? series : nil, topics: topics, about: session.profile?.aboutText ?? "")
+        let result = await store.publishJamPost(kind: kind, title: headline, subtitle: article ? subtitle : hasClip ? recordSubtitle : "", markdown: markdown, items: files, coauthors: coauthors.map(\.id), displayAs: postAsJam == nil ? "person" : "jam", audience: audience, series: article || hasClip ? series : nil, topics: topics, about: session.profile?.aboutText ?? "", inJam: postAsJam)
         posting = false
         switch result {
         case .success:
@@ -1149,6 +1149,8 @@ struct JamComposeSheet: View {
 /// comes with LIME-193.
 struct PostAsSheet: View {
     @Binding var selection: String?
+    /// An existing post's jam (LIME-259): a post stays in its jam, so editing offers you and, for a band's post, that band; nil for a new post: you and every band.
+    var postJam: String?
     @Environment(ConversationStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -1165,7 +1167,7 @@ struct PostAsSheet: View {
                     .frame(minHeight: 48)
                 }
                 .accessibilityLabel("\(store.meProvider().name)\(selection == nil ? ", selected" : "")").accessibilityIdentifier("jam-post-as-me")
-                ForEach(store.jamsMine, id: \.jamId) { jam in
+                ForEach(store.myPublications.filter { postJam == nil || $0.jamId == postJam }, id: \.jamId) { jam in
                     Button { selection = jam.jamId; dismiss() } label: {
                         HStack(spacing: 12) {
                             // Its tile with its writers' circles at the bottom right, you included (LIME-215b).

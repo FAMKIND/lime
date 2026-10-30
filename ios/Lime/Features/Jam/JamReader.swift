@@ -451,20 +451,14 @@ extension ConversationStore {
     /// the jam are the org's (LIME-188x).
     func profilePosts(jamID: String, isMe: Bool) -> [JamPostInfo] {
         let own = posts(of: jamID)
-        let all = isMe ? (own + coauthoredPosts.filter { c in !own.contains { $0.postId == c.postId } }).sorted { $0.created > $1.created } : own
-        return all.filter { $0.displayAs != "jam" }
+        // Posts once shown as an old-style band stay in the space and show under the teacher's name (LIME-259).
+        return isMe ? (own + coauthoredPosts.filter { c in !own.contains { $0.postId == c.postId } }).sorted { $0.created > $1.created } : own
     }
 
-    /// The orgs a person writes as (LIME-188x). In v1 that is their jam, when they have posted as it at least once or have given it a title that
-    /// is not their own name (a jam made on a first post is named after the person); LIME-193's organisations will add more.
-    func profileOrgs(page: JamPageInfo?, personName: String, isMe: Bool = false, bands: [JamPageInfo] = []) -> [JamPageInfo] {
-        // The bands come after the legacy one (LIME-254): mine from this phone, someone else's from the server (LIME-254b).
-        let made = isMe ? myPublications.map { JamPageInfo(jamId: $0.jamId, writerId: $0.writer, title: $0.title, about: $0.about, topics: $0.topics, postCount: $0.postCount, subscriberCount: $0.subscriberCount, hasCommunity: $0.community, pictureVersion: nil) } : bands
-        guard let page else { return made }
-        let postedAsJam = posts(of: page.jamId).contains { $0.displayAs == "jam" }
-        let title = page.title.trimmingCharacters(in: .whitespaces)
-        let differs = !title.isEmpty && title.lowercased() != personName.trimmingCharacters(in: .whitespaces).lowercased()
-        return (postedAsJam || differs ? [page] : []) + made
+    /// The bands a person has (LIME-259: one kind of band): the ones they made, from this phone on my own profile and from the server on anyone else's (LIME-254b).
+    /// Their profile posting space is the teacher, never a band.
+    func profileOrgs(isMe: Bool, bands: [JamPageInfo]) -> [JamPageInfo] {
+        isMe ? myPublications.map { JamPageInfo(jamId: $0.jamId, writerId: $0.writer, title: $0.title, about: $0.about, topics: $0.topics, postCount: $0.postCount, subscriberCount: $0.subscriberCount, hasCommunity: $0.community, pictureVersion: nil) } : bands
     }
 }
 

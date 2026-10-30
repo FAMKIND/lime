@@ -11,7 +11,7 @@ final class Org245UITests: LimeUITestCase {
         app.launch()
         XCTAssertTrue(app.buttons["profile-tab-Orgs"].waitForExistence(timeout: 10))
         app.buttons["profile-tab-Orgs"].tap()
-        any(app, "profile-org-demo-my-jam").tap()
+        any(app, "profile-org-demo-band-demo-my-jam").tap()
         let edit = app.buttons["jam-edit-page"]
         XCTAssertTrue(edit.waitForExistence(timeout: 8))
         XCTAssertEqual(edit.label, "Edit band")
@@ -42,11 +42,11 @@ final class Org245UITests: LimeUITestCase {
         app.launch()
         XCTAssertTrue(app.buttons["profile-tab-Orgs"].waitForExistence(timeout: 10))
         app.buttons["profile-tab-Orgs"].tap()
-        any(app, "profile-org-demo-my-jam").tap()
+        any(app, "profile-org-demo-band-demo-my-jam").tap()
         app.buttons["jam-edit-page"].tap()
         app.buttons["jam-end"].tap()
-        XCTAssertTrue(app.buttons["jam-end-confirm"].firstMatch.waitForExistence(timeout: 5), "Close band asks first")
-        XCTAssertEqual(app.buttons["jam-end-confirm"].firstMatch.label, "Close band")
+        XCTAssertTrue(app.buttons["jam-end-confirm"].firstMatch.waitForExistence(timeout: 5), "Delete band asks first")
+        XCTAssertEqual(app.buttons["jam-end-confirm"].firstMatch.label, "Delete")
         app.buttons["Cancel"].firstMatch.tap()
         XCTAssertTrue(app.buttons["org-done"].waitForExistence(timeout: 5), "cancelled: still editing")
     }

@@ -24,7 +24,7 @@ final class Community210gUITests: LimeUITestCase {
         app.launch()
         XCTAssertTrue(app.buttons["profile-tab-Orgs"].waitForExistence(timeout: 12))
         app.buttons["profile-tab-Orgs"].tap()
-        any(app, "profile-org-demo-my-jam").tap()
+        any(app, "profile-org-demo-band-demo-my-jam").tap()
         XCTAssertTrue(app.buttons["jam-edit-page"].waitForExistence(timeout: 10))
         app.buttons["jam-edit-page"].tap()
         XCTAssertTrue(any(app, "jam-community-toggle").waitForExistence(timeout: 5), "the writer's switch")

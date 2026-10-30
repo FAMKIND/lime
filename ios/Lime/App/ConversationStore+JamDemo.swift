@@ -11,10 +11,11 @@ extension ConversationStore {
     }
 
     /// Another jam of mine (a publication, LIME-254), newer than my own.
-    func demoCreateJam(title: String, about: String, topics: [String]) -> String {
-        let id = "demo-pub-\(UUID().uuidString.prefix(8).lowercased())"
+    func demoCreateJam(title: String, about: String, topics: [String], id given: String? = nil) -> String {
+        let id = given ?? "demo-pub-\(UUID().uuidString.prefix(8).lowercased())"
         let made = JamInfo(jamId: id, conversationId: "jam:\(id)", writer: meProvider().id, title: title, about: about, topics: topics, tiers: ["free", "subscribers"],
-                           mine: true, status: "active", ended: false, community: false, communityState: nil, communityGroup: nil, subscriberCount: 0, postCount: 0, created: Int64(Date().timeIntervalSince1970 * 1000))
+                           mine: true, status: "active", ended: false, community: false, communityState: nil, communityGroup: nil, subscriberCount: 0, postCount: 0,
+                           created: max(Int64(Date().timeIntervalSince1970 * 1000), (jamsMine.map(\.created).max() ?? 0) + 1))
         jamsMine.insert(made, at: 0)
         jamPosts[id] = []
         return id
@@ -104,6 +105,23 @@ extension ConversationStore {
             let old = jamsMine[i]
             jamsMine[i] = JamInfo(jamId: old.jamId, conversationId: old.conversationId, writer: old.writer, title: old.title, about: old.about, topics: old.topics, tiers: old.tiers, mine: true,
                                   status: "active", ended: false, community: false, communityState: nil, communityGroup: nil, subscriberCount: 2, postCount: old.postCount, created: old.created)
+        }
+        // The seed is an old-style band (the profile space named "Reading circles"). On a phone the one-time cleanup turns it into a real band (LIME-259): a test
+        // asks for that with `-lime-demo-old-band`; every other screen starts after it, as the rest of the app does.
+        if ProcessInfo.processInfo.arguments.contains("-lime-demo-old-band") { Task { await cleanUpOldBands() } } else { demoSplitBand() }
+    }
+
+    /// The cleanup's result, at once: a real band with the old space's name, about and tags; the space is the teacher again (subscribers stay with it).
+    func demoSplitBand() {
+        guard let old = myOwnJam else { return }
+        _ = demoCreateJam(title: old.title, about: old.about, topics: old.topics, id: "demo-band-\(old.jamId)")
+        demoEditJam(old.jamId, title: meProvider().name, about: old.about, topics: old.topics)
+        // Sam and Lee have chosen to follow the band (nobody follows it from the cleanup itself).
+        jamSubscribers["demo-band-\(old.jamId)"] = jamSubscribers[old.jamId]
+        if let i = jamsMine.firstIndex(where: { $0.jamId == "demo-band-\(old.jamId)" }) {
+            let band = jamsMine[i]
+            jamsMine[i] = JamInfo(jamId: band.jamId, conversationId: band.conversationId, writer: band.writer, title: band.title, about: band.about, topics: band.topics, tiers: band.tiers, mine: true,
+                                  status: "active", ended: false, community: false, communityState: nil, communityGroup: nil, subscriberCount: 2, postCount: band.postCount, created: band.created)
         }
     }
 

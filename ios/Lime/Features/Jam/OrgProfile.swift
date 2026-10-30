@@ -54,14 +54,16 @@ private struct OrgActionHost: ViewModifier {
             .sheet(item: Binding(get: { if case .subscribers = action { action } else { nil } }, set: { if $0 == nil { action = nil } })) { act in
                 if case .subscribers(let page) = act { NavigationStack { JamSubscribersView(jamID: page.jamId) }.onAppear { store.loadJamSubscribers(page.jamId) } }
             }
-            .confirmSheet("Close this band?", isPresented: Binding(get: { if case .end = action { true } else { false } }, set: { if !$0, case .end = action { action = nil } })) {
-                Button("Close band", role: .destructive) {
+            .confirmSheet(endTitle, isPresented: Binding(get: { if case .end = action { true } else { false } }, set: { if !$0, case .end = action { action = nil } })) {
+                Button("Delete", role: .destructive) {
                     if case .end(let page) = action { Task { await store.endJam(page.jamId); if closesPageAfterEnd { dismiss() } } }
                     action = nil
                 }.accessibilityIdentifier("jam-end-confirm")
                 Button("Cancel", role: .cancel) { action = nil }
-            } message: { Text("Subscribers keep what they have.") }
+            } message: { Text("Its page and picture are removed. Subscribers keep posts they already have.") }
     }
+
+    private var endTitle: String { if case .end(let page) = action { "Delete \(page.title)?" } else { "Delete this band?" } }
 }
 
 extension View {
@@ -88,7 +90,7 @@ struct JamOrgsSection: View {
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         if isMe {
                             // Red, but not the `.destructive` role: that makes the list remove the row at once, before the confirmation has been answered.
-                            Button { action = .end(org) } label: { Label("Close band", systemImage: "xmark.circle") }.tint(.red).accessibilityIdentifier("org-swipe-end-\(org.jamId)")
+                            Button { action = .end(org) } label: { Label("Delete band", systemImage: "xmark.circle") }.tint(.red).accessibilityIdentifier("org-swipe-end-\(org.jamId)")
                             Button { action = .subscribers(org) } label: { Label("Subscribers", systemImage: "person.2") }.tint(.gray).accessibilityIdentifier("org-swipe-subscribers-\(org.jamId)")
                             Button { action = .edit(org) } label: { Label("Edit", systemImage: "pencil") }.tint(.blue).accessibilityIdentifier("org-swipe-edit-\(org.jamId)")
                         }
@@ -134,7 +136,7 @@ struct JamOrgsSection: View {
                 if isMe {
                     Button { action = .edit(org) } label: { Label("Edit", systemImage: "pencil") }
                     Button { action = .subscribers(org) } label: { Label("Subscribers", systemImage: "person.2") }
-                    Button(role: .destructive) { action = .end(org) } label: { Label("Close band", systemImage: "xmark.circle") }
+                    Button(role: .destructive) { action = .end(org) } label: { Label("Delete band", systemImage: "xmark.circle") }
                 }
                 if let share = shareURL(org) { ShareLink(item: share, message: Text("\(org.title) on lime")) { Label("Share", systemImage: "square.and.arrow.up") } }
             }
@@ -154,7 +156,7 @@ private struct OrgAccessibilityActions: ViewModifier {
             content
                 .accessibilityAction(named: "Edit") { action = .edit(org) }
                 .accessibilityAction(named: "Subscribers") { action = .subscribers(org) }
-                .accessibilityAction(named: "Close band") { action = .end(org) }
+                .accessibilityAction(named: "Delete band") { action = .end(org) }
         } else { content }
     }
 }
@@ -176,6 +178,8 @@ struct OrgProfileView: View {
     @State private var fieldSheet: OrgField?
     @State private var pictureSheet = false
     @State private var coverSheet = false
+    /// Once, on the band made from an old-style one (LIME-259): what happened to the posts.
+    @State private var cleanupNote = false
     @State private var topInset: CGFloat = 0
     @State private var windowHeight: CGFloat = 0
 
@@ -193,6 +197,8 @@ struct OrgProfileView: View {
         return route.page
     }
     private var isMe: Bool { route.isMe }
+    /// My profile posting space is the teacher, never a band: it is never offered Delete band (LIME-259).
+    private var isOwnSpace: Bool { isMe && page.jamId == store.myOwnJam?.jamId }
     private var editingNow: Bool { isMe && editing }
     private static let sections: [ProfileView.Section] = [.info, .posts, .articles, .podcasts]
 
@@ -201,6 +207,10 @@ struct OrgProfileView: View {
         ScrollView {
             VStack(spacing: 18) {
                 headBlock
+                if cleanupNote && isMe && !editingNow {
+                    Text("\(page.title) is now its own band. Earlier posts stay with your profile.").font(Theme.secondary).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
+                        .accessibilityIdentifier("org-cleanup-note")
+                }
                 if route.fresh && isMe && !editingNow {
                     Text("Post as \(page.title) from New post.").font(Theme.secondary).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
                         .accessibilityIdentifier("org-fresh-hint")
@@ -227,6 +237,9 @@ struct OrgProfileView: View {
         .sheet(isPresented: $pictureSheet) { OrgPictureSheet(jamId: page.jamId, title: page.title) }
         .sheet(isPresented: $coverSheet) { OrgCoverSheet(jamId: page.jamId) }
         .task(id: page.jamId) { await store.ensureJamStyle(page.jamId) }
+        .onAppear {
+            if isMe, store.takeBandNote(page.jamId) { cleanupNote = true }
+        }
         .orgActions($action, closesPageAfterEnd: true)
         .reportSheet($reporting)
         .confirmSheet("Unsubscribe from \(page.title)?", isPresented: $confirmingUnsubscribe) {
@@ -294,7 +307,7 @@ struct OrgProfileView: View {
         Menu {
             if isMe {
                 Button { action = .subscribers(page) } label: { Label("Subscribers", systemImage: "person.2") }.accessibilityIdentifier("jam-subscribers")
-                Button(role: .destructive) { action = .end(page) } label: { Label("Close band", systemImage: "xmark.circle") }.accessibilityIdentifier("jam-end")
+                if !isOwnSpace { Button(role: .destructive) { action = .end(page) } label: { Label("Delete band", systemImage: "xmark.circle") }.accessibilityIdentifier("jam-end") }
             }
             if let username = store.publicProfiles[page.writerId]?.username, let url = URL(string: InviteLink.url(username: username)) {
                 ShareLink(item: url, message: Text("\(page.title) on lime")) { Label("Share", systemImage: "square.and.arrow.up") }.accessibilityIdentifier("org-share")
@@ -428,13 +441,13 @@ struct OrgProfileView: View {
                 .accessibilityIdentifier("jam-community-toggle")
             }
             SettingsFootnote(text: "Subscribers can join a group chat with you. Up to 100 people.")
-            SettingsCard {
+            if !isOwnSpace { SettingsCard {
                 Button { action = .end(page) } label: {
-                    HStack { Text("Close band").font(Theme.body).foregroundStyle(Color.red); Spacer(minLength: 0) }
+                    HStack { Text("Delete band").font(Theme.body).foregroundStyle(Color.red); Spacer(minLength: 0) }
                         .padding(.horizontal, 18).frame(minHeight: 58).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain).accessibilityIdentifier("jam-end")
-            }
+            } }
             SettingsFootnote(text: "Subscribers keep what they have.")
         }
     }

@@ -22,7 +22,7 @@ final class Jam215bUITests: LimeUITestCase {
         let app = launch("jam-mine")
         app.buttons["new-jam-post"].tap()
         app.buttons["jam-post-as"].tap()
-        let jam = app.buttons["jam-post-as-jam-demo-my-jam"]
+        let jam = app.buttons["jam-post-as-jam-demo-band-demo-my-jam"]
         XCTAssertTrue(jam.waitForExistence(timeout: 5))
         XCTAssertTrue(jam.label.contains("with you"), jam.label)
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'You'")).firstMatch.exists, "You · … under the name")

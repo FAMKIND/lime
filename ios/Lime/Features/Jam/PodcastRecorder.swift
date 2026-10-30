@@ -300,7 +300,7 @@ struct PodcastRecorder: View {
         }
         .preferredColorScheme(showsDetails ? nil : .dark)
         .sheet(isPresented: $choosingHosts) { JamCoauthorPicker(selected: $coauthors, title: "Add co-hosts") }
-        .sheet(isPresented: $postingAs) { PostAsSheet(selection: $postAsJam) }
+        .sheet(isPresented: $postingAs) { PostAsSheet(selection: $postAsJam, postJam: editing?.jamId) }
         .fullScreenCover(isPresented: $pickingCover) {
             MediaLibraryPicker(limit: 1, onPick: { images, _ in
                 pickingCover = false
@@ -1172,7 +1172,7 @@ struct PodcastRecorder: View {
         details = text
         initialHosts = post.coauthors
         coauthors = Array(store.bylinePeople(post).dropFirst())
-        postAsJam = post.displayAs == "jam" ? post.jamId : nil
+        postAsJam = post.displayAs == "jam" && post.jamId != store.myOwnJam?.jamId ? post.jamId : nil
     }
 
     /// Update: the words, the cover and, after a Re-record, the new recording with its captions (made on this phone); the post is replaced in place.

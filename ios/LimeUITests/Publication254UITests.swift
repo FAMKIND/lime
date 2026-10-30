@@ -53,7 +53,7 @@ final class Publication254UITests: LimeUITestCase {
         XCTAssertTrue(rows.allElementsBoundByIndex.contains { $0.label.hasPrefix("Science Corner") })
     }
 
-    /// LIME-254b: another teacher's profile lists their own jam and their bands (the server's `others`).
+    /// LIME-254b: another teacher's profile lists their bands (and never their own posting space as a band) (the server's `others`).
     func testAnotherTeachersProfileListsTheirOwnJamAndTheirBands() {
         let app = XCUIApplication()
         app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat"]
@@ -63,6 +63,6 @@ final class Publication254UITests: LimeUITestCase {
         XCTAssertTrue(app.buttons["profile-tab-Orgs"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["profile-tab-Orgs"].label.hasPrefix("Bands"))
         app.buttons["profile-tab-Orgs"].tap()
-        for id in ["profile-org-demo-sam-jam", "profile-org-demo-sam-band-1", "profile-org-demo-sam-band-2"] { XCTAssertTrue(any(app, id).waitForExistence(timeout: 5), id) }
+        for id in ["profile-org-demo-sam-band-1", "profile-org-demo-sam-band-2"] { XCTAssertTrue(any(app, id).waitForExistence(timeout: 5), id) }
     }
 }

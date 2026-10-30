@@ -86,7 +86,7 @@ final class Jam188qUITests: LimeUITestCase {
         XCTAssertTrue(app.buttons["jam-coauthors"].waitForExistence(timeout: 5))
         XCTAssertGreaterThan(app.buttons["jam-add-coauthor"].frame.minX, app.buttons["jam-coauthors"].frame.minX, "the icon sits to the right of the authors")
         app.buttons["jam-post-as"].tap()
-        let jam = app.buttons["jam-post-as-jam-demo-my-jam"]
+        let jam = app.buttons["jam-post-as-jam-demo-band-demo-my-jam"]
         XCTAssertTrue(jam.waitForExistence(timeout: 5), "your jam is listed")
         XCTAssertTrue(jam.label.contains("Reading circles"))
         jam.tap()

@@ -32,7 +32,7 @@ final class Jam188dUITests: LimeUITestCase {
         XCTAssertTrue(any(app, "profile-empty-activity").waitForExistence(timeout: 5), "calm and empty until 189")
         app.buttons["profile-tab-Orgs"].tap()
         XCTAssertFalse(any(app, "profile-empty-activity").exists, "one section at a time")
-        any(app, "profile-org-demo-sam-jam").tap()
+        any(app, "profile-org-demo-sam-band-1").tap()
         XCTAssertTrue(app.staticTexts["profile-jam-row"].waitForExistence(timeout: 5), "the jam's title, subscribers and posts live on the org's page")
     }
 

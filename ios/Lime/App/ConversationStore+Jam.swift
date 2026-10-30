@@ -31,6 +31,7 @@ extension ConversationStore {
         jamEngagement += 1
         if progress != jamProgress { jamProgress = progress }
         jamsLoaded = true
+        Task { await cleanUpOldBands() }
         let waiting = posts.values.joined().contains { $0.state == "fetching" } || credited.contains { $0.state == "fetching" } || !progress.isEmpty
         if waiting, link != nil, Date().timeIntervalSince(jamLastKick) > 15 {
             jamLastKick = Date()
@@ -146,12 +147,12 @@ extension ConversationStore {
 
     /// Makes a publication (LIME-254): another jam of mine, with its own name, about, tags and picture. My own jam is made first if I have none yet.
     /// Returns the new jam's id, or nil when it could not be made.
-    func createPublication(title: String, about: String, topics: [String], picture: Data?) async -> String? {
+    func createPublication(title: String, about: String, topics: [String], picture: Data?, demoID: String? = nil) async -> String? {
         guard await myJamID(about: "") != nil else { return nil }
         let before = Set(jamsMine.map(\.jamId))
         #if DEBUG
         if isDemo {
-            let id = demoCreateJam(title: title, about: about, topics: topics)
+            let id = demoCreateJam(title: title, about: about, topics: topics, id: demoID)
             if let picture { AvatarCache.shared.set(picture, for: Self.jamPictureKey(id)) }
             return id
         }
@@ -207,10 +208,13 @@ extension ConversationStore {
     /// Publishes a post (a quick post, an article or a recording) to my jam, making the jam first if this is my first post: the core seals it, and
     /// the next delivery sends it. Every post is free (payments are off). The photos go up afterwards in the background, each on its own and retried
     /// by itself; nothing here waits for the network.
-    func publishJamPost(kind: String, title: String, subtitle: String, markdown: String, items: [OutgoingAttachment], coauthors: [String] = [], displayAs: String = "person", audience: String = "subscribers", series: SeriesInfo? = nil, topics: [String] = [], about: String) async -> Result<Void, JamPostFailure> {
+    func publishJamPost(kind: String, title: String, subtitle: String, markdown: String, items: [OutgoingAttachment], coauthors: [String] = [], displayAs: String = "person", audience: String = "subscribers", series: SeriesInfo? = nil, topics: [String] = [], about: String, inJam: String? = nil) async -> Result<Void, JamPostFailure> {
         guard items.count <= 10 else { return .failure(.tooManyFiles) }
         guard items.allSatisfy({ $0.bytes.count <= Self.jamFileLimit }) else { return .failure(.fileTooLarge) }
-        guard let jamID = await myJamID(about: about) else { return .failure(.couldNotMake) }
+        // A post as a band goes into that band (LIME-259); anything else into my own space.
+        var target = inJam.flatMap { id in jamsMine.contains { $0.jamId == id } ? id : nil }
+        if target == nil { target = await myJamID(about: about) }
+        guard let jamID = target else { return .failure(.couldNotMake) }
         #if DEBUG
         // Tests: a post that takes a moment, so the "Posting…" state can be seen.
         if isDemo, ProcessInfo.processInfo.arguments.contains("-lime-demo-slow-publish") { try? await Task.sleep(for: .seconds(2)) }
