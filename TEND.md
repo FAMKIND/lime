@@ -9214,3 +9214,5 @@ A video podcast card's title and subtitle sit together. **Brief:** LIME-274. iOS
 - The title, subtitle and series line are now their own `VStack(spacing: 4)`, as on the article card; the card's other blocks (writer row, video, the title group, actions) keep their 10 pt. The subtitle is `subheadline` (it was body), as on the article card.
 - I also took off the title's 44 pt minimum height: it was not a button, and on a one-line title it centred the line in a 44 pt box, which was most of the gap between title and subtitle.
 - Visual change: no new test (your rule); the video card's UI tests I ran still pass. **Gate:** in jam's feed a video podcast's title and subtitle sit as close as an article card's.
+
+- **Installed (274):** all three, the 13 mini, the iPad and Jean's 12 mini.
