@@ -9073,3 +9073,13 @@ The invite page online at limemessenger.com, served by Caddy on `lime-turn-1`, a
 - **Smoke test (throwaway user via the admin API, service-role key read into memory only, user deleted after):** `turn-credentials` 200, the four urls all on `turn.limemessenger.com` (stun 3478, turn udp/tcp 3478, turns 5349), ttl 3600, username bound to the user; `livekit-token` 200, `url` = `wss://sfu.limemessenger.com`, ttl 600, token issued; no session → 401. The relay and SFU on those names were already checked in 172a.
 - **Rollback:** `supabase secrets set TURN_HOST=turn.limechat.org LIVEKIT_URL=wss://sfu.limechat.org` then redeploy the two functions.
 - **Gate:** a staging phone call (1:1 and group) with the staging build; the phones then receive the new names from the functions.
+
+## LIME-172b, staging (notice sender)
+
+**On the user's go (Resend checked by the user: `send.limemessenger.com` Verified, both keys cover all domains).** Staging only; production untouched.
+
+- **Set:** `LIME_NOTIFY_FROM="lime <no-reply@send.limemessenger.com>"`. **Deployed:** `devices-register` (version 60), the only function that imports `_shared/notify.ts`.
+- **Smoke:** `./supabase/smoke-staging.sh` passes (settings check, sealed send/fetch/ack, account and chat checks, throwaway users deleted), so the redeployed `devices-register` still registers devices. **Not sent:** a real "new phone signed in" email. It needs a real mailbox, since a throwaway address would bounce off Resend; the sign-in codes go through Supabase Auth's SMTP, set in the dashboard, not by this secret.
+- **Your check:** on a staging phone, sign the same account in on a second phone (replaces the keys) and see the notice arrive from `no-reply@send.limemessenger.com`. Also, Supabase Auth → SMTP on staging: the sender there is separate; if it still says limechat, change it by hand for sign-in codes.
+- **Rollback:** `supabase secrets set LIME_NOTIFY_FROM="lime <no-reply@send.limechat.org>"` (or unset it) and redeploy `devices-register`.
+- **Staging now:** TURN_HOST, LIVEKIT_URL and LIME_NOTIFY_FROM all on limemessenger.com. Production's three secrets and deploys remain yours to go.
