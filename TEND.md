@@ -8820,3 +8820,4 @@ A group's Edit Cover, colour and ambient default. **Brief:** LIME-257 (reuses 25
 - **Tests:** core `a_groups_colour_and_cover_are_set_by_an_admin_reach_every_member_and_a_plain_member_is_refused` (members get both, ciphertext on the server, no chat line, a colour change keeps the cover, a new cover deletes the old blob, remove) and the protocol test for the op; the whole core suite passes. UI `Cover257UITests` plus `GroupDetailsHeader`, `Fix231`, `Cover258` pass on the iOS 27 simulator.
 - **What each party learns:** the server stores one more encrypted blob per group cover (it sees its size and timing, as for the group photo), nothing else; members see the cover and colour.
 - **Not tested:** picking a real cover photo; two real phones (the core test covers the exchange).
+- **Installed (259, 257):** all three, the iPad, Shem's 13 mini and Jean's 12 mini.
