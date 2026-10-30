@@ -18,8 +18,8 @@ enum InviteLink {
 }
 
 /// What a teacher's QR code holds: their invite link plus their identity-key fingerprint, e.g.
-/// `https://limemessenger.com/u/grace.h?k=A1B2C3D4E5F607182930`. A phone camera that scans it opens the
-/// invite page; lime reads the fingerprint too.
+/// `https://limemessenger.com/u/grace.h#k=A1B2C3D4E5F607182930`. A phone camera that scans it opens the
+/// invite page; lime reads the fingerprint too. The fingerprint sits after the `#`, which a browser never sends to a server; the older `?k=` form is still read.
 @MainActor
 struct QRPayload: Equatable {
     /// 20 upper-case hex digits (the first ten bytes of SHA-256 of the master key), no spaces.
@@ -33,7 +33,7 @@ struct QRPayload: Equatable {
 
     var text: String {
         var link = InviteLink.url(username: username)
-        if let fingerprint { link += "?k=\(fingerprint)" }
+        if let fingerprint { link += "#k=\(fingerprint)" }
         return link
     }
 
@@ -46,6 +46,9 @@ struct QRPayload: Equatable {
         let parts = components.path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
         guard parts.count == 2, parts[0] == "u", OnboardingModel.usernameError(parts[1]) == nil else { return nil }
         let key = components.queryItems?.first { $0.name == "k" }?.value
+            ?? components.fragment.flatMap { fragment in
+                fragment.hasPrefix("k=") ? String(fragment.dropFirst(2)) : nil
+            }
         if let key {
             guard let fingerprint = compact(key) else { return nil }
             return QRPayload(username: parts[1], fingerprint: fingerprint)

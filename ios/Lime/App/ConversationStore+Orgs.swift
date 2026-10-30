@@ -4,12 +4,15 @@ import Foundation
 /// ordinary group. A demo run keeps it all in memory.
 extension ConversationStore {
     /// The link that joins a band: it carries the jam, its writer and the invite token (the code), and opens lime.
-    static func bandLink(code: String) -> String { "https://\(InviteLink.host)/b/\(code)" }
+    static func bandLink(code: String) -> String { "https://\(InviteLink.host)/b/#\(code)" }
 
-    /// A code read from a link (`https://limemessenger.com/b/<code>` or `lime://b/<code>`).
+    /// A code read from a link (`https://limemessenger.com/b/#<code>`, which keeps the token out of what a browser sends; the older `/b/<code>` and `lime://b/<code>` still work).
     static func bandCode(from url: URL) -> String? {
         let parts = url.pathComponents.filter { $0 != "/" }
-        if url.scheme == "https", [InviteLink.host, "www.\(InviteLink.host)"].contains(url.host?.lowercased() ?? ""), parts.count == 2, parts[0] == "b" { return parts[1] }
+        if url.scheme == "https", [InviteLink.host, "www.\(InviteLink.host)"].contains(url.host?.lowercased() ?? ""), parts.first == "b" {
+            if parts.count == 2 { return parts[1] }
+            if parts.count == 1, let fragment = url.fragment, !fragment.isEmpty { return fragment }
+        }
         if url.scheme == "lime", url.host == "b", let code = parts.first { return code }
         return nil
     }

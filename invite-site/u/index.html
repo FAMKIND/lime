@@ -38,10 +38,15 @@
   -->
 </main>
 <script>
-  // The invite link is limemessenger.com/u/<username>[?k=<key fingerprint>]. Only the username is shown, as text;
-  // the fingerprint is for the lime app and is never read here.
+  // The invite link is limemessenger.com/u/<username>#k=<key fingerprint>, or an older ?k=. A band's is limemessenger.com/b/#<token>.
+  // Only the username is shown, as text. The part after # never leaves the phone, and this page never reads it.
   (function () {
     var parts = location.pathname.split("/").filter(Boolean);
+    if (parts[0] === "b") {
+      document.getElementById("title").textContent = "You are invited to a band on lime";
+      document.getElementById("handle").textContent = "the band";
+      return;
+    }
     var name = parts[0] === "u" && parts[1] ? decodeURIComponent(parts[1]) : "";
     if (/^[A-Za-z0-9._]{3,20}$/.test(name)) {
       document.getElementById("title").textContent = "@" + name + " invited you to lime";

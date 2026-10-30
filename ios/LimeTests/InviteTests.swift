@@ -15,7 +15,7 @@ final class InviteTests: XCTestCase {
     func testAPayloadRoundTripsThroughItsText() throws {
         let payload = QRPayload(username: "grace.h", fingerprint: "a1b2 c3d4 e5f6 0718 2930")
         XCTAssertEqual(payload.fingerprint, code, "spaces and case are normalised")
-        XCTAssertEqual(payload.text, "https://limemessenger.com/u/grace.h?k=\(code)")
+        XCTAssertEqual(payload.text, "https://limemessenger.com/u/grace.h#k=\(code)")
         XCTAssertEqual(QRPayload.decode(payload.text), payload)
     }
 
@@ -28,11 +28,27 @@ final class InviteTests: XCTestCase {
     func testOnlyLimeLinksWithAGoodUsernameAndKeyAreAccepted() {
         for bad in ["", "hello", "http://limemessenger.com/u/grace.h", "https://example.com/u/grace.h", "https://limemessenger.com/grace.h",
                     "https://limemessenger.com/u/", "https://limemessenger.com/u/a b", "https://limemessenger.com/u/admin",
-                    "https://limemessenger.com/u/grace.h?k=XYZ", "https://limemessenger.com/u/grace.h?k=A1B2", "https://limemessenger.com/u/grace.h/extra",
+                    "https://limemessenger.com/u/grace.h?k=XYZ", "https://limemessenger.com/u/grace.h?k=A1B2", "https://limemessenger.com/u/grace.h#k=XYZ", "https://limemessenger.com/u/grace.h/extra",
                     "https://limemessenger.com.evil.com/u/grace.h?k=\(code)"] {
             XCTAssertNil(QRPayload.decode(bad), bad)
         }
         XCTAssertNotNil(QRPayload.decode("  https://www.limemessenger.com/u/grace.h?k=\(code.lowercased())\n"))
+    }
+
+    /// LIME-172d: the fingerprint rides after the `#` (a browser never sends it); the older `?k=` link is still read.
+    func testTheFingerprintIsReadFromTheFragmentAndTheOldQuery() throws {
+        let fromFragment = try XCTUnwrap(QRPayload.decode("https://limemessenger.com/u/grace.h#k=\(code)"))
+        let fromQuery = try XCTUnwrap(QRPayload.decode("https://limemessenger.com/u/grace.h?k=\(code)"))
+        XCTAssertEqual(fromFragment, fromQuery)
+        XCTAssertFalse(QRPayload(username: "grace.h", fingerprint: code).text.contains("?"))
+    }
+
+    func testABandLinkKeepsItsTokenInTheFragmentAndTheOldFormStillReads() throws {
+        let link = ConversationStore.bandLink(code: "jam1.sam.tok")
+        XCTAssertEqual(link, "https://limemessenger.com/b/#jam1.sam.tok")
+        XCTAssertEqual(ConversationStore.bandCode(from: try XCTUnwrap(URL(string: link))), "jam1.sam.tok")
+        XCTAssertEqual(ConversationStore.bandCode(from: try XCTUnwrap(URL(string: "https://limemessenger.com/b/jam1.sam.tok"))), "jam1.sam.tok")
+        XCTAssertNil(ConversationStore.bandCode(from: try XCTUnwrap(URL(string: "https://limemessenger.com/b/"))))
     }
 
     /// LIME-172b: lime lives on limemessenger.com; a link to the retired limechat.org (or its www) is not an invite.

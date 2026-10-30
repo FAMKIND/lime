@@ -34,7 +34,7 @@ final class Band246UITests: LimeUITestCase {
         // The invite link: shown, then off.
         app.buttons["org-invite-link"].tap()
         XCTAssertTrue(app.staticTexts["org-invite-text"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["org-invite-text"].label.hasPrefix("https://limemessenger.com/b/"))
+        XCTAssertTrue(app.staticTexts["org-invite-text"].label.hasPrefix("https://limemessenger.com/b/#"))
         app.buttons["org-invite-off"].tap()
         XCTAssertTrue(app.staticTexts["org-invite-is-off"].waitForExistence(timeout: 5), "turned off")
     }

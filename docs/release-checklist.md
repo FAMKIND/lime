@@ -15,7 +15,7 @@ Things that must be done before Lime goes to testers or the App Store. Later bri
 
 ## Invite links and QR codes (LIME-97b)
 
-- [ ] **Host `invite-site/`** (Cloudflare Pages or Codeberg Pages) and point `limemessenger.com/u/*` at it in deSEC; steps in `invite-site/README.md`. Until then the invite text's link shows nothing.
+- [ ] **Host `invite-site/`** on the call server (LIME-172d: two deSEC A records, `infra/sfu/setup.sh`, `infra/invite/deploy.sh`; steps in `invite-site/README.md`). Until then the invite text's link shows nothing.
 - [ ] **Camera string** (`NSCameraUsageDescription`): "Lime uses the camera to scan a teacher's QR code." Already in `ios/project.yml`; re-check it in the App Store privacy answers (the camera is used only to scan QR codes; nothing is recorded or uploaded).
 - [ ] **No Contacts permission** is requested (Apple's contact picker runs out of process); keep it that way, and answer "Contacts: not collected" in the privacy labels.
 - [ ] **Universal links** for `limemessenger.com/u/*` (Associated Domains + `apple-app-site-association` in `invite-site/`) once the paid Apple account exists.

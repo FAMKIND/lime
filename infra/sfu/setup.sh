@@ -25,6 +25,8 @@ MEDIA_MIN=50000      # UDP media; must not overlap coturn's relay range 49152-49
 MEDIA_MAX=60000
 TCP_PORT=7881        # ICE over TCP, for networks that block UDP
 DIR=/etc/lime-sfu
+INVITE_HOST="${INVITE_HOST-limemessenger.com}"   # the invite page (LIME-172d, files from infra/invite/deploy.sh); INVITE_HOST="" to leave it out
+INVITE_ROOT=/srv/invite
 ACME_ROOT=/var/lib/lime-acme   # not under /var/www: that folder can be root-only (mode 700), and Caddy must read this one
 
 export DEBIAN_FRONTEND=noninteractive
@@ -121,7 +123,28 @@ ufw allow ${MEDIA_MIN}:${MEDIA_MAX}/udp >/dev/null
 ufw --force enable >/dev/null
 
 # --- Caddy: HTTPS for the SFU, and the ACME challenge path for coturn's certificate (port 80)
-install -d -m 755 "$ACME_ROOT"
+install -d -m 755 "$ACME_ROOT" "$INVITE_ROOT"
+INVITE_BLOCK=""
+if [ -n "$INVITE_HOST" ]; then
+  INVITE_BLOCK="
+# The invite page: static files, no access log (nothing about who opened which link is kept). A browser never sends the part after #.
+www.$INVITE_HOST {
+	redir https://$INVITE_HOST{uri} permanent
+}
+
+$INVITE_HOST {
+	root * $INVITE_ROOT
+	header {
+		Strict-Transport-Security \"max-age=31536000\"
+		Referrer-Policy no-referrer
+		X-Content-Type-Options nosniff
+	}
+	rewrite /u/* /u/index.html
+	rewrite /b/* /u/index.html
+	file_server
+}
+"
+fi
 cat > /etc/caddy/Caddyfile <<CADDY
 # Written by infra/sfu/setup.sh. Do not edit by hand.
 {
@@ -140,6 +163,7 @@ http://$TURN_DOMAIN${TURN_ALT_DOMAIN:+, http://$TURN_ALT_DOMAIN} {
 	}
 	respond 404
 }
+$INVITE_BLOCK
 CADDY
 systemctl enable caddy >/dev/null 2>&1
 systemctl restart caddy
