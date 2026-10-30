@@ -207,6 +207,11 @@ struct OrgProfileView: View {
         return route.page
     }
     private var isMe: Bool { route.isMe }
+    /// The living default hero's palette (LIME-261): from the band's picture, else its colour.
+    private var ambientSpec: AmbientSpec? {
+        let picture = AvatarCache.shared.image(for: ConversationStore.jamPictureKey(page.jamId))
+        return Hero.ambient(photo: picture, tone: store.jamTone(page.jamId), key: "band-hero-\(page.jamId)-\(picture.map { ObjectIdentifier($0).hashValue } ?? 0)")
+    }
     /// My profile posting space is the teacher, never a band: it is never offered Delete band (LIME-259).
     private var isOwnSpace: Bool { isMe && page.jamId == store.myOwnJam?.jamId }
     private var editingNow: Bool { isMe && editing }
@@ -230,7 +235,7 @@ struct OrgProfileView: View {
             }
             .padding(.horizontal, 16).padding(.bottom, 40)
         }
-        .background(Theme.canvas.ignoresSafeArea().accessibilityIdentifier("org-profile-screen"))
+        .background((AvatarCache.shared.image(for: ConversationStore.jamCoverKey(page.jamId)) == nil ? (ambientSpec?.paper(dark: colorScheme == .dark) ?? Theme.canvas) : Theme.canvas).ignoresSafeArea().accessibilityIdentifier("org-profile-screen"))
         .background { GeometryReader { geo in
             Color.clear.preference(key: HeroInsetKey.self, value: geo.safeAreaInsets.top)
                 .preference(key: HeroWindowKey.self, value: geo.size.height + geo.safeAreaInsets.top + geo.safeAreaInsets.bottom)
@@ -375,7 +380,7 @@ struct OrgProfileView: View {
         .frame(maxWidth: .infinity, minHeight: HeroShape.blockHeight(screen: screen, inset: inset))
         .overlay { if store.isDemo { Color.clear.accessibilityIdentifier("org-tone-\(store.jamTone(page.jamId))") } }
         .background(alignment: .top) {
-            ProfileHeroBackground(image: cover ?? shown.image, cacheKey: cover.map { "band-cover-\(page.jamId)-\(ObjectIdentifier($0).hashValue)" } ?? shown.key, isDefault: cover == nil, screenHeight: screen, exposedForTests: store.isDemo)
+            ProfileHeroBackground(image: cover ?? shown.image, cacheKey: cover.map { "band-cover-\(page.jamId)-\(ObjectIdentifier($0).hashValue)" } ?? shown.key, isDefault: cover == nil, screenHeight: screen, ambient: cover == nil ? ambientSpec : nil, exposedForTests: store.isDemo)
                 .padding(.top, -inset).padding(.bottom, -8).padding(.leading, -(16 + sides.leading)).padding(.trailing, -(16 + sides.trailing))
         }
     }

@@ -1050,6 +1050,9 @@ final class ConversationStore {
         demoJamPages = ["sam": JamPageInfo(jamId: "demo-sam-jam", writerId: "sam", title: "Fractions that stick", about: "Short lessons for grades 3 to 5", topics: ["Maths", "Grade 4"], postCount: 3, subscriberCount: 12, hasCommunity: false, pictureVersion: nil)]
         demoJamBands = ["sam": [JamPageInfo(jamId: "demo-sam-band-1", writerId: "sam", title: "Fractions that stick", about: "Short lessons for grades 3 to 5", topics: ["Maths", "Grade 4"], postCount: 3, subscriberCount: 12, hasCommunity: false, pictureVersion: nil),
                                 JamPageInfo(jamId: "demo-sam-band-2", writerId: "sam", title: "Reading Co-op", about: "", topics: ["Reading"], postCount: 0, subscriberCount: 9, hasCommunity: false, pictureVersion: nil)]]
+        // A profile photo for Sam, colourful or pale, for the hero's screenshots (LIME-261).
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-lime-demo-hero-photo"), i + 1 < args.count { AvatarCache.shared.set(Self.demoHeroPhoto(args[i + 1]), for: "lee") }
         // An invite opened from a link (LIME-246c), when a test asks.
         if ProcessInfo.processInfo.arguments.contains("-lime-demo-join-band") { joiningBand = OrgInvite(jamId: "demo-sam-band-1", writerId: "sam", token: "demotoken") }
         // I belong to Sam's band (LIME-246c), when a test asks.
@@ -1413,3 +1416,20 @@ final class ConversationStore {
     }
     #endif
 }
+
+#if DEBUG
+extension ConversationStore {
+    /// A made-up photo for screenshots: "colourful" (orange, magenta and blue) or "pale" (cream and soft blue).
+    static func demoHeroPhoto(_ kind: String) -> Data? {
+        let size = CGSize(width: 400, height: 400)
+        let colours: [UIColor] = kind == "pale"
+            ? [UIColor(red: 0.96, green: 0.93, blue: 0.86, alpha: 1), UIColor(red: 0.90, green: 0.93, blue: 0.96, alpha: 1), UIColor(red: 0.95, green: 0.90, blue: 0.90, alpha: 1)]
+            : [UIColor(red: 0.98, green: 0.45, blue: 0.10, alpha: 1), UIColor(red: 0.85, green: 0.10, blue: 0.55, alpha: 1), UIColor(red: 0.10, green: 0.35, blue: 0.90, alpha: 1)]
+        return UIGraphicsImageRenderer(size: size).jpegData(withCompressionQuality: 0.9) { c in
+            colours[0].setFill(); c.fill(CGRect(origin: .zero, size: size))
+            colours[1].setFill(); c.cgContext.fillEllipse(in: CGRect(x: 160, y: 40, width: 280, height: 280))
+            colours[2].setFill(); c.cgContext.fillEllipse(in: CGRect(x: -60, y: 200, width: 300, height: 300))
+        }
+    }
+}
+#endif

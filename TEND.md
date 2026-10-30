@@ -2,6 +2,30 @@
 
 Record of work landed via the `tend` skill.
 
+# MORNING SUMMARY — the overnight run (2026-10-30)
+
+**Seven briefs, one commit each, in order; one flag for you (below). No deploys were needed or made** (246a/b, 256, 260a use no server change; 258's staging deploy was done earlier on your go). Installed on all three devices at the end.
+
+| brief | commit | what |
+|---|---|---|
+| (plot) | `70c797d` | PLOT.md committed first |
+| 246a | `172ff4f` | band members, privately (core): members group, roles, invite code, owner's phone adds, cap 100 |
+| 246b | `36cb7cf` | members-only posts (a `members` tier) and a band's groups, in core |
+| 246c | `731f005` | Members and Groups tabs, invite sheet with QR, roles, Members audience, join sheet |
+| 256 | `2eeaabe` | Report group (messages ticked, members off, leave afterwards) and the moderators' reading |
+| 260a | `3c9e4ca` | a series' description and cover, in core (the jam's state) |
+| 260b | `1f2b8fd` | the series page like a podcast show page |
+| 261 | see below | vibrant living hero backgrounds and a tinted paper canvas; screenshots in `docs/qa-shots/261/`; one switch back |
+
+**Needs you / flags**
+1. **Deploy steps: none.** (If you later want links tapped in Messages to open a band invite: **associated domains** on limechat.org, an app entitlement and a server file; `onOpenURL` is ready.)
+2. **246: writers only have a role.** A writer cannot yet publish into someone else's band (today a post as a band is made by the owner's phone with co-authors credited); `org_can_post_as` answers it for the app. The join request goes to the band's **writer** only, not "the first owner's phone that runs". The co-author → writer migration is built but has no test.
+3. **256:** core takes at most 8 report ids, so the sealed report has the group + the first 7 senders (all senders are in the included text).
+4. **260a:** the series cover is a ≤ 24 KB JPEG inside the jam's state, not a blob (explained in its section).
+5. **261:** a real bug found on the way: a dynamic colour for the tinted canvas made the group page's mute dialog vanish; fixed (plain colour per appearance). The profile photo palette needs your eyes: pale photos fall back to colour from the photo's few tints, grey ones to the avatar's colour. The drift runs on a real phone only (still in a UI test run). **Switch back:** `Hero.style` in `ios/Lime/Features/Profile/AmbientHero.swift` (`.classic`), or launch with `-lime-hero-classic`.
+6. **Known flaky tests** (Jam188b/q, VerticalTextView crash): Jam188b/q passed when run alone this round; not re-run in full.
+7. Core: 400 tests pass (a stale-test fix for the new migrations is in 246a). iOS: the classes for every brief and the ones they touch pass on the iOS 27 simulator.
+
 # MORNING SUMMARY — the overnight run (2026-10-28)
 
 **Everything in the run landed and is pushed. Nothing was deployed, no staging setting, secret or account was touched, and `open_posts_enabled` is OFF** (it is created off by the migration and nothing turns it on).
@@ -8877,3 +8901,13 @@ The series page like a podcast show page. **Brief:** LIME-260b (overnight; uses 
 - **Left out, on purpose:** the reference's trailer, ratings, Download, Share series and Report (a series has no link or report target yet; Save is the swipe, not Download: lime keeps what you open). "More from" shows a coloured tile, not the other series' own cover (cheap version: loading each series' cover needs its own read).
 - **Tests:** `Series260bUITests` (the hero's title, play pill, MORE expands, meta "3 parts", progress; swipe right marks Read; the filter Unplayed hides a played part; Hosts lists the writer, Information shows 3). `Series210f` and `Fix242` follow the new layout (the parts are below the hero) and pass. Not UI-tested: Edit series, See all, Play next.
 - **Looks to check on a device (not seen yet):** the wash and the fade at the bottom of the hero, the title over a bright cover, the one-bubble header over the cover.
+
+## LIME-261
+Vibrant, living cover backgrounds and a tinted paper canvas. **Brief:** LIME-261 (overnight, last). iOS only; a visual exploration, no new UI test class (the demo arg `-lime-demo-hero-photo colourful|pale` gives Lee a photo for screenshots).
+- **One switch:** `Hero.style` (`.ambient` / `.classic`) in `AmbientHero.swift`; launch with `-lime-hero-classic` for the old look. Reverting = change the default.
+- **Palette:** `HeroPalette.vibrant(from:)`: a hue/brightness histogram on a 24-px copy, up to 5 heaviest hues that are not near each other, saturation and brightness lifted; a near-grey photo gives none and falls back to `tonePalette(tone)`, the avatar's colour made vivid with neighbouring hues and shades (so a new teacher's default matches their circle).
+- **The background:** `AmbientBackground`: a 3×3 `MeshGradient` whose inner points drift on a 24 s loop (`TimelineView`, 20 fps); still with Reduce Motion, Low Power Mode, and in UI test runs; on iOS 17 a still arrangement of blurred blobs. In dark mode the palette is deepened (55 % brightness) so the white text keeps its contrast. Used for the default hero of **profiles, bands and groups** when there is no chosen cover (a cover still wins).
+- **Paper:** the page below is the canvas tinted ~7 % with the palette's lightest colour (dark: ~14 % of its deepest), and the hero fades into **that**, not white. Only on profile, band and group pages.
+- **Screenshots (`docs/qa-shots/261/`, iPhone 17, iOS 27):** `profile-colourful-light`, `profile-pale-light`, `profile-nophoto-light`, `band-dark`, `group-dark`, and `*-classic` for the before/after. **Missing:** a light band and light group, and dark profiles (the first dark attempt did not switch the simulator; the band and group dark shots were taken after `simctl ui appearance dark`).
+- **The bug on the way:** the paper as a dynamic `UIColor` made the group page's mute confirmation vanish (`GroupDetailsHeaderUITests`); a plain colour for the current appearance fixed it.
+- **Looks to judge on the phone:** how lively the drift feels; the white text over the brightest parts of a colourful photo (the existing overlay is unchanged; the first screenshot shows "Away" and the handle readable but close); the paper's tint strength.

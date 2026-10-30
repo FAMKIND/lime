@@ -181,7 +181,7 @@ struct ProfileView: View {
             }
             .padding(.horizontal, 16).padding(.bottom, 40)
         }
-        .background(Theme.canvas.ignoresSafeArea().accessibilityIdentifier("profile-screen"))
+        .background((heroImage == nil ? (ambientSpec?.paper(dark: colorScheme == .dark) ?? Theme.canvas) : Theme.canvas).ignoresSafeArea().accessibilityIdentifier("profile-screen"))
         .background { GeometryReader { geo in
             Color.clear.preference(key: HeroInsetKey.self, value: geo.safeAreaInsets.top)
                 .preference(key: HeroWindowKey.self, value: geo.size.height + geo.safeAreaInsets.top + geo.safeAreaInsets.bottom)
@@ -298,13 +298,18 @@ struct ProfileView: View {
         .overlay(alignment: .bottomLeading) { if store.isDemo, heroVideoReady { Rectangle().fill(Color.white.opacity(0.01)).frame(width: 2, height: 2).accessibilityLabel("player").accessibilityIdentifier("profile-hero-video") } }
         .background(alignment: .top) {
             ProfileHeroBackground(image: shown.image, cacheKey: shown.key, isDefault: heroImage == nil, screenHeight: screen, videoURL: heroVideo, playVideo: videoMayPlay,
-                                  onVideoReady: { heroVideoReady = $0 }, exposedForTests: store.isDemo)
+                                  onVideoReady: { heroVideoReady = $0 }, ambient: ambientSpec, exposedForTests: store.isDemo)
                 .padding(.top, -inset).padding(.bottom, -8).padding(.leading, -(16 + windowSideInsets.leading)).padding(.trailing, -(16 + windowSideInsets.trailing))
                 .animation(.easeInOut(duration: 0.25), value: shown.key)
         }
     }
 
     /// Their background when there is one, else the default made from their photo or tone; the layout is the same either way, so a real one arriving just replaces it.
+    /// The living default hero's palette (LIME-261): from their photo, else their avatar's colour.
+    private var ambientSpec: AmbientSpec? {
+        return Hero.ambient(photo: AvatarCache.shared.image(for: person.id), tone: person.tone, key: "hero-\(person.id)-\(AvatarCache.shared.image(for: person.id).map { ObjectIdentifier($0).hashValue } ?? 0)")
+    }
+
     private var shownHero: (image: UIImage, key: String) {
         if let heroImage { return (heroImage, "bg-\(route.userID)-\(store.extrasVersion)-\(Int(heroImage.size.width))") }
         return HeroDefault.image(for: person, photo: AvatarCache.shared.image(for: person.id), dark: colorScheme == .dark)

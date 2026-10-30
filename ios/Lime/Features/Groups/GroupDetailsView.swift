@@ -30,6 +30,12 @@ struct GroupDetailsView: View {
     private static let tabs: [Tab] = [.members, .media, .files, .links]
     private var conversation: Conversation? { store.conversation(target.conversationID) }
     private var name: String { details?.name ?? conversation?.title ?? "Group" }
+    /// The living default hero's palette (LIME-261): from the group's photo, else its colour.
+    private var ambientSpec: AmbientSpec? {
+        let id = target.conversationID
+        let photo = AvatarCache.shared.image(for: id)
+        return Hero.ambient(photo: photo, tone: store.groupTone(id), key: "group-hero-\(id)-\(photo.map { ObjectIdentifier($0).hashValue } ?? 0)")
+    }
     private var editingNow: Bool { editing && details?.canRename == true }
 
     var body: some View {
@@ -44,7 +50,7 @@ struct GroupDetailsView: View {
             }
             .padding(.horizontal, 16).padding(.bottom, 40)
         }
-        .background(Theme.canvas.ignoresSafeArea())
+        .background((AvatarCache.shared.image(for: ConversationStore.groupCoverKey(target.conversationID)) == nil ? (ambientSpec?.paper(dark: colorScheme == .dark) ?? Theme.canvas) : Theme.canvas).ignoresSafeArea())
         .background { GeometryReader { geo in
             Color.clear.preference(key: HeroInsetKey.self, value: geo.safeAreaInsets.top)
                 .preference(key: HeroWindowKey.self, value: geo.size.height + geo.safeAreaInsets.top + geo.safeAreaInsets.bottom)
@@ -255,7 +261,7 @@ struct GroupDetailsView: View {
         .frame(maxWidth: .infinity, minHeight: HeroShape.blockHeight(screen: screen, inset: inset))
         .overlay { if store.isDemo { Color.clear.accessibilityIdentifier("group-tone-\(store.groupTone(id))") } }
         .background(alignment: .top) {
-            ProfileHeroBackground(image: cover ?? shown.image, cacheKey: cover.map { "group-cover-\(id)-\(ObjectIdentifier($0).hashValue)" } ?? shown.key, isDefault: cover == nil, screenHeight: screen, exposedForTests: store.isDemo)
+            ProfileHeroBackground(image: cover ?? shown.image, cacheKey: cover.map { "group-cover-\(id)-\(ObjectIdentifier($0).hashValue)" } ?? shown.key, isDefault: cover == nil, screenHeight: screen, ambient: cover == nil ? ambientSpec : nil, exposedForTests: store.isDemo)
                 .padding(.top, -inset).padding(.bottom, -8).padding(.leading, -(16 + sides.leading)).padding(.trailing, -(16 + sides.trailing))
         }
     }

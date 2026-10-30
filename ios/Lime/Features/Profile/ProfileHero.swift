@@ -188,11 +188,14 @@ struct ProfileHeroBackground: View {
     var playVideo = false
     /// Told when the clip is actually showing (ready) or not.
     var onVideoReady: (Bool) -> Void = { _ in }
+    /// The living background of the default hero (LIME-261), or nil for the classic look (and for a cover somebody chose).
+    var ambient: AmbientSpec? = nil
     /// Demo runs (UI tests) expose it so a test can find it; for a person it is decorative and hidden from VoiceOver.
     var exposedForTests = false
     @State private var videoReady = false
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         let cap = HeroScrim.opacity(reduceTransparency: reduceTransparency, increaseContrast: contrast == .increased)
@@ -226,11 +229,12 @@ extension ProfileHeroBackground {
     @ViewBuilder
     func layers(size: CGSize, strength: Double, tint: Color) -> some View {
         let h = max(size.height, 1), s = screenHeight
-        let canvas = Theme.canvas
+        let canvas = isDefault ? (ambient?.paper(dark: colorScheme == .dark) ?? Theme.canvas) : Theme.canvas
         let blend = HeroShape.blendLength(screen: s)
         let end = h - 4, start = max(0, end - blend)
         ZStack {
-            Image(uiImage: image).resizable().scaledToFill().frame(width: size.width, height: h).clipped()
+            if isDefault, let ambient { AmbientBackground(palette: ambient.palette).frame(width: size.width, height: h).clipped() }
+            else { Image(uiImage: image).resizable().scaledToFill().frame(width: size.width, height: h).clipped() }
             // The clip, silent, looping, over its still once it is ready to show (only while allowed to play: otherwise the still stays).
             if let videoURL, playVideo {
                 HeroVideoView(url: videoURL, playing: true, onReady: { withAnimation(.easeIn(duration: 0.3)) { videoReady = true } })
