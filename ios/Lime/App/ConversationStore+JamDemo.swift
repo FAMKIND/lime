@@ -153,7 +153,12 @@ extension ConversationStore {
 
     /// A made-up request to be credited, and what answering does.
     func demoRequest() {
-        jamRequests = [CoauthorRequest(postId: "demo-request-post", jamId: "demo-sam-jam", writer: "sam", title: "What is liming?", kind: "article", created: Int64(Date().timeIntervalSince1970 * 1000))]
+        // `-lime-demo-requests <n>` asks for several (LIME-267).
+        let args = ProcessInfo.processInfo.arguments
+        let count = args.firstIndex(of: "-lime-demo-requests").flatMap { args.indices.contains($0 + 1) ? Int(args[$0 + 1]) : nil } ?? 1
+        jamRequests = (0..<max(1, count)).map {
+            CoauthorRequest(postId: $0 == 0 ? "demo-request-post" : "demo-request-post-\($0)", jamId: "demo-sam-jam", writer: "sam", title: $0 == 0 ? "What is liming?" : "Sway sway sway \($0)", kind: "article", created: Int64(Date().timeIntervalSince1970 * 1000))
+        }
     }
 
     func demoAnswer(_ request: CoauthorRequest, accept: Bool) {

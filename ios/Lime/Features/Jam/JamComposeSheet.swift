@@ -578,7 +578,7 @@ struct JamComposeSheet: View {
             }
             if !article && editing == nil && !compact {
                 // Two cards side by side, lined up with the photo icon below; they scroll sideways when they do not fit, and the last one ends with room to spare.
-                let itemWidth = min(44, (UIScreen.main.bounds.width - 32) / 7)
+                let itemWidth = min(44, (WindowMetrics.shared.size.width - 32) / 7)
                 ScrollView(.horizontal, showsIndicators: false) { pillRow.padding(.leading, 16 + (itemWidth - 25) / 2).padding(.trailing, 20) }
                     .scrollBounceBehavior(.basedOnSize)
                     .padding(.bottom, 6)
@@ -588,7 +588,7 @@ struct JamComposeSheet: View {
             // + (or photo, camera) · Aa · H · Undo · Redo on the left, the keyboard on the right; the side margins are Cancel's and Post's (16 pt), so
             // the first glyph lines up under Cancel's edge and the keyboard under Post's (LIME-197).
             let items: CGFloat = article ? 6 : 7
-            let width = min(44, (UIScreen.main.bounds.width - 32) / items)
+            let width = min(44, (WindowMetrics.shared.size.width - 32) / items)
             let inline = compact && !article && editing == nil
             HStack(spacing: 0) {
                 if inline {

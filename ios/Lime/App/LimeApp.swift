@@ -31,9 +31,21 @@ struct LimeApp: App {
         _session = State(initialValue: AccountSession(auth: auth, config: config, store: store))
     }
 
+    #if DEBUG
+    private static var demoWindowWidth: CGFloat? {
+        let args = ProcessInfo.processInfo.arguments
+        return args.firstIndex(of: "-lime-demo-window-width").flatMap { args.indices.contains($0 + 1) ? Double(args[$0 + 1]) : nil }.map { CGFloat($0) }
+    }
+    #endif
+
     var body: some Scene {
         WindowGroup {
             RootView()
+                #if DEBUG
+                // `-lime-demo-window-width <pt>` lays lime out in a window that wide (a narrow Stage Manager window), for screenshots.
+                .frame(width: Self.demoWindowWidth)
+                #endif
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { WindowMetrics.shared.size = $0 }
                 .limeTextSize()
                 .onAppear { WindowTextSize.start() }
                 .environment(store)

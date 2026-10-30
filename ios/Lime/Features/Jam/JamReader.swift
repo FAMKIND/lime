@@ -183,7 +183,7 @@ struct JamPhotoRow: View {
         let ratio = many ? JamMedia.portrait : JamMedia.ratio(width: files.first?.width, height: files.first?.height)
         // An item is the column less a peek of the next, the row runs to the screen's right edge, 12 pt between. A frame never passes 600 pt wide or
         // 80% of the screen's height, so sideways on a phone it stays in proportion.
-        let size = JamMedia.size(ratio: ratio, column: many ? JamMedia.column - 28 : JamMedia.column, screenHeight: UIScreen.main.bounds.height)
+        let size = JamMedia.size(ratio: ratio, column: many ? JamMedia.column - 28 : JamMedia.column, screenHeight: JamMedia.windowHeight)
         let tileWidth = size.width
         let height = size.height
         GeometryReader { geo in
@@ -307,7 +307,7 @@ private struct JamPhoto: View {
         Group {
             if let image {
                 Image(uiImage: image).resizable().scaledToFit()
-                    .frame(maxWidth: JamMedia.maxColumn, maxHeight: UIScreen.main.bounds.height * JamMedia.maxHeightShare)
+                    .frame(maxWidth: JamMedia.maxColumn, maxHeight: JamMedia.windowHeight * JamMedia.maxHeightShare)
                     .jamMediaClip()
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityLabel(file.name.isEmpty ? "Photo" : "Photo, \(file.name)")

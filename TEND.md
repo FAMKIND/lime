@@ -8995,3 +8995,15 @@ Audience that explains itself; a real thumbnail on step 2. **Brief:** LIME-264. 
 - **3. Step 2 thumbnail:** a chosen cover, else a video's first frame, else the post's own cover/poster when editing, else the card's default art (`CoverArt`: the band's tile or your picture, blurred); the document icon stays only for a plain post with no picture.
 - **Tests:** none new (visual); Band246, Open210c, Post240, Privacy210d and Studio241 UI tests pass (26 cases).
 - **Gate:** post as lime juice: Audience lists Subscribers / Members / Everyone, each with its line; post as yourself: no Members; edit a members post: Members still selected; a video podcast's step 2 shows its first frame.
+
+## LIME-267
+
+Jam in a narrow iPad window. **Brief:** LIME-267. iOS only.
+
+- **1. The window's width, not the screen's:** new `WindowMetrics.shared.size`, fed from the root view's own size, replaces `UIScreen.main` in `JamMedia.column` (every video card, reader and cover), the card/reader/article/recorder heights, the composer's tool widths and the chat header's `screen − 196` formula. Views read it in `body`, so a window resized in Stage Manager re-lays out.
+- **2. Placeholder:** a video with no poster yet shows its small thumbnail blurred, filling the frame, not stretched sharp.
+- **3. Invitations:** one invitation keeps its card; two or more are one row ("4 invitations to co-write", the first inviter's avatar) that opens an Invitations sheet with Accept / Decline for each (it closes itself when the last is answered). The filter pills no longer move.
+- **4. The window's own controls (Stage Manager •••):** not changed. I could not check it here (the simulator has no Stage Manager); the header uses the system safe area as before. Please look at it on the iPad; say if it still crowds.
+- **Screenshots:** `docs/qa-shots/267/` (`after-narrow.png`, `after-wide.png`, `after-narrow-4-invites.png`), on the iPad Pro 13" simulator. The simulator cannot resize a real window, so a debug launch argument `-lime-demo-window-width <pt>` lays lime out in a window that wide (and `-lime-demo-requests <n>` makes n invitations). In the 400 pt window the writer rows are whole, the video card fits with its normal shape and the invitations are one row. No before shots: the old screen-based layout cannot be reproduced without the same flag.
+- **Tests:** none new; Jam212b, Jam215, Jam188i, Jam188g and Jam188b (the invitation) UI tests pass.
+- **Gate (iPad, phone-sized window):** writer rows fully visible, a video card fits, the invitations are one row, the pills sit under the header.

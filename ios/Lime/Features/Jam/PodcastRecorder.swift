@@ -291,7 +291,7 @@ struct PodcastRecorder: View {
     private var jamTitle: String? { postAsJam.flatMap { id in store.jamsMine.first { $0.jamId == id }?.title } }
     private var canPost: Bool { clip != nil && !title.trimmingCharacters(in: .whitespaces).isEmpty }
     /// The stage's height: about a third of the screen, never more, so the words under it are never pushed off.
-    private var stageHeight: CGFloat { min(UIScreen.main.bounds.height * 0.34, 300) }
+    private var stageHeight: CGFloat { min(JamMedia.windowHeight * 0.34, 300) }
 
     /// The recorder screen (LIME-239a) is shown until there is a take; an article's audio, a take and an edit of a post use the words page.
     private var showsDetails: Bool { !forArticle && (clip != nil || (editing != nil && !reRecording)) }

@@ -146,8 +146,8 @@ struct JamArticleCover: View {
             }
         }
         // Taller since the subtitle joined the title (LIME-215b): two thirds of a portrait (4:5) photo's height at the same width, about width x 0.83.
-        .frame(width: JamMedia.size(ratio: JamMedia.coverRatio, column: JamMedia.column, screenHeight: UIScreen.main.bounds.height).width,
-               height: JamMedia.size(ratio: JamMedia.coverRatio, column: JamMedia.column, screenHeight: UIScreen.main.bounds.height).height)
+        .frame(width: JamMedia.size(ratio: JamMedia.coverRatio, column: JamMedia.column, screenHeight: JamMedia.windowHeight).width,
+               height: JamMedia.size(ratio: JamMedia.coverRatio, column: JamMedia.column, screenHeight: JamMedia.windowHeight).height)
         .jamMediaClip()
         .accessibilityElement(children: .contain)
         .task(id: store.jamAttachments(post.postId).map(\.attachmentId)) {

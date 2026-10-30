@@ -27,7 +27,9 @@ enum JamMedia {
     }
 
     /// The text column of a card or the reader: the screen less the 20 pt margins.
-    @MainActor static var column: CGFloat { UIScreen.main.bounds.width - 40 }
+    @MainActor static var column: CGFloat { WindowMetrics.shared.size.width - 40 }
+    /// The window's height (not the screen's: a narrow iPad window is shorter than the screen too).
+    @MainActor static var windowHeight: CGFloat { WindowMetrics.shared.size.height }
 
     /// The standard frame nearest to the picture's own shape (a square is nearer 4:5), cropped from the centre; the viewer shows the whole picture.
     static func ratio(width: UInt32?, height: UInt32?) -> CGFloat {
@@ -92,12 +94,14 @@ struct JamVideoCard: View {
         let _ = verticalSize
         let controller = self.controller ?? makeController()
         let ratio = JamMedia.ratio(width: file.width, height: file.height)
-        let screenHeight = UIScreen.main.bounds.height
+        let screenHeight = JamMedia.windowHeight
         let frame = JamMedia.size(ratio: ratio, column: JamMedia.column, screenHeight: screenHeight)
         ZStack {
             Color.black
             if controller.simulated || controller.player == nil {
                 if let poster = UIImage(data: file.poster) { Image(uiImage: poster).resizable().scaledToFill() }
+                // No poster yet: the small thumbnail, blurred (not stretched sharp and posterised) until the real picture comes in place of it (LIME-267).
+                else if let thumb = UIImage(data: file.thumb) { Image(uiImage: thumb).resizable().scaledToFill().blur(radius: 18).clipped() }
             } else {
                 PlayerLayerView(player: controller.player, fill: true)
             }

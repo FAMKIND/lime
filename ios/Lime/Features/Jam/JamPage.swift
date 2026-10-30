@@ -11,6 +11,7 @@ struct JamSubscribersRoute: Hashable { let jamID: String }
 struct JamPage: View {
     @Environment(ConversationStore.self) private var store
     @State private var composing = false
+    @State private var invitationsOpen = false
     /// Saving or un-saving a post redraws the Saved segment.
     @AppStorage(JamSaved.key) private var savedList: String = ""
 
@@ -51,29 +52,55 @@ struct JamPage: View {
         }
     }
 
-    /// Someone asks to credit me on their post: a calm prompt at the top of the feed.
+    /// Someone asks to credit me on their post: a calm prompt at the top of the feed. One invitation shows its card; two or more are **one row**
+    /// ("4 invitations to co-write") that opens a sheet with each, so they never push the filter pills down (LIME-267).
+    @ViewBuilder
     private var requests: some View {
-        VStack(spacing: 8) {
-            ForEach(store.jamRequests, id: \.postId) { request in
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("\(store.teacherName(request.writer)) added you as co-author of \u{201C}\(request.title)\u{201D}").font(Theme.body).foregroundStyle(Theme.text)
-                        .accessibilityIdentifier("jam-request-\(request.postId)")
-                    HStack(spacing: 10) {
-                        Button { Task { await store.answerCoauthorRequest(request, accept: true) } } label: {
-                            Text("Accept").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.accentInk).padding(.horizontal, 18).frame(minHeight: 44).background(Theme.accent, in: Capsule())
-                        }
-                        .accessibilityIdentifier("jam-request-accept-\(request.postId)")
-                        Button { Task { await store.answerCoauthorRequest(request, accept: false) } } label: {
-                            Text("Decline").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).padding(.horizontal, 18).frame(minHeight: 44).background(Theme.surface, in: Capsule())
-                        }
-                        .accessibilityIdentifier("jam-request-decline-\(request.postId)")
-                    }
+        if store.jamRequests.count == 1, let request = store.jamRequests.first {
+            requestCard(request).padding(.horizontal, 16).padding(.top, 8)
+        } else if let first = store.jamRequests.first {
+            Button { invitationsOpen = true } label: {
+                HStack(spacing: 12) {
+                    AvatarView(person: store.teacher(first.writer), size: 32).accessibilityHidden(true)
+                    Text("\(store.jamRequests.count) invitations to co-write").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.textSecondary).accessibilityHidden(true)
                 }
-                .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 14).frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
                 .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
+            .buttonStyle(.plain).padding(.horizontal, 16).padding(.top, 8)
+            .accessibilityLabel("\(store.jamRequests.count) invitations to co-write").accessibilityHint("Opens the list to accept or decline")
+            .accessibilityIdentifier("jam-requests-row")
+            .sheet(isPresented: $invitationsOpen) {
+                NavigationStack {
+                    ScrollView { VStack(spacing: 8) { ForEach(store.jamRequests, id: \.postId) { requestCard($0) } }.padding(16) }
+                        .background(Theme.canvas)
+                        .sheetHeader("Invitations")
+                        .onChange(of: store.jamRequests.isEmpty) { _, empty in if empty { invitationsOpen = false } }
+                }
+                .presentationDetents([.medium, .large])
+            }
         }
-        .padding(.horizontal, 16).padding(.top, store.jamRequests.isEmpty ? 0 : 8)
+    }
+
+    private func requestCard(_ request: CoauthorRequest) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("\(store.teacherName(request.writer)) added you as co-author of \u{201C}\(request.title)\u{201D}").font(Theme.body).foregroundStyle(Theme.text)
+                .accessibilityIdentifier("jam-request-\(request.postId)")
+            HStack(spacing: 10) {
+                Button { Task { await store.answerCoauthorRequest(request, accept: true) } } label: {
+                    Text("Accept").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.accentInk).padding(.horizontal, 18).frame(minHeight: 44).background(Theme.accent, in: Capsule())
+                }
+                .accessibilityIdentifier("jam-request-accept-\(request.postId)")
+                Button { Task { await store.answerCoauthorRequest(request, accept: false) } } label: {
+                    Text("Decline").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).padding(.horizontal, 18).frame(minHeight: 44).background(Theme.surface, in: Capsule())
+                }
+                .accessibilityIdentifier("jam-request-decline-\(request.postId)")
+            }
+        }
+        .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private var feed: some View {

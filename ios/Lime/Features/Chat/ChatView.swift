@@ -107,7 +107,7 @@ struct ChatView: View {
         .toolbar {
             // The avatar and name sit beside the system ‹, with no glass of their own, left-aligned in a width worked out from the screen's (the room between ‹ and the two circles; .principal would centre it);
             // the name truncates rather than vanishing (LIME-247, 247b).
-            ToolbarItem(placement: .principal) { titlePill(conversation).frame(width: max(120, UIScreen.main.bounds.width - 196), alignment: .leading) }
+            ToolbarItem(placement: .principal) { titlePill(conversation).frame(width: max(120, WindowMetrics.shared.size.width - 196), alignment: .leading) }
                 .sharedBackgroundVisibility(.hidden)
             // Search and the call button are two 44 pt circles of our own glass (the system's would be a capsule), last; a fixed gap keeps them apart.
             ToolbarItem(placement: .topBarTrailing) {
