@@ -216,3 +216,8 @@ extension ConversationStore {
         return [meProvider()] + ids.map { teacher($0) }
     }
 }
+
+extension JamPostInfo {
+    /// Who can read the post as the audience picker names it: a members-only post is `members` (stored as a tier), else the post's audience (LIME-264).
+    var shownAudience: String { tier == "members" ? "members" : audience }
+}

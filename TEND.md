@@ -8985,3 +8985,13 @@ Co-authors you can see. **Brief:** LIME-266. iOS (`PodcastRecorder`, `JamMedia`,
 - **Gate (13 mini + iPad):** post a podcast with FAM as co-host: your card says "with FAM · waiting", and the Post as row shows FAM's circle beside the chip. Edit the post (change the title, add a second co-host): FAM stays waiting. On the iPad Accept → both phones' cards and About say "with FAM".
 
 - **Installed (265, 266):** all three, the 13 mini, the iPad and Jean's 12 mini.
+
+## LIME-264
+
+Audience that explains itself; a real thumbnail on step 2. **Brief:** LIME-264. iOS only.
+
+- **1. Each choice says who it reaches:** Subscribers "Everyone who subscribed to <band / you>", Members "Only <band>'s members (<n>)", Everyone "Any teacher on lime" (210's rules and the new-account date unchanged). Posting as a band, the menu ends with "Members joined <band>; subscribers follow it." The collapsed row reads "Members · 3" where the count is known (the phone's member list for that band). Posting as yourself: no Members row, as before.
+- **2. Editing keeps what the post was:** a members-only post is stored as a tier, not an audience, so the editor started on Subscribers and offered no Members. It now starts on Members (`JamPostInfo.shownAudience`) and the menu offers Members when the post is a members one; the "changed?" checks use the same value, so saving does not re-send an unchanged audience.
+- **3. Step 2 thumbnail:** a chosen cover, else a video's first frame, else the post's own cover/poster when editing, else the card's default art (`CoverArt`: the band's tile or your picture, blurred); the document icon stays only for a plain post with no picture.
+- **Tests:** none new (visual); Band246, Open210c, Post240, Privacy210d and Studio241 UI tests pass (26 cases).
+- **Gate:** post as lime juice: Audience lists Subscribers / Members / Everyone, each with its line; post as yourself: no Members; edit a members post: Members still selected; a video podcast's step 2 shows its first frame.

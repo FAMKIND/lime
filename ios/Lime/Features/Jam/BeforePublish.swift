@@ -20,6 +20,10 @@ struct BeforePublishScreen: View {
     var savedAudience: String? = nil
     /// Posting as a band: its members can be the audience (LIME-246c).
     var membersOption = false
+    /// The band the post is from (its id), or nil when it is from me: names the audience choices and gives the thumbnail's default art (LIME-264).
+    var bandID: String? = nil
+    /// The post being edited, whose own cover or poster the thumbnail shows when nothing new was chosen.
+    var editingPostID: String? = nil
     /// The post has a photo, video or audio (so Everyone asks for the privacy confirmation), and the pictures to check for faces.
     var hasMedia = false
     var pictures: [Data] = []
@@ -44,7 +48,11 @@ struct BeforePublishScreen: View {
                 // Like the player's info block: the cover on the left, the title and the subtitle beside it.
                 HStack(spacing: 14) {
                     Group {
-                        if let thumbnail { Image(uiImage: thumbnail).resizable().scaledToFill() } else { RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.surface).overlay { Image(systemName: kind == .post ? "text.alignleft" : "doc.text").foregroundStyle(Theme.textSecondary) } }
+                        if let thumbnail { Image(uiImage: thumbnail).resizable().scaledToFill() }
+                        else if let editingPostID { PostCover(postID: editingPostID) }
+                        // What the card will show with no cover: the band's or the writer's picture, blurred, as everywhere else (LIME-264).
+                        else if kind != .post { CoverArt(image: nil, person: store.meProvider(), org: bandID.map { store.jamTitle($0) }, orgId: bandID) }
+                        else { RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.surface).overlay { Image(systemName: "text.alignleft").foregroundStyle(Theme.textSecondary) } }
                     }
                     .frame(width: 72, height: 72).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)).accessibilityHidden(true).accessibilityIdentifier("before-thumbnail")
                     VStack(alignment: .leading, spacing: 3) {
@@ -55,7 +63,7 @@ struct BeforePublishScreen: View {
                 }
                 .accessibilityElement(children: .combine).accessibilityIdentifier("before-summary")
                 VStack(spacing: 0) {
-                    if showsAudience { row("Audience", id: "before-audience") { AudienceChip(audience: $audience, saved: savedAudience, allowsMembers: membersOption) } }
+                    if showsAudience { row("Audience", id: "before-audience") { AudienceChip(audience: $audience, saved: savedAudience, allowsMembers: membersOption, bandName: bandID.map { store.jamTitle($0) }, memberCount: bandID.flatMap { store.orgMembersByJam[$0]?.count }) } }
                     if store.openPostsEnabled { row("Tags", id: "before-tags") { TopicsChip(topics: $topics) } }
                     if kind != .post { row("Series", id: "before-series") { SeriesChip(series: $series) } }
                 }

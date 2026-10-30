@@ -986,7 +986,7 @@ struct JamComposeSheet: View {
             // The post's own words, in its own layout (a recording shows its title, subtitle and description on the article page).
             article = editing.kind != "quick"; title = editing.title; subtitle = editing.subtitle
             postAsJam = editing.displayAs == "jam" && editing.jamId != store.myOwnJam?.jamId ? editing.jamId : nil   // the chip starts on the post's current author (LIME-201); a post in my own space is mine
-            audience = editing.audience; series = editing.series; topics = savedTopics(of: editing)
+            audience = editing.shownAudience; series = editing.series; topics = savedTopics(of: editing)
             coauthors = Array(store.bylinePeople(editing).dropFirst()); pendingHosts = store.pendingCoauthors(editing)
             if let stored = store.jamAttachments(editing.postId).first(where: JamCover.isCover), let data = await store.jamAttachmentData(editing.postId, stored.attachmentId) { coverImage = UIImage(data: data) }
             // The post's own files keep their numbers; new pictures are numbered after them (LIME-195b).
@@ -1038,7 +1038,7 @@ struct JamComposeSheet: View {
         let first = composer.plainText.replacingOccurrences(of: "\u{FFFC}", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
         let summary = article ? title : first.split(separator: "\n").first.map(String.init) ?? ""
         return BeforePublishScreen(kind: kind, editing: editing != nil, summary: summary, subtitle: article ? subtitle : "", thumbnail: photos.first?.preview ?? coverImage,
-                                   audience: $audience, topics: $topics, series: $series, savedAudience: editing?.audience, membersOption: postAsJam != nil && editing == nil,
+                                   audience: $audience, topics: $topics, series: $series, savedAudience: editing?.shownAudience, membersOption: postAsJam != nil && (editing == nil || editing?.tier == "members"), bandID: postAsJam, editingPostID: editing.flatMap { coverImage == nil && photos.isEmpty ? $0.postId : nil },
                                    hasMedia: editing != nil ? !store.jamAttachments(editing?.postId ?? "").isEmpty : hasMedia, pictures: privacyPictures,
                                    working: posting, problem: problem, buttonID: editing != nil ? "jam-update" : "jam-post") {
             if editing != nil { update() } else { post() }
@@ -1058,7 +1058,7 @@ struct JamComposeSheet: View {
             let result = await store.editJamPost(editing, title: title, subtitle: subtitle, markdown: markdown, added: added + (article ? articleCover.map { [$0] } ?? [] : []),
                                                  displayAs: postAsJam == nil ? "person" : "jam", removeCover: article && coverRemoved && articleCover == nil)
             // Who can read it changed: Everyone publishes an open copy, Subscribers takes it back (LIME-210c).
-            var moved = result && audience != editing.audience ? await store.setPostAudience(editing, to: audience) : true
+            var moved = result && audience != editing.shownAudience ? await store.setPostAudience(editing, to: audience) : true
             if moved && series != editing.series { moved = await store.setPostSeries(editing, to: series) }
             if moved && topics != savedTopics(of: editing) { moved = await store.setPostTopics(editing, to: topics) }
             posting = false

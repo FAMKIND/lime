@@ -11,6 +11,9 @@ struct AudienceChip: View {
     var opensOn: Date? = AccountAge.everyoneOpensOn()
     /// Posting as a band: its members can be the audience (LIME-246c).
     var allowsMembers = false
+    /// The band the post is from (nil: from me) and how many members it has where known: the choices say who they reach (LIME-264).
+    var bandName: String? = nil
+    var memberCount: Int? = nil
     @State private var confirmingEveryone = false
     @State private var confirmingTakeBack = false
 
@@ -19,20 +22,30 @@ struct AudienceChip: View {
 
     var body: some View {
         Menu {
-            Button { choose("subscribers") } label: { Label("Subscribers", systemImage: !everyone && !members ? "checkmark" : "lock") }
-                .accessibilityIdentifier("audience-subscribers")
+            Button { choose("subscribers") } label: {
+                Label { Text("Subscribers"); Text(bandName.map { "Everyone who subscribed to \($0)" } ?? "Everyone who subscribed to you") } icon: { Image(systemName: !everyone && !members ? "checkmark" : "lock") }
+            }
+            .accessibilityIdentifier("audience-subscribers")
             if allowsMembers {
-                Button { choose("members") } label: { Label("Members", systemImage: members ? "checkmark" : "person.2") }
-                    .accessibilityIdentifier("audience-members")
+                Button { choose("members") } label: {
+                    Label { Text("Members"); Text(bandName.map { "Only \($0)\u{2019}s members" + (memberCount.map { " (\($0))" } ?? "") } ?? "Only the band\u{2019}s members") } icon: { Image(systemName: members ? "checkmark" : "person.2") }
+                }
+                .accessibilityIdentifier("audience-members")
             }
             // A new account waits 7 days: one clear line with the date, never a cut-off sentence (LIME-242).
-            Button { choose("everyone") } label: { Label(opensOn.map { "Everyone \u{00B7} from \($0.formatted(.dateTime.month(.abbreviated).day()))" } ?? "Everyone on lime", systemImage: everyone ? "checkmark" : "globe") }
-                .disabled(opensOn != nil && !everyone)
-                .accessibilityIdentifier("audience-everyone")
+            Button { choose("everyone") } label: {
+                Label { Text(opensOn.map { "Everyone \u{00B7} from \($0.formatted(.dateTime.month(.abbreviated).day()))" } ?? "Everyone on lime"); Text("Any teacher on lime") } icon: { Image(systemName: everyone ? "checkmark" : "globe") }
+            }
+            .disabled(opensOn != nil && !everyone)
+            .accessibilityIdentifier("audience-everyone")
+            if allowsMembers, let bandName {
+                Divider()
+                Text("Members joined \(bandName); subscribers follow it.")
+            }
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: everyone ? "globe" : members ? "person.2" : "lock").font(.system(size: 13, weight: .medium)).accessibilityHidden(true)
-                Text(everyone ? "Everyone" : members ? "Members" : "Subscribers").font(Theme.font(.subheadline, weight: .medium))
+                Text(everyone ? "Everyone" : members ? "Members" + (memberCount.map { " \u{00B7} \($0)" } ?? "") : "Subscribers").font(Theme.font(.subheadline, weight: .medium))
                 Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold)).accessibilityHidden(true)
             }
             .foregroundStyle(Theme.text)

@@ -501,8 +501,8 @@ struct PodcastRecorder: View {
         var pictures: [Data] = []
         if let poster = previewClip?.poster, !poster.isEmpty { pictures.append(poster) }
         if let cover { pictures.append(cover.bytes) }
-        return BeforePublishScreen(kind: .podcast, editing: editing != nil, summary: summary, subtitle: subtitle, thumbnail: coverImage, audience: $audience, topics: $topics, series: $series,
-                                   savedAudience: editing?.audience, membersOption: postAsJam != nil && editing == nil, hasMedia: true, pictures: pictures, working: saving || preparing || publishing, problem: problem,
+        return BeforePublishScreen(kind: .podcast, editing: editing != nil, summary: summary, subtitle: subtitle, thumbnail: coverImage ?? previewClip.flatMap { $0.poster.isEmpty ? nil : UIImage(data: $0.poster) }, audience: $audience, topics: $topics, series: $series,
+                                   savedAudience: editing?.shownAudience, membersOption: postAsJam != nil && (editing == nil || editing?.tier == "members"), bandID: postAsJam, editingPostID: editing.flatMap { coverImage == nil && previewClip?.poster.isEmpty != false ? $0.postId : nil }, hasMedia: true, pictures: pictures, working: saving || preparing || publishing, problem: problem,
                                    buttonID: editing != nil ? "podcast-update" : "podcast-post") {
             Task { editing != nil ? await update() : await sendNow() }
         }
@@ -1193,7 +1193,7 @@ struct PodcastRecorder: View {
     private func prefill(_ post: JamPostInfo) {
         let files = store.jamAttachments(post.postId)
         cameraOn = files.contains { $0.kind == "video" }
-        title = post.title; subtitle = post.subtitle; series = post.series; audience = post.audience
+        title = post.title; subtitle = post.subtitle; series = post.series; audience = post.shownAudience
         topics = post.topics.isEmpty ? (store.jamsMine.first { $0.jamId == post.jamId }?.topics ?? []) : post.topics
         // The description is the post's text without the picture block of its own cover (which the stage already shows).
         var text = post.markdown
@@ -1233,7 +1233,7 @@ struct PodcastRecorder: View {
         // Joining or leaving a series is a change of its own (the core seals the post again).
         var seriesOK = ok && series != editing.series ? await store.setPostSeries(editing, to: series) : true
         // Who can read it, and its tags, were chosen on "Before you publish" (LIME-241).
-        if ok && seriesOK && audience != editing.audience { seriesOK = await store.setPostAudience(editing, to: audience) }
+        if ok && seriesOK && audience != editing.shownAudience { seriesOK = await store.setPostAudience(editing, to: audience) }
         let savedTopics = editing.topics.isEmpty ? (store.jamsMine.first { $0.jamId == editing.jamId }?.topics ?? []) : editing.topics
         if ok && seriesOK && topics != savedTopics { seriesOK = await store.setPostTopics(editing, to: topics) }
         saving = false
