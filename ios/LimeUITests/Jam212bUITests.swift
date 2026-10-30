@@ -12,7 +12,7 @@ final class Jam212bUITests: LimeUITestCase {
 
     private func any(_ app: XCUIApplication, _ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
 
-    func testTheBigVideoCardStartsWithTheVideoThenTheTitleThenTheWriterRow() {
+    func testTheBigVideoCardStartsWithTheWriterRowThenTheVideoThenTheTitle() {
         let app = launch()
         let video = any(app, "jam-video")
         for _ in 0..<6 where !video.exists { app.swipeUp() }
@@ -21,8 +21,8 @@ final class Jam212bUITests: LimeUITestCase {
         XCTAssertTrue(writer.exists, "the writer row")
         let title = app.staticTexts.matching(NSPredicate(format: "identifier == 'jam-podcast-title' AND label CONTAINS 'fraction walls'")).firstMatch
         XCTAssertTrue(title.exists)
-        XCTAssertLessThan(video.frame.minY, title.frame.minY, "the video first (LIME-248)")
-        XCTAssertLessThan(title.frame.minY, writer.frame.minY, "then the title, then the writer row")
+        XCTAssertLessThan(writer.frame.minY, video.frame.minY, "the writer row first (LIME-262)")
+        XCTAssertLessThan(video.frame.minY, title.frame.minY, "then the video, then the title")
     }
 
     func testEveryCardHasTheSameActionRowAndRemixAndShareAreDisabled() {

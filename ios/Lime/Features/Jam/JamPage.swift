@@ -284,13 +284,14 @@ struct JamPostCard: View {
         return JamCardChoice.style(isRecording: post.kind == "record", ready: post.state == "ready", hasAudio: files.contains { $0.kind == "audio" }, hasVideo: files.contains { $0.kind == "video" }, place: place)
     }
 
-    /// A video podcast card (LIME-203, 212b, 248): the video first, then the words under it (title with ⋯ beside it, subtitle, series, the writer row),
+    /// A video podcast card (LIME-203, 212b, 248, 262): the writer row (⋯ on its right), the video, then the words under it (title, subtitle, series),
     /// then the same action row.
     private func videoPodcast(_ writer: Person) -> some View {
         let files = store.jamAttachments(post.postId)
         let org = store.authorName(post)
         let video = files.first { $0.kind == "video" }
         return VStack(alignment: .leading, spacing: 10) {
+            writerRow(writer)
             if let video {
                 JamVideoCard(postID: post.postId, file: video, captionFile: JamCaptions.file(for: files.firstIndex(of: video) ?? 0, in: files),
                              label: "Video podcast, \(post.title.isEmpty ? "recording" : post.title), \(org), \(VoiceFormat.clock(Double(video.durationMs ?? 0) / 1000))",
@@ -301,18 +302,16 @@ struct JamPostCard: View {
                                  Task { await item.controller.play(data: { await store.jamAttachmentData(item.postID, item.file.attachmentId) }) }
                              })
             }
-            HStack(alignment: .top, spacing: 8) {
-                Text(post.title.isEmpty ? "Recording" : post.title).font(Theme.font(.title3, weight: .semibold)).foregroundStyle(Theme.text).multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                    .accessibilityAddTraits(.isHeader).accessibilityIdentifier("jam-podcast-title")
-                JamPostMenu(post: post).padding(.trailing, -12)
-            }
+            Text(post.title.isEmpty ? "Recording" : post.title).font(Theme.font(.title3, weight: .semibold)).foregroundStyle(Theme.text).multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .accessibilityAddTraits(.isHeader).accessibilityIdentifier("jam-podcast-title")
             if !post.subtitle.isEmpty { Text(post.subtitle).font(Theme.body).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.leading).lineLimit(2) }
             SeriesTag(post: post)
-            writerRow(writer)
             actions
         }
         .padding(.horizontal, 20).padding(.vertical, 14)
+        // The ⋯ sits on the writer row's right, as on the other cards (LIME-262).
+        .overlay(alignment: .topTrailing) { JamPostMenu(post: post).padding(.trailing, 8).padding(.top, 8) }
     }
 
     private var isAudioRecord: Bool { post.kind == "record" && post.state == "ready" && store.jamAttachments(post.postId).contains { $0.kind == "audio" } }
