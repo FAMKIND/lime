@@ -9063,3 +9063,13 @@ The invite page online at limemessenger.com, served by Caddy on `lime-turn-1`, a
 - **Gate:** open `https://limemessenger.com/u/shem` in Safari: the invite page; scan an invite QR with the iPhone camera: it opens the page. The app itself opens it once universal links exist (November). Still open from 172b: the three Supabase secrets and deploys.
 
 - **Installed (172d):** all three, the 13 mini, the iPad and Jean's 12 mini.
+
+## LIME-172b, staging (call secrets)
+
+**On the user's go, staging only (`lime-staging`).** Production untouched.
+
+- **Held back: `LIME_NOTIFY_FROM`.** The brief said to check first that the Resend key works for `send.limemessenger.com`. I cannot: the key is the function secret `LIME_NOTIFY_RESEND_API_KEY` (Supabase shows only a digest of a secret, never the value) and no copy exists on this machine. Not set, and `devices-register` (the only function that imports `notify.ts`) not redeployed. **Your check:** Resend → Domains shows `send.limemessenger.com` Verified, and the staging key is Full access or not limited to another domain. Then say go and I set `LIME_NOTIFY_FROM="lime <no-reply@send.limemessenger.com>"` and deploy `devices-register`. Until then notice mail on staging still comes from the old default sender.
+- **Set:** `TURN_HOST=turn.limemessenger.com`, `LIVEKIT_URL=wss://sfu.limemessenger.com`. **Deployed:** `turn-credentials`, `livekit-token`.
+- **Smoke test (throwaway user via the admin API, service-role key read into memory only, user deleted after):** `turn-credentials` 200, the four urls all on `turn.limemessenger.com` (stun 3478, turn udp/tcp 3478, turns 5349), ttl 3600, username bound to the user; `livekit-token` 200, `url` = `wss://sfu.limemessenger.com`, ttl 600, token issued; no session → 401. The relay and SFU on those names were already checked in 172a.
+- **Rollback:** `supabase secrets set TURN_HOST=turn.limechat.org LIVEKIT_URL=wss://sfu.limechat.org` then redeploy the two functions.
+- **Gate:** a staging phone call (1:1 and group) with the staging build; the phones then receive the new names from the functions.
