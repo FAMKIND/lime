@@ -77,6 +77,8 @@ struct ProfileView: View {
     @State private var confirmingUnsubscribe = false
     @State private var links: [ProfileLink] = []
     @State private var heroImage: UIImage?
+    /// Whether their background has been looked for yet: until then the default hero shows what was kept from last time, or only the paper (LIME-261b).
+    @State private var heroLoaded = false
     // A background video (LIME-226b).
     @State private var heroVideo: URL?
     @State private var videoPending = false
@@ -226,6 +228,8 @@ struct ProfileView: View {
                 heroVideo = HeroVideoCache.url(for: clip, key: "\(route.userID)-\(store.extrasVersion)")
             } else { heroVideo = nil }
             videoPending = heroImage != nil && heroVideo == nil && !route.isMe ? await store.peerExtraPending(route.userID, .backgroundVideo) : false
+            Hero.noteCover(id: "hero-\(route.userID)", has: heroImage != nil)
+            heroLoaded = true
         }
         .confirmSheet("Unsubscribe from \(jamPage?.title ?? "this jam")?", isPresented: $confirmingUnsubscribe) {
             Button("Unsubscribe", role: .destructive) { if let jamPage { Task { await store.unsubscribe(jamPage.jamId) } } }.accessibilityIdentifier("profile-jam-subscribe-confirm")
@@ -298,7 +302,7 @@ struct ProfileView: View {
         .overlay(alignment: .bottomLeading) { if store.isDemo, heroVideoReady { Rectangle().fill(Color.white.opacity(0.01)).frame(width: 2, height: 2).accessibilityLabel("player").accessibilityIdentifier("profile-hero-video") } }
         .background(alignment: .top) {
             ProfileHeroBackground(image: shown.image, cacheKey: shown.key, isDefault: heroImage == nil, screenHeight: screen, videoURL: heroVideo, playVideo: videoMayPlay,
-                                  onVideoReady: { heroVideoReady = $0 }, ambient: ambientSpec, exposedForTests: store.isDemo)
+                                  onVideoReady: { heroVideoReady = $0 }, ambient: ambientSpec, awaitingAmbient: Hero.style == .ambient && ambientSpec == nil, exposedForTests: store.isDemo)
                 .padding(.top, -inset).padding(.bottom, -8).padding(.leading, -(16 + windowSideInsets.leading)).padding(.trailing, -(16 + windowSideInsets.trailing))
                 .animation(.easeInOut(duration: 0.25), value: shown.key)
         }
@@ -307,7 +311,10 @@ struct ProfileView: View {
     /// Their background when there is one, else the default made from their photo or tone; the layout is the same either way, so a real one arriving just replaces it.
     /// The living default hero's palette (LIME-261): from their photo, else their avatar's colour.
     private var ambientSpec: AmbientSpec? {
-        return Hero.ambient(photo: AvatarCache.shared.image(for: person.id), tone: person.tone, key: "hero-\(person.id)-\(AvatarCache.shared.image(for: person.id).map { ObjectIdentifier($0).hashValue } ?? 0)")
+        let id = "hero-\(route.userID)"
+        // Not looked for yet: what was kept from last time (a page with a cover keeps none, so no bright mesh shows first), else nothing.
+        guard heroLoaded else { return Hero.remembered(id: id, chosen: nil).spec }
+        return Hero.ambient(photo: AvatarCache.shared.image(for: person.id), chosen: nil, tone: person.tone, key: "\(id)-\(AvatarCache.shared.image(for: person.id).map { ObjectIdentifier($0).hashValue } ?? 0)", id: id)
     }
 
     private var shownHero: (image: UIImage, key: String) {

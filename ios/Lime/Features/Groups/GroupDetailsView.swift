@@ -34,7 +34,7 @@ struct GroupDetailsView: View {
     private var ambientSpec: AmbientSpec? {
         let id = target.conversationID
         let photo = AvatarCache.shared.image(for: id)
-        return Hero.ambient(photo: photo, tone: store.groupTone(id), key: "group-hero-\(id)-\(photo.map { ObjectIdentifier($0).hashValue } ?? 0)")
+        return Hero.ambient(photo: photo, chosen: store.groupTones[id], tone: store.groupTone(id), key: "group-hero-\(id)-\(photo.map { ObjectIdentifier($0).hashValue } ?? 0)", id: "group-hero-\(id)")
     }
     private var editingNow: Bool { editing && details?.canRename == true }
 

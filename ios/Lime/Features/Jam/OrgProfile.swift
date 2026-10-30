@@ -210,7 +210,7 @@ struct OrgProfileView: View {
     /// The living default hero's palette (LIME-261): from the band's picture, else its colour.
     private var ambientSpec: AmbientSpec? {
         let picture = AvatarCache.shared.image(for: ConversationStore.jamPictureKey(page.jamId))
-        return Hero.ambient(photo: picture, tone: store.jamTone(page.jamId), key: "band-hero-\(page.jamId)-\(picture.map { ObjectIdentifier($0).hashValue } ?? 0)")
+        return Hero.ambient(photo: picture, chosen: store.jamTones[page.jamId], tone: store.jamTone(page.jamId), key: "band-hero-\(page.jamId)-\(picture.map { ObjectIdentifier($0).hashValue } ?? 0)", id: "band-hero-\(page.jamId)")
     }
     /// My profile posting space is the teacher, never a band: it is never offered Delete band (LIME-259).
     private var isOwnSpace: Bool { isMe && page.jamId == store.myOwnJam?.jamId }

@@ -8912,3 +8912,16 @@ Vibrant, living cover backgrounds and a tinted paper canvas. **Brief:** LIME-261
 - **The bug on the way:** the paper as a dynamic `UIColor` made the group page's mute confirmation vanish (`GroupDetailsHeaderUITests`); a plain colour for the current appearance fixed it.
 - **Looks to judge on the phone:** how lively the drift feels; the white text over the brightest parts of a colourful photo (the existing overlay is unchanged; the first screenshot shows "Away" and the handle readable but close); the paper's tint strength.
 - **Installed (the overnight run: 246a–c, 256, 260a–b, 261):** all three, the iPad, Shem's 13 mini and Jean's 12 mini.
+
+## LIME-261b
+
+Living backgrounds that adapt: the picture's own colours, the chosen colour wins, calmer, no flash. **Brief:** LIME-261b. iOS only; visual, so no new UI test class (the 16 tests of the hero classes — `Cover257/258`, `Profile217/226b`, `Org216` — and the group header tests pass).
+
+- **Which colours:** a chosen cover (the picture itself is shown) → a **chosen colour** (always beats the picture; "Use the default colour" goes back to the picture's) → the photo / band or group picture → the avatar's tone. `Hero.ambient(photo:chosen:tone:key:id:)`; bands pass `jamTones[id]` and groups `groupTones[id]` (only set when somebody chose one); profiles have no chosen colour.
+- **Adapt, don't invent:** k-means (k = 5, farthest-point start) in Lab on a 32 px copy, weighted by area; clusters under 6 % dropped; only the picture's own hues; under 3 left → lighter and darker shades of the dominant (same hue). A chosen colour: it, a lighter and a deeper shade, and two neighbours at ±15°. The swatches are pastels, so the saturation is floored at 0.6 first (the hue is the swatch's).
+- **Calmer:** saturation × 1.1 capped 0.65, brightness kept in 0.30–0.70; the drift loop is 28 s.
+- **No flash:** the mesh is not drawn until its source is known. Palettes are kept on disk by id and chosen-colour version (`HeroPaletteCache`, UserDefaults, 300 entries); a page with a cover keeps a "cover" mark, so next time no mesh shows before the picture. The first time, only the paper shows and the mesh fades in over 0.4 s (a test run shows it at once). Only the profile needed this (its background arrives asynchronously); bands and groups know their cover at once.
+- **Paper:** from the dominant cluster, 6 % (dark 12 % of a deepened shade).
+- **Demo args for screenshots:** `-lime-demo-band-picture` (a lime-green picture for Sam's band) and `-lime-demo-band-tone <n>`.
+- **Screenshots:** `docs/qa-shots/261b/` — `band-green-nochoice`, `band-green-orange`, `band-green-dark`, `profile-colourful`, `profile-pale`, `profile-nophoto`, `group-light`, `group-dark`; the 261 versions are in `docs/qa-shots/261/`.
+- **For your eyes:** the first-time fade and the cache (the simulator cannot show the flash the way a phone does); the orange read as a muted amber-brown at the brightness cap; whether 0.70 is too dark for pale pictures.

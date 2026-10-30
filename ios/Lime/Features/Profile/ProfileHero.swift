@@ -190,6 +190,8 @@ struct ProfileHeroBackground: View {
     var onVideoReady: (Bool) -> Void = { _ in }
     /// The living background of the default hero (LIME-261), or nil for the classic look (and for a cover somebody chose).
     var ambient: AmbientSpec? = nil
+    /// The default is the ambient look but its palette is not known yet: only the paper shows, and the mesh fades in when ready (LIME-261b).
+    var awaitingAmbient = false
     /// Demo runs (UI tests) expose it so a test can find it; for a person it is decorative and hidden from VoiceOver.
     var exposedForTests = false
     @State private var videoReady = false
@@ -234,6 +236,7 @@ extension ProfileHeroBackground {
         let end = h - 4, start = max(0, end - blend)
         ZStack {
             if isDefault, let ambient { AmbientBackground(palette: ambient.palette).frame(width: size.width, height: h).clipped() }
+            else if isDefault, awaitingAmbient { canvas.frame(width: size.width, height: h) }
             else { Image(uiImage: image).resizable().scaledToFill().frame(width: size.width, height: h).clipped() }
             // The clip, silent, looping, over its still once it is ready to show (only while allowed to play: otherwise the still stays).
             if let videoURL, playVideo {

@@ -1053,6 +1053,9 @@ final class ConversationStore {
         // A profile photo for Sam, colourful or pale, for the hero's screenshots (LIME-261).
         let args = ProcessInfo.processInfo.arguments
         if let i = args.firstIndex(of: "-lime-demo-hero-photo"), i + 1 < args.count { AvatarCache.shared.set(Self.demoHeroPhoto(args[i + 1]), for: "lee") }
+        // Sam's band with a lime-green picture, and a colour chosen for it (LIME-261b screenshots).
+        if args.contains("-lime-demo-band-picture") { AvatarCache.shared.set(Self.demoHeroPhoto("green"), for: Self.jamPictureKey("demo-sam-jam")) }
+        if let i = args.firstIndex(of: "-lime-demo-band-tone"), i + 1 < args.count, let t = Int(args[i + 1]) { jamTones["demo-sam-jam"] = t }
         // An invite opened from a link (LIME-246c), when a test asks.
         if ProcessInfo.processInfo.arguments.contains("-lime-demo-join-band") { joiningBand = OrgInvite(jamId: "demo-sam-band-1", writerId: "sam", token: "demotoken") }
         // I belong to Sam's band (LIME-246c), when a test asks.
@@ -1422,7 +1425,9 @@ extension ConversationStore {
     /// A made-up photo for screenshots: "colourful" (orange, magenta and blue) or "pale" (cream and soft blue).
     static func demoHeroPhoto(_ kind: String) -> Data? {
         let size = CGSize(width: 400, height: 400)
-        let colours: [UIColor] = kind == "pale"
+        let colours: [UIColor] = kind == "green"
+            ? [UIColor(red: 0.45, green: 0.78, blue: 0.20, alpha: 1), UIColor(red: 0.30, green: 0.65, blue: 0.25, alpha: 1), UIColor(red: 0.70, green: 0.88, blue: 0.35, alpha: 1)]
+            : kind == "pale"
             ? [UIColor(red: 0.96, green: 0.93, blue: 0.86, alpha: 1), UIColor(red: 0.90, green: 0.93, blue: 0.96, alpha: 1), UIColor(red: 0.95, green: 0.90, blue: 0.90, alpha: 1)]
             : [UIColor(red: 0.98, green: 0.45, blue: 0.10, alpha: 1), UIColor(red: 0.85, green: 0.10, blue: 0.55, alpha: 1), UIColor(red: 0.10, green: 0.35, blue: 0.90, alpha: 1)]
         return UIGraphicsImageRenderer(size: size).jpegData(withCompressionQuality: 0.9) { c in
