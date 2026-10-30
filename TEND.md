@@ -8949,3 +8949,12 @@ A video podcast's card: the writer row back above the video. **Brief:** LIME-262
 - **Not screenshotted** (a re-order; you check on the phone). **Gate:** in jam's feed a video podcast reads avatar · name · date (⋯ right), the video, then the title and description.
 
 - **Installed (262):** all three, the 13 mini, the iPad and Jean's 12 mini.
+
+## LIME-263
+
+The app icon's lime about 20 % larger. **Brief:** LIME-263. `ios/Lime/Resources/Assets.xcassets/AppIcon.appiconset/icon-1024.png` only.
+
+- **How:** the current artwork scaled 1.2× about the centre onto the same background (sampled from the file: #F9F8F4), opaque (no alpha), sRGB, 1024 × 1024; the lime now spans about 70–948 px (~86 % of the canvas, a ~70 px margin all round, well inside iOS's rounded mask).
+- **Upscaled, not re-rendered:** the vectors in `public/assets` (`logo-mark.svg`, `lime-logo.svg`) do not match the icon exactly (petal shapes and outline weight differ), so I used a high-quality (CoreGraphics) upscale of the current artwork, as the brief allows. At 1.2× it stays crisp in the shot; say if you want a vector redraw. `public/assets/*` untouched and not committed.
+- **Before / after:** `docs/qa-shots/263/before-after.png` (also `before.png`, `after.png`).
+- **Gate:** on the 13 mini's home screen the lime fills more of the icon, still with a margin all round. iOS may keep the old icon until the home screen refreshes: restart the phone or delete and reinstall the app if it still shows the old one.
