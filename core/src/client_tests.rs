@@ -1479,7 +1479,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
              DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP INDEX olm_sessions_by_peer; DROP TABLE received_ciphertexts; DROP TABLE emergency_messages; DROP TABLE emergency_settings; DROP TABLE mesh_outbox; DROP TABLE mesh_packets; DROP TABLE mesh_seen; DROP TABLE mesh_uploaded; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
-             DROP TABLE draft_files; DROP TABLE draft_outbox; DROP TABLE draft_authors; DROP TABLE draft_chunks; DROP TABLE drafts; DROP TABLE deleted_peers; DROP TABLE session_repairs; DROP TABLE profile_key_requests; DROP TABLE my_extra; DROP TABLE extras; DROP TRIGGER jam_posts_fts_insert; DROP TRIGGER jam_posts_fts_update; DROP TRIGGER jam_posts_fts_delete; DROP TABLE jam_fts; DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_credits; DROP TABLE jam_credit_requests; DROP TABLE jam_credit_wires; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_blob_deletes; DROP TABLE jam_reactions; DROP TABLE jam_my_reactions; DROP TABLE jam_comments; DROP TABLE jam_counts; DROP TABLE jam_counts_out; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; DROP TABLE open_outbox; DROP TABLE jam_follow_off; DROP TABLE contact_jam_checks; DROP TABLE community_joins; DROP TABLE open_fts; DROP TABLE open_seen; ALTER TABLE conversations DROP COLUMN group_tone; ALTER TABLE conversations DROP COLUMN group_cover; ALTER TABLE conversations DROP COLUMN group_org; ALTER TABLE conversations DROP COLUMN group_parent; ALTER TABLE conversations DROP COLUMN group_parent_open; DROP TABLE org_joins; PRAGMA user_version = 9;",
+             DROP TABLE draft_files; DROP TABLE draft_outbox; DROP TABLE draft_authors; DROP TABLE draft_chunks; DROP TABLE drafts; DROP TABLE deleted_peers; DROP TABLE session_repairs; DROP TABLE profile_key_requests; DROP TABLE my_extra; DROP TABLE extras; DROP TRIGGER jam_posts_fts_insert; DROP TRIGGER jam_posts_fts_update; DROP TRIGGER jam_posts_fts_delete; DROP TABLE jam_fts; DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_credits; DROP TABLE jam_credit_requests; DROP TABLE jam_credit_wires; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_blob_deletes; DROP TABLE jam_reactions; DROP TABLE jam_my_reactions; DROP TABLE jam_comments; DROP TABLE jam_counts; DROP TABLE jam_counts_out; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; DROP TABLE open_outbox; DROP TABLE jam_follow_off; DROP TABLE contact_jam_checks; DROP TABLE community_joins; DROP TABLE open_fts; DROP TABLE open_seen; ALTER TABLE conversations DROP COLUMN group_tone; ALTER TABLE conversations DROP COLUMN group_cover; ALTER TABLE conversations DROP COLUMN group_org; ALTER TABLE conversations DROP COLUMN group_parent; ALTER TABLE conversations DROP COLUMN group_parent_open; DROP TABLE org_joins; DROP TABLE series_meta; PRAGMA user_version = 9;",
         )
         .unwrap();
     }
@@ -7747,6 +7747,50 @@ fn a_bands_groups_show_to_members_an_open_one_is_joined_by_request_an_invite_onl
     carol.store.leave_org(jam.clone()).unwrap();
     assert!(carol.store.my_orgs().unwrap().is_empty());
     assert!(carol.store.list_conversations().unwrap().iter().all(|c| c.id != science) || carol.store.group_details(science.clone()).map(|d| d.my_role == "none").unwrap_or(true));
+}
+
+// ---------------------------------------------------------------- LIME-260a: a series of its own
+
+const SERIES_ID: &str = "0194c3f0-aaaa-7000-8000-000000000001";
+
+fn series_part(writer: &Party, jam: &str, title: &str, part: u32, thumb: Vec<u8>) -> String {
+    let picture = crate::OutgoingAttachment { bytes: vec![7; 64], name: "cover.jpg".into(), mime: "image/jpeg".into(), width: Some(8), height: Some(8), duration_ms: None, thumb, poster: Vec::new() };
+    publish_with(writer, jam, title, "Words", vec![picture], options("subscribers", Some(series("Fractions", part, Some(2)))))
+}
+
+#[test]
+fn a_series_description_and_cover_are_set_by_the_writer_reach_subscribers_and_default_to_the_newest_parts_cover() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let jam = new_jam(&alice);
+    join_jam(&alice, &bob, &jam, &transport);
+    series_part(&alice, &jam, "Part one", 1, vec![1, 1, 1]);
+    series_part(&alice, &jam, "Part two", 2, vec![2, 2, 2]);
+    // Unset: no description, and the cover is the newest part's.
+    assert_eq!(alice.store.series_meta(jam.clone(), SERIES_ID.into()).unwrap(), None);
+    assert_eq!(alice.store.series_cover(jam.clone(), SERIES_ID.into()).unwrap(), Some(vec![2, 2, 2]), "the newest part's cover by default");
+    // Only the writer sets it, with limits.
+    assert!(bob.store.set_series_meta(jam.clone(), SERIES_ID.into(), "Fractions".into(), "x".into(), None).is_err(), "a subscriber cannot");
+    assert!(alice.store.set_series_meta(jam.clone(), SERIES_ID.into(), "Fractions".into(), "x".repeat(1001), None).is_err());
+    assert!(alice.store.set_series_meta(jam.clone(), SERIES_ID.into(), "Fractions".into(), "ok".into(), Some(vec![0; 24 * 1024 + 1])).is_err());
+    alice.store.set_series_meta(jam.clone(), SERIES_ID.into(), "Fractions that stick".into(), "Short lessons, one idea each.".into(), Some(vec![9, 9, 9])).unwrap();
+    assert_eq!(alice.store.series_cover(jam.clone(), SERIES_ID.into()).unwrap(), Some(vec![9, 9, 9]));
+    catch_up(&alice, &[&bob], &transport);
+    let got = bob.store.series_meta(jam.clone(), SERIES_ID.into()).unwrap().expect("the subscriber got it with the jam's state");
+    assert_eq!((got.title.as_str(), got.description.as_str(), got.cover.clone()), ("Fractions that stick", "Short lessons, one idea each.", Some(vec![9, 9, 9])));
+    assert_eq!(bob.store.series_cover(jam.clone(), SERIES_ID.into()).unwrap(), Some(vec![9, 9, 9]));
+    // A change reaches them; a later title change of the jam keeps it; removing the cover falls back to the newest part's.
+    alice.store.set_series_meta(jam.clone(), SERIES_ID.into(), "Fractions that stick".into(), "Updated.".into(), None).unwrap();
+    alice.store.update_jam(jam.clone(), "Fractions, renamed".into(), "About".into(), vec![]).unwrap();
+    catch_up(&alice, &[&bob], &transport);
+    let again = bob.store.series_meta(jam.clone(), SERIES_ID.into()).unwrap().unwrap();
+    assert_eq!((again.description.as_str(), again.cover.clone()), ("Updated.", None));
+    assert_eq!(bob.store.series_cover(jam.clone(), SERIES_ID.into()).unwrap(), Some(vec![2, 2, 2]), "back to the newest part's cover");
+    // A subscriber who joins later gets it with the welcome.
+    let (carol, _) = party(&server, "carol", 3);
+    join_jam(&alice, &carol, &jam, &transport);
+    assert_eq!(carol.store.series_meta(jam.clone(), SERIES_ID.into()).unwrap().map(|m| m.description), Some("Updated.".to_string()));
 }
 
 // ---------------------------------------------------------------- LIME-210h: publish chips and search of open posts

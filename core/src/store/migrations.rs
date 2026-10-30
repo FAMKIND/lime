@@ -934,6 +934,16 @@ const MIGRATIONS: &[&str] = &[
          at      INTEGER NOT NULL,
          PRIMARY KEY (jam_id, user_id, target)
      );",
+    // LIME-260a: a series' own description and cover, as the jam's signed state says them (writer only; the cover is a small JPEG inside the state).
+    "CREATE TABLE series_meta (
+         jam_id      TEXT NOT NULL,
+         series_id   TEXT NOT NULL,
+         title       TEXT NOT NULL,
+         description TEXT NOT NULL DEFAULT '',
+         cover       BLOB,
+         hlc         TEXT NOT NULL DEFAULT '',
+         PRIMARY KEY (jam_id, series_id)
+     );",
 ];
 
 /// The schema version this build writes.

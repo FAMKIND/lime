@@ -1412,7 +1412,7 @@ impl LimeStore {
         }
         let welcome = json!({
             "jam_id": jam_id,
-            "state": { "writer": jam.writer, "title": jam.title, "about": jam.about, "topics": jam.topics, "tiers": jam.tiers, "state_hlc": jam.state_hlc, "community": jam.community },
+            "state": { "writer": jam.writer, "title": jam.title, "about": jam.about, "topics": jam.topics, "tiers": jam.tiers, "state_hlc": jam.state_hlc, "community": jam.community, "series": super::series::metas_json(conn, jam_id)? },
             "sessions": sessions,
             "post_count": jam_store::post_count(conn, jam_id)?,
         });
@@ -1723,6 +1723,8 @@ impl LimeStore {
         if let Some(community) = value.get("community").and_then(Value::as_bool) {
             conn.execute("UPDATE jams SET community = ?2 WHERE jam_id = ?1", params![jam.jam_id, community]).map_err(db_err)?;
         }
+        // The series the writer described (LIME-260a).
+        super::series::apply_metas(conn, &jam.jam_id, value, hlc, force)?;
         Ok(())
     }
 
