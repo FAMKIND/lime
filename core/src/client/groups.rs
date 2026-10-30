@@ -523,6 +523,18 @@ impl LimeStore {
         })
     }
 
+    /// Queues the group's whole history (the original signed envelopes) for one member, as for a person just added: a phone that came back with
+    /// new keys has none of it (LIME-270). Replaying it on a phone that has it is harmless.
+    pub(crate) fn queue_group_history(&self, state: &AccountState, conn: &Connection, group_id: &str, user: &str, now: i64) -> Result<(), StoreError> {
+        let inners = groups::load_inners(conn, group_id)?;
+        for chunk in inners.chunks(HISTORY_CHUNK) {
+            let envelopes: Vec<Value> = chunk.iter().filter_map(|text| serde_json::from_str(text).ok()).collect();
+            let history = self.history_op(state, group_id, envelopes, conn, now)?;
+            groups::enqueue(conn, group_id, user, &history.to_json().to_string())?;
+        }
+        Ok(())
+    }
+
     fn history_op(&self, state: &AccountState, group_id: &str, envelopes: Vec<Value>, conn: &Connection, now: i64) -> Result<Op, StoreError> {
         let hlc = tick_hlc(conn, now)?;
         let mut op = Op {
@@ -639,7 +651,7 @@ impl LimeStore {
                 Err(error) => return Err(error),
             }
         }
-        let mut outbound = self.ensure_group_session(transport, token, state, me, &group_id, &others)?;
+        let mut outbound = self.ensure_group_session(transport, token, state, me, &group_id, &others, &audience)?;
 
         op.sig = state.account.sign(op.signing_bytes()).to_base64();
         let inner = SealedInner { sender_user: me.to_owned(), sender_device: state.device_id.clone(), sender_cert: state.cert(), op }.to_bytes();
@@ -662,12 +674,26 @@ impl LimeStore {
         me: &str,
         group_id: &str,
         others: &[String],
+        audience: &[(String, Vec<String>)],
     ) -> Result<groups::Outbound, StoreError> {
         let now = now_ms();
-        let mut sorted: Vec<&String> = others.iter().collect();
+        // A member is known by their user id and the devices they have now ("user#dev1,dev2"; a member with no usable devices, say one whose
+        // new key is not accepted yet, by the bare id). A new device is a change: the session is replaced and given to it (LIME-270).
+        let entry = |user: &str| -> String {
+            match audience.iter().find(|(u, _)| u == user) {
+                Some((_, devices)) if !devices.is_empty() => {
+                    let mut devices = devices.clone();
+                    devices.sort();
+                    format!("{user}#{}", devices.join(","))
+                }
+                _ => user.to_owned(),
+            }
+        };
+        let mut sorted: Vec<String> = others.iter().map(|u| entry(u)).collect();
         sorted.sort();
-        let fingerprint = hex_sha256(sorted.iter().map(|u| u.as_str()).collect::<Vec<_>>().join(",").as_bytes());
+        let fingerprint = hex_sha256(sorted.join(",").as_bytes());
         let existing = self.with_conn(|conn| groups::load_outbound(conn, &self.pickle_key, group_id))?;
+        let previous = existing.as_ref().map(|o| o.shared_with.clone()).unwrap_or_default();
         let mut outbound = match existing {
             Some(o) if !o.rotate && o.messages < ROTATE_AFTER_MESSAGES && now - o.created_at < ROTATE_AFTER_MS && o.fingerprint == fingerprint => o,
             _ => groups::Outbound {
@@ -679,9 +705,30 @@ impl LimeStore {
                 shared_with: vec![],
             },
         };
+        // Someone whose devices differ from the ones this group last used (a phone that signed out and came back with new keys): it has
+        // none of the group, so it is sent the history too. A session recorded before devices were tracked gives no answer: send it
+        // once, in groups small enough for that to be cheap.
+        if !previous.is_empty() {
+            for user in others {
+                let now_entry = entry(user);
+                if !now_entry.contains('#') || previous.contains(&now_entry) {
+                    continue;
+                }
+                let before = previous.iter().find(|e| e.as_str() == user || e.starts_with(&format!("{user}#")));
+                let changed = match before {
+                    Some(old) if old.contains('#') => true,
+                    Some(_) => others.len() <= 30,
+                    None => false,
+                };
+                if changed {
+                    self.with_conn(|conn| self.queue_group_history(state, conn, group_id, user, now))?;
+                }
+            }
+        }
         self.with_conn(|conn| groups::save_outbound(conn, &self.pickle_key, group_id, &outbound))?;
         for user in others {
-            if outbound.shared_with.contains(user) {
+            let shared_entry = entry(user);
+            if outbound.shared_with.contains(&shared_entry) {
                 continue;
             }
             let hlc = self.with_conn(|conn| tick_hlc(conn, now))?;
@@ -702,7 +749,7 @@ impl LimeStore {
             match self.send_to_user(transport, token, state, me, user, op) {
                 // Delivered, or nobody to give it to: either way this person is done.
                 Ok(()) | Err(StoreError::NoRecipientKeys) => {
-                    outbound.shared_with.push(user.clone());
+                    outbound.shared_with.push(shared_entry);
                     self.with_conn(|conn| groups::save_outbound(conn, &self.pickle_key, group_id, &outbound))?;
                 }
                 // Their key changed and is not accepted yet: they miss this session (and its messages) until it is.

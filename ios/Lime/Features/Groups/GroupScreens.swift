@@ -21,11 +21,12 @@ struct GroupPickerScreen: View {
     var onNext: ([String]) -> Void = { _ in }
     var onBack: () -> Void
     @Environment(ConversationStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
     @State private var chosen: [String] = []
     @State private var query = ""
 
     private var existing: [String] { if case .add(_, let ids) = mode { ids } else { [] } }
-    private var teachers: [KnownTeacher] { KnownTeachers.from(store.conversations).filter { !existing.contains($0.person.id) } }
+    private var teachers: [KnownTeacher] { KnownTeachers.from(store.conversations, includingKeyChanges: true).filter { !existing.contains($0.person.id) } }
     private var sections: [KnownTeachers.Section] { KnownTeachers.sections(teachers, filter: query) }
     private var title: String { mode == .create ? "New Group" : "Add Members" }
     private var countText: String {
@@ -84,19 +85,30 @@ struct GroupPickerScreen: View {
                             .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 4).accessibilityAddTraits(.isHeader)
                         ForEach(section.teachers) { teacher in
                             let on = chosen.contains(teacher.person.id)
-                            Button { toggle(teacher.person.id) } label: {
+                            Button {
+                                // A new key must be accepted in the one-to-one chat first (LIME-270).
+                                if teacher.needsKey { dismiss(); store.openFromNotification(teacher.id, thread: nil) } else { toggle(teacher.person.id) }
+                            } label: {
                                 HStack(spacing: 14) {
                                     AvatarView(person: teacher.person, size: 44)
-                                    Text(teacher.person.name).font(Theme.body).foregroundStyle(Theme.text)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(teacher.person.name).font(Theme.body).foregroundStyle(Theme.text)
+                                        if teacher.needsKey { Text("New key: accept first").font(Theme.caption).foregroundStyle(Theme.textSecondary) }
+                                    }
                                     Spacer(minLength: 0)
-                                    Image(systemName: on ? "checkmark.circle.fill" : "circle")
-                                        .font(.system(size: 24)).foregroundStyle(on ? Theme.text : Theme.textSecondary.opacity(0.6))
+                                    if teacher.needsKey {
+                                        Image(systemName: "exclamationmark.triangle").font(.system(size: 20)).foregroundStyle(Theme.textSecondary)
+                                    } else {
+                                        Image(systemName: on ? "checkmark.circle.fill" : "circle")
+                                            .font(.system(size: 24)).foregroundStyle(on ? Theme.text : Theme.textSecondary.opacity(0.6))
+                                    }
                                 }
                                 .padding(.horizontal, 20).frame(minHeight: 60).contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                             .accessibilityElement(children: .combine)
                             .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
+                            .accessibilityHint(teacher.needsKey ? "Opens your chat to accept their new key" : "")
                             .accessibilityIdentifier("group-pick-\(teacher.person.id)")
                         }
                     }

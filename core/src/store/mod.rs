@@ -472,6 +472,8 @@ impl LimeStore {
     /// that were held back are read, and messages to them can be sent again.
     pub fn trust_new_key(&self, conversation_id: String) -> Result<(), StoreError> {
         let peer = conversation_id.strip_prefix("dm:").ok_or(StoreError::NotFound)?;
+        // Needed to hand their new phone the history of the groups we share (before the connection is taken).
+        let account = self.load_or_create_account().ok().filter(|state| state.registered).and_then(|state| state.user_id.clone().map(|me| (state, me)));
         let conn = self.lock();
         conn.execute(
             "UPDATE peers SET master_key = new_master_key, new_master_key = NULL, verified_at = NULL
@@ -488,6 +490,23 @@ impl LimeStore {
         .map_err(db_err)?;
         // Their new phone has none of what the old one held: give it my delivery key.
         delivery::queue_share(&conn, peer, now_ms())?;
+        // Groups we share (LIME-270): their new phone has none of them. The next group message replaces the sending session and gives it
+        // to the new phone, and the group's history goes now.
+        if let Some((state, me)) = account {
+            let groups: Vec<String> = {
+                let mut statement = conn.prepare("SELECT DISTINCT group_id FROM group_members WHERE user_id = ?1").map_err(db_err)?;
+                let rows = statement.query_map(params![peer], |r| r.get::<_, String>(0)).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+                rows
+            };
+            for group_id in groups {
+                let current = crate::store::groups::state_of(&conn, &group_id)?;
+                if !current.is_member(&me) || !current.is_member(peer) {
+                    continue;
+                }
+                conn.execute("UPDATE group_outbound_sessions SET rotate = 1 WHERE group_id = ?1", params![group_id]).map_err(db_err)?;
+                self.queue_group_history(&state, &conn, &group_id, peer, now_ms())?;
+            }
+        }
         Ok(())
     }
 

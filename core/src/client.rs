@@ -332,6 +332,8 @@ impl LimeStore {
         }
         // Edits, deletes and reactions go after the messages they are about.
         self.deliver_message_ops(&transport, &auth_token, &mut state, &me);
+        // A group history queued while sending (a member's new phone found out of date, LIME-270) goes in this pass, not the next.
+        self.deliver_group_outbox(&transport, &auth_token, &mut state, &me);
         Ok(sent)
     }
 

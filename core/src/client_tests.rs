@@ -7982,3 +7982,59 @@ fn an_open_post_the_phone_fetched_is_found_by_search_and_forgotten_when_it_is_go
     bob.store.fetch_open_feed(transport, bob.token.clone(), 0).unwrap();
     assert!(bob.store.search_open_posts("brick".into(), 10).unwrap().is_empty());
 }
+
+// ---------------------------------------------------------------- LIME-270: groups after a member's keys change
+
+/// Carol's phone is replaced (same account, new keys) after the group is up and Alice has written once.
+fn team_with_carols_new_phone() -> (Arc<FakeServer>, Party, Party, Party, Arc<dyn Transport>, String) {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = team(&server);
+    bob.store.accept_request(chat.clone()).unwrap();
+    carol.store.accept_request(chat.clone()).unwrap();
+    say_in(&alice, &transport, &chat, "one");
+    sync(&bob, &transport);
+    sync(&carol, &transport);
+    assert_eq!(group_texts(&carol, &chat).last().map(String::as_str), Some("one"));
+    let (carol2, _) = party(&server, "carol", 9);
+    (server, alice, bob, carol2, transport, chat)
+}
+
+#[test]
+fn a_members_new_phone_gets_the_group_only_after_the_key_is_accepted_and_then_hears_everything_from_then_on() {
+    let (_server, alice, bob, carol2, transport, chat) = team_with_carols_new_phone();
+    // Before the accept: the group still works for everyone else, and nothing goes to Carol's new phone.
+    say_in(&alice, &transport, &chat, "two");
+    sync(&bob, &transport);
+    assert_eq!(group_texts(&bob, &chat).last().map(String::as_str), Some("two"));
+    sync(&carol2, &transport);
+    assert!(group_chat(&carol2).is_none(), "an unaccepted key is not used in the group");
+
+    // Alice accepts the key in her chat with Carol; her next group message reaches the new phone, which also gets the group itself.
+    alice.store.trust_new_key(format!("dm:{}", carol2.user)).unwrap();
+    say_in(&alice, &transport, &chat, "three");
+    sync(&carol2, &transport);
+    sync(&carol2, &transport);
+    let group = group_chat(&carol2).expect("the new phone learned the group (its history was sent)");
+    assert_eq!(group.id, chat);
+    assert_eq!(group_texts(&carol2, &chat).last().map(String::as_str), Some("three"), "and reads what comes after the accept");
+    assert!(!group_texts(&carol2, &chat).contains(&"one".to_string()), "older messages stay unreadable, as for anyone added");
+    sync(&bob, &transport);
+    assert_eq!(group_texts(&bob, &chat).last().map(String::as_str), Some("three"), "everyone else keeps receiving");
+}
+
+#[test]
+fn a_key_accepted_before_the_update_is_healed_by_the_next_group_message() {
+    let (_server, alice, _bob, carol2, transport, chat) = team_with_carols_new_phone();
+    say_in(&alice, &transport, &chat, "two");   // Alice meets the new key here (and so records it)
+    // The old build: the key was accepted, but the group's session record knows people, not devices, and nothing was queued.
+    alice.store.trust_new_key(format!("dm:{}", carol2.user)).unwrap();
+    {
+        let conn = alice.store.lock();
+        conn.execute("DELETE FROM group_outbox", []).unwrap();
+        conn.execute("UPDATE group_outbound_sessions SET rotate = 0, fingerprint = 'old', shared_with = '[\"bob\",\"carol\"]'", []).unwrap();
+    }
+    say_in(&alice, &transport, &chat, "after the update");
+    sync(&carol2, &transport);
+    sync(&carol2, &transport);
+    assert_eq!(group_texts(&carol2, &chat).last().map(String::as_str), Some("after the update"));
+}

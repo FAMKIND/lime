@@ -737,6 +737,7 @@ final class ConversationStore {
         try? await Task.detached(priority: .userInitiated) { try core.trustNewKey(conversationId: id) }.value
         await reload()
         await syncNow()
+        await deliverNow()   // the groups we share: their history goes now (LIME-270)
     }
 
     /// Sends a message again (one that failed, or that was never delivered).
@@ -1248,15 +1249,16 @@ final class ConversationStore {
             // `group-call-named-N`: the group's name was chosen by a person, so it names the call (otherwise the people do).
             let rest = String(name.dropFirst("group-call-".count))
             groupCalls.demoCall(people: Int(rest.replacingOccurrences(of: "named-", with: "")) ?? 3, conversationID: group, customName: rest.hasPrefix("named-"))
-        case "group", "group-details", "group-details-plain", "new-group", "new-group-name":
+        case "group", "group-details", "group-details-plain", "group-details-key", "new-group", "new-group-name", "new-group-key":
             loadDemoTeachers()
+            if screen?.hasSuffix("-key") == true, let sam = conversations.firstIndex(where: { $0.id == "dm:sam" }) { conversations[sam].keyChangePending = true }
             let id = demoMakeGroup(name: "Grade 4 Team", emoji: screen == "group-details-plain" ? nil : "🍎", memberIDs: ["lee", "sam", "priya.nair"], owner: true)
-            demoSheet = screen == "new-group" || screen == "new-group-name" ? screen : nil
+            demoSheet = screen == "new-group" || screen == "new-group-name" ? screen : screen == "new-group-key" ? "new-group" : nil
             if screen == "group" {
                 demoAddMessages(to: id, [("lee", "Can we plan the field trip on Friday?"), ("sam", "I can bring the permission forms")])
                 path.append(id)
             }
-            if screen == "group-details" || screen == "group-details-plain" {
+            if screen == "group-details" || screen == "group-details-plain" || screen == "group-details-key" {
                 demoAddMessages(to: id, [("lee", "Can we plan the field trip on Friday?"), ("sam", "I can bring the permission forms"), ("priya.nair", "Friday works for me")])
                 path.append(id); path.append(GroupTarget(conversationID: id))
             }

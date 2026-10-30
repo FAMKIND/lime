@@ -7,6 +7,8 @@ struct KnownTeacher: Identifiable, Equatable, Sendable {
     /// The conversation's id (tapping the row opens that chat).
     let id: String
     let person: Person
+    /// Their keys changed and you have not accepted the new ones (LIME-270): a group cannot use them yet.
+    var needsKey = false
 }
 
 enum KnownTeachers {
@@ -17,10 +19,12 @@ enum KnownTeachers {
     }
 
     /// Everyone with an accepted direct chat (requests, groups and blocked people are not teachers you know).
-    static func from(_ conversations: [Conversation]) -> [KnownTeacher] {
+    /// `includingKeyChanges`: the group pickers also list someone whose new key waits to be accepted (marked), even if their chat is a request.
+    static func from(_ conversations: [Conversation], includingKeyChanges: Bool = false) -> [KnownTeacher] {
         conversations.compactMap { c in
-            guard !c.isRequest, !c.isGroup, let person = c.members.first else { return nil }
-            return KnownTeacher(id: c.id, person: person)
+            guard !c.isGroup, let person = c.members.first else { return nil }
+            if c.isRequest && !(includingKeyChanges && c.keyChangePending) { return nil }
+            return KnownTeacher(id: c.id, person: person, needsKey: includingKeyChanges && c.keyChangePending)
         }
     }
 

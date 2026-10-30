@@ -368,6 +368,20 @@ struct GroupDetailsView: View {
                 }
                 ForEach(details.members, id: \.userId) { member in memberRow(member, details: details) }
             }
+            // LIME-270: a member whose new key you have not accepted gets no messages from this group until you do.
+            ForEach(details.members.filter { !$0.isMe && keyChangePending($0) }, id: \.userId) { member in
+                let first = member.name.split(separator: " ").first.map(String.init) ?? member.name
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("\(first)\u{2019}s key changed: accept it in your chat with \(first) to keep them in this group.")
+                        .font(Theme.secondary).foregroundStyle(Theme.textSecondary)
+                    Button("Open chat with \(first)") { store.openFromNotification("dm:\(member.userId)", thread: nil) }
+                        .font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.text).frame(minHeight: 44, alignment: .leading)
+                        .accessibilityIdentifier("group-key-open-\(member.userId)")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 18)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("group-key-note-\(member.userId)")
+            }
             SettingsFootnote(text: "Up to \(details.maxMembers) people. End-to-end encrypted: the server doesn't know this group, its name or who is in it.")
         }
     }
@@ -399,6 +413,10 @@ struct GroupDetailsView: View {
         Text(text).font(Theme.body).foregroundStyle(Theme.textSecondary).frame(maxWidth: .infinity).padding(.top, 12).accessibilityIdentifier("group-shared-empty")
     }
 
+    private func keyChangePending(_ member: GroupMemberInfo) -> Bool {
+        store.conversation("dm:\(member.userId)")?.keyChangePending == true
+    }
+
     private func memberRow(_ member: GroupMemberInfo, details: GroupDetails) -> some View {
         let roleWord = member.role == "owner" ? "owner" : member.role == "admin" ? "admin" : nil
         let canMakeAdmin = details.myRole == "owner" && !member.isMe && member.role != "owner"
@@ -410,6 +428,10 @@ struct GroupDetailsView: View {
                         HStack(spacing: 6) {
                             Text(member.name).font(Theme.body).foregroundStyle(Theme.text).lineLimit(1).layoutPriority(2)
                             if let label = member.label { LabelCapsule(text: label, id: "member-label-\(member.userId)") }
+                            if !member.isMe && keyChangePending(member) {
+                                Image(systemName: "exclamationmark.triangle").font(.system(size: 14)).foregroundStyle(Theme.textSecondary)
+                                    .accessibilityLabel("New key not accepted")
+                            }
                         }
                         if let roleWord { Text(roleWord.capitalized).font(Theme.caption).foregroundStyle(Theme.textSecondary) }
                     }
