@@ -9007,3 +9007,5 @@ Jam in a narrow iPad window. **Brief:** LIME-267. iOS only.
 - **Screenshots:** `docs/qa-shots/267/` (`after-narrow.png`, `after-wide.png`, `after-narrow-4-invites.png`), on the iPad Pro 13" simulator. The simulator cannot resize a real window, so a debug launch argument `-lime-demo-window-width <pt>` lays lime out in a window that wide (and `-lime-demo-requests <n>` makes n invitations). In the 400 pt window the writer rows are whole, the video card fits with its normal shape and the invitations are one row. No before shots: the old screen-based layout cannot be reproduced without the same flag.
 - **Tests:** none new; Jam212b, Jam215, Jam188i, Jam188g and Jam188b (the invitation) UI tests pass.
 - **Gate (iPad, phone-sized window):** writer rows fully visible, a video card fits, the invitations are one row, the pills sit under the header.
+
+- **Installed (264, 267):** all three, the 13 mini, the iPad and Jean's 12 mini.
