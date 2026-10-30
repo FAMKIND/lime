@@ -72,6 +72,8 @@ struct ModerationReportScreen: View {
     @State private var detail: ModerationDetail?
     @State private var failed = false
     @State private var note = ""
+    /// The person chosen to suspend from a group report (LIME-256).
+    @State private var groupSuspect: String?
     @State private var pending: Pending?
 
     private struct Pending: Identifiable {
@@ -94,6 +96,7 @@ struct ModerationReportScreen: View {
                     card("Sent with the report") {
                         if !detail.readable { Text("This report can\u{2019}t be opened (sealed to another key).").font(Theme.body).foregroundStyle(.red) }
                         else if detail.included.isEmpty { Text("Nothing was included.").font(Theme.body).foregroundStyle(Theme.textSecondary) }
+                        else if detail.item.kind == "group", let group = GroupReportReading(json: detail.included) { groupReport(group) }
                         else { Text(detail.included).font(.system(.footnote, design: .monospaced)).foregroundStyle(Theme.text).textSelection(.enabled).accessibilityIdentifier("moderation-included") }
                         Text("Ids: " + detail.subjectIDs.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary).textSelection(.enabled)
                     }
@@ -147,10 +150,42 @@ struct ModerationReportScreen: View {
             if detail.item.kind == "person" || detail.item.kind == "profile_item" {
                 actionButton("Remove public picture", id: "remove_public", symbol: "photo.badge.minus", pending: Pending(id: "remove_public", title: "Remove their public background?", button: "Remove", message: "Their public background is deleted from the server."))
             }
-            if let suspect = suspectID(detail) {
+            if detail.item.kind == "group", let group = GroupReportReading(json: detail.included) {
+                // A group has no one account to suspend: each person whose message was included can be.
+                ForEach(group.senders, id: \.id) { sender in
+                    Button { groupSuspect = sender.id; pending = Pending(id: "suspend", title: "Suspend \(sender.name)?", button: "Suspend", message: "They can\u{2019}t sign in or use lime until you lift it.") } label: {
+                        Label("Suspend \(sender.name)", systemImage: "person.crop.circle.badge.xmark").font(Theme.body).foregroundStyle(Color.red)
+                            .frame(maxWidth: .infinity, minHeight: 50).background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                    .accessibilityIdentifier("moderation-suspend-\(sender.id)")
+                }
+            }
+            if let suspect = suspectID(detail), detail.item.kind != "group" {
                 actionButton("Suspend account", id: "suspend", symbol: "person.crop.circle.badge.xmark", pending: Pending(id: "suspend", title: "Suspend this account?", button: "Suspend", message: "They can\u{2019}t sign in or use lime until you lift it. \(suspect.prefix(8))\u{2026}"))
             }
         }
+    }
+
+    /// A group report (LIME-256), read: the name, the messages the reporter included with who sent them, and the people if they were included.
+    @ViewBuilder
+    private func groupReport(_ group: GroupReportReading) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let name = group.name { Text(name).font(Theme.font(.headline, weight: .semibold)).foregroundStyle(Theme.text).accessibilityIdentifier("moderation-group-name") }
+            if group.messages.isEmpty { Text("No messages were included.").font(Theme.body).foregroundStyle(Theme.textSecondary) }
+            ForEach(Array(group.messages.enumerated()), id: \.offset) { _, m in
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(m.sender).font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                    Text(m.text).font(Theme.body).foregroundStyle(Theme.text).textSelection(.enabled)
+                }
+                .accessibilityElement(children: .combine)
+            }
+            if group.trimmed { Text("Long messages were trimmed.").font(Theme.caption).foregroundStyle(Theme.textSecondary) }
+            if let members = group.members {
+                Text("Who\u{2019}s in the group").font(Theme.font(.footnote, weight: .semibold)).foregroundStyle(Theme.textSecondary).padding(.top, 6)
+                Text(members.map { "\($0.name) (\($0.role))" }.joined(separator: ", ")).font(Theme.body).foregroundStyle(Theme.text).accessibilityIdentifier("moderation-group-members")
+            }
+        }
+        .accessibilityIdentifier("moderation-included")
     }
 
     private func actionButton(_ title: String, id: String, symbol: String, pending next: Pending) -> some View {
@@ -169,6 +204,7 @@ struct ModerationReportScreen: View {
         case "message": return ids.count > 2 && !ids[2].isEmpty ? ids[2] : nil
         case "person", "profile_item": return ids.first
         case "jam", "org": return ids.count > 1 ? ids[1] : nil
+        case "group": return groupSuspect
         default: return nil
         }
     }
@@ -188,5 +224,33 @@ struct ModerationReportScreen: View {
         let ok = await store.moderationAct(reportID: item.id, action: action.id, target: target, slot: action.id == "remove_public" ? "background" : nil,
                                            reason: action.id == "suspend" ? detail.item.reason : nil, note: note)
         if ok { done(); dismiss() } else { store.showBanner("Couldn\u{2019}t do that.") }
+    }
+}
+
+/// A group report's included JSON, read for the moderators (LIME-256).
+struct GroupReportReading {
+    struct Message { let sender: String; let text: String }
+    let name: String?
+    let messages: [Message]
+    let members: [(name: String, role: String)]?
+    let trimmed: Bool
+    /// The people whose messages are in the report (account id and name), for the Suspend buttons.
+    let senders: [(id: String, name: String)]
+
+    init?(json: String) {
+        guard let data = json.data(using: .utf8), let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        name = object["name"] as? String
+        let rows = (object["messages"] as? [[String: Any]]) ?? []
+        messages = rows.map { Message(sender: ($0["sender_name"] as? String) ?? ($0["sender"] as? String) ?? "", text: ($0["text"] as? String) ?? "") }
+        members = (object["members"] as? [[String: Any]])?.map { (name: ($0["name"] as? String) ?? "", role: ($0["role"] as? String) ?? "") }
+        trimmed = (object["trimmed"] as? Bool) ?? false
+        var seen: [String] = []
+        var list: [(id: String, name: String)] = []
+        for row in rows {
+            guard let id = row["sender"] as? String, !id.isEmpty, !seen.contains(id) else { continue }
+            seen.append(id)
+            list.append((id: id, name: (row["sender_name"] as? String) ?? id))
+        }
+        senders = list
     }
 }

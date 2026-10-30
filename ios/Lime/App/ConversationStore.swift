@@ -1225,7 +1225,10 @@ final class ConversationStore {
                 demoAddMessages(to: id, [("lee", "Can we plan the field trip on Friday?"), ("sam", "I can bring the permission forms")])
                 path.append(id)
             }
-            if screen == "group-details" || screen == "group-details-plain" { path.append(id); path.append(GroupTarget(conversationID: id)) }
+            if screen == "group-details" || screen == "group-details-plain" {
+                demoAddMessages(to: id, [("lee", "Can we plan the field trip on Friday?"), ("sam", "I can bring the permission forms"), ("priya.nair", "Friday works for me")])
+                path.append(id); path.append(GroupTarget(conversationID: id))
+            }
         case "groups-rows":
             // Two groups to swipe: one I own and one I am only a member of (next to the demo's one-to-one chats).
             loadDemoTeachers()

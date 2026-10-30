@@ -12,6 +12,12 @@ struct ReportSheet: View {
     @State private var sending = false
     @State private var sent = false
     @State private var failed = false
+    /// A group report (LIME-256): the messages left in, the name and photo, who is in it, and leaving afterwards.
+    @State private var ticked: Set<String> = []
+    @State private var nameAndPhoto = true
+    @State private var withMembers = false
+    @State private var leaveAfter = false
+    @State private var leftGroup = false
     @FocusState private var noteFocused: Bool
 
     var body: some View {
@@ -22,7 +28,7 @@ struct ReportSheet: View {
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) { if !sent { Button("Cancel") { dismiss() }.accessibilityIdentifier("report-cancel") } }
                     ToolbarItem(placement: .topBarTrailing) {
-                        if sent { Button("Done") { dismiss() }.fontWeight(.semibold).accessibilityIdentifier("report-done") }
+                        if sent { Button("Done") { dismiss(); if leftGroup { store.path = NavigationPath() } }.fontWeight(.semibold).accessibilityIdentifier("report-done") }
                         else { Button(sending ? "Sending\u{2026}" : "Send") { Task { await send() } }.fontWeight(.semibold).disabled(reason == nil || sending).accessibilityIdentifier("report-send") }
                     }
                 }
@@ -58,6 +64,7 @@ struct ReportSheet: View {
                     .onChange(of: note) { _, now in if now.count > 500 { note = String(now.prefix(500)) } }
                     .accessibilityIdentifier("report-note")
 
+                if let group = target.group { groupInclude(group) } else {
                 VStack(alignment: .leading, spacing: 8) {
                     Toggle("Include this \(target.noun)", isOn: $include).tint(Theme.accent).font(Theme.body).accessibilityIdentifier("report-include")
                     if include, !target.preview.isEmpty {
@@ -68,6 +75,7 @@ struct ReportSheet: View {
                         .font(Theme.caption).foregroundStyle(Theme.textSecondary)
                 }
                 .padding(14).background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
 
                 if target.blockConversationID != nil, let name = target.personName {
                     Toggle("Also block \(name)", isOn: $alsoBlock).tint(Theme.accent).font(Theme.body).padding(14)
@@ -81,6 +89,52 @@ struct ReportSheet: View {
         .scrollDismissesKeyboard(.interactively)
     }
 
+    /// The group's Include section: Recent messages (each a toggle), Group name and photo, Who's in the group, Leave the group after reporting.
+    @ViewBuilder
+    private func groupInclude(_ group: GroupReportDraft) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Include").font(Theme.font(.headline, weight: .semibold)).foregroundStyle(Theme.text).accessibilityAddTraits(.isHeader)
+            Text("Recent messages").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.textSecondary).accessibilityAddTraits(.isHeader)
+            if group.messages.isEmpty {
+                Text("No messages yet.").font(Theme.caption).foregroundStyle(Theme.textSecondary)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(group.messages.enumerated()), id: \.element.id) { index, message in
+                        let on = ticked.contains(message.id)
+                        Button { if on { ticked.remove(message.id) } else { ticked.insert(message.id) } } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: on ? "checkmark.circle.fill" : "circle").foregroundStyle(on ? Theme.accent : Theme.textSecondary).accessibilityHidden(true)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(message.senderName).font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                                    Text(String(message.text.split(separator: "\n").first ?? "")).font(Theme.body).foregroundStyle(Theme.text).lineLimit(1)
+                                    if message.attachments > 0 { Text("\(message.attachments) attachment\(message.attachments == 1 ? "" : "s") (not sent)").font(Theme.caption).foregroundStyle(Theme.textSecondary) }
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 14).frame(minHeight: 52).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Include message from \(message.senderName): \(message.text.prefix(80)), \(on ? "on" : "off")")
+                        .accessibilityAddTraits(on ? [.isSelected] : [])
+                        .accessibilityIdentifier("report-message-\(message.id)")
+                        if index < group.messages.count - 1 { Divider().overlay(Theme.hairline).padding(.leading, 14) }
+                    }
+                }
+                .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+            VStack(spacing: 0) {
+                Toggle("Group name and photo", isOn: $nameAndPhoto).tint(Theme.accent).font(Theme.body).padding(14).accessibilityIdentifier("report-group-name")
+                Divider().overlay(Theme.hairline).padding(.leading, 14)
+                Toggle("Who\u{2019}s in the group", isOn: $withMembers).tint(Theme.accent).font(Theme.body).padding(14).accessibilityIdentifier("report-group-members")
+                Divider().overlay(Theme.hairline).padding(.leading, 14)
+                Toggle("Leave the group after reporting", isOn: $leaveAfter).tint(Theme.accent).font(Theme.body).padding(14).accessibilityIdentifier("report-group-leave")
+            }
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            Text("lime\u{2019}s team sees only what is ticked, and your report. The group won\u{2019}t know it was you.").font(Theme.caption).foregroundStyle(Theme.textSecondary)
+        }
+        .onAppear { if ticked.isEmpty { ticked = Set(group.messages.map(\.id)) } }
+    }
+
     private var thanks: some View {
         VStack(spacing: 12) {
             Spacer()
@@ -89,7 +143,10 @@ struct ReportSheet: View {
                 .accessibilityIdentifier("report-thanks")
             #if DEBUG
             // Tests: what the last demo report carried (kind and ids).
-            if store.isDemo, let last = ConversationStore.demoReports.last { Text("").accessibilityLabel("\(last.kind) \(last.ids.joined(separator: ","))").accessibilityIdentifier("report-probe") }
+            if store.isDemo, let last = ConversationStore.demoReports.last {
+                Text("").accessibilityLabel("\(last.kind) \(last.ids.joined(separator: ","))").accessibilityIdentifier("report-probe")
+                Text("").accessibilityLabel(ConversationStore.demoLastIncluded).accessibilityIdentifier("report-included-probe")
+            }
             #endif
             Spacer()
         }
@@ -99,8 +156,17 @@ struct ReportSheet: View {
     private func send() async {
         guard let reason else { return }
         sending = true; failed = false
-        let ok = await store.sendReport(target, reason: reason, note: note, include: include, alsoBlock: alsoBlock)
-        sending = false
+        var outgoing = target
+        var includeIt = include
+        if let group = target.group {
+            let payload = group.payload(sending: ticked, nameAndPhoto: nameAndPhoto, withMembers: withMembers)
+            outgoing.ids = payload.ids
+            outgoing.included = payload.included
+            includeIt = true
+        }
+        let ok = await store.sendReport(outgoing, reason: reason, note: note, include: includeIt, alsoBlock: alsoBlock)
+        self.sending = false
+        if ok, leaveAfter, let group = target.group { await store.leaveGroup(group.conversationID); leftGroup = true }
         if ok { sent = true } else { failed = true }
     }
 }

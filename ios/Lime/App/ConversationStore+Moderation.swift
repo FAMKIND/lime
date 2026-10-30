@@ -15,6 +15,62 @@ struct ReportTarget: Identifiable, Equatable {
     var included: String
     /// What the sheet shows the reporter will be sent.
     var preview: String
+    /// A group report (LIME-256): what the reporter may choose to include.
+    var group: GroupReportDraft?
+}
+
+/// One message of a group, as the report sheet lists it.
+struct GroupReportMessage: Identifiable, Equatable {
+    let id: String
+    let senderID: String
+    let senderName: String
+    let text: String
+    let sent: Int
+    let attachments: Int
+}
+
+struct GroupReportMember: Equatable {
+    let userID: String
+    let name: String
+    let role: String
+}
+
+/// What a group report can carry (LIME-256, DESIGN-24): the last 20 messages the reporter can see (each can be left out), the group's name and photo, and, only
+/// if asked, who is in it.
+struct GroupReportDraft: Equatable {
+    let conversationID: String
+    let name: String
+    let hasPhoto: Bool
+    let messages: [GroupReportMessage]
+    let members: [GroupReportMember]
+
+    /// The report's `ids` and `included` for the choices made. The sealed report stays under the server's 96 KB cap: when the messages are too long the oldest
+    /// ones are cut short and the report says `trimmed`.
+    func payload(sending ticked: Set<String>, nameAndPhoto: Bool, withMembers: Bool) -> (ids: [String], included: String) {
+        let chosen = messages.filter { ticked.contains($0.id) }
+        var limit = 2_000
+        var rows: [[String: Any]] = []
+        var trimmed = false
+        var text = ""
+        repeat {
+            rows = chosen.map { m in
+                let cut = m.text.count > limit
+                if cut { trimmed = true }
+                return ["id": m.id, "sender": m.senderID, "sender_name": m.senderName, "text": cut ? String(m.text.prefix(limit)) : m.text, "sent": m.sent, "attachments": m.attachments]
+            }
+            var object: [String: Any] = ["conversation": conversationID, "messages": rows]
+            if nameAndPhoto { object["name"] = name; object["photo"] = hasPhoto ? "has a photo" : "none" }
+            if withMembers { object["members"] = members.map { ["user_id": $0.userID, "name": $0.name, "role": $0.role] } }
+            if trimmed { object["trimmed"] = true }
+            text = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+            if text.utf8.count <= 90_000 { break }
+            limit /= 2
+        } while limit >= 50
+        var senders: [String] = []
+        for m in chosen where !m.senderID.isEmpty && !senders.contains(m.senderID) { senders.append(m.senderID) }
+        // The core takes at most 8 ids: the group and its first seven senders (all of them are in the included text).
+        return ([conversationID] + senders.prefix(7), text)
+    }
 }
 
 enum ReportReason: String, CaseIterable, Identifiable {
@@ -53,7 +109,7 @@ extension ConversationStore {
         return ReportTarget(kind: "jam_post", ids: [post.postId, post.jamId, post.author] + (blob.isEmpty ? [] : [blob]) + (hasOpenCopy ? ["open"] : []), noun: "post", personName: who, blockConversationID: blockChat(for: post.author),
                             included: jsonText(["post_id": post.postId, "blob_id": blob, "jam_id": post.jamId, "author": post.author, "title": post.title, "subtitle": post.subtitle,
                                                 "text": post.markdown, "created": post.created, "kind": post.kind]),
-                            preview: String(words.prefix(160)))
+                            preview: String(words.prefix(160)), group: nil)
     }
 
     /// An open post (LIME-210h): the same kind as any jam post, the post's id first (the id the server's `hide_open_post` acts on) and "open" in the place of the
@@ -86,6 +142,18 @@ extension ConversationStore {
                             preview: String(message.text.prefix(160)))
     }
 
+    /// Report a group (LIME-256): the last 20 messages with text that I can see, the name and photo, and the people (off by default).
+    func reportTarget(group conversationID: String, name: String, hasPhoto: Bool, members: [GroupMemberInfo]) -> ReportTarget {
+        let me = meProvider().id
+        let messages = (conversation(conversationID)?.messages ?? []).filter { $0.state != .system && !$0.deleted && !$0.text.isEmpty }.suffix(20).map { m -> GroupReportMessage in
+            let sender = m.senderID ?? me
+            return GroupReportMessage(id: m.id, senderID: sender, senderName: sender == me ? meProvider().name : teacherName(sender), text: m.text, sent: Int(m.date.timeIntervalSince1970 * 1000), attachments: m.attachments.count)
+        }
+        let draft = GroupReportDraft(conversationID: conversationID, name: name, hasPhoto: hasPhoto, messages: Array(messages),
+                                     members: members.map { GroupReportMember(userID: $0.userId, name: $0.isMe ? meProvider().name : $0.name, role: $0.role) })
+        return ReportTarget(kind: "group", ids: [conversationID], noun: "group", personName: nil, blockConversationID: nil, included: "", preview: name, group: draft)
+    }
+
     func reportTarget(page: JamPageInfo) -> ReportTarget {
         ReportTarget(kind: "jam", ids: [page.jamId, page.writerId], noun: "jam", personName: teacherName(page.writerId), blockConversationID: blockChat(for: page.writerId),
                      included: jsonText(["jam_id": page.jamId, "writer": page.writerId, "title": page.title, "about": page.about]), preview: page.title)
@@ -94,7 +162,7 @@ extension ConversationStore {
     /// Sends the report (sealed on this phone, see core `send_report`); with "Also block", blocks the person's chat. True when it was sent.
     func sendReport(_ target: ReportTarget, reason: ReportReason, note: String, include: Bool, alsoBlock: Bool) async -> Bool {
         #if DEBUG
-        if isDemo { Self.demoReports.append((target.kind, reason.rawValue, note, include, target.ids)); if alsoBlock, let chat = target.blockConversationID { await block(chat) }; return true }
+        if isDemo { Self.demoLastIncluded = include ? target.included : ""; Self.demoReports.append((target.kind, reason.rawValue, note, include, target.ids)); if alsoBlock, let chat = target.blockConversationID { await block(chat) }; return true }
         #endif
         guard let core, let link, let token = try? await link.token() else { return false }
         let input = ReportInput(subjectKind: target.kind, subjectIds: target.ids, reason: reason.rawValue, note: String(note.prefix(500)), included: include ? target.included : "")
@@ -104,6 +172,7 @@ extension ConversationStore {
     }
 
     #if DEBUG
+    nonisolated(unsafe) static var demoLastIncluded = ""
     nonisolated(unsafe) static var demoReports: [(kind: String, reason: String, note: String, included: Bool, ids: [String])] = []
     #endif
 }

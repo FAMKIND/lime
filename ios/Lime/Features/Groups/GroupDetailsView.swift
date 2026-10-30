@@ -23,6 +23,7 @@ struct GroupDetailsView: View {
     @State private var adding = false
     @State private var editingAvatar = false
     @State private var coverSheet = false
+    @State private var reporting: ReportTarget?
     @State private var topInset: CGFloat = 0
     @State private var windowHeight: CGFloat = 0
 
@@ -70,6 +71,7 @@ struct GroupDetailsView: View {
                 if changed { Task { await refresh() } }
             }
         }
+        .reportSheet($reporting)
         .sheet(isPresented: $coverSheet) {
             let id = target.conversationID
             CoverColourSheet(
@@ -205,6 +207,10 @@ struct GroupDetailsView: View {
                 }
                 Button(role: .destructive) { leaving = true } label: { Label("Leave group", systemImage: "rectangle.portrait.and.arrow.right") }
                     .accessibilityIdentifier("group-more-leave")
+                Button(role: .destructive) {
+                    reporting = store.reportTarget(group: target.conversationID, name: name, hasPhoto: details.hasPhoto, members: details.members)
+                } label: { Label("Report group", systemImage: "flag") }
+                    .accessibilityIdentifier("group-more-report")
             }
         } label: { ToolIconLabel(symbol: "ellipsis") }
             .accessibilityLabel("More").accessibilityIdentifier("group-more")
