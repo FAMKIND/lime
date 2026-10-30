@@ -9110,3 +9110,5 @@ An optional Face ID / passcode lock for lime. **Brief:** LIME-269. iOS only; not
 - **Tests:** `AppLock269Tests` (6: off by default covers nothing; the delay table; blur at once and lock immediately or after the delay; cold start locked and a refused Face ID stays locked; notification text hidden while locked; turning on needs the system to agree). UI (`AppLock269UITests`, fake authenticator): Lock lime is off by default → on → home and back shows the lock → Unlock opens lime. The blurred snapshot itself is not asserted by a test.
 - **Not verified by me:** real Face ID and the real app-switcher picture (the simulator does not show either faithfully).
 - **Gate:** turn on Lock lime (Immediately) on the 13 mini; leave the app and return: Face ID opens it. Open the app switcher: lime's card is blurred. Send yourself a message while locked: the banner says "New message".
+
+- **Installed (268, 269):** all three, the 13 mini, the iPad and Jean's 12 mini (one install, both briefs).
