@@ -9158,3 +9158,22 @@ The old cover goes once a contact's key has changed, even after the accept. **Br
 - **Gate:** send FAM one message from each phone: FAM's profile shows the default (no old cover) on both; FAM sets a new cover (and sends a message so their new key reaches you) → both show it.
 
 - **Installed (271b):** all three, the 13 mini, the iPad and Jean's 12 mini.
+
+## LIME-271c (Phase 1 only: stopped, nothing built)
+
+**Brief:** LIME-271c. Phase 1 (read-only, staging `lime-staging`): is FAM's cover a public copy? **No. Stopped as the brief says; nothing was changed, built or installed.** Method: the service-role key read into memory only to select FAM's `profiles` row and the counts of its server-side rows; no email or id is printed here.
+
+- **What `avatar get` answers is decided by two columns per slot** (`<slot>_version` not null and `<slot>_visibility = 'everyone'`; otherwise 404). FAM's row on staging:
+
+| Slot | Visibility | Version | `avatar get` |
+|---|---|---|---|
+| photo | everyone | 1791594859405 (2026-10-09) | **200, a public photo exists** |
+| background (cover) | contacts | null | 404 |
+| background_video | contacts | null | 404 |
+| links | contacts | null | 404 |
+
+- **FAM's server-side blobs: none** (`blobs` has no row owned by FAM), so there is no contacts-only (encrypted) cover under any key either. FAM's devices: the first (2026-10-08) was revoked at 19:23:02 on 2026-10-30 and a new one registered in the same second (`master_keys.reset_at` the same), i.e. the iPad's sign-back-in.
+- **So the server holds nothing that can serve FAM's cover, in either form.** `refresh_extra` gets 404 for the public copy, then 404 for the encrypted blob, and stores "none". A cover still showing on the phones is therefore **not coming from the server**: either a stale local copy that no refresh has replaced, or the profile's **default hero**, which is made from the person's photo (`HeroDefault.image(for:photo:)`, `ProfileView.shownHero`) and FAM **does** have an old *public photo* (above) that every other phone still fetches. I cannot tell these apart from here.
+- **What the two phones' cache holds (source, version) for FAM:** not readable by me. The store is SQLCipher with a Keychain key on each phone, and no screen or diagnostic prints a contact's cached source and version. I did not touch the phones.
+- **One thing to look at (needs your eyes, 10 seconds):** open FAM's profile on the 13 mini. Is the "old cover" FAM's old **profile photo** enlarged and blurred behind the name (that is the default hero, from the public photo), or a separate picture FAM chose as a cover? Also, does FAM's small avatar on the 13 mini show FAM's old photo or the "F"?
+- **If it is the old public photo:** that is the same shape as 271c's premise, with the photo instead of the cover: FAM's wiped iPad does not know the public photo exists (its local record is gone), so FAM sees "F" and cannot remove it, while everyone else sees it. 271c's change (a fresh device adopts its own public items on sign-in, and Remove deletes the public copy) would fix it for the photo too; the brief would need to name the photo. **If it is a separate stale cover:** a diagnostic for the cached source and version per contact is the next step (plot's call).
