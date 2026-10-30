@@ -9037,7 +9037,7 @@ The switch to limemessenger.com, in the app, docs and tests. **Brief:** LIME-172
 
 - **What moved:** every host, link and address outside `public/` now says limemessenger.com: `InviteLink.host` (invite links, QR codes and band links are `https://limemessenger.com/u/…` and `/b/…`), Settings → About's Terms and Privacy links, the STUN fallback `stun:turn.limemessenger.com:3478`, `turn-credentials`' default `TURN_HOST`, `notify.ts`' default sender `lime <no-reply@send.limemessenger.com>`, the invite site's README and comment, `docs/` (api-v2, architecture, release-checklist), the READMEs, and the tests (Rust, iOS unit and UI) and demo data that used the old host.
 - **The old link is not an invite:** `limechat.org/u/…` (and www.) no longer decodes (`testALinkToTheOldHostIsNotAnInvite`). I also tightened the band-link reader, which accepted any host ending in the invite host (`evil-limemessenger.com`): it now takes the host or `www.` only.
-- **Left on purpose:** `infra/` (the scripts and READMEs still name `turn.limechat.org` / `sfu.limechat.org` and `shem@limechat.org`, as the dual-name server of 172a: they go with the retirement in Phase D). `public/` (the frozen web app), PLOT.md and TEND.md. Otherwise `git grep -i limechat` returns nothing.
+- **Left on purpose:** `infra/` (the scripts and READMEs still name `turn.limechat.org` / `sfu.limechat.org` and `shem@limechat.org`, as the dual-name server of 172a: they go with the retirement in Phase D). `public/` (the frozen web app), PLOT.md and TEND.md. The old-host test in `InviteTests` names limechat.org on purpose. Otherwise `git grep -i limechat` returns nothing.
 - **`/terms` and `/privacy`:** the invite site (`invite-site/`) has **no such pages**: it only serves `/u/*` and a holding page. The Settings links will show nothing until the compliance pack writes them; the links can stay. Noted in `invite-site/README.md`.
 - **Tests:** Rust 403 pass; iOS unit (Invite, ComposerDocument, ComposerTyping, LinkColour) and Band246 UI pass.
 
@@ -9048,3 +9048,5 @@ The switch to limemessenger.com, in the app, docs and tests. **Brief:** LIME-172
 4. Rollback: set the three secrets back to `turn.limechat.org`, `wss://sfu.limechat.org`, and the old sender; redeploy.
 
 - **Gate (after your steps):** a message both ways; a 1:1 call (TURN) and a group call; scan an invite QR (it opens `limemessenger.com/u/…`); a sign-in email arrives from `send.limemessenger.com`. Until the steps are done, calls still work (the app asks the function for the host, and the function's default now points at a name the 172a certificate already covers), but an invite link opens nothing and mail still comes from the old sender.
+
+- **Installed (172b):** all three, the 13 mini, the iPad and Jean's 12 mini.
