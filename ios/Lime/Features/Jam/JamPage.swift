@@ -329,11 +329,14 @@ struct JamPostCard: View {
                                  Task { await item.controller.play(data: { await store.jamAttachmentData(item.postID, item.file.attachmentId) }) }
                              })
             }
-            Text(post.title.isEmpty ? "Recording" : post.title).font(Theme.font(.title3, weight: .semibold)).foregroundStyle(Theme.text).multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                .accessibilityAddTraits(.isHeader).accessibilityIdentifier("jam-podcast-title")
-            if !post.subtitle.isEmpty { Text(post.subtitle).font(Theme.body).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.leading).lineLimit(2) }
-            SeriesTag(post: post)
+            // The title, subtitle and series line sit together, as on the article card (LIME-274); the card's other blocks keep their 10 pt.
+            VStack(alignment: .leading, spacing: 4) {
+                Text(post.title.isEmpty ? "Recording" : post.title).font(Theme.font(.title3, weight: .semibold)).foregroundStyle(Theme.text).multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityAddTraits(.isHeader).accessibilityIdentifier("jam-podcast-title")
+                if !post.subtitle.isEmpty { Text(post.subtitle).font(Theme.font(.subheadline)).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.leading).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading) }
+                SeriesTag(post: post)
+            }
             actions
         }
         .padding(.horizontal, 20).padding(.vertical, 14)

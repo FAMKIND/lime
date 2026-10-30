@@ -9206,3 +9206,11 @@ Band writers send posts for review; owners publish. **Brief:** LIME-273 (writers
 - **Gate (13 mini = owner, Jean = writer of lime juice):** Jean must be made a **writer** of lime juice first (Members → Jean → writer). Jean writes an article, Post as → lime juice (for review) → Send for review; the 13 mini gets the banner, the band page shows Waiting for review (1); open it, Next → Publish; both feeds show it from lime juice with Jean. Also try Send back with a note and look at Jean's Drafts.
 
 - **Installed (273):** all three, the 13 mini, the iPad and Jean's 12 mini.
+
+## LIME-274
+
+A video podcast card's title and subtitle sit together. **Brief:** LIME-274. iOS, `JamPage.swift` `videoPodcast(_:)` only.
+
+- The title, subtitle and series line are now their own `VStack(spacing: 4)`, as on the article card; the card's other blocks (writer row, video, the title group, actions) keep their 10 pt. The subtitle is `subheadline` (it was body), as on the article card.
+- I also took off the title's 44 pt minimum height: it was not a button, and on a one-line title it centred the line in a 44 pt box, which was most of the gap between title and subtitle.
+- Visual change: no new test (your rule); the video card's UI tests I ran still pass. **Gate:** in jam's feed a video podcast's title and subtitle sit as close as an article card's.
