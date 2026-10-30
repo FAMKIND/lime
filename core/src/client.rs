@@ -1393,7 +1393,19 @@ impl LimeStore {
         if devices.is_empty() {
             return Err(StoreError::NoRecipientKeys);
         }
-        self.with_conn(|conn| store_peer_devices(conn, user_id, &devices))?;
+        self.with_conn(|conn| {
+            // Every phone we ever had a session with is gone from their list: they came back on new keys (perhaps accepted before this check
+            // existed). What we hold from the old phone, their profile key and its pictures, is stale (LIME-271).
+            let known: Vec<String> = {
+                let mut statement = conn.prepare("SELECT DISTINCT peer_device_id FROM olm_sessions WHERE peer_user_id = ?1").map_err(db_err)?;
+                let rows = statement.query_map(params![user_id], |r| r.get::<_, String>(0)).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+                rows
+            };
+            if !known.is_empty() && !known.iter().any(|old| devices.iter().any(|d| &d.device_id == old)) {
+                crate::store::photos::forget_contact_profile(conn, user_id)?;
+            }
+            store_peer_devices(conn, user_id, &devices)
+        })?;
         Ok(devices)
     }
 
@@ -1988,6 +2000,8 @@ fn record_key_change(conn: &Connection, user_id: &str, new_master_key: &str) -> 
         params![user_id, new_master_key],
     )
     .map_err(db_err)?;
+    // Their old phone's profile key and what came with it must not outlive it (LIME-271).
+    crate::store::photos::forget_contact_profile(conn, user_id)?;
     Ok(())
 }
 

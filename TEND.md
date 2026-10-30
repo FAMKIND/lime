@@ -9128,3 +9128,16 @@ Groups heal after a contact's key change, and they can be added again. **Brief:*
 - **Gate (13 mini, Jean, iPad as FAM):** accept FAM's new key on the 13 mini and Jean (if already accepted, skip); send in the shared group on each: the iPad should receive from then on and show the group; New group → FAM is listed.
 
 - **Installed (270):** all three, the 13 mini, the iPad and Jean's 12 mini.
+
+## LIME-271
+
+A contact's old cover doesn't outlive their key change. **Brief:** LIME-271. Core only; no iOS or server change.
+
+- **The cause:** the contacts-only photo, cover, video and links are fetched by a blob id derived from **the profile key this phone holds for the contact**. After FAM's keys were replaced, the other phones kept FAM's old profile key, and the wiped iPad could not delete its old blobs (it has no old key), so they kept opening the old cover.
+- **1. Forget on a key change:** when a contact presents a different master key (before any accept), `record_key_change` now calls `photos::forget_contact_profile`: the profile key held for them, their cached photo, background, video and links, and the record of asking for their key are dropped. Their new phone shares a fresh profile key (or is asked for one, which the existing once-a-day request does) and everything is fetched again then.
+- **Keys accepted before this build:** the brief's "accepted or not" needs the old accepts healed too. A send now compares the phones we ever had a session with against the contact's current device list; **if none of them is still there** (they came back on new keys), their profile and cache are forgotten the same way. So FAM's old cover leaves the 13 mini and Jean's phones at their next send to FAM (or the first group send that reaches FAM).
+- **2. No cover → default:** with the key forgotten and no public copy, the existing refresh stores "none" for the slot, so the profile shows the default; an old cover can't be re-fetched.
+- **3. Blob sweep (noted, not changed):** `blob-sweep` only deletes blobs with an `expires_at` in the past; profile photo, cover, video and links blobs have none ("kept until its owner removes it"), so **FAM's old encrypted blobs stay on the server** (ciphertext under a key nobody holds any more; they cost storage only, and count against FAM's quota). A clean fix is server-side: on `reset_account_keys`, delete that owner's no-expiry profile blobs. That is a new server behaviour (and the blobs table has no class for profile blobs to tell them from other no-expiry ones), so I left it: say if you want it as a brief.
+- **What each party learns:** nothing new; the phone drops stale data.
+- **Tests (core 407 pass, 2 new):** Alice's cover is read by Bob; Alice comes back on new keys; Bob's next send drops the old key and cover, the old blob isn't fetched again, and after Bob accepts and Alice shares her new key and a new cover, the new cover shows. And a stale key accepted "before the update" is dropped at the next send.
+- **Gate:** after install, FAM's profile on the 13 mini and Jean's shows the default (no old cover) once either sends FAM something (a message to FAM is enough); when FAM sets a new photo and cover on the iPad, both phones show them (the iPad must have shared its new key: a message from FAM to them does it).

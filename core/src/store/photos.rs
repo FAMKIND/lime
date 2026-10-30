@@ -98,6 +98,21 @@ pub(crate) fn rotate_key(conn: &Connection, now_ms: i64) -> Result<(), StoreErro
 
 // ---------------------------------------------------------------- contacts' profile keys
 
+/// A contact's keys changed (their account was signed in on a new phone): what this phone holds from their old phone is dropped (LIME-271): the
+/// profile key it held for them, and the photo, background, video and links it fetched with it. Their new phone shares a fresh key (or is asked
+/// for one), and everything is fetched again then. A stale key would keep finding the old phone's blobs, which still sit on the server.
+pub(crate) fn forget_contact_profile(conn: &Connection, user: &str) -> Result<(), StoreError> {
+    for sql in [
+        "DELETE FROM contact_profile_keys WHERE user_id = ?1",
+        "DELETE FROM photos WHERE user_id = ?1",
+        "DELETE FROM extras WHERE user_id = ?1",
+        "DELETE FROM profile_key_requests WHERE peer_user_id = ?1",
+    ] {
+        conn.execute(sql, params![user]).map_err(db_err)?;
+    }
+    Ok(())
+}
+
 pub(crate) fn store_contact_key(conn: &Connection, user: &str, key: &[u8], now_ms: i64) -> Result<(), StoreError> {
     let same = contact_key(conn, user)?.is_some_and(|old| old == key);
     conn.execute(

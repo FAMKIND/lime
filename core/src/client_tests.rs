@@ -8038,3 +8038,67 @@ fn a_key_accepted_before_the_update_is_healed_by_the_next_group_message() {
     sync(&carol2, &transport);
     assert_eq!(group_texts(&carol2, &chat).last().map(String::as_str), Some("after the update"));
 }
+
+// ---------------------------------------------------------------- LIME-271: a contact's old cover does not outlive their key change
+
+/// Alice has a contacts-only background; Bob reads it. Then Alice's phone is replaced (her old blobs stay on the server: a wiped phone cannot delete them).
+fn bob_reads_alices_cover_then_alice_comes_back_on_new_keys() -> (Arc<FakeServer>, Party, Party, Party, Arc<dyn Transport>) {
+    use crate::store::extras::BACKGROUND;
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    alice.store.set_my_extra(transport.clone(), alice.token.clone(), BACKGROUND.into(), photo_bytes()).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    refresh(&bob, &transport);
+    assert_eq!(bob.store.peer_extra("alice".into(), BACKGROUND.into()).unwrap(), Some(photo_bytes()));
+    let (alice2, _) = party(&server, "alice", 9);
+    (server, alice, bob, alice2, transport)
+}
+
+#[test]
+fn a_contacts_old_cover_is_dropped_when_their_keys_change_and_the_new_one_shows_once_they_share_again() {
+    use crate::store::extras::BACKGROUND;
+    let (_server, _alice, bob, alice2, transport) = bob_reads_alices_cover_then_alice_comes_back_on_new_keys();
+    // Bob meets the new key (his next message to her): her old profile key and cover are gone, before any accept.
+    bob.store.queue_text("dm:alice".into(), "are you there?".into()).unwrap();
+    let _ = bob.store.deliver_queued(transport.clone(), bob.token.clone());
+    assert_eq!(crate::store::photos::contact_key(&bob.store.lock(), "alice").unwrap(), None, "the old phone's profile key is forgotten");
+    assert_eq!(bob.store.peer_extra("alice".into(), BACKGROUND.into()).unwrap(), None, "so is the cover it opened");
+    refresh(&bob, &transport);
+    assert_eq!(bob.store.peer_extra("alice".into(), BACKGROUND.into()).unwrap(), None, "and the old blob is not fetched again");
+
+    // Bob accepts; Alice sets a new cover on her new phone and shares her key: Bob shows the new one.
+    bob.store.trust_new_key("dm:alice".into()).unwrap();
+    let fresh: Vec<u8> = photo_bytes().into_iter().rev().collect();
+    alice2.store.start_dm("bob".into(), "Bob".into()).unwrap();
+    alice2.store.set_my_extra(transport.clone(), alice2.token.clone(), BACKGROUND.into(), fresh.clone()).unwrap();
+    say(&alice2, &bob, &transport, "hi, new phone");
+    sync(&bob, &transport);
+    refresh(&bob, &transport);
+    assert_eq!(bob.store.peer_extra("alice".into(), BACKGROUND.into()).unwrap(), Some(fresh));
+}
+
+#[test]
+fn a_key_accepted_before_the_update_loses_the_old_cover_at_the_next_send() {
+    use crate::store::extras::BACKGROUND;
+    let (_server, _alice, bob, alice2, transport) = bob_reads_alices_cover_then_alice_comes_back_on_new_keys();
+    // The old build: Bob accepted the new key without ever dropping the old profile key. (Put the stale state back, and forget any session with
+    // the new phone, as if nothing had been sent to it yet.)
+    bob.store.queue_text("dm:alice".into(), "first".into()).unwrap();
+    let _ = bob.store.deliver_queued(transport.clone(), bob.token.clone());
+    bob.store.trust_new_key("dm:alice".into()).unwrap();
+    {
+        let conn = bob.store.lock();
+        conn.execute("DELETE FROM olm_sessions WHERE peer_device_id = ?1", rusqlite::params![alice2.device]).unwrap();
+        conn.execute("DELETE FROM peer_devices WHERE user_id = 'alice'", []).unwrap();
+        crate::store::photos::store_contact_key(&conn, "alice", &vec![5u8; 32], 1).unwrap();
+        crate::store::extras::save_cached(&conn, "alice", BACKGROUND, &photo_bytes(), "encrypted", 1, 1).unwrap();
+    }
+    assert!(bob.store.peer_extra("alice".into(), BACKGROUND.into()).unwrap().is_some(), "stale cover shown");
+    bob.store.queue_text("dm:alice".into(), "again".into()).unwrap();
+    let _ = bob.store.deliver_queued(transport.clone(), bob.token.clone());
+    assert_eq!(crate::store::photos::contact_key(&bob.store.lock(), "alice").unwrap(), None);
+    assert_eq!(bob.store.peer_extra("alice".into(), BACKGROUND.into()).unwrap(), None, "the stale cover is gone");
+}
