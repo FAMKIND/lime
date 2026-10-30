@@ -8958,3 +8958,5 @@ The app icon's lime about 20 % larger. **Brief:** LIME-263. `ios/Lime/Resources/
 - **Upscaled, not re-rendered:** the vectors in `public/assets` (`logo-mark.svg`, `lime-logo.svg`) do not match the icon exactly (petal shapes and outline weight differ), so I used a high-quality (CoreGraphics) upscale of the current artwork, as the brief allows. At 1.2× it stays crisp in the shot; say if you want a vector redraw. `public/assets/*` untouched and not committed.
 - **Before / after:** `docs/qa-shots/263/before-after.png` (also `before.png`, `after.png`).
 - **Gate:** on the 13 mini's home screen the lime fills more of the icon, still with a margin all round. iOS may keep the old icon until the home screen refreshes: restart the phone or delete and reinstall the app if it still shows the old one.
+
+- **Installed (263):** all three, the 13 mini, the iPad and Jean's 12 mini. The home-screen icon may need a phone restart to refresh.
