@@ -9188,3 +9188,5 @@ A fresh device adopts its own public photo, cover and links. **Brief:** LIME-271
 - **Tests:** core 409 pass (new: Alice with a public photo and cover and contacts-only links; her fresh phone adopts the photo and the cover and not the links, once only; removing them takes the public photo off the server and another phone then sees none; a removed item is not adopted back). The profile UI test still passes. The app-side wiring has no test of its own.
 - **Gate:** on the iPad, FAM's own profile now shows the old photo (adopted); FAM removes it (or sets a new one) and both phones show the initials (or the new photo) after a send or a refresh. The "old cover" the phones show is the default hero made from that photo, so it follows.
 - **Note for plot:** the rule "no record" means a phone that has *ever* looked or chosen keeps its record: FAM's iPad has none (wiped), so it adopts; a phone that already has a record for a slot is left alone.
+
+- **Installed (271c):** all three, the 13 mini, the iPad and Jean's 12 mini.
