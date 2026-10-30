@@ -10,8 +10,13 @@
 # only forwards ciphertext. There is no recording or egress service, no webhooks, and the TURN built into LiveKit is off.
 set -euo pipefail
 
+# The call server answers to two names while the move to limemessenger.com happens (LIME-172a); set ALT_DOMAIN="" / TURN_ALT_DOMAIN="" for one.
 DOMAIN="${DOMAIN:-sfu.limechat.org}"
+ALT_DOMAIN="${ALT_DOMAIN-sfu.limemessenger.com}"
 TURN_DOMAIN="${TURN_DOMAIN:-turn.limechat.org}"
+TURN_ALT_DOMAIN="${TURN_ALT_DOMAIN-turn.limemessenger.com}"
+# coturn's certificate lineage (infra/turn/setup.sh): one certificate for both turn names, named for the first.
+TURN_CERT="${TURN_CERT:-turn.limemessenger.com}"
 EMAIL="${EMAIL:-shem@limechat.org}"
 LIVEKIT_VERSION=1.13.9
 SHA256_AMD64=0b7fa208b662d09cfdeae8c06cf4c481aead0556086558b48250501e2e2d6e20
@@ -123,12 +128,12 @@ cat > /etc/caddy/Caddyfile <<CADDY
 	email $EMAIL
 }
 
-$DOMAIN {
+$DOMAIN${ALT_DOMAIN:+, $ALT_DOMAIN} {
 	reverse_proxy 127.0.0.1:7880
 }
 
-# coturn's certificate is renewed by certbot ("webroot"); Caddy only serves the challenge file.
-http://$TURN_DOMAIN {
+# coturn's certificate is renewed by certbot ("webroot"); Caddy only serves the challenge file, for both turn names.
+http://$TURN_DOMAIN${TURN_ALT_DOMAIN:+, http://$TURN_ALT_DOMAIN} {
 	handle /.well-known/acme-challenge/* {
 		root * $ACME_ROOT
 		file_server
@@ -139,20 +144,21 @@ CADDY
 systemctl enable caddy >/dev/null 2>&1
 systemctl restart caddy
 
-# --- coturn's certificate: standalone (needs port 80 to itself) -> webroot (Caddy answers on 80)
-RENEWAL="/etc/letsencrypt/renewal/$TURN_DOMAIN.conf"
-if [ -f "$RENEWAL" ] && grep -q '^authenticator = standalone' "$RENEWAL"; then
-  certbot reconfigure --non-interactive --cert-name "$TURN_DOMAIN" --authenticator webroot --webroot-path "$ACME_ROOT" >/dev/null
-fi
-if [ -f "$RENEWAL" ]; then
-  certbot renew --dry-run --cert-name "$TURN_DOMAIN" >/dev/null 2>&1 \
-    && echo "coturn's certificate renewal works through Caddy (dry run passed)" \
-    || { echo "WARNING: the dry-run renewal of $TURN_DOMAIN failed: check 'certbot renew --dry-run'" >&2; exit 1; }
-fi
+# --- coturn's certificate(s): standalone (needs port 80 to itself) -> webroot (Caddy answers on 80). Both lineages, the old one and the shared one.
+for CERT in "$TURN_DOMAIN" "$TURN_CERT"; do
+  RENEWAL="/etc/letsencrypt/renewal/$CERT.conf"
+  [ -f "$RENEWAL" ] || continue
+  if grep -q '^authenticator = standalone' "$RENEWAL"; then
+    certbot reconfigure --non-interactive --cert-name "$CERT" --authenticator webroot --webroot-path "$ACME_ROOT" >/dev/null
+  fi
+  certbot renew --dry-run --cert-name "$CERT" >/dev/null 2>&1 \
+    && echo "coturn's certificate $CERT renews through Caddy (dry run passed)" \
+    || { echo "WARNING: the dry-run renewal of $CERT failed: check 'certbot renew --dry-run'" >&2; exit 1; }
+done
 
 systemctl daemon-reload
 systemctl enable lime-sfu >/dev/null 2>&1
 systemctl restart lime-sfu
 sleep 3
-systemctl is-active --quiet lime-sfu && echo "LiveKit $LIVEKIT_VERSION is running for $DOMAIN (media $MEDIA_MIN-$MEDIA_MAX/udp, $TCP_PORT/tcp)" \
+systemctl is-active --quiet lime-sfu && echo "LiveKit $LIVEKIT_VERSION is running for $DOMAIN${ALT_DOMAIN:+ and $ALT_DOMAIN} (media $MEDIA_MIN-$MEDIA_MAX/udp, $TCP_PORT/tcp)" \
   || { systemctl status lime-sfu --no-pager | tail -20; exit 1; }

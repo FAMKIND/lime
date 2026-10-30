@@ -9009,3 +9009,24 @@ Jam in a narrow iPad window. **Brief:** LIME-267. iOS only.
 - **Gate (iPad, phone-sized window):** writer rows fully visible, a video card fits, the invitations are one row, the pills sit under the header.
 
 - **Installed (264, 267):** all three, the 13 mini, the iPad and Jean's 12 mini.
+
+## LIME-172a
+
+The call server answers to both names. **Brief:** LIME-172a (the user's go, typed in this window, 2026-10-30). No app change, no Supabase change; the live app is unaffected (it still uses `turn.`/`sfu.limechat.org`).
+
+- **Repo:** `infra/sfu/setup.sh`: Caddy serves `sfu.limechat.org, sfu.limemessenger.com` (one block) and the ACME challenge for both `http://turn.*` names; renewal handling covers both certificate lineages. `infra/turn/setup.sh`: one certificate, lineage `turn.limemessenger.com`, covering both names (`ALT_DOMAIN`, default `turn.limechat.org`, `""` for one); webroot through Caddy when Caddy is there, standalone on a fresh server; the deploy hook points at the new lineage. READMEs updated.
+- **On `lime-turn-1`:** backup of the Caddyfile, turnserver.conf, renewal hook and renewal configs in `/root/lime-172a-backup/` (rollback = copy back, `systemctl restart caddy coturn`). Ran `infra/sfu/setup.sh`, then `infra/turn/setup.sh`: a new certificate for `turn.limemessenger.com` + `turn.limechat.org` (expires 2027-01-28); coturn restarted once. The old `turn.limechat.org` lineage is still there (renews through the same hook); delete it with `certbot delete --cert-name turn.limechat.org` once 172b is done.
+- **Four-hostname check:**
+
+| Name | Check | Result |
+|---|---|---|
+| `turn.limechat.org:5349` | openssl s_client | Verification OK; cert names `turn.limechat.org`, `turn.limemessenger.com` |
+| `turn.limemessenger.com:5349` | openssl s_client | Verification OK; same certificate |
+| `sfu.limechat.org:443` | openssl + curl | Verification OK; names `sfu.limechat.org`; `https://` 200 |
+| `sfu.limemessenger.com:443` | openssl + curl | Verification OK; names `sfu.limemessenger.com`; `https://` 200 |
+| both `turn.*` on :80 | curl `/.well-known/acme-challenge/x` | 404 (Caddy answers, as designed) |
+
+- **`certbot renew --dry-run`:** both lineages succeed. coturn, caddy and lime-sfu are active.
+- **Calls (no phones used):** a TURN allocation with a real time-limited credential through **both** names (UDP/TCP: 0 % loss). A LiveKit room through **both** names (`lk load-test`, 1 video + 1 audio publisher, 1 subscriber, 12 s): 2/2 tracks, about 980 kbps, 0 % loss each. `turnutils_uclient -S` (TLS) prints an OpenSSL "internal error" for both names alike; the TLS certificate itself verifies with openssl on both, so I take it as that tool's quirk, not the server's; please make the phone call to confirm.
+- **Not done (by design):** the app, the Supabase secrets and the invite site are 172b's.
+- **Gate:** the table above; **a call between two phones still connects** (a 1:1 call through TURN and a group call on the current limechat.org names): please make one.

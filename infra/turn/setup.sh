@@ -3,13 +3,16 @@
 #
 #   ssh root@<server> 'bash -s' < infra/turn/setup.sh
 #
-# What it does: installs coturn and certbot; gets a TLS certificate for $DOMAIN (the A record must already point here);
+# What it does: installs coturn and certbot; gets a TLS certificate for $DOMAIN and $ALT_DOMAIN (the A records must already point here);
 # writes /etc/turnserver.conf with time-limited REST credentials (`use-auth-secret`); opens the firewall; starts coturn.
 # The shared secret is created once, at /etc/lime-turn/secret (root only, never printed). Supabase's `turn-credentials`
 # function needs the same value (see infra/turn/README.md for how to copy it without it appearing anywhere).
 set -euo pipefail
 
-DOMAIN="${DOMAIN:-turn.limechat.org}"
+# One certificate, one lineage named for DOMAIN, covering both names while lime moves to limemessenger.com (LIME-172a); ALT_DOMAIN="" for one name.
+DOMAIN="${DOMAIN:-turn.limemessenger.com}"
+ALT_DOMAIN="${ALT_DOMAIN-turn.limechat.org}"
+ACME_ROOT=/var/lib/lime-acme   # Caddy's challenge folder (infra/sfu/setup.sh)
 EMAIL="${EMAIL:-shem@limechat.org}"
 RELAY_MIN=49152
 RELAY_MAX=49999
@@ -39,10 +42,13 @@ ufw allow ${RELAY_MIN}:${RELAY_MAX}/udp >/dev/null
 ufw --force enable >/dev/null
 
 # --- the certificate
-if [ ! -d "/etc/letsencrypt/live/$DOMAIN" ]; then
-  certbot certonly --standalone --non-interactive --agree-tos -m "$EMAIL" -d "$DOMAIN"
-fi
-# coturn runs as an unprivileged user: it gets its own readable copy of the certificate, refreshed on every renewal.
+# Where Caddy owns port 80 (infra/sfu/setup.sh) the challenge goes through it ("webroot"); on a fresh server certbot has port 80 to itself ("standalone").
+# Already covering every name: certbot keeps it. Missing one: it is expanded.
+NAMES=(-d "$DOMAIN"); [ -z "$ALT_DOMAIN" ] || NAMES+=(-d "$ALT_DOMAIN")
+if [ -d "$ACME_ROOT" ] && systemctl is-active --quiet caddy; then METHOD=(--webroot -w "$ACME_ROOT"); else METHOD=(--standalone); fi
+certbot certonly "${METHOD[@]}" --non-interactive --agree-tos -m "$EMAIL" --cert-name "$DOMAIN" --expand "${NAMES[@]}"
+# coturn runs as an unprivileged user: it gets its own readable copy of the certificate, refreshed on every renewal (any lineage: the hook is shared,
+# so the old turn.limechat.org lineage, until it is deleted, renews into the same copy).
 install -d -m 750 -o root -g turnserver /etc/lime-turn/tls
 cat > /etc/letsencrypt/renewal-hooks/deploy/lime-turn.sh <<HOOK
 #!/bin/sh

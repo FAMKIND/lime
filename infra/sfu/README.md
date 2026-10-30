@@ -5,8 +5,8 @@ The media is **end-to-end encrypted by the phones** (a key per sender, sent over
 server and Caddy only ever see ciphertext, IP addresses, timing, packet sizes and how many people are in a room: never media, never names.
 1:1 calls do not use this server (they are phone to phone, through the TURN relay when needed: `infra/turn/`).
 
-- **Server:** today it shares Hetzner Cloud CPX11 `lime-turn-1` (Ashburn, Ubuntu 26.04, `178.156.199.1`) with coturn. Name: `sfu.limechat.org`
-  (an A record in deSEC). Moving to its own server later is a rerun of `setup.sh` plus one DNS change (see Cost and growth).
+- **Server:** today it shares Hetzner Cloud CPX11 `lime-turn-1` (Ashburn, Ubuntu 26.04, `178.156.199.1`) with coturn. Names: `sfu.limechat.org` and `sfu.limemessenger.com`
+  (A records in deSEC; LIME-172a: both answer while lime moves to limemessenger.com; `ALT_DOMAIN=""` for one). Moving to its own server later is a rerun of `setup.sh` plus one DNS change (see Cost and growth).
 - **Ports:** 443 TCP (HTTPS and WSS, Caddy), 7881 TCP (ICE over TCP for networks that block UDP), 50000-60000 UDP (media; coturn's relay
   range 49152-49999 does not overlap), 80 TCP (Caddy: certificates), 22. LiveKit's own signalling port (7880) listens on `127.0.0.1` only.
 - **What runs:** `lime-sfu.service` (LiveKit, pinned version, checksum verified, runs as its own user) and `caddy.service`.
@@ -26,7 +26,7 @@ ssh root@178.156.199.1 'bash -s' < infra/sfu/setup.sh
 
 It installs Caddy and a pinned LiveKit (SHA-256 checked), writes `/etc/lime-sfu/livekit.yaml`, the Caddyfile and the systemd unit, opens ufw,
 and **switches coturn's certificate renewal from certbot "standalone" to "webroot"** (Caddy now owns ports 80 and 443; it serves only the
-challenge path for `turn.limechat.org`), then proves it with `certbot renew --dry-run`. The API key and secret are created **once**
+challenge path for both `turn.` names), then proves it with `certbot renew --dry-run`. The API key and secret are created **once**
 in `/etc/lime-sfu/` (root only, never printed). Re-running keeps them. The A record for `sfu.limechat.org` must already point here (Caddy gets
 its own certificate for that name); if a Hetzner Cloud Firewall is attached to the server, it must allow 443/tcp, 7881/tcp and 50000-60000/udp.
 
@@ -49,7 +49,7 @@ Until all three are set the function answers `503 not_configured` and the app sa
 - Certificate and signalling: `curl -sS -o /dev/null -w '%{http_code}\n' https://sfu.limechat.org/` (LiveKit answers `200` with `OK` on its root).
 - The service: `ssh root@178.156.199.1 'systemctl is-active lime-sfu caddy; ufw status | grep -E "443|7881|50000"'`
 - Reachable from outside: `nc -zv sfu.limechat.org 443`, `nc -zv sfu.limechat.org 7881`, and a UDP media test with `lk load-test` (below).
-- coturn's certificate still renews: `ssh root@178.156.199.1 'certbot renew --dry-run --cert-name turn.limechat.org'`
+- coturn's certificate still renews: `ssh root@178.156.199.1 'certbot renew --dry-run'`
 - A load test, from a machine that is **not** the server (`brew install livekit-cli`; keep the key and secret in shell variables, never on the command line history):
   `lk load-test --url wss://sfu.limechat.org --api-key "$K" --api-secret "$S" --room loadtest-6 --video-publishers 6 --audio-publishers 6 --subscribers 6 --video-resolution high --duration 75s`
   and watch the server with `ssh root@178.156.199.1 'top -b -n1 | head -15; ss -s'` while it runs. (Load-test rooms are plain, unencrypted
