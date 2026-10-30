@@ -205,6 +205,11 @@ fn forget_jam_picture(conn: &rusqlite::Connection, jam_id: &str) -> Result<(), S
     Ok(())
 }
 
+fn forget_jam_slot(conn: &rusqlite::Connection, jam_id: &str, slot: &str) -> Result<(), StoreError> {
+    conn.execute("DELETE FROM extras WHERE user_id = ?1 AND slot = ?2", rusqlite::params![jam_picture_owner(jam_id), slot]).map_err(crate::store::db_err)?;
+    Ok(())
+}
+
 /// The largest file in a jam post (the server's blob cap is 25 MiB, and the sealed form is a little larger).
 const MAX_ATTACHMENT_BYTES: usize = 24 * 1024 * 1024;
 
@@ -1239,6 +1244,103 @@ impl LimeStore {
         }
         self.with_conn(|conn| extras::save_cached(conn, &owner, JAM_PICTURE, &bytes, "public", version, now_ms()))?;
         Ok(true)
+    }
+
+    /// A band's cover (LIME-258), if this phone holds one: the JPEG bytes (the same 1 MiB image as a picture, framed for the hero).
+    pub fn jam_cover(&self, jam_id: String) -> Result<Option<Vec<u8>>, StoreError> {
+        self.with_conn(|conn| Ok(extras::cached(conn, &jam_picture_owner(&jam_id), extras::JAM_COVER)?.map(|c| c.bytes).filter(|b| !b.is_empty())))
+    }
+
+    /// A band's colour (0 to 7) as this phone holds it; `None` means the default (from the jam id).
+    pub fn jam_tone(&self, jam_id: String) -> Result<Option<i64>, StoreError> {
+        self.with_conn(|conn| Ok(extras::cached(conn, &jam_picture_owner(&jam_id), extras::JAM_TONE)?.and_then(|c| c.bytes.first().copied()).map(i64::from)))
+    }
+
+    /// Puts a cover (a JPEG of at most 1 MiB) on MY band's page. The server and any signed-in teacher can see it, like the title and picture.
+    pub fn set_jam_cover(&self, transport: Arc<dyn Transport>, auth_token: String, jam_id: String, jpeg: Vec<u8>) -> Result<(), StoreError> {
+        if jpeg.is_empty() || jpeg.len() > extras::max_bytes(extras::JAM_COVER) {
+            return Err(StoreError::Rejected);
+        }
+        let (status, body) = call(&transport, Some(&auth_token), "jam-page", &json!({ "action": "cover_put", "jam_id": jam_id, "size": jpeg.len() }))?;
+        check(status)?;
+        let url = body.get("url").and_then(Value::as_str).ok_or(StoreError::BadMessage)?;
+        let (put, _) = raw(&transport, "PUT", url, Some("image/jpeg"), jpeg.clone())?;
+        check(put)?;
+        let (status, body) = call(&transport, Some(&auth_token), "jam-page", &json!({ "action": "cover_commit", "jam_id": jam_id }))?;
+        check(status)?;
+        let version = body.get("version").and_then(Value::as_i64).unwrap_or(0);
+        self.with_conn(|conn| extras::save_cached(conn, &jam_picture_owner(&jam_id), extras::JAM_COVER, &jpeg, "public", version, now_ms()))
+    }
+
+    /// Takes the cover off MY band's page.
+    pub fn remove_jam_cover(&self, transport: Arc<dyn Transport>, auth_token: String, jam_id: String) -> Result<(), StoreError> {
+        let (status, _) = call(&transport, Some(&auth_token), "jam-page", &json!({ "action": "cover_remove", "jam_id": jam_id }))?;
+        if status != 404 {
+            check(status)?;
+        }
+        self.with_conn(|conn| forget_jam_slot(conn, &jam_id, extras::JAM_COVER))
+    }
+
+    /// Sets MY band's colour (0 to 7), or back to the default with `None`.
+    pub fn set_jam_tone(&self, transport: Arc<dyn Transport>, auth_token: String, jam_id: String, tone: Option<i64>) -> Result<(), StoreError> {
+        if tone.is_some_and(|t| !(0..=7).contains(&t)) {
+            return Err(StoreError::Rejected);
+        }
+        let (status, _) = call(&transport, Some(&auth_token), "jam-page", &json!({ "action": "tone_set", "jam_id": jam_id, "tone": tone }))?;
+        check(status)?;
+        self.with_conn(|conn| match tone {
+            Some(t) => extras::save_cached(conn, &jam_picture_owner(&jam_id), extras::JAM_TONE, &[t as u8], "public", 1, now_ms()),
+            None => forget_jam_slot(conn, &jam_id, extras::JAM_TONE),
+        })
+    }
+
+    /// Looks at a band's public page for its colour and cover and keeps what this phone holds in step: the colour is stored, the cover downloaded when its
+    /// version changed and forgotten when the page has none. `true` when what this phone holds changed. A network failure keeps what is held.
+    pub fn refresh_jam_style(&self, transport: Arc<dyn Transport>, auth_token: String, jam_id: String) -> Result<bool, StoreError> {
+        let owner = jam_picture_owner(&jam_id);
+        let (status, body) = call(&transport, Some(&auth_token), "jam-page", &json!({ "action": "get", "jam_id": jam_id }))?;
+        if status == 404 || status == 410 {
+            return Ok(false);
+        }
+        check(status)?;
+        let jam = body.get("jam").ok_or(StoreError::BadMessage)?;
+        let mut changed = false;
+        let tone = jam.get("tone").and_then(Value::as_i64).filter(|t| (0..=7).contains(t));
+        let held_tone = self.with_conn(|conn| Ok(extras::cached(conn, &owner, extras::JAM_TONE)?.and_then(|c| c.bytes.first().copied()).map(i64::from)))?;
+        if tone != held_tone {
+            self.with_conn(|conn| match tone {
+                Some(t) => extras::save_cached(conn, &owner, extras::JAM_TONE, &[t as u8], "public", 1, now_ms()),
+                None => forget_jam_slot(conn, &jam_id, extras::JAM_TONE),
+            })?;
+            changed = true;
+        }
+        let held = self.with_conn(|conn| extras::cached(conn, &owner, extras::JAM_COVER))?;
+        match jam.get("cover_version").and_then(Value::as_i64) {
+            None => {
+                if held.as_ref().is_some_and(|c| !c.bytes.is_empty()) {
+                    self.with_conn(|conn| forget_jam_slot(conn, &jam_id, extras::JAM_COVER))?;
+                    changed = true;
+                }
+            }
+            Some(version) => {
+                if held.as_ref().is_some_and(|c| c.version == version && !c.bytes.is_empty()) {
+                    return Ok(changed);
+                }
+                let (status, body) = call(&transport, Some(&auth_token), "jam-page", &json!({ "action": "cover_get", "jam_id": jam_id }))?;
+                if status == 404 || status == 410 {
+                    return Ok(changed);
+                }
+                check(status)?;
+                let url = body.get("url").and_then(Value::as_str).ok_or(StoreError::BadMessage)?;
+                let (got, bytes) = raw(&transport, "GET", url, None, Vec::new())?;
+                check(got)?;
+                if !bytes.is_empty() && bytes.len() <= extras::max_bytes(extras::JAM_COVER) {
+                    self.with_conn(|conn| extras::save_cached(conn, &owner, extras::JAM_COVER, &bytes, "public", version, now_ms()))?;
+                    changed = true;
+                }
+            }
+        }
+        Ok(changed)
     }
 
     /// How much of what is queued for this jam has gone ("sending to 412 of 1,000"). Both zero when nothing waits.

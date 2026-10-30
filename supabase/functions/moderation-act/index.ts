@@ -45,7 +45,8 @@ Deno.serve(handler(async (req) => {
       needTarget();
       // A taken-down page loses its public picture with the rest of what shows (LIME-194).
       await removeObject(AVATAR_BUCKET, `jam-${target}.jpg`);
-      const { error } = await db.from("jams").update({ taken_down_at: new Date().toISOString(), picture_version: null }).eq("jam_id", target);
+      await removeObject(AVATAR_BUCKET, `jam-cover-${target}.jpg`);
+      const { error } = await db.from("jams").update({ taken_down_at: new Date().toISOString(), picture_version: null, cover_version: null }).eq("jam_id", target);
       if (error) throw new HttpError(500, "internal");
       break;
     }

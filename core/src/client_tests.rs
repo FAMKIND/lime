@@ -5462,6 +5462,42 @@ fn a_page_is_found_by_its_writer_and_not_once_the_jam_ended() {
 }
 
 #[test]
+fn a_bands_colour_and_cover_are_set_by_its_writer_seen_by_a_teacher_refetched_on_a_new_version_and_gone_when_it_ends() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let jam = new_jam(&alice);
+    deliver(&alice, &transport);
+    let look = |p: &Party| p.store.refresh_jam_style(transport.clone(), p.token.clone(), jam.clone()).unwrap();
+    assert!(!look(&bob), "nothing yet");
+    assert_eq!((bob.store.jam_tone(jam.clone()).unwrap(), bob.store.jam_cover(jam.clone()).unwrap()), (None, None));
+
+    // Out of range or too big is refused before anything is sent.
+    assert!(alice.store.set_jam_tone(transport.clone(), alice.token.clone(), jam.clone(), Some(8)).is_err());
+    assert!(alice.store.set_jam_cover(transport.clone(), alice.token.clone(), jam.clone(), vec![0; 1024 * 1024 + 1]).is_err());
+
+    alice.store.set_jam_tone(transport.clone(), alice.token.clone(), jam.clone(), Some(5)).unwrap();
+    alice.store.set_jam_cover(transport.clone(), alice.token.clone(), jam.clone(), vec![1, 2, 3]).unwrap();
+    assert_eq!((alice.store.jam_tone(jam.clone()).unwrap(), alice.store.jam_cover(jam.clone()).unwrap()), (Some(5), Some(vec![1, 2, 3])), "the writer holds both at once");
+    assert!(look(&bob));
+    assert_eq!((bob.store.jam_tone(jam.clone()).unwrap(), bob.store.jam_cover(jam.clone()).unwrap()), (Some(5), Some(vec![1, 2, 3])));
+    assert!(!look(&bob), "same version: unchanged");
+
+    // A new cover is a new version, a new colour is noticed.
+    alice.store.set_jam_cover(transport.clone(), alice.token.clone(), jam.clone(), vec![9, 9]).unwrap();
+    alice.store.set_jam_tone(transport.clone(), alice.token.clone(), jam.clone(), Some(0)).unwrap();
+    assert!(look(&bob));
+    assert_eq!((bob.store.jam_tone(jam.clone()).unwrap(), bob.store.jam_cover(jam.clone()).unwrap()), (Some(0), Some(vec![9, 9])));
+
+    // Removed: the reader forgets the cover; the default colour again.
+    alice.store.remove_jam_cover(transport.clone(), alice.token.clone(), jam.clone()).unwrap();
+    alice.store.set_jam_tone(transport.clone(), alice.token.clone(), jam.clone(), None).unwrap();
+    assert_eq!((alice.store.jam_tone(jam.clone()).unwrap(), alice.store.jam_cover(jam.clone()).unwrap()), (None, None));
+    assert!(look(&bob));
+    assert_eq!((bob.store.jam_tone(jam.clone()).unwrap(), bob.store.jam_cover(jam.clone()).unwrap()), (None, None));
+}
+
+#[test]
 fn a_jams_picture_is_set_by_its_writer_seen_by_a_teacher_refetched_on_a_new_version_and_gone_when_the_jam_ends() {
     let server = FakeServer::new();
     let (alice, transport) = party(&server, "alice", 1);

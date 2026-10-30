@@ -19,6 +19,9 @@ pub(crate) const BACKGROUND: &str = "background";
 pub(crate) const BACKGROUND_VIDEO: &str = "background_video";
 /// A jam page's public picture (LIME-194), cached here under the owner `jam:<jam_id>`; never a profile slot, so `is_slot` does not accept it.
 pub(crate) const JAM_PICTURE: &str = "jam_picture";
+/// A band's cover (LIME-258), cached like its picture, and its colour (one byte, 0 to 7; no row = the default).
+pub(crate) const JAM_COVER: &str = "jam_cover";
+pub(crate) const JAM_TONE: &str = "jam_tone";
 const NONCE_BYTES: usize = 12;
 
 pub(crate) fn is_slot(slot: &str) -> bool {

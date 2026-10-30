@@ -130,6 +130,9 @@ final class ConversationStore {
     var jamEngagement = 0
     /// When each jam's public picture was last looked at on the server (LIME-194), so a feed does not ask again and again.
     var jamPictureChecked: [String: Date] = [:]
+    /// A band's chosen colour (0 to 7) and when its style (colour, cover) was last looked at (LIME-258).
+    var jamTones: [String: Int] = [:]
+    var jamStyleChecked: [String: Date] = [:]
     var demoEngagement = DemoEngagement()
     var jamSubscribers: [String: [JamSubscriberInfo]] = [:]
     var jamLastKick = Date.distantPast

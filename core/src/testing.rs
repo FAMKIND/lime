@@ -63,6 +63,9 @@ pub(crate) struct ServerState {
     pub jam_seq: HashMap<String, usize>,
     /// jam id to the version of its public picture (LIME-194); the bytes are the object `public-avatars/jam-<id>.jpg`
     pub jam_pictures: HashMap<String, i64>,
+    /// jam id to the version of its public cover, and to its colour (LIME-258)
+    pub jam_covers: HashMap<String, i64>,
+    pub jam_tones: HashMap<String, i64>,
     /// jam id to its published subscriber count
     pub jam_subscribers: HashMap<String, i64>,
     /// `jam-blob-get` requests that carried a user token (there must be none) and how many were made
@@ -701,6 +704,20 @@ impl FakeServer {
                     None => respond(404, json!({ "error": "not_found" })),
                 }
             }
+            "jam-page" if body.get("action").and_then(Value::as_str) == Some("cover_get") => {
+                let jam = text("jam_id");
+                match state.jam_covers.get(&jam) {
+                    Some(version) => respond(200, json!({ "url": format!("/storage/v1/object/sign/public-avatars/jam-cover-{jam}.jpg?token=t"), "version": version })),
+                    None => respond(404, json!({ "error": "not_found" })),
+                }
+            }
+            "jam-page" if body.get("action").and_then(Value::as_str) == Some("get") => {
+                let jam = text("jam_id");
+                match state.jam_pages.get(&jam) {
+                    Some((owner, title, count, false)) => respond(200, json!({ "jam": { "jam_id": jam, "writer_id": owner, "title": title, "about": "", "topics": [], "post_count": count, "picture_version": state.jam_pictures.get(&jam), "tone": state.jam_tones.get(&jam), "cover_version": state.jam_covers.get(&jam) } })),
+                    _ => respond(404, json!({ "error": "not_found" })),
+                }
+            }
             "jam-page" => {
                 let jam = text("jam_id");
                 let existing = state.jam_pages.get(&jam).cloned();
@@ -731,6 +748,32 @@ impl FakeServer {
                         state.jam_pictures.insert(jam, version);
                         respond(200, json!({ "version": version }))
                     }
+                    "tone_set" => {
+                        match body.get("tone").and_then(Value::as_i64) {
+                            Some(t) if (0..=7).contains(&t) => state.jam_tones.insert(jam, t),
+                            Some(_) => return respond(400, json!({ "error": "bad_request" })),
+                            None => state.jam_tones.remove(&jam),
+                        };
+                        respond(200, json!({ "ok": true }))
+                    }
+                    "cover_put" => match existing {
+                        Some((_, _, _, false)) => respond(200, json!({ "url": format!("/storage/v1/object/upload/sign/public-avatars/jam-cover-{jam}.jpg?token=t") })),
+                        _ => respond(404, json!({ "error": "not_found" })),
+                    },
+                    "cover_commit" => {
+                        if !state.objects.contains_key(&format!("public-avatars/jam-cover-{jam}.jpg")) {
+                            return respond(409, json!({ "error": "not_uploaded" }));
+                        }
+                        state.clock += 1;
+                        let version = state.clock;
+                        state.jam_covers.insert(jam, version);
+                        respond(200, json!({ "version": version }))
+                    }
+                    "cover_remove" => {
+                        state.objects.remove(&format!("public-avatars/jam-cover-{jam}.jpg"));
+                        state.jam_covers.remove(&jam);
+                        respond(200, json!({ "ok": true }))
+                    }
                     "picture_remove" => {
                         state.objects.remove(&format!("public-avatars/jam-{jam}.jpg"));
                         state.jam_pictures.remove(&jam);
@@ -742,6 +785,8 @@ impl FakeServer {
                         }
                         state.objects.remove(&format!("public-avatars/jam-{jam}.jpg"));
                         state.jam_pictures.remove(&jam);
+                        state.objects.remove(&format!("public-avatars/jam-cover-{jam}.jpg"));
+                        state.jam_covers.remove(&jam);
                         let gone: Vec<String> = state.jam_blobs.iter().filter(|(_, j)| **j == jam).map(|(b, _)| b.clone()).collect();
                         for blob in &gone {
                             state.jam_blobs.remove(blob);

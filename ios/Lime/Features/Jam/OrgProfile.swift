@@ -175,6 +175,7 @@ struct OrgProfileView: View {
     @State private var editing: Bool
     @State private var fieldSheet: OrgField?
     @State private var pictureSheet = false
+    @State private var coverSheet = false
     @State private var topInset: CGFloat = 0
     @State private var windowHeight: CGFloat = 0
 
@@ -224,6 +225,8 @@ struct OrgProfileView: View {
         .sheet(item: $reading) { route in NavigationStack { JamPostView(postID: route.postID).toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { reading = nil } } } } }
         .sheet(item: $fieldSheet) { OrgFieldSheet(page: page, field: $0) }
         .sheet(isPresented: $pictureSheet) { OrgPictureSheet(jamId: page.jamId, title: page.title) }
+        .sheet(isPresented: $coverSheet) { OrgCoverSheet(jamId: page.jamId) }
+        .task(id: page.jamId) { await store.ensureJamStyle(page.jamId) }
         .orgActions($action, closesPageAfterEnd: true)
         .reportSheet($reporting)
         .confirmSheet("Unsubscribe from \(page.title)?", isPresented: $confirmingUnsubscribe) {
@@ -244,7 +247,7 @@ struct OrgProfileView: View {
     @ToolbarContentBuilder
     private var legacyItems: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarTrailing) {
-            if editingNow { doneButton } else {
+            if editingNow { editCoverButton; doneButton } else {
                 if isMe { editButton }
                 moreMenu
             }
@@ -257,6 +260,8 @@ struct OrgProfileView: View {
     private var modernItems: some ToolbarContent {
         if editingNow {
             CircleToolbarItem(placement: .topBarLeading) { backToOrg }
+            ToolbarItem(placement: .topBarTrailing) { editCoverButton }
+            ToolbarSpacer(.fixed, placement: .topBarTrailing)
             ToolbarItem(placement: .topBarTrailing) { doneButton }
         } else {
             if isMe {
@@ -269,6 +274,11 @@ struct OrgProfileView: View {
 
     private var editButton: some View {
         Button("Edit") { editing = true }.accessibilityLabel("Edit band").accessibilityIdentifier("jam-edit-page")
+    }
+
+    /// The band's cover and colour, in a small sheet (LIME-258).
+    private var editCoverButton: some View {
+        Button("Edit Cover") { coverSheet = true }.accessibilityLabel("Edit cover").accessibilityIdentifier("org-edit-cover")
     }
 
     private var doneButton: some View {
@@ -302,7 +312,8 @@ struct OrgProfileView: View {
         let screen = windowHeight > 0 ? windowHeight : UIScreen.main.bounds.height
         let inset = topInset > 0 ? topInset : 100
         let authors = store.orgAuthors(page)
-        let shown = HeroDefault.org(dark: colorScheme == .dark)
+        let cover = AvatarCache.shared.image(for: ConversationStore.jamCoverKey(page.jamId))
+        let shown = HeroDefault.band(tone: store.jamTone(page.jamId), picture: AvatarCache.shared.image(for: ConversationStore.jamPictureKey(page.jamId)), id: page.jamId, dark: colorScheme == .dark)
         let sides = windowSideInsets
         return VStack(spacing: 0) {
             VStack(spacing: 6) {
@@ -338,8 +349,9 @@ struct OrgProfileView: View {
             }
         }
         .frame(maxWidth: .infinity, minHeight: HeroShape.blockHeight(screen: screen, inset: inset))
+        .overlay { if store.isDemo { Color.clear.accessibilityIdentifier("org-tone-\(store.jamTone(page.jamId))") } }
         .background(alignment: .top) {
-            ProfileHeroBackground(image: shown.image, cacheKey: shown.key, isDefault: true, screenHeight: screen, exposedForTests: store.isDemo)
+            ProfileHeroBackground(image: cover ?? shown.image, cacheKey: cover.map { "band-cover-\(page.jamId)-\(ObjectIdentifier($0).hashValue)" } ?? shown.key, isDefault: cover == nil, screenHeight: screen, exposedForTests: store.isDemo)
                 .padding(.top, -inset).padding(.bottom, -8).padding(.leading, -(16 + sides.leading)).padding(.trailing, -(16 + sides.trailing))
         }
     }

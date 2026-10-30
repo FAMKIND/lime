@@ -213,6 +213,58 @@ Deno.test("jam-page by_writer: the oldest live jam is the writer's own, the rest
   });
 });
 
+// LIME-258: a band's colour and cover, public with the page: tone 0 to 7 kept across updates; cover put/commit/get/remove, writer only, size limits, gone when the jam ends.
+Deno.test("a jam's colour and cover: tone range and kept, cover put, commit, get, by writer, only the writer, remove, and ending the jam deletes it", opts, async () => {
+  await withUsers(2, async ([writer, other]) => {
+    const jamId = crypto.randomUUID();
+    const base = { action: "set", jam_id: jamId, title: "Conscious collective", about: "", topics: [], post_count: 0 };
+    const tone = (value: unknown, who = writer) => call("jam-page", who.token, { action: "tone_set", jam_id: jamId, tone: value });
+    assertEquals((await call("jam-page", writer.token, base)).status, 200);
+    assertEquals((await call("jam-page", other.token, { action: "get", jam_id: jamId })).body.jam.tone, null, "no colour yet");
+    assertEquals((await tone(8)).status, 400);
+    assertEquals((await tone(-1)).status, 400);
+    assertEquals((await tone(2.5)).status, 400);
+    assertEquals((await tone(5, other)).status, 409, "only the writer");
+    assertEquals((await tone(5)).status, 200);
+    assertEquals((await call("jam-page", other.token, { action: "get", jam_id: jamId })).body.jam.tone, 5);
+    assertEquals((await call("jam-page", writer.token, { ...base, about: "x" })).status, 200);
+    assertEquals((await call("jam-page", other.token, { action: "by_writer", writer_id: writer.id })).body.jam.tone, 5, "an update of the page keeps the colour");
+    assertEquals((await tone(null)).status, 200);
+    assertEquals((await call("jam-page", other.token, { action: "get", jam_id: jamId })).body.jam.tone, null, "null: the default again");
+    // No cover yet; only the writer puts one; 1 byte to 1 MiB.
+    assertEquals((await call("jam-page", other.token, { action: "cover_get", jam_id: jamId })).status, 404);
+    assertEquals((await call("jam-page", other.token, { action: "get", jam_id: jamId })).body.jam.cover_version, null);
+    assertEquals((await call("jam-page", other.token, { action: "cover_put", jam_id: jamId, size: 100 })).status, 409);
+    assertEquals((await call("jam-page", writer.token, { action: "cover_put", jam_id: jamId, size: 0 })).status, 400);
+    assertEquals((await call("jam-page", writer.token, { action: "cover_put", jam_id: jamId, size: 1024 * 1024 + 1 })).status, 400);
+    assertEquals((await call("jam-page", writer.token, { action: "cover_commit", jam_id: jamId })).status, 409, "commit before an upload");
+    const jpeg = randomBytes(5000);
+    const started = await call("jam-page", writer.token, { action: "cover_put", jam_id: jamId, size: jpeg.length });
+    assertEquals(started.status, 200, JSON.stringify(started.body));
+    assertEquals(await put(started.body.url, jpeg, "image/jpeg"), 200);
+    assertEquals((await call("jam-page", other.token, { action: "cover_commit", jam_id: jamId })).status, 409);
+    const committed = await call("jam-page", writer.token, { action: "cover_commit", jam_id: jamId });
+    assertEquals(committed.status, 200, JSON.stringify(committed.body));
+    assertEquals((await call("jam-page", other.token, { action: "get", jam_id: jamId })).body.jam.cover_version, committed.body.version);
+    assertEquals((await call("jam-page", other.token, { action: "by_writer", writer_id: writer.id })).body.jam.cover_version, committed.body.version);
+    const got = await call("jam-page", other.token, { action: "cover_get", jam_id: jamId });
+    assertEquals(got.status, 200, JSON.stringify(got.body));
+    assertEquals((await download(got.body.url)).bytes, jpeg);
+    assertEquals((await call("jam-page", other.token, { action: "cover_remove", jam_id: jamId })).status, 409);
+    assertEquals((await call("jam-page", writer.token, { action: "cover_remove", jam_id: jamId })).status, 200);
+    assertEquals((await call("jam-page", other.token, { action: "cover_get", jam_id: jamId })).status, 404);
+    // Ending the jam deletes a new cover.
+    const again = await call("jam-page", writer.token, { action: "cover_put", jam_id: jamId, size: jpeg.length });
+    assertEquals(await put(again.body.url, jpeg, "image/jpeg"), 200);
+    assertEquals((await call("jam-page", writer.token, { action: "cover_commit", jam_id: jamId })).status, 200);
+    assertEquals((await call("jam-page", writer.token, { action: "end", jam_id: jamId })).status, 200);
+    assertEquals((await call("jam-page", other.token, { action: "cover_get", jam_id: jamId })).status, 404);
+    const { data } = await admin.storage.from("public-avatars").list("", { search: `jam-cover-${jamId}.jpg` });
+    assertEquals((data ?? []).length, 0);
+    assertEquals((await call("jam-page", writer.token, { action: "cover_put", jam_id: jamId, size: 100 })).status, 404);
+  });
+});
+
 // LIME-194: a picture for a jam, on its public page.
 Deno.test("a jam's picture: put, commit, get on the page and by writer, only the writer, size limits, remove, and ending the jam deletes it", opts, async () => {
   await withUsers(2, async ([writer, other]) => {

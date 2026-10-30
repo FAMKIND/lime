@@ -272,6 +272,15 @@ enum HeroDefault {
         return (made, key)
     }
 
+    /// A band's default hero (LIME-258): its picture blurred with its own tint, else a gradient of its colour.
+    static func band(tone: Int, picture: UIImage?, id: String, dark: Bool) -> (image: UIImage, key: String) {
+        let key = picture.map { "band-photo-\(id)-\(ObjectIdentifier($0).hashValue)" } ?? "band-tone-\(((tone % 8) + 8) % 8)-\(dark)"
+        if let hit = cache.object(forKey: key as NSString) { return (hit, key) }
+        let made = picture.map(blurred) ?? Self.tone(tone, dark: dark)
+        cache.setObject(made, forKey: key as NSString)
+        return (made, key)
+    }
+
     /// The photo, aspect-filled into the frame, blurred (radius about 40 at the real size: here a fifth of it, as this copy is a fifth the size) and dimmed.
     static func blurred(_ photo: UIImage) -> UIImage {
         let format = UIGraphicsImageRendererFormat.default()

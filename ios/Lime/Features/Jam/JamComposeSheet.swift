@@ -1203,12 +1203,12 @@ struct JamInitialTile: View {
                 Image(uiImage: picture).resizable().scaledToFill().frame(width: size, height: size)
                     .clipShape(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
             } else {
-                RoundedRectangle(cornerRadius: size * 0.28, style: .continuous).fill(Theme.accent.opacity(0.35))
+                RoundedRectangle(cornerRadius: size * 0.28, style: .continuous).fill(jamId.map { Theme.avatar(store.jamTone($0)) } ?? Theme.accent.opacity(0.35))
                 Text(String(title.trimmingCharacters(in: .whitespaces).prefix(1)).uppercased()).font(.system(size: size * 0.45, weight: .bold)).foregroundStyle(Theme.text)
             }
         }
         .frame(width: size, height: size)
-        .task(id: jamId) { if let jamId { await store.ensureJamPicture(jamId) } }
+        .task(id: jamId) { if let jamId { await store.ensureJamPicture(jamId); await store.ensureJamStyle(jamId) } }
     }
 }
 
