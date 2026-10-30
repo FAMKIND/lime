@@ -9126,3 +9126,5 @@ Groups heal after a contact's key change, and they can be added again. **Brief:*
 - **4. Band members group:** it is an ordinary group in the core, so the same code heals it; no separate test.
 - **Tests:** core 405 pass (2 new: a new phone gets nothing before the accept, then the group and every later message after it, while the others keep receiving; and a pre-update session record is healed by the next send). UI (demo): the Members note with its Open chat button for the one member, and New group listing the contact with "New key: accept first".
 - **Gate (13 mini, Jean, iPad as FAM):** accept FAM's new key on the 13 mini and Jean (if already accepted, skip); send in the shared group on each: the iPad should receive from then on and show the group; New group → FAM is listed.
+
+- **Installed (270):** all three, the 13 mini, the iPad and Jean's 12 mini.
