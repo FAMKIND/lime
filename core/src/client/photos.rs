@@ -278,8 +278,10 @@ impl LimeStore {
 
     fn refresh_photo_one(&self, transport: &Arc<dyn Transport>, token: &str, user: &str) -> Result<bool, StoreError> {
         let now = now_ms();
+        self.with_conn(|conn| photos::drop_profile_if_stale(conn, user).map(|_| ()))?;   // LIME-271b
         let held = self.with_conn(|conn| photos::cached(conn, user))?;
-        let had = held.as_ref().is_some_and(|c| !c.bytes.is_empty());
+        // Just forgotten: what the app shows is out of date even though nothing is held now.
+        let had = held.as_ref().is_some_and(|c| !c.bytes.is_empty()) | photos::take_forgotten(user);
 
         let (status, body) = call(transport, Some(token), "avatar", &json!({ "action": "get", "user_id": user }))?;
         if status == 200 {

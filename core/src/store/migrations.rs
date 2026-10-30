@@ -944,6 +944,11 @@ const MIGRATIONS: &[&str] = &[
          hlc         TEXT NOT NULL DEFAULT '',
          PRIMARY KEY (jam_id, series_id)
      );",
+    // LIME-271b: the identity (master key) each contact's profile key came with, so a key from before their keys changed is known to be stale.
+    "CREATE TABLE IF NOT EXISTS contact_profile_masters (
+         user_id    TEXT PRIMARY KEY NOT NULL,
+         master_key TEXT NOT NULL
+     );",
 ];
 
 /// The schema version this build writes.

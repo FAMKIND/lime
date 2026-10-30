@@ -1394,17 +1394,9 @@ impl LimeStore {
             return Err(StoreError::NoRecipientKeys);
         }
         self.with_conn(|conn| {
-            // Every phone we ever had a session with is gone from their list: they came back on new keys (perhaps accepted before this check
-            // existed). What we hold from the old phone, their profile key and its pictures, is stale (LIME-271).
-            let known: Vec<String> = {
-                let mut statement = conn.prepare("SELECT DISTINCT peer_device_id FROM olm_sessions WHERE peer_user_id = ?1").map_err(db_err)?;
-                let rows = statement.query_map(params![user_id], |r| r.get::<_, String>(0)).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
-                rows
-            };
-            if !known.is_empty() && !known.iter().any(|old| devices.iter().any(|d| &d.device_id == old)) {
-                crate::store::photos::forget_contact_profile(conn, user_id)?;
-            }
-            store_peer_devices(conn, user_id, &devices)
+            store_peer_devices(conn, user_id, &devices)?;
+            // A profile key from before their keys changed is dropped, whenever and in whichever build the new key was accepted (LIME-271b).
+            crate::store::photos::drop_profile_if_stale(conn, user_id).map(|_| ())
         })?;
         Ok(devices)
     }

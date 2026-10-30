@@ -98,12 +98,24 @@ pub(crate) fn rotate_key(conn: &Connection, now_ms: i64) -> Result<(), StoreErro
 
 // ---------------------------------------------------------------- contacts' profile keys
 
+/// People whose profile was just forgotten: their next refresh reports them as changed, so the app redraws the default (it keeps its own pictures).
+static FORGOTTEN: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+pub(crate) fn take_forgotten(user: &str) -> bool {
+    let mut list = FORGOTTEN.lock().unwrap_or_else(|e| e.into_inner());
+    let before = list.len();
+    list.retain(|u| u != user);
+    list.len() != before
+}
+
 /// A contact's keys changed (their account was signed in on a new phone): what this phone holds from their old phone is dropped (LIME-271): the
 /// profile key it held for them, and the photo, background, video and links it fetched with it. Their new phone shares a fresh key (or is asked
 /// for one), and everything is fetched again then. A stale key would keep finding the old phone's blobs, which still sit on the server.
 pub(crate) fn forget_contact_profile(conn: &Connection, user: &str) -> Result<(), StoreError> {
+    FORGOTTEN.lock().unwrap_or_else(|e| e.into_inner()).push(user.to_owned());
     for sql in [
         "DELETE FROM contact_profile_keys WHERE user_id = ?1",
+        "DELETE FROM contact_profile_masters WHERE user_id = ?1",
         "DELETE FROM photos WHERE user_id = ?1",
         "DELETE FROM extras WHERE user_id = ?1",
         "DELETE FROM profile_key_requests WHERE peer_user_id = ?1",
@@ -113,12 +125,65 @@ pub(crate) fn forget_contact_profile(conn: &Connection, user: &str) -> Result<()
     Ok(())
 }
 
+/// Drops a contact's profile key and what came with it when the key is known to be from before their keys changed (LIME-271b). `true` when it did.
+/// - A key stored with the identity it came with is stale once their pinned master key differs from that one.
+/// - A key from before identities were recorded is stale when every phone we had a session with when it arrived is gone from their current device
+///   list (a second phone added later leaves the first in the list, so that is not mistaken for a replacement). A key that passes is stamped with the
+///   current identity, so from then on the first rule decides.
+/// Runs wherever their devices are known (a send, a refresh), so it does not depend on which build accepted the new key.
+pub(crate) fn drop_profile_if_stale(conn: &Connection, user: &str) -> Result<bool, StoreError> {
+    let Some(received_at) = conn
+        .query_row("SELECT received_at FROM contact_profile_keys WHERE user_id = ?1", params![user], |r| r.get::<_, i64>(0))
+        .optional()
+        .map_err(db_err)?
+    else {
+        return Ok(false);
+    };
+    let pinned: Option<String> = conn.query_row("SELECT master_key FROM peers WHERE user_id = ?1", params![user], |r| r.get(0)).optional().map_err(db_err)?;
+    let Some(pinned) = pinned else { return Ok(false) };
+    let recorded: Option<String> =
+        conn.query_row("SELECT master_key FROM contact_profile_masters WHERE user_id = ?1", params![user], |r| r.get(0)).optional().map_err(db_err)?;
+    let stale = match recorded {
+        Some(recorded) => recorded != pinned,
+        None => {
+            let current: Vec<String> = {
+                let mut statement = conn.prepare("SELECT device_id FROM peer_devices WHERE user_id = ?1").map_err(db_err)?;
+                let rows = statement.query_map(params![user], |r| r.get::<_, String>(0)).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+                rows
+            };
+            let then: Vec<String> = {
+                let mut statement = conn.prepare("SELECT DISTINCT peer_device_id FROM olm_sessions WHERE peer_user_id = ?1 AND created_at <= ?2").map_err(db_err)?;
+                let rows = statement.query_map(params![user, received_at], |r| r.get::<_, String>(0)).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+                rows
+            };
+            !current.is_empty() && !then.is_empty() && !then.iter().any(|old| current.contains(old))
+        }
+    };
+    if stale {
+        forget_contact_profile(conn, user)?;
+        return Ok(true);
+    }
+    conn.execute(
+        "INSERT OR REPLACE INTO contact_profile_masters (user_id, master_key) VALUES (?1, ?2)",
+        params![user, pinned],
+    )
+    .map_err(db_err)?;
+    Ok(false)
+}
+
 pub(crate) fn store_contact_key(conn: &Connection, user: &str, key: &[u8], now_ms: i64) -> Result<(), StoreError> {
     let same = contact_key(conn, user)?.is_some_and(|old| old == key);
     conn.execute(
         "INSERT INTO contact_profile_keys (user_id, key, received_at) VALUES (?1, ?2, ?3)
          ON CONFLICT (user_id) DO UPDATE SET key = ?2, received_at = ?3",
         params![user, vodozemac::base64_encode(key), now_ms],
+    )
+    .map_err(db_err)?;
+    // The identity it came with (LIME-271b): the key is stale as soon as the contact's master key is no longer this one.
+    conn.execute(
+        "INSERT INTO contact_profile_masters (user_id, master_key) SELECT user_id, master_key FROM peers WHERE user_id = ?1
+         ON CONFLICT (user_id) DO UPDATE SET master_key = excluded.master_key",
+        params![user],
     )
     .map_err(db_err)?;
     if !same {

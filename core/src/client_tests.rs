@@ -8080,25 +8080,77 @@ fn a_contacts_old_cover_is_dropped_when_their_keys_change_and_the_new_one_shows_
     assert_eq!(bob.store.peer_extra("alice".into(), BACKGROUND.into()).unwrap(), Some(fresh));
 }
 
-#[test]
-fn a_key_accepted_before_the_update_loses_the_old_cover_at_the_next_send() {
+// ---------------------------------------------------------------- LIME-271b: the old cover goes even when the new key was accepted long ago
+
+/// The phones' state after 270: Alice came back on new keys, Bob accepted, and Bob already has a session with her new phone and her devices cached.
+/// The old build never dropped his profile key for her, so it (and the cover it opens) is put back.
+fn bob_holds_alices_old_cover_after_accepting_her_new_phone() -> (Party, Party, Arc<dyn Transport>, i64) {
     use crate::store::extras::BACKGROUND;
     let (_server, _alice, bob, alice2, transport) = bob_reads_alices_cover_then_alice_comes_back_on_new_keys();
-    // The old build: Bob accepted the new key without ever dropping the old profile key. (Put the stale state back, and forget any session with
-    // the new phone, as if nothing had been sent to it yet.)
+    let (old_key, received_at): (String, i64) =
+        bob.store.lock().query_row("SELECT key, received_at FROM contact_profile_keys WHERE user_id = 'alice'", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
     bob.store.queue_text("dm:alice".into(), "first".into()).unwrap();
     let _ = bob.store.deliver_queued(transport.clone(), bob.token.clone());
     bob.store.trust_new_key("dm:alice".into()).unwrap();
+    say(&alice2, &bob, &transport, "hi, new phone");
+    sync(&bob, &transport);
+    bob.store.accept_request("dm:alice".into()).ok();
+    say(&bob, &alice2, &transport, "welcome back");
     {
         let conn = bob.store.lock();
-        conn.execute("DELETE FROM olm_sessions WHERE peer_device_id = ?1", rusqlite::params![alice2.device]).unwrap();
-        conn.execute("DELETE FROM peer_devices WHERE user_id = 'alice'", []).unwrap();
-        crate::store::photos::store_contact_key(&conn, "alice", &vec![5u8; 32], 1).unwrap();
+        let sessions: i64 = conn.query_row("SELECT COUNT(*) FROM olm_sessions WHERE peer_device_id = ?1", rusqlite::params![alice2.device], |r| r.get(0)).unwrap();
+        assert!(sessions > 0, "a session with her new phone exists, as on the real phones");
+        // What the build before this left: her old profile key, the cover it opens, and no record of which identity it came with.
+        conn.execute("DELETE FROM contact_profile_keys WHERE user_id = 'alice'", []).unwrap();
+        conn.execute("DELETE FROM contact_profile_masters WHERE user_id = 'alice'", []).unwrap();
+        conn.execute("INSERT INTO contact_profile_keys (user_id, key, received_at) VALUES ('alice', ?1, ?2)", rusqlite::params![old_key, received_at]).unwrap();
         crate::store::extras::save_cached(&conn, "alice", BACKGROUND, &photo_bytes(), "encrypted", 1, 1).unwrap();
     }
-    assert!(bob.store.peer_extra("alice".into(), BACKGROUND.into()).unwrap().is_some(), "stale cover shown");
-    bob.store.queue_text("dm:alice".into(), "again".into()).unwrap();
-    let _ = bob.store.deliver_queued(transport.clone(), bob.token.clone());
-    assert_eq!(crate::store::photos::contact_key(&bob.store.lock(), "alice").unwrap(), None);
-    assert_eq!(bob.store.peer_extra("alice".into(), BACKGROUND.into()).unwrap(), None, "the stale cover is gone");
+    (bob, alice2, transport, received_at)
+}
+
+#[test]
+fn an_old_cover_is_dropped_even_though_a_session_with_the_new_phone_exists() {
+    use crate::store::extras::BACKGROUND;
+    let (bob, _alice2, transport, _) = bob_holds_alices_old_cover_after_accepting_her_new_phone();
+    assert!(bob.store.peer_extra("alice".into(), BACKGROUND.into()).unwrap().is_some(), "the stale cover is shown (the bug)");
+    let changed = refresh(&bob, &transport);
+    assert!(changed.contains(&"alice".to_string()), "the app is told her picture changed, so it redraws the default");
+    assert_eq!(bob.store.peer_extra("alice".into(), BACKGROUND.into()).unwrap(), None, "gone at the next refresh");
+    assert_eq!(crate::store::photos::contact_key(&bob.store.lock(), "alice").unwrap(), None, "with the key that opened it");
+}
+
+#[test]
+fn a_profile_key_is_stale_when_the_identity_it_came_with_is_no_longer_theirs_and_a_second_phone_is_not_a_replacement() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let conn = bob.store.lock();
+    // Recorded identity: it came with alice's pinned key, so it is fine; if her pinned key becomes another one, it is stale.
+    assert_eq!(crate::store::photos::drop_profile_if_stale(&conn, "alice").unwrap(), false);
+    conn.execute("UPDATE peers SET master_key = 'a-different-key' WHERE user_id = 'alice'", []).unwrap();
+    assert_eq!(crate::store::photos::drop_profile_if_stale(&conn, "alice").unwrap(), true);
+    assert_eq!(crate::store::photos::contact_key(&conn, "alice").unwrap(), None);
+    drop(conn);
+
+    // No recorded identity, and the phone we had a session with when the key arrived is still in her list next to a new one: a second phone, not a replacement.
+    let (carol, _) = party(&server, "carol", 3);
+    befriend(&carol, &bob, &transport);
+    let conn = bob.store.lock();
+    conn.execute("DELETE FROM contact_profile_masters WHERE user_id = 'carol'", []).unwrap();
+    let old_device = carol.device.clone();
+    conn.execute("DELETE FROM olm_sessions WHERE peer_user_id = 'carol'", []).unwrap();
+    conn.execute(
+        "INSERT INTO olm_sessions (peer_user_id, peer_device_id, peer_identity_key, session_id, session_pickle, created_at, updated_at, last_received) VALUES ('carol', ?1, 'k', 's', 'p', 0, 0, 0)",
+        rusqlite::params![old_device],
+    )
+    .unwrap();
+    conn.execute("UPDATE contact_profile_keys SET received_at = 5 WHERE user_id = 'carol'", []).unwrap();
+    conn.execute("DELETE FROM peer_devices WHERE user_id = 'carol'", []).unwrap();
+    for device in [old_device.as_str(), "carol-second-phone"] {
+        conn.execute("INSERT INTO peer_devices (user_id, device_id, identity_key, signing_key, master_signature, updated_at) VALUES ('carol', ?1, 'i', 's', 'm', 0)", rusqlite::params![device]).unwrap();
+    }
+    assert_eq!(crate::store::photos::drop_profile_if_stale(&conn, "carol").unwrap(), false);
+    assert!(crate::store::photos::contact_key(&conn, "carol").unwrap().is_some(), "her key stays");
 }

@@ -108,7 +108,12 @@ extension ConversationStore {
         }.value) ?? []
         guard !changed.isEmpty else { return }
         let loaded = await Task.detached(priority: .utility) { changed.map { ($0, (try? core.peerPhoto(userId: $0)) ?? nil) } }.value
-        for (id, data) in loaded { AvatarCache.shared.set(data, for: id) }
+        for (id, data) in loaded {
+            AvatarCache.shared.set(data, for: id)
+            // A cover the core dropped (their keys changed) must not linger in the profile's remembered state either (LIME-271b).
+            let cover = (try? await Task.detached(priority: .utility) { try core.peerExtra(userId: id, slot: ExtraSlot.background.rawValue) }.value) ?? nil
+            if cover == nil { Hero.noteCover(id: "hero-\(id)", has: false) }
+        }
     }
 
     /// Fetches the photos that may have changed (each person at most hourly unless `force`).
@@ -123,6 +128,11 @@ extension ConversationStore {
         }.value) ?? []
         guard !changed.isEmpty else { return }
         let loaded = await Task.detached(priority: .utility) { changed.map { ($0, (try? core.peerPhoto(userId: $0)) ?? nil) } }.value
-        for (id, data) in loaded { AvatarCache.shared.set(data, for: id) }
+        for (id, data) in loaded {
+            AvatarCache.shared.set(data, for: id)
+            // A cover the core dropped (their keys changed) must not linger in the profile's remembered state either (LIME-271b).
+            let cover = (try? await Task.detached(priority: .utility) { try core.peerExtra(userId: id, slot: ExtraSlot.background.rawValue) }.value) ?? nil
+            if cover == nil { Hero.noteCover(id: "hero-\(id)", has: false) }
+        }
     }
 }

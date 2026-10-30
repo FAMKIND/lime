@@ -200,6 +200,8 @@ impl LimeStore {
         let now = now_ms();
         // A video is only noted, not downloaded, while fetching videos is off (cellular, Low Data Mode) unless the person asked for it.
         let hold = slot == extras::BACKGROUND_VIDEO && !force && !FETCH_VIDEOS.load(Ordering::Relaxed);
+        // Known devices are enough to tell whether the key I hold for them is from a phone they no longer use (LIME-271b).
+        self.with_conn(|conn| photos::drop_profile_if_stale(conn, user).map(|_| ()))?;
         let held = self.with_conn(|conn| extras::cached(conn, user, slot))?;
         let had = held.as_ref().is_some_and(|c| !c.bytes.is_empty());
 
