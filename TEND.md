@@ -8960,3 +8960,12 @@ The app icon's lime about 20 % larger. **Brief:** LIME-263. `ios/Lime/Resources/
 - **Gate:** on the 13 mini's home screen the lime fills more of the icon, still with a margin all round. iOS may keep the old icon until the home screen refreshes: restart the phone or delete and reinstall the app if it still shows the old one.
 
 - **Installed (263):** all three, the 13 mini, the iPad and Jean's 12 mini. The home-screen icon may need a phone restart to refresh.
+
+## LIME-265
+
+A video podcast went black after Listen. **Brief:** LIME-265. iOS only.
+
+- **Cause (traced):** Listen switches the video track off (`PodcastController.setPicture(false)`), but only the player screen turned it back on, and only when its Watch/Listen value *changed*. Closing the player in Listen left the shared item's track disabled: the feed card (same `AVPlayer`) played with a black picture, and reopening started in Watch with no change to fire, so the stage and full screen stayed black too. Leaving jam and coming back rebuilt the controller, which is why that "fixed" it.
+- **Fix:** the on/off now lives in the controller (`pictureOn`, applied again when a new item's tracks load). The player screen sets it from Watch/Listen on appear and on switching to another item, and always switches it **on** when it closes. Feed card, stage and full screen all draw the same layer, so one flag fixes all three.
+- **Test:** `Picture265Tests` (the flag's on/off). The brief's UI test (real layer ready) is not possible here: demo videos are simulated (no `AVPlayer`), and a tap on the Watch half of the toggle already does not register in the simulator (see Player235UITests). So no before/after screenshots either; this needs the phone.
+- **Gate (13 mini):** play a video podcast, switch to Listen, close the player → the feed card shows the picture; open again → Watch shows the picture; full screen shows it.

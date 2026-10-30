@@ -335,6 +335,13 @@ struct JamVideoScreen: View {
         }
         .background { EndWatcher(controller: active.controller) { if !isAudio { advance() } } }
         .onChange(of: watch) { _, on in active.controller.setPicture(on) }
+        // LIME-265: the picture is the controller's, shared with the feed card and full screen. Open: it follows Watch/Listen; closed: always on.
+        .onAppear { active.controller.setPicture(watch) }
+        .onDisappear { controller.setPicture(true); current?.controller.setPicture(true) }
+        .onChange(of: active.postID) { _, _ in
+            controller.setPicture(true)
+            active.controller.setPicture(watch)
+        }
         .sheet(isPresented: $sharing) { if let post { JamShareSheet(post: post) } }
         .reportSheet($reporting)
         .sheet(isPresented: $transcript) { TranscriptSheet(cues: shownCues) }

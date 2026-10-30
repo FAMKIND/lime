@@ -45,7 +45,15 @@ final class PodcastController {
     /// Listen: the picture is switched off (its frames are not decoded or drawn; the sound goes on); Watch switches it on again. (The file is one
     /// encrypted blob, so what is downloaded does not change.)
     func setPicture(_ on: Bool) {
-        for track in player?.currentItem?.tracks ?? [] where track.assetTrack?.mediaType == .video { track.isEnabled = on }
+        pictureOn = on
+        applyPicture()
+    }
+
+    /// Whether the video track is switched on. Kept here, not in the player screen, so a player that closes in Listen cannot leave the feed card black.
+    private(set) var pictureOn = true
+
+    private func applyPicture() {
+        for track in player?.currentItem?.tracks ?? [] where track.assetTrack?.mediaType == .video { track.isEnabled = pictureOn }
     }
 
     var hasStarted: Bool { player != nil || (simulated && (isPlaying || position > 0)) }
@@ -123,6 +131,11 @@ final class PodcastController {
         player.automaticallyWaitsToMinimizeStalling = false
         player.isMuted = muted
         self.player = player
+        Task { [weak self] in
+            // The item's tracks arrive a moment after it is made; a picture that was off stays off, one that was on is on.
+            _ = try? await item.asset.load(.tracks)
+            self?.applyPicture()
+        }
         Task { [weak self] in
             if let seconds = try? await item.asset.load(.duration).seconds, seconds.isFinite, seconds > 0 { self?.duration = seconds }
         }
