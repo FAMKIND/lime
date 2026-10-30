@@ -500,7 +500,7 @@ struct PodcastRecorder: View {
         if let poster = previewClip?.poster, !poster.isEmpty { pictures.append(poster) }
         if let cover { pictures.append(cover.bytes) }
         return BeforePublishScreen(kind: .podcast, editing: editing != nil, summary: summary, subtitle: subtitle, thumbnail: coverImage, audience: $audience, topics: $topics, series: $series,
-                                   savedAudience: editing?.audience, hasMedia: true, pictures: pictures, working: saving || preparing || publishing, problem: problem,
+                                   savedAudience: editing?.audience, membersOption: postAsJam != nil && editing == nil, hasMedia: true, pictures: pictures, working: saving || preparing || publishing, problem: problem,
                                    buttonID: editing != nil ? "podcast-update" : "podcast-post") {
             Task { editing != nil ? await update() : await sendNow() }
         }

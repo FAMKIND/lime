@@ -9,30 +9,37 @@ struct AudienceChip: View {
     var saved: String? = nil
     /// A new account waits before it can post to Everyone (LIME-210d): the day it opens, or nil.
     var opensOn: Date? = AccountAge.everyoneOpensOn()
+    /// Posting as a band: its members can be the audience (LIME-246c).
+    var allowsMembers = false
     @State private var confirmingEveryone = false
     @State private var confirmingTakeBack = false
 
     private var everyone: Bool { audience == "everyone" }
+    private var members: Bool { audience == "members" }
 
     var body: some View {
         Menu {
-            Button { choose("subscribers") } label: { Label("Subscribers", systemImage: !everyone ? "checkmark" : "lock") }
+            Button { choose("subscribers") } label: { Label("Subscribers", systemImage: !everyone && !members ? "checkmark" : "lock") }
                 .accessibilityIdentifier("audience-subscribers")
+            if allowsMembers {
+                Button { choose("members") } label: { Label("Members", systemImage: members ? "checkmark" : "person.2") }
+                    .accessibilityIdentifier("audience-members")
+            }
             // A new account waits 7 days: one clear line with the date, never a cut-off sentence (LIME-242).
             Button { choose("everyone") } label: { Label(opensOn.map { "Everyone \u{00B7} from \($0.formatted(.dateTime.month(.abbreviated).day()))" } ?? "Everyone on lime", systemImage: everyone ? "checkmark" : "globe") }
                 .disabled(opensOn != nil && !everyone)
                 .accessibilityIdentifier("audience-everyone")
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: everyone ? "globe" : "lock").font(.system(size: 13, weight: .medium)).accessibilityHidden(true)
-                Text(everyone ? "Everyone" : "Subscribers").font(Theme.font(.subheadline, weight: .medium))
+                Image(systemName: everyone ? "globe" : members ? "person.2" : "lock").font(.system(size: 13, weight: .medium)).accessibilityHidden(true)
+                Text(everyone ? "Everyone" : members ? "Members" : "Subscribers").font(Theme.font(.subheadline, weight: .medium))
                 Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold)).accessibilityHidden(true)
             }
             .foregroundStyle(Theme.text)
             .padding(.horizontal, 12).frame(minHeight: 44)
             .contentShape(Capsule())
         }
-        .accessibilityLabel(everyone ? "Audience: everyone on lime" : "Audience: subscribers").accessibilityHint("Choose who can read this post")
+        .accessibilityLabel(everyone ? "Audience: everyone on lime" : members ? "Audience: members of the band" : "Audience: subscribers").accessibilityHint("Choose who can read this post")
         .accessibilityIdentifier("jam-audience")
         .confirmSheet("Everyone on lime can read this, and so can lime's server.", isPresented: $confirmingEveryone) {
             Button("Post to everyone") { audience = "everyone" }.accessibilityIdentifier("audience-confirm-everyone")
@@ -46,7 +53,8 @@ struct AudienceChip: View {
 
     private func choose(_ new: String) {
         guard new != audience else { return }
-        if new == "everyone" { confirmingEveryone = true }
+        if new == "members" { audience = "members" }
+        else if new == "everyone" { confirmingEveryone = true }
         else if saved == "everyone" { confirmingTakeBack = true }
         else { audience = "subscribers" }
     }

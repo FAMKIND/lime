@@ -458,8 +458,19 @@ extension ConversationStore {
     /// The bands a person has (LIME-259: one kind of band): the ones they made, from this phone on my own profile and from the server on anyone else's (LIME-254b).
     /// Their profile posting space is the teacher, never a band.
     func profileOrgs(isMe: Bool, bands: [JamPageInfo]) -> [JamPageInfo] {
-        isMe ? myPublications.map { JamPageInfo(jamId: $0.jamId, writerId: $0.writer, title: $0.title, about: $0.about, topics: $0.topics, postCount: $0.postCount, subscriberCount: $0.subscriberCount, hasCommunity: $0.community, pictureVersion: nil) } : bands
+        guard isMe else { return bands }
+        let made = myPublications.map { JamPageInfo(jamId: $0.jamId, writerId: $0.writer, title: $0.title, about: $0.about, topics: $0.topics, postCount: $0.postCount, subscriberCount: $0.subscriberCount, hasCommunity: $0.community, pictureVersion: nil) }
+        // The bands I belong to without owning them: only I see them on my profile (LIME-246c).
+        let joined = orgs.filter { org in !made.contains { $0.jamId == org.jamId } && org.writerId != meProvider().id }.map { org -> JamPageInfo in
+            let known = jamSubscriptions.first { $0.jamId == org.jamId }
+            return JamPageInfo(jamId: org.jamId, writerId: org.writerId, title: known?.title ?? org.name, about: known?.about ?? "", topics: known?.topics ?? [], postCount: known?.postCount ?? 0,
+                               subscriberCount: known?.subscriberCount ?? 0, hasCommunity: false, pictureVersion: nil)
+        }
+        return made + joined
     }
+
+    /// A band I belong to without owning it or writing for it: it shows on my profile to me alone, with a lock.
+    func isMemberOnlyBand(_ jamID: String) -> Bool { orgs.first { $0.jamId == jamID }?.myRole == "member" }
 }
 
 /// A person's posts of one kind on their profile (the Posts, Articles and Podcasts tabs, LIME-188x). Posts are readable once you subscribe; before

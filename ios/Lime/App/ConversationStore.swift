@@ -87,6 +87,15 @@ final class ConversationStore {
     var jamsLoaded = false
     /// The one-time cleanup of an old-style band is running (LIME-259).
     var cleaningBands = false
+    /// The bands I am a member of (their private members group), and what I know of each: its people and its groups (LIME-246).
+    var orgs: [OrgInfo] = []
+    var orgMembersByJam: [String: [OrgMemberInfo]] = [:]
+    var orgGroupsByJam: [String: [OrgGroupInfo]] = [:]
+    /// My own request to join a band (or one of its groups): asked, joined, full or refused, by jam id or conversation id.
+    var orgJoinStates: [String: String] = [:]
+    /// An invite opened from a link, waiting for "Join?".
+    var joiningBand: OrgInvite?
+    var demoOrgInviteOn = true
     var demoCleanupState: String?
     var demoBandNotes: Set<String> = []
     var jamVisibleCount = 20
@@ -1038,6 +1047,10 @@ final class ConversationStore {
         demoJamPages = ["sam": JamPageInfo(jamId: "demo-sam-jam", writerId: "sam", title: "Fractions that stick", about: "Short lessons for grades 3 to 5", topics: ["Maths", "Grade 4"], postCount: 3, subscriberCount: 12, hasCommunity: false, pictureVersion: nil)]
         demoJamBands = ["sam": [JamPageInfo(jamId: "demo-sam-band-1", writerId: "sam", title: "Fractions that stick", about: "Short lessons for grades 3 to 5", topics: ["Maths", "Grade 4"], postCount: 3, subscriberCount: 12, hasCommunity: false, pictureVersion: nil),
                                 JamPageInfo(jamId: "demo-sam-band-2", writerId: "sam", title: "Reading Co-op", about: "", topics: ["Reading"], postCount: 0, subscriberCount: 9, hasCommunity: false, pictureVersion: nil)]]
+        // An invite opened from a link (LIME-246c), when a test asks.
+        if ProcessInfo.processInfo.arguments.contains("-lime-demo-join-band") { joiningBand = OrgInvite(jamId: "demo-sam-band-1", writerId: "sam", token: "demotoken") }
+        // I belong to Sam's band (LIME-246c), when a test asks.
+        if ProcessInfo.processInfo.arguments.contains("-lime-demo-band-member") { demoSeedOrg("demo-sam-band-1", mine: false) }
         // Their public profiles, as the server would answer (UI tests and screenshots).
         publicProfiles = [
             "sam": PublicProfile(userId: "sam", displayName: "Sam Park", username: "sam.park", school: "Lincoln Elementary", aboutEmoji: "📚", aboutText: "Fourth grade, loves fractions", since: 1_762_000_000_000, hasJam: false),

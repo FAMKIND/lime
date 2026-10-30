@@ -130,6 +130,11 @@ impl LimeStore {
         })
     }
 
+    /// The band's owner opens its members group (the first time; nothing happens after). The app calls it when the owner first looks at Members.
+    pub fn org_start(&self, jam_id: String) -> Result<(), StoreError> {
+        self.ensure_org(&jam_id).map(|_| ())
+    }
+
     /// Adds people to the band (owners may; from contacts). The 101st is refused. They are sent the group and follow the band's jam on their own phones.
     pub fn add_org_members(&self, jam_id: String, user_ids: Vec<String>) -> Result<(), StoreError> {
         let conversation = self.ensure_org(&jam_id)?;

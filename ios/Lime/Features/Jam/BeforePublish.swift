@@ -18,6 +18,8 @@ struct BeforePublishScreen: View {
     @Binding var series: SeriesInfo?
     /// The audience the post being edited has now.
     var savedAudience: String? = nil
+    /// Posting as a band: its members can be the audience (LIME-246c).
+    var membersOption = false
     /// The post has a photo, video or audio (so Everyone asks for the privacy confirmation), and the pictures to check for faces.
     var hasMedia = false
     var pictures: [Data] = []
@@ -33,7 +35,7 @@ struct BeforePublishScreen: View {
     private var buttonTitle: String { editing ? "Update" : kind == .post ? "Post" : "Publish" }
     /// Everyone with media needs the confirmation, unless the post was Everyone already.
     private var needsPrivacy: Bool { audience == "everyone" && hasMedia && savedAudience != "everyone" }
-    private var showsAudience: Bool { store.openPostsEnabled || audience == "everyone" || savedAudience == "everyone" }
+    private var showsAudience: Bool { membersOption || store.openPostsEnabled || audience == "everyone" || savedAudience == "everyone" }
 
     var body: some View {
         ScrollView {
@@ -53,7 +55,7 @@ struct BeforePublishScreen: View {
                 }
                 .accessibilityElement(children: .combine).accessibilityIdentifier("before-summary")
                 VStack(spacing: 0) {
-                    if showsAudience { row("Audience", id: "before-audience") { AudienceChip(audience: $audience, saved: savedAudience) } }
+                    if showsAudience { row("Audience", id: "before-audience") { AudienceChip(audience: $audience, saved: savedAudience, allowsMembers: membersOption) } }
                     if store.openPostsEnabled { row("Tags", id: "before-tags") { TopicsChip(topics: $topics) } }
                     if kind != .post { row("Series", id: "before-series") { SeriesChip(series: $series) } }
                 }

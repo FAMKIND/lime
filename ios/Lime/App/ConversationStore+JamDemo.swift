@@ -41,8 +41,8 @@ extension ConversationStore {
                                      durationMs: item.durationMs, thumb: item.thumb, poster: item.poster, available: true)
         }
         demoJamAttachments[id] = info
-        let post = JamPostInfo(postId: id, jamId: jamID, author: meProvider().id, tier: "free", kind: kind, title: title, subtitle: subtitle, markdown: markdown, plain: messagePlainText(text: markdown),
-                               attachmentsJson: "[]", created: Int64(Date().timeIntervalSince1970 * 1000), coauthors: coauthors, displayAs: displayAs, editedAt: 0, audience: audience, series: series, topics: topics, state: "ready")
+        let post = JamPostInfo(postId: id, jamId: jamID, author: meProvider().id, tier: audience == "members" ? "members" : "free", kind: kind, title: title, subtitle: subtitle, markdown: markdown, plain: messagePlainText(text: markdown),
+                               attachmentsJson: "[]", created: Int64(Date().timeIntervalSince1970 * 1000), coauthors: coauthors, displayAs: displayAs, editedAt: 0, audience: audience == "members" ? "subscribers" : audience, series: series, topics: topics, state: "ready")
         jamPosts[jamID, default: []].append(post)
         lastPublishedPostID = id
         // An Everyone post shows up in Discover (the demo has no server), under its chips or else the jam's topics.
@@ -109,6 +109,8 @@ extension ConversationStore {
         // The seed is an old-style band (the profile space named "Reading circles"). On a phone the one-time cleanup turns it into a real band (LIME-259): a test
         // asks for that with `-lime-demo-old-band`; every other screen starts after it, as the rest of the app does.
         if ProcessInfo.processInfo.arguments.contains("-lime-demo-old-band") { Task { await cleanUpOldBands() } } else { demoSplitBand() }
+        // A band with people and groups (LIME-246c), when a test asks.
+        if ProcessInfo.processInfo.arguments.contains("-lime-demo-band-people") { demoSeedOrg("demo-band-demo-my-jam", mine: true) }
     }
 
     /// The cleanup's result, at once: a real band with the old space's name, about and tags; the space is the teacher again (subscribers stay with it).

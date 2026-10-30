@@ -1038,7 +1038,7 @@ struct JamComposeSheet: View {
         let first = composer.plainText.replacingOccurrences(of: "\u{FFFC}", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
         let summary = article ? title : first.split(separator: "\n").first.map(String.init) ?? ""
         return BeforePublishScreen(kind: kind, editing: editing != nil, summary: summary, subtitle: article ? subtitle : "", thumbnail: photos.first?.preview ?? coverImage,
-                                   audience: $audience, topics: $topics, series: $series, savedAudience: editing?.audience,
+                                   audience: $audience, topics: $topics, series: $series, savedAudience: editing?.audience, membersOption: postAsJam != nil && editing == nil,
                                    hasMedia: editing != nil ? !store.jamAttachments(editing?.postId ?? "").isEmpty : hasMedia, pictures: privacyPictures,
                                    working: posting, problem: problem, buttonID: editing != nil ? "jam-update" : "jam-post") {
             if editing != nil { update() } else { post() }

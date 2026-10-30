@@ -247,6 +247,7 @@ struct JamPostCard: View {
                         }
                         .buttonStyle(.plain).accessibilityLabel(detail).accessibilityHint("Opens the post").accessibilityIdentifier("jam-card-byline-\(post.postId)")
                         if post.audience == "everyone" { openGlobe }
+                        if post.tier == "members" { membersLabel }
                     }
                 }
                 Spacer(minLength: 0)
@@ -258,8 +259,15 @@ struct JamPostCard: View {
                 Text([store.byline(post), JamDates.short(post.created), post.editedAt > 0 ? "Edited" : nil].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
                     .accessibilityIdentifier("jam-card-byline-\(post.postId)")
                 if post.audience == "everyone" { openGlobe }
+                if post.tier == "members" { membersLabel }
             }
         }
+    }
+
+    /// A members-only post (LIME-246c): a small label.
+    private var membersLabel: some View {
+        Label("Members", systemImage: "person.2").font(Theme.caption).foregroundStyle(Theme.textSecondary).labelStyle(.titleAndIcon)
+            .accessibilityLabel("For members only").accessibilityIdentifier("jam-card-members-\(post.postId)")
     }
 
     /// A small globe beside the date: this post is open to everyone on lime (LIME-210c). A subscribers-only post shows nothing (the default needs no mark).

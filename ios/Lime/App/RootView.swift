@@ -24,6 +24,9 @@ struct RootView: View {
         .overlay(alignment: .top) { GroupIncomingBanner() }
         .overlay(alignment: .top) { DraftInviteBanner() }
         .fullScreenCover(item: Binding(get: { store.openDraftRoute }, set: { store.openDraftRoute = $0 })) { JamComposeSheet(openDraft: $0.id) }
+        // An invite to a band from a link (LIME-246c): "Join <band>?".
+        .onOpenURL { url in if let code = ConversationStore.bandCode(from: url), let invite = store.parseBandInvite(code) { store.joiningBand = invite } }
+        .sheet(item: Binding(get: { store.joiningBand }, set: { store.joiningBand = $0 })) { JoinBandSheet(invite: $0) }
         .sheet(isPresented: Binding(get: { store.groupCalls.invite != nil && !store.groupCalls.inCall }, set: { if !$0 { store.groupCalls.dismissInvite() } })) { GroupInviteSheet() }
         .alert("Group call", isPresented: Binding(get: { store.groupCalls.notice != nil }, set: { if !$0 { store.groupCalls.notice = nil } })) {
             Button("OK", role: .cancel) {}

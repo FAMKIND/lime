@@ -1,5 +1,10 @@
 import SwiftUI
 
+/// The tabs of a band's page (LIME-246c): the public ones, and Members and Groups for its members. The ids stay `profile-tab-<Name>`.
+enum BandTab: String, CaseIterable { case info = "Info", posts = "Posts", articles = "Articles", podcasts = "Podcasts", members = "Members", groups = "Groups"
+    static let publicTabs: [BandTab] = [.info, .posts, .articles, .podcasts]
+}
+
 /// An org's profile, pushed like a person's (LIME-216).
 struct OrgRoute: Hashable {
     let page: JamPageInfo
@@ -88,7 +93,7 @@ struct JamOrgsSection: View {
                     .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                     .listRowBackground(Color.clear).listRowSeparator(.hidden)
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        if isMe {
+                        if owns(org) {
                             // Red, but not the `.destructive` role: that makes the list remove the row at once, before the confirmation has been answered.
                             Button { action = .end(org) } label: { Label("Delete band", systemImage: "xmark.circle") }.tint(.red).accessibilityIdentifier("org-swipe-end-\(org.jamId)")
                             Button { action = .subscribers(org) } label: { Label("Subscribers", systemImage: "person.2") }.tint(.gray).accessibilityIdentifier("org-swipe-subscribers-\(org.jamId)")
@@ -106,6 +111,9 @@ struct JamOrgsSection: View {
         .orgActions($action)
     }
 
+    /// I run this band (a band I only belong to has no Edit, Subscribers or Delete).
+    private func owns(_ org: JamPageInfo) -> Bool { isMe && store.jamsMine.contains { $0.jamId == org.jamId } }
+
     private func shareURL(_ org: JamPageInfo) -> URL? {
         guard let username = store.publicProfiles[org.writerId]?.username else { return nil }
         return URL(string: InviteLink.url(username: username))
@@ -120,7 +128,7 @@ struct JamOrgsSection: View {
                     BylineAvatar(people: authors, jam: org.title, jamId: org.jamId, size: 52).frame(width: 60, height: 56, alignment: .leading)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(org.title).font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
-                        Text(names).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                        Text(store.isMemberOnlyBand(org.jamId) ? "Only you see this" : names).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(1)
                         if !org.about.isEmpty { Text(org.about).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1) }
                         Text(org.subscriberCount == 1 ? "1 subscriber" : "\(org.subscriberCount) subscribers").font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
                     }
@@ -131,16 +139,18 @@ struct JamOrgsSection: View {
             .buttonStyle(.plain)
             .accessibilityLabel("\(org.title), by \(names), \(org.subscriberCount) subscribers").accessibilityHint("Opens its page")
             .accessibilityIdentifier("profile-org-\(org.jamId)")
-            .modifier(OrgAccessibilityActions(org: org, isMe: isMe, action: $action))
+            .modifier(OrgAccessibilityActions(org: org, isMe: owns(org), action: $action))
             .contextMenu {
-                if isMe {
+                if owns(org) {
                     Button { action = .edit(org) } label: { Label("Edit", systemImage: "pencil") }
                     Button { action = .subscribers(org) } label: { Label("Subscribers", systemImage: "person.2") }
                     Button(role: .destructive) { action = .end(org) } label: { Label("Delete band", systemImage: "xmark.circle") }
                 }
                 if let share = shareURL(org) { ShareLink(item: share, message: Text("\(org.title) on lime")) { Label("Share", systemImage: "square.and.arrow.up") } }
             }
-            if !isMe { SubscribeLink(page: org, id: "profile-org-subscribe-\(org.jamId)").padding(.trailing, 16) }
+            if store.isMemberOnlyBand(org.jamId) {
+                Image(systemName: "lock").font(.system(size: 13)).foregroundStyle(Theme.textSecondary).padding(.trailing, 16).accessibilityLabel("Only you see this").accessibilityIdentifier("profile-org-lock-\(org.jamId)")
+            } else if !isMe { SubscribeLink(page: org, id: "profile-org-subscribe-\(org.jamId)").padding(.trailing, 16) }
         }
     }
 }
@@ -169,7 +179,7 @@ struct OrgProfileView: View {
     @Environment(ConversationStore.self) private var store
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
-    @State private var tab: ProfileView.Section = .info
+    @State private var tab: BandTab = .info
     @State private var reading: JamPostRoute?
     @State private var action: OrgAction?
     @State private var reporting: ReportTarget?
@@ -200,7 +210,8 @@ struct OrgProfileView: View {
     /// My profile posting space is the teacher, never a band: it is never offered Delete band (LIME-259).
     private var isOwnSpace: Bool { isMe && page.jamId == store.myOwnJam?.jamId }
     private var editingNow: Bool { isMe && editing }
-    private static let sections: [ProfileView.Section] = [.info, .posts, .articles, .podcasts]
+    /// Members and Groups show to the band's members only (LIME-246c).
+    private var sections: [BandTab] { store.isBandMember(page.jamId) ? BandTab.allCases : BandTab.publicTabs }
 
     var body: some View {
         let following = store.isFollowing(page.jamId)
@@ -236,7 +247,7 @@ struct OrgProfileView: View {
         .sheet(item: $fieldSheet) { OrgFieldSheet(page: page, field: $0) }
         .sheet(isPresented: $pictureSheet) { OrgPictureSheet(jamId: page.jamId, title: page.title) }
         .sheet(isPresented: $coverSheet) { OrgCoverSheet(jamId: page.jamId) }
-        .task(id: page.jamId) { await store.ensureJamStyle(page.jamId) }
+        .task(id: page.jamId) { await store.ensureJamStyle(page.jamId); if store.isBandMember(page.jamId) { await store.loadOrg(page.jamId) } }
         .onAppear {
             if isMe, store.takeBandNote(page.jamId) { cleanupNote = true }
         }
@@ -358,7 +369,7 @@ struct OrgProfileView: View {
             .padding(.top, HeroShape.avatarTopPadding(screen: screen, inset: inset, avatar: 104) - 12)
             Spacer(minLength: HeroShape.textToPills(screen: screen))
             if editingNow { Color.clear.frame(height: HeroShape.pillsRow) } else {
-                ProfileTabs(sections: Self.sections, selection: $tab)
+                ProfileTabs(sections: sections, selection: $tab)
             }
         }
         .frame(maxWidth: .infinity, minHeight: HeroShape.blockHeight(screen: screen, inset: inset))
@@ -475,7 +486,10 @@ struct OrgProfileView: View {
 
     @ViewBuilder
     private func content(following: Bool) -> some View {
-        if tab == .info { info } else if isMe || following {
+        if tab == .info { info }
+        else if tab == .members { OrgMembersTab(jamID: page.jamId) }
+        else if tab == .groups { OrgGroupsTab(jamID: page.jamId, title: page.title) }
+        else if isMe || following {
             let segment: JamSegment = tab == .articles ? .articles : tab == .podcasts ? .podcasts : .posts
             let posts = store.posts(of: page.jamId).filter { $0.displayAs == "jam" && segment.includes(kind: $0.kind) }
             if posts.isEmpty {

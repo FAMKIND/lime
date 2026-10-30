@@ -32,6 +32,7 @@ extension ConversationStore {
         if progress != jamProgress { jamProgress = progress }
         jamsLoaded = true
         Task { await cleanUpOldBands() }
+        Task { await refreshOrgs() }
         let waiting = posts.values.joined().contains { $0.state == "fetching" } || credited.contains { $0.state == "fetching" } || !progress.isEmpty
         if waiting, link != nil, Date().timeIntervalSince(jamLastKick) > 15 {
             jamLastKick = Date()
@@ -224,7 +225,7 @@ extension ConversationStore {
         guard StorageGuard.shared.allows(items.reduce(0) { $0 + Int64($1.bytes.count) }) else { return .failure(.noSpace) }
         do {
             lastPublishedPostID = try await Task.detached(priority: .userInitiated) {
-                try core.publishJamPostWith(jamId: jamID, kind: kind, title: title, subtitle: subtitle, markdown: markdown, tier: "free", attachments: items, coauthors: coauthors, displayAs: displayAs, options: PostOptions(audience: audience, series: series, topics: topics))
+                try core.publishJamPostWith(jamId: jamID, kind: kind, title: title, subtitle: subtitle, markdown: markdown, tier: audience == "members" ? "members" : "free", attachments: items, coauthors: coauthors, displayAs: displayAs, options: PostOptions(audience: audience == "members" ? "subscribers" : audience, series: series, topics: topics))
             }.value
         } catch {
             CallDiagnostics.shared.log("jam post failed: \(error)")
