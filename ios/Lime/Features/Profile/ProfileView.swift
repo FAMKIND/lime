@@ -264,7 +264,7 @@ struct ProfileView: View {
             Text("This removes it from this phone. The other person keeps their copy.")
         }
         .confirmSheet("Sign out of lime?", isPresented: $confirmingSignOut) {
-            Button("Sign out and remove messages from this iPhone", role: .destructive) {
+            Button("Sign out") {
                 Task { await session.signOut() }
             }
             .accessibilityIdentifier("profile-sign-out-confirm")
@@ -641,7 +641,7 @@ struct ProfileView: View {
             if route.isMe {
                 Button { settingsLaunch = SettingsLaunch(start: .myQR) } label: { Label("My QR code", systemImage: "qrcode") }
                     .accessibilityIdentifier("profile-my-qr")
-                Button(role: .destructive) { confirmingSignOut = true } label: { Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right") }
+                Button { confirmingSignOut = true } label: { Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right") }
                     .accessibilityIdentifier("profile-sign-out")
             } else if accepted, let conversation {
                 let muted = notifications.settings.isMuted(conversation.id)

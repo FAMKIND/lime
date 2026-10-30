@@ -38,6 +38,20 @@ enum StorageKeychain {
         return key
     }
 
+    /// Stores `key` under `service` (used to move a key to its account's own item).
+    static func store(_ key: Data, service: String) throws {
+        deleteKey(service: service)
+        let add: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+            kSecValueData as String: key,
+        ]
+        let status = SecItemAdd(add as CFDictionary, nil)
+        guard status == errSecSuccess else { throw KeychainError.unexpected(status) }
+    }
+
     /// The stored key, or nil when there is none (or it is unusable, which is treated the same way).
     static func existingKey(service: String = defaultService) -> Data? {
         (try? read(service: service)) ?? nil

@@ -23,6 +23,14 @@ enum StorageBootstrap {
                             keychainService: StorageKeychain.defaultService)
         }
 
+        /// One account's own space (LIME-268): its own folder and its own Keychain key, so signing in as someone else opens theirs and leaves this one
+        /// locked and intact. `lime/accounts/<user id>`.
+        static func live(for userID: String) throws -> Location {
+            let legacy = try live()
+            return Location(directory: legacy.directory.appendingPathComponent("accounts", isDirectory: true).appendingPathComponent(userID, isDirectory: true),
+                            keychainService: "\(StorageKeychain.defaultService).\(userID)")
+        }
+
         var databaseURL: URL { directory.appendingPathComponent("lime.db") }
 
         /// The data folder used to be `Lime` (LIME-178 writes it `lime`). The phone's file system is case-insensitive, so `lime` would open the
@@ -160,10 +168,32 @@ enum StorageBootstrap {
         (try? url.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup) ?? false
     }
 
+    // MARK: Per-account spaces (LIME-268)
+
+    /// Phones that signed in before accounts had spaces keep one store directly in `lime/`. Its first owner takes it over: the files and the
+    /// Keychain key move into that account's space (nothing is copied or deleted). Does nothing when there is no old store or the space already exists.
+    @discardableResult
+    static func adoptOldStore(for userID: String, legacy: Location? = nil, space: Location? = nil) -> Bool {
+        guard let legacy = try? legacy ?? Location.live(), let space = try? space ?? Location.live(for: userID) else { return false }
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: legacy.databaseURL.path), !fm.fileExists(atPath: space.databaseURL.path) else { return false }
+        guard (try? fm.createDirectory(at: space.directory, withIntermediateDirectories: true, attributes: [.protectionKey: protection])) != nil else { return false }
+        let names = ((try? fm.contentsOfDirectory(atPath: legacy.directory.path)) ?? []).filter { $0.hasPrefix("lime") }
+        for name in names {
+            try? fm.moveItem(at: legacy.directory.appendingPathComponent(name), to: space.directory.appendingPathComponent(name))
+        }
+        if let key = StorageKeychain.existingKey(service: legacy.keychainService),
+           (try? StorageKeychain.store(key, service: space.keychainService)) != nil {
+            StorageKeychain.deleteKey(service: legacy.keychainService)
+        }
+        prepareFiles(in: space)
+        return true
+    }
+
     // MARK: Signing out
 
-    /// Deletes this device's database, the files moved aside, and the key (sign out: the next account
-    /// starts clean).
+    /// Deletes this device's database, the files moved aside, and the key (Remove everything from this device, and
+    /// deleting the account). Signing out does not call this: it keeps the store, locked.
     static func wipe(at location: Location? = nil) {
         guard let location = try? location ?? Location.live() else { return }
         let fm = FileManager.default

@@ -95,7 +95,7 @@ struct AboutView: View {
                 Text(Brand.legalLine).font(Theme.caption).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
                     .accessibilityIdentifier("legal-line")
             }
-            Button("Sign out", role: .destructive) { confirmingSignOut = true }
+            Button("Sign out") { confirmingSignOut = true }
                 .font(Theme.font(.subheadline, weight: .semibold))
                 .accessibilityIdentifier("sign-out")
             Button("Done") { dismiss() }
@@ -108,7 +108,7 @@ struct AboutView: View {
         .background(Theme.canvas.ignoresSafeArea())
         .presentationDetents([.large])
         .confirmSheet("Sign out of lime?", isPresented: $confirmingSignOut) {
-            Button("Sign out and remove chats from this phone", role: .destructive) {
+            Button("Sign out") {
                 dismiss()
                 Task { await session.signOut() }
             }

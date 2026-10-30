@@ -8,7 +8,10 @@ enum SettingsRoute: Hashable {
 
 /// The words shown before signing out (here and in Account).
 enum SignOutCopy {
-    static let warning = "Signing out removes your messages and keys from this iPhone. Your contacts will see that your security key changed."
+    static let warning = "Your chats stay on this device, locked, until you sign in again."
+    /// "Remove everything from this device": the red, separate choice.
+    static let removeTitle = "Remove everything from this device"
+    static let removeWarning = "Your chats, files and keys on this device are deleted. This can't be undone."
 }
 
 /// Settings (design 05): a sheet with a glass ✕, the profile card, and grouped rows.
@@ -19,6 +22,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var path: [SettingsRoute]
     @State private var confirmingSignOut = false
+    @State private var confirmingRemoval = false
     /// On the server's moderator list (LIME-191): the Moderation row shows for them only.
     @State private var isModerator = false
     /// Open straight on this screen (the profile's Edit profile).
@@ -114,10 +118,16 @@ struct SettingsView: View {
                 // Sign out is easy to find here as well as in Account; it says honestly what it does to this phone's keys.
                 SettingsCard {
                     Button { confirmingSignOut = true } label: {
-                        SettingsRowLabel(symbol: "rectangle.portrait.and.arrow.right", title: "Sign out", showsDivider: false, destructive: true)
+                        SettingsRowLabel(symbol: "rectangle.portrait.and.arrow.right", title: "Sign out", showsDivider: false)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("settings-sign-out")
+                    Divider().overlay(Theme.hairline).padding(.leading, 60)
+                    Button { confirmingRemoval = true } label: {
+                        SettingsRowLabel(symbol: "trash", title: SignOutCopy.removeTitle, showsDivider: false, destructive: true)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("settings-remove-everything")
                 }
             }
             .padding(.horizontal, 16)
@@ -127,7 +137,7 @@ struct SettingsView: View {
         .toolbar(.hidden, for: .navigationBar)
         .accessibilityIdentifier("settings-root")
         .confirmSheet("Sign out of lime?", isPresented: $confirmingSignOut) {
-            Button("Sign out and remove messages from this iPhone", role: .destructive) {
+            Button("Sign out") {
                 dismiss()
                 Task { await session.signOut() }
             }
@@ -135,6 +145,16 @@ struct SettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(SignOutCopy.warning)
+        }
+        .confirmSheet(SignOutCopy.removeTitle + "?", isPresented: $confirmingRemoval) {
+            Button("Remove everything", role: .destructive) {
+                dismiss()
+                Task { await session.signOut(removingData: true) }
+            }
+            .accessibilityIdentifier("settings-remove-everything-confirm")
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(SignOutCopy.removeWarning)
         }
     }
 

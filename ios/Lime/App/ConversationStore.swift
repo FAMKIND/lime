@@ -343,6 +343,22 @@ final class ConversationStore {
 
     /// Where the database lives (tests use a temporary folder; nil is Application Support).
     private let storageLocation: StorageBootstrap.Location?
+    /// The signed-in account whose space is open (LIME-268); nil is the old single store (the demo, tests and phones before accounts had spaces).
+    @ObservationIgnored private(set) var accountID: String?
+
+    /// The folder and Keychain item of the open account's space.
+    private var currentLocation: StorageBootstrap.Location? {
+        if let storageLocation { return storageLocation }
+        if let accountID { return try? StorageBootstrap.Location.live(for: accountID) }
+        return nil
+    }
+
+    /// Opens (on the next `bootstrap`) this account's own space. A different account's store is closed first, locked and intact on disk.
+    func useAccount(_ id: String) {
+        guard accountID != id else { return }
+        if core != nil || accountID != nil { closeStore() }
+        accountID = id
+    }
 
     init(storageLocation: StorageBootstrap.Location? = nil) {
         self.storageLocation = storageLocation
@@ -361,7 +377,7 @@ final class ConversationStore {
     func bootstrap(arguments: [String] = ProcessInfo.processInfo.arguments) async {
         if core == nil {
             let resetStore = StorageBootstrap.resetRequested(arguments: arguments, debugBuild: StorageBootstrap.isDebugBuild)
-            let location = storageLocation
+            let location = currentLocation
             do {
                 let opened = try await Task.detached(priority: .userInitiated) {
                     StorageBootstrap.applyDebugHooks(arguments: arguments)
@@ -762,8 +778,8 @@ final class ConversationStore {
     }
     #endif
 
-    /// Signing out: forget everything on this device (the database, its key) and start empty.
-    func wipe() {
+    /// Closes the open store and forgets what the screens held of it; the files and the key stay (locked) for the next sign-in.
+    func closeStore() {
         core = nil
         link = nil
         accountSignedIn = false
@@ -778,7 +794,13 @@ final class ConversationStore {
         notifications?.settings.reset()
         AvatarCache.shared.reset()
         AttachmentImages.shared.reset()
-        StorageBootstrap.wipe(at: storageLocation)
+    }
+
+    /// Remove everything from this device: closes the store and deletes this account's database, its files and its key.
+    func wipe() {
+        let location = currentLocation
+        closeStore()
+        StorageBootstrap.wipe(at: location)
     }
 
     func reload() async {

@@ -768,7 +768,7 @@ final class LimeUITestsQARound: LimeUITestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         row.tap()
         XCTAssertTrue(app.buttons["settings-sign-out-confirm"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts[SignOutCopyForTests.warning].exists || app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'security key changed'")).firstMatch.exists, "the honest words about keys")
+        XCTAssertTrue(app.staticTexts[SignOutCopyForTests.warning].exists || app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'locked'")).firstMatch.exists, "the honest words: kept, locked")
         let cancel = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Cancel'")).firstMatch
         if cancel.waitForExistence(timeout: 3) { cancel.tap() } else { app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap() }   // the dialog is dismissed by tapping outside
         XCTAssertTrue(app.buttons["settings-sign-out-confirm"].waitForNonExistence(timeout: 5), "cancelled")
@@ -2142,7 +2142,19 @@ final class LimeUITestsSettings: LimeUITestCase {
         app.buttons["settings-account"].tap()
         app.buttons["account-sign-out"].tap()
         XCTAssertTrue(app.buttons["account-sign-out-confirm"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Signing out removes your messages and keys from this iPhone. Your contacts will see that your security key changed."].exists)
+        XCTAssertTrue(app.staticTexts[SignOutCopyForTests.warning].exists, "sign out keeps the chats, locked")
+    }
+
+    func testRemoveEverythingIsASeparateRedChoiceWithItsOwnConfirmation() {
+        let app = demoApp()
+        app.launch()
+        openSettings(app)
+        app.buttons["settings-account"].tap()
+        XCTAssertTrue(app.buttons["account-remove-everything"].waitForExistence(timeout: 5))
+        app.buttons["account-remove-everything"].tap()
+        XCTAssertTrue(app.buttons["account-remove-everything-confirm"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts[SignOutCopyForTests.removeWarning].exists)
+        XCTAssertFalse(app.buttons["account-sign-out-confirm"].exists, "a different confirmation from Sign out")
     }
 
     func testAMessageShowsSendingThenSent() {
@@ -2538,7 +2550,8 @@ private extension XCUIElement {
 
 /// The sign-out warning (shown by the confirmation), as the app words it.
 enum SignOutCopyForTests {
-    static let warning = "Signing out removes your messages and keys from this iPhone. Your contacts will see that your security key changed."
+    static let warning = "Your chats stay on this device, locked, until you sign in again."
+    static let removeWarning = "Your chats, files and keys on this device are deleted. This can't be undone."
 }
 
 @MainActor

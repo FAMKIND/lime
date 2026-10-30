@@ -325,8 +325,8 @@ final class LocalBackendE2ETests: XCTestCase {
         }
         XCTAssertEqual(adaHolds, 1, "Ada holds Bob's delivery key")
 
-        // Bob signs out (his keys are wiped). Ada writes; the server holds it for his old phone.
-        await bob.session.signOut()
+        // Bob removes everything from his phone (his keys are wiped: signing out alone keeps them, LIME-268). Ada writes; the server holds it for his old phone.
+        await bob.session.signOut(removingData: true)
         await ada.store.sendNow("while you are away", in: chat)
         XCTAssertEqual(ada.store.conversation(chat)?.messages.last?.state, .sent)
 

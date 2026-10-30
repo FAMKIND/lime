@@ -5,6 +5,7 @@ import SwiftUI
 struct AccountScreen: View {
     @Environment(AccountSession.self) private var session
     @State private var confirmingSignOut = false
+    @State private var confirmingRemoval = false
     let onClose: () -> Void
 
     var body: some View {
@@ -24,16 +25,22 @@ struct AccountScreen: View {
             SettingsFootnote(text: "Your email is only used to sign in and to send you codes. Other teachers never see it.")
             SettingsCard {
                 Button { confirmingSignOut = true } label: {
-                    SettingsRowLabel(symbol: "rectangle.portrait.and.arrow.right", title: "Sign Out", showsDivider: false, destructive: true)
+                    SettingsRowLabel(symbol: "rectangle.portrait.and.arrow.right", title: "Sign Out", showsDivider: false)
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("account-sign-out")
+                Divider().overlay(Theme.hairline).padding(.leading, 60)
+                Button { confirmingRemoval = true } label: {
+                    SettingsRowLabel(symbol: "trash", title: SignOutCopy.removeTitle, showsDivider: false, destructive: true)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("account-remove-everything")
                 Divider().overlay(Theme.hairline).padding(.leading, 60)
                 SettingsRow(symbol: "trash", title: "Delete Account", route: .deleteAccount, id: "account-delete", showsDivider: false)
             }
         }
         .confirmSheet("Sign out of lime?", isPresented: $confirmingSignOut) {
-            Button("Sign out and remove messages from this iPhone", role: .destructive) {
+            Button("Sign out") {
                 onClose()
                 Task { await session.signOut() }
             }
@@ -41,6 +48,16 @@ struct AccountScreen: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(SignOutCopy.warning)
+        }
+        .confirmSheet(SignOutCopy.removeTitle + "?", isPresented: $confirmingRemoval) {
+            Button("Remove everything", role: .destructive) {
+                onClose()
+                Task { await session.signOut(removingData: true) }
+            }
+            .accessibilityIdentifier("account-remove-everything-confirm")
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(SignOutCopy.removeWarning)
         }
     }
 }

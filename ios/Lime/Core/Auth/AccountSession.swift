@@ -100,6 +100,7 @@ final class AccountSession {
         tokens = saved
         // Phones signed in before the owner was recorded never had it: record it now (it also guards against another account's chats).
         if defaults.string(forKey: Self.ownerKey) == nil { defaults.set(saved.userID, forKey: Self.ownerKey) }
+        openSpace(for: saved.userID)
         store.accountSignedIn = true
         profile = storedProfile()
         await store.bootstrap(arguments: arguments)
@@ -113,8 +114,9 @@ final class AccountSession {
 
     /// Both steps passed (and the profile exists): keep the session and register this device.
     func completeSignIn(tokens: AuthTokens, profile: Profile?, maskedEmail: String? = nil) async {
-        // Someone else's chats and keys are never kept for a different account.
-        if let owner = defaults.string(forKey: Self.ownerKey), owner != tokens.userID { store.wipe() }
+        // Each account has its own space (LIME-268): the same person coming back opens their locked store and keeps their keys; another
+        // account opens its own and leaves this one intact.
+        openSpace(for: tokens.userID)
         defaults.set(tokens.userID, forKey: Self.ownerKey)
         store.accountSignedIn = true
         self.tokens = tokens
@@ -124,6 +126,13 @@ final class AccountSession {
         await store.bootstrap()
         phase = .signedIn
         await registerDevice()
+    }
+
+    /// Opens the space of the account that is signing in. A store from before spaces existed goes to the account that owned it (the recorded owner,
+    /// else this one) the first time, whoever signs in now.
+    private func openSpace(for userID: String) {
+        StorageBootstrap.adoptOldStore(for: defaults.string(forKey: Self.ownerKey) ?? userID)
+        store.useAccount(userID)
     }
 
     /// The core registers this device once both factors have passed.
@@ -251,16 +260,22 @@ final class AccountSession {
 
     // MARK: Signing out
 
-    /// Ends the session on the server, then forgets the tokens, the profile and the local store.
-    func signOut() async {
+    /// Ends the session on the server and returns to sign-in. The chats, files and keys stay on this device, encrypted and locked (LIME-268):
+    /// signing in again as the same account opens them and reuses the same keys (nothing new is published). `removingData` is "Remove everything
+    /// from this device": this account's store and keys are deleted too.
+    func signOut(removingData: Bool = false) async {
         endBackgroundListening()
         await nudges?.stop()
         nudges = nil
         if let auth, let tokens { await auth.signOut(tokens: tokens) }
         SessionKeychain.clear(service: sessionService)
         defaults.removeObject(forKey: Self.profileKey)
-        defaults.removeObject(forKey: Self.ownerKey)
-        store.wipe()
+        if removingData {
+            defaults.removeObject(forKey: Self.ownerKey)
+            store.wipe()
+        } else {
+            store.closeStore()
+        }
         tokens = nil
         profile = nil
         maskedEmail = nil
@@ -328,7 +343,7 @@ final class AccountSession {
         await store.sendAccountDeletedNotices()
         try? await auth.confirmAccountDeletion(token: token, step: "notices", tokens: tokens)
         try? await auth.confirmAccountDeletion(token: token, step: "delete", tokens: tokens)
-        await signOut()
+        await signOut(removingData: true)
     }
 
     /// The tokens, refreshed first when they are about to expire.
