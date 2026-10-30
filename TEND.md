@@ -8937,3 +8937,5 @@ Band members, finished. **Brief:** LIME-246d. Core + iOS; no server change.
 - **Tests:** core 402 pass (new: a join added by a second owner while the writer is offline and not twice when both run; the co-author → writer migration, run twice makes nothing twice). UI: `Band246dUITests` (2: scan opens the join sheet; the badge shows on the band's group only); `Band246UITests` still pass.
 - **Not done / flags:** the group-join request (`jam.org.group_join`) still goes to the group's owner only, as before. The badge has no VoiceOver text (the band's name is on the group's details); say if you want it spoken.
 - **Gate (two phones + the iPad):** make the iPad's account an owner of lime juice (Members → set role to owner), then make a new link (the old one doesn't name the iPad). With the 13 mini's lime closed, Jean joins by that link: the iPad adds her.
+
+- **Installed (261b, 246d):** all three, the 13 mini, the iPad and Jean's 12 mini.
