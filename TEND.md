@@ -15,7 +15,7 @@ Record of work landed via the `tend` skill.
 | 256 | `2eeaabe` | Report group (messages ticked, members off, leave afterwards) and the moderators' reading |
 | 260a | `3c9e4ca` | a series' description and cover, in core (the jam's state) |
 | 260b | `1f2b8fd` | the series page like a podcast show page |
-| 261 | see below | vibrant living hero backgrounds and a tinted paper canvas; screenshots in `docs/qa-shots/261/`; one switch back |
+| 261 | `f5065a2` | vibrant living hero backgrounds and a tinted paper canvas; screenshots in `docs/qa-shots/261/`; one switch back |
 
 **Needs you / flags**
 1. **Deploy steps: none.** (If you later want links tapped in Messages to open a band invite: **associated domains** on limechat.org, an app entitlement and a server file; `onOpenURL` is ready.)
@@ -8911,3 +8911,4 @@ Vibrant, living cover backgrounds and a tinted paper canvas. **Brief:** LIME-261
 - **Screenshots (`docs/qa-shots/261/`, iPhone 17, iOS 27):** `profile-colourful-light`, `profile-pale-light`, `profile-nophoto-light`, `band-dark`, `group-dark`, and `*-classic` for the before/after. **Missing:** a light band and light group, and dark profiles (the first dark attempt did not switch the simulator; the band and group dark shots were taken after `simctl ui appearance dark`).
 - **The bug on the way:** the paper as a dynamic `UIColor` made the group page's mute confirmation vanish (`GroupDetailsHeaderUITests`); a plain colour for the current appearance fixed it.
 - **Looks to judge on the phone:** how lively the drift feels; the white text over the brightest parts of a colourful photo (the existing overlay is unchanged; the first screenshot shows "Away" and the handle readable but close); the paper's tint strength.
+- **Installed (the overnight run: 246a–c, 256, 260a–b, 261):** all three, the iPad, Shem's 13 mini and Jean's 12 mini.
