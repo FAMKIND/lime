@@ -7,6 +7,7 @@
 //! URLs from Storage) go through the platform's [`Transport`], so the core never opens a socket itself.
 
 use super::*;
+use crate::store::extras as store_extras;
 use crate::store::photos::{self, Mine, MIN_GAP_MS, RECHECK_MS};
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -29,6 +30,25 @@ pub(super) fn raw(transport: &Arc<dyn Transport>, method: &str, path: &str, cont
         .unwrap_or_default();
     let response = transport.request(method.into(), path.into(), headers, body).map_err(|_: TransportError| StoreError::Network)?;
     Ok((response.status, response.body))
+}
+
+impl LimeStore {
+    /// My own public copy for a slot (`None`: the photo), if the server has one: signed URL, then the bytes. `None` when there is none or it is too large.
+    fn fetch_my_public(&self, transport: &Arc<dyn Transport>, token: &str, me: &str, slot: Option<&str>, max: usize) -> Result<Option<Vec<u8>>, StoreError> {
+        let mut request = json!({ "action": "get", "user_id": me });
+        if let Some(slot) = slot {
+            request["slot"] = json!(slot);
+        }
+        let (status, body) = call(transport, Some(token), "avatar", &request)?;
+        if status == 404 {
+            return Ok(None);
+        }
+        check(status)?;
+        let url = body.get("url").and_then(Value::as_str).ok_or(StoreError::BadMessage)?;
+        let (got, bytes) = raw(transport, "GET", url, None, Vec::new())?;
+        check(got)?;
+        Ok(Some(bytes).filter(|b| !b.is_empty() && b.len() <= max))
+    }
 }
 
 fn version_of(body: &Value) -> i64 {
@@ -72,6 +92,40 @@ impl LimeStore {
         })?;
         self.sync_my_photo(&transport, &auth_token)?;
         self.notify_contacts_of_photo_change()
+    }
+
+    /// A phone that signs in with no record of its own profile (a fresh space, or one wiped) looks for what is already public under my name, my photo,
+    /// cover, cover clip and links, and keeps it as mine (visible to everyone, as it is), so my profile shows what others see and I can change or remove it
+    /// (LIME-271c). A slot this phone has a record for, including one I removed, is never touched. Returns what was adopted (`photo`, `links`, ...).
+    pub fn adopt_my_public(&self, transport: Arc<dyn Transport>, auth_token: String) -> Result<Vec<String>, StoreError> {
+        let state = self.load_or_create_account()?;
+        let Some(me) = state.user_id.clone().filter(|_| state.registered) else { return Ok(vec![]) };
+        let mut adopted = Vec::new();
+        let now = now_ms();
+        // The photo.
+        if self.with_conn(photos::mine_updated_at)? == 0 {
+            let found = self.fetch_my_public(&transport, &auth_token, &me, None, 1024 * 1024)?;
+            self.with_conn(|conn| photos::save_mine(conn, &photos::Mine { jpeg: found.clone(), visibility: "everyone".into(), uploaded_key: None }, now))?;
+            if found.is_some() {
+                adopted.push("photo".to_owned());
+            }
+        }
+        // The cover still comes before its clip: the clip is only kept with a still.
+        for slot in [store_extras::LINKS, store_extras::BACKGROUND, store_extras::BACKGROUND_VIDEO] {
+            if self.with_conn(|conn| store_extras::has_mine(conn, slot))? {
+                continue;
+            }
+            let found = self.fetch_my_public(&transport, &auth_token, &me, Some(slot), store_extras::max_bytes(slot))?;
+            let found = found.filter(|_| slot != store_extras::BACKGROUND_VIDEO || adopted.iter().any(|a| a == store_extras::BACKGROUND) || self.with_conn(|conn| store_extras::mine(conn, store_extras::BACKGROUND)).map(|m| m.data.is_some()).unwrap_or(false));
+            self.with_conn(|conn| {
+                let visibility = if found.is_some() { "everyone" } else { "contacts" };
+                store_extras::save_mine(conn, slot, &store_extras::Mine { data: found.clone(), visibility: visibility.into(), uploaded_key: None }, now)
+            })?;
+            if found.is_some() {
+                adopted.push(slot.to_owned());
+            }
+        }
+        Ok(adopted)
     }
 
     /// Who may see my photo: `everyone` (a public copy) or `contacts` (an encrypted copy; the public one is

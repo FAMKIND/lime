@@ -93,6 +93,11 @@ pub(crate) fn mine(conn: &Connection, slot: &str) -> Result<Mine, StoreError> {
     Ok(row.unwrap_or(Mine { data: None, visibility: "contacts".into(), uploaded_key: None }))
 }
 
+/// True once this phone has a record for the slot (a value, or "nothing", chosen or looked for).
+pub(crate) fn has_mine(conn: &Connection, slot: &str) -> Result<bool, StoreError> {
+    conn.query_row("SELECT EXISTS (SELECT 1 FROM my_extra WHERE slot = ?1)", params![slot], |r| r.get(0)).map_err(db_err)
+}
+
 pub(crate) fn save_mine(conn: &Connection, slot: &str, mine: &Mine, now_ms: i64) -> Result<(), StoreError> {
     conn.execute(
         "INSERT INTO my_extra (slot, data, visibility, uploaded_key, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)

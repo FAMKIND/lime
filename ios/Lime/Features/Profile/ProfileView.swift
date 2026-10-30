@@ -222,6 +222,7 @@ struct ProfileView: View {
         .sheet(isPresented: $showStatus) { StatusSheet(openSettings: { showStatus = false; settingsLaunch = SettingsLaunch(start: nil) }) }
         .sheet(item: $settingsLaunch) { SettingsView(startAt: $0.start) }
         .task(id: "\(route.userID)-\(store.extrasVersion)") {
+            if route.isMe { await store.adoptMyPublicProfile() }   // a one-off look for what is already public under my name (LIME-271c)
             links = ProfileLinks.decode(await store.peerExtra(route.userID, .links))
             heroImage = await store.peerExtra(route.userID, .background).flatMap(UIImage.init(data:))
             if heroImage != nil, let clip = await store.peerExtra(route.userID, .backgroundVideo) {

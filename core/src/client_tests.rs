@@ -8154,3 +8154,45 @@ fn a_profile_key_is_stale_when_the_identity_it_came_with_is_no_longer_theirs_and
     assert_eq!(crate::store::photos::drop_profile_if_stale(&conn, "carol").unwrap(), false);
     assert!(crate::store::photos::contact_key(&conn, "carol").unwrap().is_some(), "her key stays");
 }
+
+// ---------------------------------------------------------------- LIME-271c: a fresh device adopts its own public photo, cover and links
+
+#[test]
+fn a_fresh_device_adopts_its_own_public_items_and_removing_them_takes_them_off_the_server() {
+    use crate::store::extras::{BACKGROUND, LINKS};
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    // Alice made a public photo and a public cover, and kept her links to contacts only.
+    alice.store.set_photo_visibility(transport.clone(), alice.token.clone(), "everyone".into()).unwrap();
+    alice.store.set_my_photo(transport.clone(), alice.token.clone(), photo_bytes()).unwrap();
+    alice.store.set_my_extra(transport.clone(), alice.token.clone(), BACKGROUND.into(), photo_bytes()).unwrap();
+    alice.store.set_extra_visibility(transport.clone(), alice.token.clone(), BACKGROUND.into(), "everyone".into()).unwrap();
+    alice.store.set_my_extra(transport.clone(), alice.token.clone(), LINKS.into(), links_json()).unwrap();
+    bob.store.start_dm("alice".into(), "Alice".into()).unwrap();
+    refresh(&bob, &transport);
+    assert_eq!(bob.store.peer_photo("alice".into()).unwrap(), Some(photo_bytes()), "others see her public photo");
+
+    // Her phone is wiped and she signs back in: a fresh store that knows nothing of it.
+    let (alice2, _) = party(&server, "alice", 9);
+    assert_eq!(alice2.store.my_photo().unwrap().jpeg, None);
+    assert_eq!(alice2.store.my_extra(BACKGROUND.into()).unwrap().data, None);
+    let adopted = alice2.store.adopt_my_public(transport.clone(), alice2.token.clone()).unwrap();
+    assert_eq!(adopted, vec!["photo".to_string(), BACKGROUND.to_string()], "the photo and the cover; the links were never public");
+    assert_eq!(alice2.store.my_photo().unwrap().jpeg, Some(photo_bytes()));
+    assert_eq!(alice2.store.my_photo().unwrap().visibility, "everyone");
+    assert_eq!(alice2.store.my_extra(BACKGROUND.into()).unwrap().data, Some(photo_bytes()));
+    assert_eq!(alice2.store.my_extra(BACKGROUND.into()).unwrap().visibility, "everyone");
+    assert_eq!(alice2.store.my_extra(LINKS.into()).unwrap().data, None);
+    assert!(alice2.store.adopt_my_public(transport.clone(), alice2.token.clone()).unwrap().is_empty(), "once is enough");
+
+    // She removes both: they are gone from the server, and others then see nothing.
+    alice2.store.remove_my_photo(transport.clone(), alice2.token.clone()).unwrap();
+    alice2.store.remove_my_extra(transport.clone(), alice2.token.clone(), BACKGROUND.into()).unwrap();
+    assert_eq!(alice2.store.my_photo().unwrap().jpeg, None);
+    bob.store.lock().execute("UPDATE photos SET checked_at = 0", []).unwrap();
+    refresh(&bob, &transport);
+    assert_eq!(bob.store.peer_photo("alice".into()).unwrap(), None, "no public photo any more");
+    // A removed item is not adopted back: this phone has a record of it now.
+    assert!(alice2.store.adopt_my_public(transport.clone(), alice2.token.clone()).unwrap().is_empty());
+}

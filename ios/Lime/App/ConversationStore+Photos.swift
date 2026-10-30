@@ -17,6 +17,24 @@ extension ConversationStore {
         return (mine?.jpeg, PhotoVisibility(rawValue: mine?.visibility ?? "") ?? .everyone)
     }
 
+    /// A phone with no record of my own profile (a fresh space) keeps what is already public under my name as mine, so my profile shows what others
+    /// see and I can change or remove it (LIME-271c). Quiet when there is nothing to adopt, and cheap once it has looked.
+    func adoptMyPublicProfile() async {
+        #if DEBUG
+        if isDemo { return }
+        #endif
+        guard let core, let link, let token = try? await link.token() else { return }
+        let adopted = (try? await Task.detached(priority: .utility) {
+            try core.adoptMyPublic(transport: link.transport, authToken: token)
+        }.value) ?? []
+        guard !adopted.isEmpty else { return }
+        if adopted.contains("photo") {
+            let jpeg = try? await Task.detached(priority: .utility) { try core.myPhoto().jpeg }.value
+            AvatarCache.shared.set(jpeg ?? nil, for: meProvider().id)
+        }
+        extrasVersion += 1
+    }
+
     /// Saves and uploads my photo (a processed JPEG). `false` when it could not be sent (offline, over the limit).
     func setMyPhoto(_ jpeg: Data) async -> Bool {
         let me = meProvider().id

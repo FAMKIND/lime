@@ -195,6 +195,7 @@ final class AccountSession {
         await live.start()
         store.startDraftRealtime(config)
         await store.syncNow()
+        await store.adoptMyPublicProfile()   // LIME-271c
     }
 
     // MARK: Foreground and background
