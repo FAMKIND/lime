@@ -59,6 +59,8 @@ pub(crate) struct ServerState {
     pub jam_blobs: HashMap<String, String>,
     /// jam id to (writer, title, post_count, ended): the public pages
     pub jam_pages: HashMap<String, (String, String, i64, bool)>,
+    /// jam id to the order its page was first made in (LIME-254b: the oldest is the writer's own jam)
+    pub jam_seq: HashMap<String, usize>,
     /// jam id to the version of its public picture (LIME-194); the bytes are the object `public-avatars/jam-<id>.jpg`
     pub jam_pictures: HashMap<String, i64>,
     /// jam id to its published subscriber count
@@ -687,10 +689,10 @@ impl FakeServer {
             }
             "jam-page" if body.get("action").and_then(Value::as_str) == Some("by_writer") => {
                 let writer = text("writer_id");
-                match state.jam_pages.iter().find(|(_, (owner, _, _, ended))| *owner == writer && !*ended) {
-                    Some((id, (_, title, count, _))) => respond(200, json!({ "jam": { "jam_id": id, "writer_id": writer, "title": title, "about": "", "topics": [], "post_count": count, "subscriber_count": state.jam_subscribers.get(id).copied().unwrap_or(0), "picture_version": state.jam_pictures.get(id) } })),
-                    None => respond(200, json!({ "jam": null })),
-                }
+                let mut live: Vec<(&String, &(String, String, i64, bool))> = state.jam_pages.iter().filter(|(_, (owner, _, _, ended))| *owner == writer && !*ended).collect();
+                live.sort_by_key(|(id, _)| state.jam_seq.get(*id).copied().unwrap_or(0));
+                let page = |(id, (_, title, count, _)): &(&String, &(String, String, i64, bool))| json!({ "jam_id": id, "writer_id": writer, "title": title, "about": "", "topics": [], "post_count": count, "subscriber_count": state.jam_subscribers.get(*id).copied().unwrap_or(0), "picture_version": state.jam_pictures.get(*id) });
+                respond(200, json!({ "jam": live.first().map(page), "others": live.iter().skip(1).map(page).collect::<Vec<_>>() }))
             }
             "jam-page" if body.get("action").and_then(Value::as_str) == Some("picture_get") => {
                 let jam = text("jam_id");
@@ -711,6 +713,8 @@ impl FakeServer {
                             return respond(409, json!({ "error": "ended" }));
                         }
                         state.jam_subscribers.insert(jam.clone(), body.get("subscriber_count").and_then(Value::as_i64).unwrap_or(0));
+                        let seq = state.jam_seq.len();
+                        state.jam_seq.entry(jam.clone()).or_insert(seq);
                         state.jam_pages.insert(jam, (user, text("title"), body.get("post_count").and_then(Value::as_i64).unwrap_or(0), false));
                         respond(200, json!({ "ok": true }))
                     }

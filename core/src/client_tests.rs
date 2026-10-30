@@ -5430,6 +5430,23 @@ fn a_post_with_a_photo_and_a_file_reaches_a_late_subscriber_who_downloads_both_w
 }
 
 #[test]
+fn a_writers_own_jam_comes_first_and_their_bands_after_ended_ones_left_out() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let own = new_jam(&alice);
+    let band = alice.store.create_jam("Science Corner".into(), String::new(), vec![]).unwrap().strip_prefix("jam:").unwrap().to_owned();
+    let gone = alice.store.create_jam("Closed band".into(), String::new(), vec![]).unwrap().strip_prefix("jam:").unwrap().to_owned();
+    deliver(&alice, &transport);
+    alice.store.end_jam(gone).unwrap();
+    deliver(&alice, &transport);
+    let page = bob.store.fetch_jam_page(transport.clone(), bob.token.clone(), alice.user.clone()).unwrap().unwrap();
+    assert_eq!(page.jam_id, own, "the oldest is their own jam");
+    let bands = bob.store.fetch_jam_bands(transport, bob.token.clone(), alice.user.clone()).unwrap();
+    assert_eq!(bands.iter().map(|b| (b.jam_id.as_str(), b.title.as_str())).collect::<Vec<_>>(), vec![(band.as_str(), "Science Corner")], "their other live pages, not the ended one");
+}
+
+#[test]
 fn a_page_is_found_by_its_writer_and_not_once_the_jam_ended() {
     let server = FakeServer::new();
     let (alice, transport) = party(&server, "alice", 1);

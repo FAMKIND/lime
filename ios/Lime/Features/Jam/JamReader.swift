@@ -457,9 +457,9 @@ extension ConversationStore {
 
     /// The orgs a person writes as (LIME-188x). In v1 that is their jam, when they have posted as it at least once or have given it a title that
     /// is not their own name (a jam made on a first post is named after the person); LIME-193's organisations will add more.
-    func profileOrgs(page: JamPageInfo?, personName: String, isMe: Bool = false) -> [JamPageInfo] {
-        // On my own profile the publications I made (LIME-254) come after the legacy one.
-        let made = isMe ? myPublications.map { JamPageInfo(jamId: $0.jamId, writerId: $0.writer, title: $0.title, about: $0.about, topics: $0.topics, postCount: $0.postCount, subscriberCount: $0.subscriberCount, hasCommunity: $0.community, pictureVersion: nil) } : []
+    func profileOrgs(page: JamPageInfo?, personName: String, isMe: Bool = false, bands: [JamPageInfo] = []) -> [JamPageInfo] {
+        // The bands come after the legacy one (LIME-254): mine from this phone, someone else's from the server (LIME-254b).
+        let made = isMe ? myPublications.map { JamPageInfo(jamId: $0.jamId, writerId: $0.writer, title: $0.title, about: $0.about, topics: $0.topics, postCount: $0.postCount, subscriberCount: $0.subscriberCount, hasCommunity: $0.community, pictureVersion: nil) } : bands
         guard let page else { return made }
         let postedAsJam = posts(of: page.jamId).contains { $0.displayAs == "jam" }
         let title = page.title.trimmingCharacters(in: .whitespaces)

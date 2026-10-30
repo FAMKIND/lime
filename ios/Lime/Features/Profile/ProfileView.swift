@@ -108,6 +108,8 @@ struct ProfileView: View {
 
     /// Their jam's page, when they have one (LIME-188d: Posts is a section only then).
     @State private var jamPage: JamPageInfo?
+    /// Someone else's bands (LIME-254b).
+    @State private var bands: [JamPageInfo] = []
 
     /// The sections, in order (LIME-188x). Activity waits for LIME-189 and says so calmly; Comments and Replies come back with it if they are needed.
     enum Section: String, CaseIterable { case info = "Info", posts = "Posts", articles = "Articles", podcasts = "Podcasts", orgs = "Orgs", activity = "Activity", shared = "Shared", calls = "Calls" }
@@ -145,7 +147,7 @@ struct ProfileView: View {
     private var ownPosts: [JamPostInfo] { jamPage.map { store.profilePosts(jamID: $0.jamId, isMe: route.isMe) } ?? [] }
     /// Someone else's posts are readable once you subscribe: before that, Posts says so.
     private var postsLocked: Bool { jamPage.map { !route.isMe && !store.isFollowing($0.jamId) } ?? false }
-    private var orgs: [JamPageInfo] { store.profileOrgs(page: jamPage, personName: displayName, isMe: route.isMe) }
+    private var orgs: [JamPageInfo] { store.profileOrgs(page: jamPage, personName: displayName, isMe: route.isMe, bands: bands) }
     private var sections: [Section] {
         var list: [Section] = [.info]
         let kinds = Set(ownPosts.map(\.kind))
@@ -434,7 +436,7 @@ struct ProfileView: View {
 
     private func loadJam() async {
         if route.isMe { jamPage = store.myOwnJam.map { JamPageInfo(jamId: $0.jamId, writerId: $0.writer, title: $0.title, about: $0.about, topics: $0.topics, postCount: $0.postCount, subscriberCount: $0.subscriberCount, hasCommunity: $0.community, pictureVersion: nil) } }
-        else { jamPage = await store.jamPage(of: route.userID) }
+        else { jamPage = await store.jamPage(of: route.userID); bands = await store.jamBands(of: route.userID) }
     }
 
     // MARK: The top

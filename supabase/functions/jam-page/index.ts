@@ -8,7 +8,7 @@
 //   picture_commit { jam_id }    -> { version }: verifies the upload and makes it visible (`picture_version` on the page).
 //   picture_get { jam_id }       -> { url, version }: a signed download URL, any signed-in user (404 if none).
 //   picture_remove { jam_id }    -> { ok }: deletes it. Ending a jam deletes it too.
-//   by_writer { writer_id }                              -> { jam }: that teacher's live (not ended) page, or { jam: null }. Any signed-in user, the same trust
+//   by_writer { writer_id }                              -> { jam, others }: that teacher's own (oldest live, not ended) page, or { jam: null }, and their other live pages (bands), oldest first, at most 20. Any signed-in user, the same trust
 //                                                           as reading their profile (the server learns that this account looked).
 
 import { admin, requireUser } from "../_shared/db.ts";
@@ -33,9 +33,10 @@ Deno.serve(handler(async (req) => {
   if (body.action === "by_writer") {
     if (!isUuid(body.writer_id)) throw new HttpError(400, "bad_request", "writer_id must be a UUID.");
     const { data, error } = await admin().from("jams").select("jam_id, writer_id, title, about, topics, post_count, subscriber_count, has_community, picture_version, created_at")
-      .eq("writer_id", (body.writer_id as string).toLowerCase()).is("ended_at", null).is("taken_down_at", null).order("created_at", { ascending: false }).limit(1);
+      .eq("writer_id", (body.writer_id as string).toLowerCase()).is("ended_at", null).is("taken_down_at", null).order("created_at", { ascending: true }).limit(21);
     if (error) throw new HttpError(500, "internal");
-    return json({ jam: data?.[0] ?? null });
+    // LIME-254b: `jam` is the writer's own jam (the oldest); `others` are their other live pages (bands), oldest first, at most 20.
+    return json({ jam: data?.[0] ?? null, others: data?.slice(1) ?? [] });
   }
   if (!isUuid(body.jam_id)) throw new HttpError(400, "bad_request", "jam_id must be a UUID.");
   const jamId = (body.jam_id as string).toLowerCase();

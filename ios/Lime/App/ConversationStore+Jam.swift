@@ -312,6 +312,16 @@ extension ConversationStore {
         return page ?? nil
     }
 
+    /// A teacher's other live pages, their bands (LIME-254b), oldest first; none from a server that does not send them yet.
+    func jamBands(of userID: String) async -> [JamPageInfo] {
+        #if DEBUG
+        if isDemo { return demoJamBands[userID] ?? [] }
+        #endif
+        guard let core, let link else { return [] }
+        guard let token = try? await link.token() else { return [] }
+        return (try? await Task.detached { try core.fetchJamBands(transport: link.transport, authToken: token, writerUserId: userID) }.value) ?? []
+    }
+
     func subscribe(to page: JamPageInfo) async {
         #if DEBUG
         if isDemo { demoSubscribe(page); return }

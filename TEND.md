@@ -8781,3 +8781,12 @@ Create publication from jam's +. **Brief:** LIME-254.
 - **The explainer:** under the Create band sheet's step 1 fields: "Band together." / "A band is teachers playing together: a school team, a co-op, a union, a publication." The Bands tab only exists when there is a band, so it has no empty state to add it to. The jam's "Community chat" is untouched.
 - **Tests:** the words in `Jam188d/t/v`, `Jam194`, `Org245`, `Publication254` follow (the last also asserts the explainer). These, `Org216` and all of `Jam188d` pass on the iOS 27 simulator.
 - **Installed (253b):** all three, the iPad, Shem's 13 mini and Jean's 12 mini.
+
+## LIME-254b
+Others see a teacher's own jam, and their bands, on the profile. **Brief:** LIME-254b.
+- **Server (`jam-page` `by_writer`):** now orders **oldest first** (`limit 21`): `jam` = the writer's own (oldest live) page, `others` = their other live, not-taken-down pages, oldest first, at most 20 (ended ones left out). `jam` keeps its key, so an older app still works (it now gets the oldest instead of the newest, which is the fix). `docs/api-v2.md` updated. **Deployed to staging** (`supabase functions deploy jam-page`, on the user's go).
+- **Core:** `fetch_jam_page` unchanged for callers; new `fetch_jam_bands` returns `others` (empty from a server that doesn't send them). Both share one parser (`fetch_writer_pages`, a free function: the exported impl can't hold a tuple-returning helper). The fake server returns `jam` + `others` in the order pages were made.
+- **App:** a profile that isn't mine loads `store.jamBands(of:)` and `profileOrgs(…, bands:)` lists them after the legacy own-jam rule; my own profile still lists `myPublications`. Demo: Sam has two bands.
+- **Tests:** server `jam_test.ts` ("the oldest live jam is the writer's own, the rest come as others…") passes on the local stack **and staging**; core `a_writers_own_jam_comes_first_and_their_bands_after_ended_ones_left_out` plus the 14 other jam tests pass; UI `testAnotherTeachersProfileListsTheirOwnJamAndTheirBands`; `Org216/245`, `Jam188d/v` still pass on the iOS 27 simulator.
+- **What each party learns:** nothing new; each page was already public with its `writer_id`.
+- **Smoke (staging):** the two `by_writer` tests ran against staging with throwaway users (deleted after).

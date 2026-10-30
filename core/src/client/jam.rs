@@ -1174,28 +1174,15 @@ impl LimeStore {
         Ok(plain)
     }
 
-    /// A teacher's live jam page, if they have one: any signed-in teacher can look (the same trust as reading their profile; the server learns that
-    /// this account looked). `None` when they have no jam, or it ended.
+    /// A teacher's own live jam page (their oldest), if they have one: any signed-in teacher can look (the same trust as reading their profile; the server
+    /// learns that this account looked). `None` when they have no jam, or it ended.
     pub fn fetch_jam_page(&self, transport: Arc<dyn Transport>, auth_token: String, writer_user_id: String) -> Result<Option<JamPageInfo>, StoreError> {
-        let (status, body) = call(&transport, Some(&auth_token), "jam-page", &json!({ "action": "by_writer", "writer_id": writer_user_id }))?;
-        if status == 404 {
-            return Ok(None);
-        }
-        check(status)?;
-        let Some(jam) = body.get("jam").filter(|j| j.is_object()) else { return Ok(None) };
-        let text = |k: &str| jam.get(k).and_then(Value::as_str).map(str::to_owned);
-        let topics = jam.get("topics").and_then(Value::as_array).map(|a| a.iter().filter_map(|t| t.as_str().map(str::to_owned)).collect()).unwrap_or_default();
-        Ok(Some(JamPageInfo {
-            jam_id: text("jam_id").ok_or(StoreError::BadMessage)?,
-            writer_id: text("writer_id").unwrap_or(writer_user_id),
-            title: text("title").unwrap_or_default(),
-            about: text("about").unwrap_or_default(),
-            topics,
-            post_count: jam.get("post_count").and_then(Value::as_u64).unwrap_or(0) as u32,
-            subscriber_count: jam.get("subscriber_count").and_then(Value::as_u64).unwrap_or(0) as u32,
-            has_community: jam.get("has_community").and_then(Value::as_bool).unwrap_or(false),
-            picture_version: jam.get("picture_version").and_then(Value::as_i64),
-        }))
+        Ok(fetch_writer_pages(transport, auth_token, writer_user_id)?.0)
+    }
+
+    /// A teacher's other live pages, their bands (LIME-254b), oldest first. Empty from a server that does not send them yet.
+    pub fn fetch_jam_bands(&self, transport: Arc<dyn Transport>, auth_token: String, writer_user_id: String) -> Result<Vec<JamPageInfo>, StoreError> {
+        Ok(fetch_writer_pages(transport, auth_token, writer_user_id)?.1)
     }
 
     /// A jam's public picture (LIME-194), if this phone holds one: the JPEG bytes. Cached like a profile's, under the jam's id.
@@ -2276,4 +2263,31 @@ impl LimeStore {
             }
         }
     }
+}
+
+/// `by_writer`: the writer's own page and their other live pages (LIME-254b).
+fn fetch_writer_pages(transport: Arc<dyn Transport>, auth_token: String, writer_user_id: String) -> Result<(Option<JamPageInfo>, Vec<JamPageInfo>), StoreError> {
+    let (status, body) = call(&transport, Some(&auth_token), "jam-page", &json!({ "action": "by_writer", "writer_id": writer_user_id }))?;
+    if status == 404 {
+        return Ok((None, Vec::new()));
+    }
+    check(status)?;
+    let page_of = |jam: &Value| -> Result<JamPageInfo, StoreError> {
+        let text = |k: &str| jam.get(k).and_then(Value::as_str).map(str::to_owned);
+        let topics = jam.get("topics").and_then(Value::as_array).map(|a| a.iter().filter_map(|t| t.as_str().map(str::to_owned)).collect()).unwrap_or_default();
+        Ok(JamPageInfo {
+            jam_id: text("jam_id").ok_or(StoreError::BadMessage)?,
+            writer_id: text("writer_id").unwrap_or_else(|| writer_user_id.clone()),
+            title: text("title").unwrap_or_default(),
+            about: text("about").unwrap_or_default(),
+            topics,
+            post_count: jam.get("post_count").and_then(Value::as_u64).unwrap_or(0) as u32,
+            subscriber_count: jam.get("subscriber_count").and_then(Value::as_u64).unwrap_or(0) as u32,
+            has_community: jam.get("has_community").and_then(Value::as_bool).unwrap_or(false),
+            picture_version: jam.get("picture_version").and_then(Value::as_i64),
+        })
+    };
+    let page = body.get("jam").filter(|j| j.is_object()).map(page_of).transpose()?;
+    let others = body.get("others").and_then(Value::as_array).map(|a| a.iter().filter(|j| j.is_object()).map(page_of).collect::<Result<Vec<_>, _>>()).transpose()?.unwrap_or_default();
+    Ok((page, others))
 }

@@ -197,6 +197,22 @@ Deno.test("jam-page by_writer: a signed-in teacher finds the live page, none onc
   });
 });
 
+// LIME-254b: the writer's own (oldest) jam is `jam`; their other live pages (bands) are `others`, oldest first; ended ones are left out.
+Deno.test("jam-page by_writer: the oldest live jam is the writer's own, the rest come as others, oldest first, ended ones left out", opts, async () => {
+  await withUsers(2, async ([writer, other]) => {
+    const own = crypto.randomUUID(), bandA = crypto.randomUUID(), bandB = crypto.randomUUID(), closed = crypto.randomUUID();
+    for (const [id, title] of [[own, "Ms Rivera"], [bandA, "Science Corner"], [closed, "Closed band"], [bandB, "Reading Co-op"]]) {
+      assertEquals((await call("jam-page", writer.token, { action: "set", jam_id: id, title, about: "", topics: [], post_count: 0 })).status, 200);
+      await new Promise((r) => setTimeout(r, 15));
+    }
+    assertEquals((await call("jam-page", writer.token, { action: "end", jam_id: closed })).status, 200);
+    const found = await call("jam-page", other.token, { action: "by_writer", writer_id: writer.id });
+    assertEquals(found.body.jam.jam_id, own, "their own jam");
+    assertEquals(found.body.others.map((j: { jam_id: string }) => j.jam_id), [bandA, bandB], "their bands, oldest first, no ended one");
+    assertEquals(found.body.others[0].title, "Science Corner");
+  });
+});
+
 // LIME-194: a picture for a jam, on its public page.
 Deno.test("a jam's picture: put, commit, get on the page and by writer, only the writer, size limits, remove, and ending the jam deletes it", opts, async () => {
   await withUsers(2, async ([writer, other]) => {

@@ -138,6 +138,8 @@ final class ConversationStore {
     var coauthoredPosts: [JamPostInfo] = []
     /// Demo mode (UI tests): jam pages of other teachers by user id.
     var demoJamPages: [String: JamPageInfo] = [:]
+    /// A teacher's other pages, their bands (LIME-254b), by writer id.
+    var demoJamBands: [String: [JamPageInfo]] = [:]
     var demoOpenPosts: [String: OpenPostInfo] = [:]
     var demoJamAttachments: [String: [JamAttachmentInfo]] = [:]
     /// The call tab's All | Missed segment and its filters (kept while the app runs).
@@ -1024,6 +1026,8 @@ final class ConversationStore {
         refreshStorageState()
         statuses = ["sam": PeerStatus(state: .dnd, until: nil), "lee": PeerStatus(state: .away, until: nil)]
         demoJamPages = ["sam": JamPageInfo(jamId: "demo-sam-jam", writerId: "sam", title: "Fractions that stick", about: "Short lessons for grades 3 to 5", topics: ["Maths", "Grade 4"], postCount: 3, subscriberCount: 12, hasCommunity: false, pictureVersion: nil)]
+        demoJamBands = ["sam": [JamPageInfo(jamId: "demo-sam-band-1", writerId: "sam", title: "Science Corner", about: "", topics: ["Science"], postCount: 0, subscriberCount: 4, hasCommunity: false, pictureVersion: nil),
+                                JamPageInfo(jamId: "demo-sam-band-2", writerId: "sam", title: "Reading Co-op", about: "", topics: ["Reading"], postCount: 0, subscriberCount: 9, hasCommunity: false, pictureVersion: nil)]]
         // Their public profiles, as the server would answer (UI tests and screenshots).
         publicProfiles = [
             "sam": PublicProfile(userId: "sam", displayName: "Sam Park", username: "sam.park", school: "Lincoln Elementary", aboutEmoji: "📚", aboutText: "Fourth grade, loves fractions", since: 1_762_000_000_000, hasJam: false),
