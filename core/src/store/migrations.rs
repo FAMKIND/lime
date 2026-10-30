@@ -917,6 +917,9 @@ const MIGRATIONS: &[&str] = &[
          post_id UNINDEXED,
          tokenize = 'unicode61 remove_diacritics 2'
      );",
+    // LIME-257: a group's colour (one of the 8 avatar tones) and its cover (an encrypted photo: blob id and key, like `group_photo`), from its signed `group.set_style` op.
+    "ALTER TABLE conversations ADD COLUMN group_tone INTEGER;
+     ALTER TABLE conversations ADD COLUMN group_cover TEXT;",
 ];
 
 /// The schema version this build writes.

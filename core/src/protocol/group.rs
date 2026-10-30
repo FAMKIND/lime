@@ -96,6 +96,9 @@ pub(crate) enum Kind {
     Rename { name: String },
     /// An emoji or an encrypted photo (never both); neither clears the avatar.
     SetAvatar { emoji: Option<String>, photo: Option<GroupPhoto> },
+    /// The group's colour (one of the 8 avatar tones) and cover (an encrypted photo, like its avatar photo), LIME-257. Each op carries both, so it replaces the
+    /// style: a colour change sends the cover that is current, a cover change the tone that is. Neither is the default again.
+    SetStyle { tone: Option<u8>, cover: Option<GroupPhoto> },
     /// `role` is `Admin` or `Member`.
     SetRole { user: String, role: Role },
     /// The owner ends the group for everyone: it becomes read-only (LIME-115).
@@ -111,6 +114,7 @@ impl Kind {
             Kind::Leave => "group.leave",
             Kind::Rename { .. } => "group.rename",
             Kind::SetAvatar { .. } => "group.set_avatar",
+            Kind::SetStyle { .. } => "group.set_style",
             Kind::SetRole { .. } => "group.set_role",
             Kind::Delete => "group.delete",
         }
@@ -127,6 +131,7 @@ impl Kind {
                 Some(photo) => json!({ "photo": photo.to_json() }),
                 None => json!({ "emoji": emoji }),
             },
+            Kind::SetStyle { tone, cover } => json!({ "tone": tone, "cover": cover.as_ref().map(GroupPhoto::to_json) }),
             Kind::SetRole { user, role } => json!({ "user": user, "role": role.as_str() }),
             Kind::Delete => json!({}),
         }
@@ -151,6 +156,18 @@ impl Kind {
                     Some(value) => Some(GroupPhoto::parse(value)?),
                 };
                 Kind::SetAvatar { emoji: if photo.is_some() { None } else { text("emoji") }, photo }
+            }
+            "group.set_style" => {
+                // A tone out of range or a cover that is malformed makes the op invalid.
+                let tone = match payload.get("tone") {
+                    None | Some(Value::Null) => None,
+                    Some(value) => Some(value.as_u64().filter(|t| *t <= 7)? as u8),
+                };
+                let cover = match payload.get("cover") {
+                    None | Some(Value::Null) => None,
+                    Some(value) => Some(GroupPhoto::parse(value)?),
+                };
+                Kind::SetStyle { tone, cover }
             }
             "group.delete" => Kind::Delete,
             "group.set_role" => {
@@ -191,6 +208,8 @@ pub(crate) enum Event {
     Avatar,
     /// The group's photo was set or changed.
     Photo,
+    /// Its colour or cover changed (LIME-257): no line in the chat.
+    Style,
     Role(String, Role),
     NewOwner(String),
     /// The owner deleted the group.
@@ -213,6 +232,9 @@ pub(crate) struct GroupState {
     pub name: String,
     pub emoji: Option<String>,
     pub photo: Option<GroupPhoto>,
+    /// The colour (0 to 7) and cover (LIME-257).
+    pub tone: Option<u8>,
+    pub cover: Option<GroupPhoto>,
     pub members: Vec<Member>,
     pub effects: Vec<Effect>,
     /// Everyone who has ever been a member (a message from someone since removed still shows).
@@ -411,6 +433,11 @@ fn pass(group_id: &str, sorted: &[GroupOp], ancestry: &Ancestry, voiding_removes
                 state.photo = photo.clone();
                 Some(if photo.is_some() { Event::Photo } else { Event::Avatar })
             }
+            Kind::SetStyle { tone, cover } if actor_role.is_some_and(Role::can_manage) => {
+                state.tone = *tone;
+                state.cover = cover.clone();
+                Some(Event::Style)
+            }
             // Only the owner ends a group; everyone replays this the same way, so a forged delete from anyone else changes nothing.
             Kind::Delete if actor_role == Some(Role::Owner) => {
                 state.deleted = true;
@@ -570,6 +597,23 @@ mod tests {
         let many: Vec<String> = (0..120).map(|i| format!("u{i}")).collect();
         let refs: Vec<&str> = many.iter().map(String::as_str).collect();
         assert_eq!(replay("g", &[create("ann", &refs)]).members.len(), MAX_MEMBERS);
+    }
+
+    #[test]
+    fn a_style_op_from_an_admin_applies_and_from_a_plain_member_changes_nothing() {
+        let cover = GroupPhoto { blob_id: "11111111-2222-3333-4444-555555555555".into(), key: vec![7; 32] };
+        let ops = vec![
+            create("ann", &["bo", "cy"]),
+            op("r", "ann", 2, &["g"], Kind::SetRole { user: "bo".into(), role: Role::Admin }),
+            op("s1", "cy", 3, &["r"], Kind::SetStyle { tone: Some(2), cover: None }),
+            op("s2", "bo", 4, &["s1"], Kind::SetStyle { tone: Some(5), cover: Some(cover.clone()) }),
+        ];
+        let state = replay("g", &ops);
+        assert_eq!((state.tone, state.cover.clone()), (Some(5), Some(cover.clone())), "the plain member's op changed nothing, the admin's applied");
+        let again = Kind::parse("group.set_style", &Kind::SetStyle { tone: Some(5), cover: Some(cover) }.payload());
+        assert!(matches!(again, Some(Kind::SetStyle { tone: Some(5), cover: Some(_) })));
+        assert!(Kind::parse("group.set_style", &json!({ "tone": 9 })).is_none(), "a tone out of range is invalid");
+        assert!(Kind::parse("group.set_style", &json!({ "tone": 1, "cover": { "id": "nope" } })).is_none(), "a malformed cover is invalid");
     }
 
     #[test]

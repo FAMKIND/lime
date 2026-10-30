@@ -1,11 +1,29 @@
 import SwiftUI
 import UIKit
 
-/// A band's cover and colour (LIME-258), from Edit Cover on its page: a cover (Photos or the camera, framed into the hero's 4:5 as a profile's is; Remove brings the
-/// ambient default back) and one of the eight avatar colours (the default comes from the band's id). Saved at once; both are public, like the name and picture.
+/// A band's cover and colour (LIME-258), from Edit Cover on its page, and a group's (LIME-257): a cover (Photos or the camera, framed into the hero's 4:5 as a
+/// profile's is; Remove brings the ambient default back) and one of the eight avatar colours (the default comes from the id). Saved at once.
 struct OrgCoverSheet: View {
     let jamId: String
     @Environment(ConversationStore.self) private var store
+
+    var body: some View {
+        CoverColourSheet(
+            cover: AvatarCache.shared.image(for: ConversationStore.jamCoverKey(jamId)), chosen: store.jamTones[jamId], current: store.jamTone(jamId),
+            note: "The cover and colour are public, like the band's name.",
+            setTone: { await store.setJamTone(jamId, tone: $0) }, setCover: { await store.setJamCover(jamId, jpeg: $0) }, removeCover: { await store.removeJamCover(jamId) })
+    }
+}
+
+/// The sheet itself, for a band or a group: what is held now, and what each choice does.
+struct CoverColourSheet: View {
+    let cover: UIImage?
+    let chosen: Int?
+    let current: Int
+    let note: String
+    let setTone: (Int?) async -> Bool
+    let setCover: (Data) async -> Bool
+    let removeCover: () async -> Bool
     @Environment(\.dismiss) private var dismiss
     @State private var step: Step?
     @State private var framing: UIImage?
@@ -21,10 +39,6 @@ struct OrgCoverSheet: View {
     /// The names of the eight avatar colours, in tone order (what VoiceOver says).
     static let names = ["Pink", "Coral", "Orange", "Yellow", "Blue", "Periwinkle", "Purple", "Aqua"]
 
-    private var cover: UIImage? { AvatarCache.shared.image(for: ConversationStore.jamCoverKey(jamId)) }
-    private var chosen: Int? { store.jamTones[jamId] }
-    private var current: Int { store.jamTone(jamId) }
-
     var body: some View {
         VStack(spacing: 0) {
             SheetHeader(title: "Cover and colour", leading: .close { dismiss() })
@@ -33,7 +47,7 @@ struct OrgCoverSheet: View {
                     coverSection
                     colourSection
                     if let problem { Text(problem).font(Theme.secondary).foregroundStyle(Color.red) }
-                    Text("The cover and colour are public, like the band's name.").font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                    Text(note).font(Theme.caption).foregroundStyle(Theme.textSecondary)
                 }
                 .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 24)
             }
@@ -104,21 +118,21 @@ struct OrgCoverSheet: View {
 
     private func pick(_ tone: Int) {
         guard tone != current || chosen == nil else { return }
-        Task { busy = true; if await !store.setJamTone(jamId, tone: tone) { problem = "The colour could not be saved." }; busy = false }
+        Task { busy = true; if await !setTone(tone) { problem = "The colour could not be saved." }; busy = false }
     }
 
     private func reset() {
-        Task { busy = true; if await !store.setJamTone(jamId, tone: nil) { problem = "The colour could not be saved." }; busy = false }
+        Task { busy = true; if await !setTone(nil) { problem = "The colour could not be saved." }; busy = false }
     }
 
     private func save(_ crop: BackgroundCrop) {
         guard let still = BackgroundProcessing.jpeg(crop.image) else { problem = "That picture could not be prepared."; return }
         problem = nil
-        Task { busy = true; if await !store.setJamCover(jamId, jpeg: still) { problem = "The cover could not be saved. Check your connection and try again." }; busy = false }
+        Task { busy = true; if await !setCover(still) { problem = "The cover could not be saved. Check your connection and try again." }; busy = false }
     }
 
     private func remove() {
         problem = nil
-        Task { busy = true; if await !store.removeJamCover(jamId) { problem = "The cover could not be removed." }; busy = false }
+        Task { busy = true; if await !removeCover() { problem = "The cover could not be removed." }; busy = false }
     }
 }

@@ -311,6 +311,106 @@ impl LimeStore {
         Ok(changed)
     }
 
+    /// The group's colour (0 to 7) as the signed state says; `None` is the default (from the group's id).
+    pub fn group_tone(&self, conversation_id: String) -> Result<Option<i64>, StoreError> {
+        self.with_conn(|conn| {
+            Ok(conn
+                .query_row("SELECT group_tone FROM conversations WHERE id = ?1", params![conversation_id], |r| r.get::<_, Option<i64>>(0))
+                .optional()
+                .map_err(db_err)?
+                .flatten())
+        })
+    }
+
+    /// The group's cover, once this phone has it (LIME-257).
+    pub fn group_cover(&self, conversation_id: String) -> Result<Option<Vec<u8>>, StoreError> {
+        self.with_conn(|conn| {
+            let Some(cover) = stored_cover(conn, &conversation_id)? else { return Ok(None) };
+            Ok(crate::store::photos::cached(conn, &cover_key(&conversation_id))?.filter(|c| c.source == cover.blob_id && !c.bytes.is_empty()).map(|c| c.bytes))
+        })
+    }
+
+    /// Sets the group's colour (0 to 7), or back to the default with `None` (the owner and admins may). The cover that is current goes with it.
+    pub fn set_group_tone(&self, conversation_id: String, tone: Option<i64>) -> Result<(), StoreError> {
+        if tone.is_some_and(|t| !(0..=7).contains(&t)) {
+            return Err(StoreError::Rejected);
+        }
+        let (group_id, state, me) = self.group_context(&conversation_id)?;
+        let before = self.with_conn(|conn| groups::state_of(conn, &group_id))?;
+        if !before.may_manage(&me) {
+            return Err(StoreError::Rejected);
+        }
+        self.make_group_op(&state, &me, &group_id, None, Kind::SetStyle { tone: tone.map(|t| t as u8), cover: before.cover })
+    }
+
+    /// Sets the group's cover (a JPEG already framed 4:5 and shrunk by the app; the owner and admins may). Like the photo it is encrypted on this phone with a
+    /// new random key and uploaded as an opaque blob; its id and key go only inside the group's signed, encrypted state op, so the server never sees it.
+    pub fn set_group_cover(&self, transport: Arc<dyn Transport>, auth_token: String, conversation_id: String, jpeg: Vec<u8>) -> Result<(), StoreError> {
+        if jpeg.is_empty() || jpeg.len() > 1024 * 1024 {
+            return Err(StoreError::Rejected);
+        }
+        let (group_id, state, me) = self.group_context(&conversation_id)?;
+        let before = self.with_conn(|conn| groups::state_of(conn, &group_id))?;
+        if !before.may_manage(&me) {
+            return Err(StoreError::Rejected);
+        }
+        let cover = upload_group_blob(&transport, &auth_token, &jpeg)?;
+        self.make_group_op(&state, &me, &group_id, None, Kind::SetStyle { tone: before.tone, cover: Some(cover.clone()) })?;
+        self.with_conn(|conn| crate::store::photos::save_cached(conn, &cover_key(&conversation_id), &jpeg, &cover.blob_id, 1, now_ms()))?;
+        self.drop_group_photo(&transport, &auth_token, &conversation_id, before.cover);
+        Ok(())
+    }
+
+    /// Takes the cover off (the colour stays).
+    pub fn remove_group_cover(&self, transport: Arc<dyn Transport>, auth_token: String, conversation_id: String) -> Result<(), StoreError> {
+        let (group_id, state, me) = self.group_context(&conversation_id)?;
+        let before = self.with_conn(|conn| groups::state_of(conn, &group_id))?;
+        if !before.may_manage(&me) {
+            return Err(StoreError::Rejected);
+        }
+        self.make_group_op(&state, &me, &group_id, None, Kind::SetStyle { tone: before.tone, cover: None })?;
+        self.with_conn(|conn| crate::store::photos::save_cached(conn, &cover_key(&conversation_id), &[], "none", 0, now_ms()))?;
+        self.drop_group_photo(&transport, &auth_token, &conversation_id, before.cover);
+        Ok(())
+    }
+
+    /// Fetches and decrypts the covers of groups whose cover this phone does not have yet, and forgets the ones that were removed. Returns the conversations that changed.
+    pub fn refresh_group_covers(&self, transport: Arc<dyn Transport>, auth_token: String) -> Result<Vec<String>, StoreError> {
+        let groups: Vec<(String, Option<String>)> = self.with_conn(|conn| {
+            let mut statement = conn
+                .prepare("SELECT id, group_cover FROM conversations WHERE is_group = 1 AND id LIKE 'grp:%' AND request_state != 'blocked'")
+                .map_err(db_err)?;
+            let rows = statement.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?))).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+            Ok(rows)
+        })?;
+        let mut changed = Vec::new();
+        for (conversation, stored) in groups {
+            let key = cover_key(&conversation);
+            let held = self.with_conn(|conn| crate::store::photos::cached(conn, &key))?;
+            let Some(cover) = stored.as_deref().and_then(GroupPhoto::from_stored) else {
+                if held.as_ref().is_some_and(|c| !c.bytes.is_empty()) {
+                    self.with_conn(|conn| crate::store::photos::save_cached(conn, &key, &[], "none", 0, now_ms()))?;
+                    changed.push(conversation);
+                }
+                continue;
+            };
+            if held.as_ref().is_some_and(|c| c.source == cover.blob_id && !c.bytes.is_empty()) {
+                continue;
+            }
+            let Ok((200, body)) = call(&transport, Some(&auth_token), "blob", &json!({ "action": "get", "blob_id": cover.blob_id })) else { continue };
+            let Some(url) = body.get("url").and_then(Value::as_str) else { continue };
+            let Ok(response) = transport.request("GET".into(), url.into(), Vec::new(), Vec::new()) else { continue };
+            if check(response.status).is_err() {
+                continue;
+            }
+            if let Some(jpeg) = crate::store::attachments::open(&cover.key, &cover.blob_id, &[response.body]) {
+                self.with_conn(|conn| crate::store::photos::save_cached(conn, &key, &jpeg, &cover.blob_id, 1, now_ms()))?;
+                changed.push(conversation);
+            }
+        }
+        Ok(changed)
+    }
+
     /// Makes someone an admin, or a plain member again (only the owner may).
     pub fn set_group_admin(&self, conversation_id: String, user_id: String, admin: bool) -> Result<(), StoreError> {
         let (group_id, state, me) = self.group_context(&conversation_id)?;
@@ -949,4 +1049,34 @@ impl LimeStore {
             let _ = call(transport, Some(token), "blob", &json!({ "action": "delete", "blob_id": old.blob_id }));
         }
     }
+}
+
+/// A group's cover is cached beside its photo, under this key (a conversation id never contains `#`).
+fn cover_key(conversation_id: &str) -> String {
+    format!("{conversation_id}#cover")
+}
+
+fn stored_cover(conn: &rusqlite::Connection, conversation_id: &str) -> Result<Option<GroupPhoto>, StoreError> {
+    let stored: Option<String> = conn
+        .query_row("SELECT group_cover FROM conversations WHERE id = ?1", params![conversation_id], |r| r.get(0))
+        .optional()
+        .map_err(db_err)?
+        .flatten();
+    Ok(stored.as_deref().and_then(GroupPhoto::from_stored))
+}
+
+/// Encrypts a JPEG with a new random key and uploads it as an opaque blob: the blob's id and the key are what the group's signed state op carries.
+fn upload_group_blob(transport: &Arc<dyn Transport>, auth_token: &str, jpeg: &[u8]) -> Result<GroupPhoto, StoreError> {
+    let photo = GroupPhoto { blob_id: uuid::Uuid::new_v4().to_string(), key: crate::store::attachments::new_key() };
+    let sealed = crate::store::attachments::seal(&photo.key, &photo.blob_id, jpeg).remove(0);
+    let (status, body) = call(transport, Some(auth_token), "blob", &json!({ "action": "put", "blob_id": photo.blob_id, "size": sealed.len() }))?;
+    check(status)?;
+    let url = body.get("url").and_then(Value::as_str).ok_or(StoreError::BadMessage)?;
+    let response = transport
+        .request("PUT".into(), url.into(), vec![HeaderPair { name: "content-type".into(), value: "application/octet-stream".into() }], sealed)
+        .map_err(|_: TransportError| StoreError::Network)?;
+    check(response.status)?;
+    let (status, _) = call(transport, Some(auth_token), "blob", &json!({ "action": "commit", "blob_id": photo.blob_id }))?;
+    check(status)?;
+    Ok(photo)
 }

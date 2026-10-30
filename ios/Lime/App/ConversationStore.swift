@@ -136,6 +136,8 @@ final class ConversationStore {
     var jamPictureChecked: [String: Date] = [:]
     /// A band's chosen colour (0 to 7) and when its style (colour, cover) was last looked at (LIME-258).
     var jamTones: [String: Int] = [:]
+    /// A group's chosen colour (LIME-257); its cover is in `AvatarCache` under `groupCoverKey`.
+    var groupTones: [String: Int] = [:]
     var jamStyleChecked: [String: Date] = [:]
     var demoEngagement = DemoEngagement()
     var jamSubscribers: [String: [JamSubscriberInfo]] = [:]
@@ -483,6 +485,7 @@ final class ConversationStore {
         // Other people's photos, at most hourly each; this is off the critical path of the messages.
         await refreshPhotos()
         await refreshGroupPhotos()
+        await refreshGroupCovers()
         await downloadRecentImages()
         // A nudge that came in while the photo work above ran is not lost: sync again.
         } while syncAgain

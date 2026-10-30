@@ -1479,7 +1479,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
              DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP INDEX olm_sessions_by_peer; DROP TABLE received_ciphertexts; DROP TABLE emergency_messages; DROP TABLE emergency_settings; DROP TABLE mesh_outbox; DROP TABLE mesh_packets; DROP TABLE mesh_seen; DROP TABLE mesh_uploaded; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
-             DROP TABLE draft_files; DROP TABLE draft_outbox; DROP TABLE draft_authors; DROP TABLE draft_chunks; DROP TABLE drafts; DROP TABLE deleted_peers; DROP TABLE session_repairs; DROP TABLE profile_key_requests; DROP TABLE my_extra; DROP TABLE extras; DROP TRIGGER jam_posts_fts_insert; DROP TRIGGER jam_posts_fts_update; DROP TRIGGER jam_posts_fts_delete; DROP TABLE jam_fts; DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_credits; DROP TABLE jam_credit_requests; DROP TABLE jam_credit_wires; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_blob_deletes; DROP TABLE jam_reactions; DROP TABLE jam_my_reactions; DROP TABLE jam_comments; DROP TABLE jam_counts; DROP TABLE jam_counts_out; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; DROP TABLE open_outbox; DROP TABLE jam_follow_off; DROP TABLE contact_jam_checks; DROP TABLE community_joins; DROP TABLE open_fts; DROP TABLE open_seen; PRAGMA user_version = 9;",
+             DROP TABLE draft_files; DROP TABLE draft_outbox; DROP TABLE draft_authors; DROP TABLE draft_chunks; DROP TABLE drafts; DROP TABLE deleted_peers; DROP TABLE session_repairs; DROP TABLE profile_key_requests; DROP TABLE my_extra; DROP TABLE extras; DROP TRIGGER jam_posts_fts_insert; DROP TRIGGER jam_posts_fts_update; DROP TRIGGER jam_posts_fts_delete; DROP TABLE jam_fts; DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_credits; DROP TABLE jam_credit_requests; DROP TABLE jam_credit_wires; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_blob_deletes; DROP TABLE jam_reactions; DROP TABLE jam_my_reactions; DROP TABLE jam_comments; DROP TABLE jam_counts; DROP TABLE jam_counts_out; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; DROP TABLE open_outbox; DROP TABLE jam_follow_off; DROP TABLE contact_jam_checks; DROP TABLE community_joins; DROP TABLE open_fts; DROP TABLE open_seen; ALTER TABLE conversations DROP COLUMN group_tone; ALTER TABLE conversations DROP COLUMN group_cover; PRAGMA user_version = 9;",
         )
         .unwrap();
     }
@@ -2459,6 +2459,69 @@ fn a_group_photo_is_set_changed_and_removed_across_accounts_and_the_server_holds
     assert_eq!(bob.store.group_photo(chat.clone()).unwrap(), None);
     assert!(!bob.store.group_details(chat.clone()).unwrap().has_photo);
     assert_eq!(bob.store.list_conversations().unwrap().into_iter().find(|c| c.id == chat).unwrap().group_emoji, None);
+}
+
+#[test]
+fn a_groups_colour_and_cover_are_set_by_an_admin_reach_every_member_and_a_plain_member_is_refused() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = team(&server);
+    for p in [&bob, &carol] {
+        p.store.accept_request(chat.clone()).unwrap();
+    }
+    deliver(&bob, &transport);
+    deliver(&carol, &transport);
+    for p in [&alice, &bob, &carol] {
+        sync(p, &transport);
+    }
+    let refresh = |p: &Party| p.store.refresh_group_covers(transport.clone(), p.token.clone()).unwrap();
+    let cover = |seed: u8| (0..30_000u32).map(|i| (i as u8).wrapping_mul(seed).wrapping_add(seed)).collect::<Vec<u8>>();
+    assert_eq!((bob.store.group_tone(chat.clone()).unwrap(), bob.store.group_cover(chat.clone()).unwrap()), (None, None), "the default");
+
+    // A plain member may change neither; out-of-range is refused before anything is sent.
+    assert!(bob.store.set_group_tone(chat.clone(), Some(3)).is_err());
+    assert!(bob.store.set_group_cover(transport.clone(), bob.token.clone(), chat.clone(), cover(5)).is_err());
+    assert!(alice.store.set_group_tone(chat.clone(), Some(8)).is_err());
+
+    // The owner sets a colour and a cover: members get both; the server holds only ciphertext and no line appears in the chat.
+    let before_lines = bob.store.list_messages(chat.clone()).unwrap().into_iter().filter(|m| m.local_state == "system").count();
+    alice.store.set_group_tone(chat.clone(), Some(6)).unwrap();
+    let first = cover(3);
+    alice.store.set_group_cover(transport.clone(), alice.token.clone(), chat.clone(), first.clone()).unwrap();
+    deliver(&alice, &transport);
+    assert_eq!((alice.store.group_tone(chat.clone()).unwrap(), alice.store.group_cover(chat.clone()).unwrap()), (Some(6), Some(first.clone())), "the owner has both at once");
+    for p in [&bob, &carol] {
+        sync(p, &transport);
+        assert_eq!(p.store.group_tone(chat.clone()).unwrap(), Some(6), "{}", p.user);
+        assert_eq!(refresh(p), vec![chat.clone()]);
+        assert_eq!(p.store.group_cover(chat.clone()).unwrap(), Some(first.clone()), "{}", p.user);
+    }
+    assert_eq!(bob.store.list_messages(chat.clone()).unwrap().into_iter().filter(|m| m.local_state == "system").count(), before_lines, "a style change is no chat line");
+    assert!(refresh(&bob).is_empty(), "nothing changed the second time");
+    {
+        let state = server.state.lock().unwrap();
+        let (id, _) = state.blob_rows.iter().next().unwrap();
+        assert!(!state.objects.get(&format!("blobs/{id}")).unwrap().windows(32).any(|w| w == &first[1000..1032]), "ciphertext");
+    }
+
+    // A colour change keeps the cover; a new cover replaces (and deletes) the old blob.
+    alice.store.set_group_tone(chat.clone(), Some(1)).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    assert_eq!((bob.store.group_tone(chat.clone()).unwrap(), bob.store.group_cover(chat.clone()).unwrap()), (Some(1), Some(first.clone())));
+    alice.store.set_group_cover(transport.clone(), alice.token.clone(), chat.clone(), cover(7)).unwrap();
+    assert_eq!(server.state.lock().unwrap().blob_rows.len(), 1, "the replaced cover is deleted from the server");
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    assert_eq!(refresh(&bob), vec![chat.clone()]);
+    assert_eq!(bob.store.group_cover(chat.clone()).unwrap(), Some(cover(7)));
+
+    // Removed: the cover goes everywhere, the colour stays.
+    alice.store.remove_group_cover(transport.clone(), alice.token.clone(), chat.clone()).unwrap();
+    assert!(server.state.lock().unwrap().blob_rows.is_empty());
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    refresh(&bob);
+    assert_eq!((bob.store.group_tone(chat.clone()).unwrap(), bob.store.group_cover(chat.clone()).unwrap()), (Some(1), None));
 }
 
 #[test]

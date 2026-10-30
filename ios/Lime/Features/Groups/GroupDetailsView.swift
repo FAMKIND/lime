@@ -22,6 +22,7 @@ struct GroupDetailsView: View {
     @State private var clearing = false
     @State private var adding = false
     @State private var editingAvatar = false
+    @State private var coverSheet = false
     @State private var topInset: CGFloat = 0
     @State private var windowHeight: CGFloat = 0
 
@@ -69,6 +70,14 @@ struct GroupDetailsView: View {
                 if changed { Task { await refresh() } }
             }
         }
+        .sheet(isPresented: $coverSheet) {
+            let id = target.conversationID
+            CoverColourSheet(
+                cover: AvatarCache.shared.image(for: ConversationStore.groupCoverKey(id)), chosen: store.groupTones[id], current: store.groupTone(id),
+                note: "Only people in the group see the cover and colour.",
+                setTone: { await store.setGroupTone(id, tone: $0) }, setCover: { await store.setGroupCover(id, jpeg: $0) }, removeCover: { await store.removeGroupCover(id) })
+        }
+        .task { await store.loadGroupStyle(target.conversationID) }
         .sheet(isPresented: $renaming) {
             RenameGroupSheet(name: $newName) { saved in
                 renaming = false
@@ -128,6 +137,8 @@ struct GroupDetailsView: View {
         if #available(iOS 26, *) {
             if editingNow {
                 CircleToolbarItem(placement: .topBarLeading) { backToGroup }
+                ToolbarItem(placement: .topBarTrailing) { editCoverButton }
+                ToolbarSpacer(.fixed, placement: .topBarTrailing)
                 ToolbarItem(placement: .topBarTrailing) { doneButton }
             } else {
                 if details?.canRename == true {
@@ -138,7 +149,7 @@ struct GroupDetailsView: View {
             }
         } else {
             ToolbarItemGroup(placement: .topBarTrailing) {
-                if editingNow { doneButton } else {
+                if editingNow { editCoverButton; doneButton } else {
                     if details?.canRename == true { editButton }
                     moreMenu
                 }
@@ -149,6 +160,11 @@ struct GroupDetailsView: View {
 
     private var editButton: some View {
         Button("Edit") { editing = true }.accessibilityLabel("Edit group").accessibilityIdentifier("group-edit")
+    }
+
+    /// The group's cover and colour, in a small sheet (LIME-257).
+    private var editCoverButton: some View {
+        Button("Edit Cover") { coverSheet = true }.accessibilityLabel("Edit cover").accessibilityIdentifier("group-edit-cover")
     }
 
     private var doneButton: some View {
@@ -199,7 +215,9 @@ struct GroupDetailsView: View {
         let screen = windowHeight > 0 ? windowHeight : UIScreen.main.bounds.height
         let inset = topInset > 0 ? topInset : 100
         let id = target.conversationID
-        let shown = HeroDefault.image(for: Person(id: id, name: name, tone: AvatarTone.tone(for: id)), photo: AvatarCache.shared.image(for: id), dark: colorScheme == .dark)
+        // The cover when it has one, else its photo blurred, else a gradient of its colour (LIME-257).
+        let cover = AvatarCache.shared.image(for: ConversationStore.groupCoverKey(id))
+        let shown = HeroDefault.band(tone: store.groupTone(id), picture: AvatarCache.shared.image(for: id), id: id, dark: colorScheme == .dark)
         let sides = windowSideInsets
         let count = details?.members.count ?? 0
         return VStack(spacing: 0) {
@@ -229,8 +247,9 @@ struct GroupDetailsView: View {
             }
         }
         .frame(maxWidth: .infinity, minHeight: HeroShape.blockHeight(screen: screen, inset: inset))
+        .overlay { if store.isDemo { Color.clear.accessibilityIdentifier("group-tone-\(store.groupTone(id))") } }
         .background(alignment: .top) {
-            ProfileHeroBackground(image: shown.image, cacheKey: shown.key, isDefault: true, screenHeight: screen, exposedForTests: store.isDemo)
+            ProfileHeroBackground(image: cover ?? shown.image, cacheKey: cover.map { "group-cover-\(id)-\(ObjectIdentifier($0).hashValue)" } ?? shown.key, isDefault: cover == nil, screenHeight: screen, exposedForTests: store.isDemo)
                 .padding(.top, -inset).padding(.bottom, -8).padding(.leading, -(16 + sides.leading)).padding(.trailing, -(16 + sides.trailing))
         }
     }
@@ -242,7 +261,7 @@ struct GroupDetailsView: View {
         if let photo = AvatarCache.shared.image(for: id) {
             Image(uiImage: photo).resizable().scaledToFill().frame(width: 104, height: 104).clipShape(Circle())
         } else if let emoji = details?.emoji {
-            Circle().fill(Theme.surface).frame(width: 104, height: 104).overlay(Text(emoji).font(.system(size: 52)))
+            Circle().fill(Theme.avatar(store.groupTone(id))).frame(width: 104, height: 104).overlay(Text(emoji).font(.system(size: 52)))
         } else if let conversation {
             ConversationAvatar(conversation: conversation, size: 104).overlay(alignment: .topLeading) {
                 Color.clear.frame(width: 1, height: 1).accessibilityElement().accessibilityIdentifier("group-details-members-avatar")

@@ -197,6 +197,12 @@ pub(crate) fn rebuild(conn: &Connection, group_id: &str, me: &str, now: i64) -> 
         }
         _ => {}
     }
+    // The colour and cover (LIME-257): what the signed state says now.
+    conn.execute(
+        "UPDATE conversations SET group_tone = ?2, group_cover = ?3 WHERE id = ?1",
+        params![conv, state.tone.map(i64::from), state.cover.as_ref().map(|c| c.to_stored())],
+    )
+    .map_err(db_err)?;
     // Ended: I left it, or its owner deleted it. Either way it is read-only.
     let left_myself = !i_am_member && state.effects.iter().any(|e| e.event == Event::Left && e.actor == me);
     let ended = if state.deleted { Some("deleted") } else if left_myself { Some("left") } else { None };
@@ -245,6 +251,7 @@ fn write_system_lines(conn: &Connection, conv: &str, state: &GroupState, me: &st
             Event::Renamed(name) => json!({ "e": "renamed", "by": effect.actor, "name": name }),
             Event::Avatar => json!({ "e": "avatar", "by": effect.actor }),
             Event::Photo => json!({ "e": "photo", "by": effect.actor }),
+            Event::Style => continue,
             Event::Role(user, role) => json!({ "e": "role", "by": effect.actor, "user": user, "role": role.as_str() }),
             Event::NewOwner(user) => json!({ "e": "owner", "by": effect.actor, "user": user }),
             Event::Deleted => json!({ "e": "deleted", "by": effect.actor }),
