@@ -9156,3 +9156,5 @@ The old cover goes once a contact's key has changed, even after the accept. **Br
 - **Tests:** core 408 pass (new: the repro; a key is stale when its recorded identity differs, and a second phone is not a replacement). iOS: `StaleCover271bTests` (the avatar and the remembered cover clear). The reporting-as-changed path through the app's refresh is not covered by a test of its own.
 - **Honest limit:** the drop runs when this phone looks at their devices or refreshes their picture, so it needs one of: a message to them, opening their profile or Messages refreshing photos (hourly at most per person). After install, sending FAM one message from each phone is the sure way.
 - **Gate:** send FAM one message from each phone: FAM's profile shows the default (no old cover) on both; FAM sets a new cover (and sends a message so their new key reaches you) → both show it.
+
+- **Installed (271b):** all three, the 13 mini, the iPad and Jean's 12 mini.
