@@ -8196,3 +8196,69 @@ fn a_fresh_device_adopts_its_own_public_items_and_removing_them_takes_them_off_t
     // A removed item is not adopted back: this phone has a record of it now.
     assert!(alice2.store.adopt_my_public(transport.clone(), alice2.token.clone()).unwrap().is_empty());
 }
+
+// ---------------------------------------------------------------- LIME-273: band writers send posts for review; owners publish
+
+fn band_with_a_writer() -> (Arc<FakeServer>, Party, Party, Party, Arc<dyn Transport>, String) {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    let jam = new_jam(&alice);
+    deliver(&alice, &transport);
+    alice.store.add_org_members(jam.clone(), vec!["bob".into(), "carol".into()]).unwrap();
+    deliver(&alice, &transport);
+    for p in [&bob, &carol] { sync(p, &transport); }
+    alice.store.set_org_role(jam.clone(), "bob".into(), "writer".into()).unwrap();
+    deliver(&alice, &transport);
+    for p in [&bob, &carol] { sync(p, &transport); }
+    (server, alice, bob, carol, transport, jam)
+}
+
+#[test]
+fn a_writers_draft_goes_to_the_owners_for_review_comes_back_with_a_note_and_is_published_as_the_band_crediting_the_writer() {
+    let (_server, alice, bob, carol, transport, jam) = band_with_a_writer();
+    let draft = bob.store.create_draft("Seed swap".into(), "".into(), "Bring packets of seeds.".into()).unwrap();
+    // A member cannot send for review; an owner posts directly; a writer can.
+    assert!(carol.store.send_draft_for_review(carol.store.create_draft("x".into(), "".into(), "y".into()).unwrap(), jam.clone()).is_err());
+    assert!(alice.store.send_draft_for_review(alice.store.create_draft("x".into(), "".into(), "y".into()).unwrap(), jam.clone()).is_err());
+    bob.store.send_draft_for_review(draft.clone(), jam.clone()).unwrap();
+    assert_eq!(bob.store.draft_review(draft.clone()).unwrap().state, "waiting");
+    deliver(&bob, &transport);
+    sync(&alice, &transport);
+
+    // The owner is told, finds it waiting, and it is the same draft (they can edit it together).
+    assert!(alice.store.unseen_draft_invites().unwrap().contains(&draft), "the owner is told");
+    let review = alice.store.draft_review(draft.clone()).unwrap();
+    assert_eq!((review.state.as_str(), review.jam_id.as_str(), review.i_review, review.writer.as_str()), ("waiting", jam.as_str(), true, "bob"));
+    let waiting = alice.store.drafts_waiting_for_review(jam.clone()).unwrap();
+    assert_eq!(waiting.iter().map(|w| (w.draft_id.clone(), w.title.clone(), w.writer.clone())).collect::<Vec<_>>(), vec![(draft.clone(), "Seed swap".to_string(), "bob".to_string())]);
+    assert!(bob.store.drafts_waiting_for_review(jam.clone()).unwrap().is_empty(), "a writer does not review");
+    assert_eq!(alice.store.draft_markdown(draft.clone()).unwrap(), "Bring packets of seeds.");
+
+    // Send back with a note: the writer's Drafts says so.
+    alice.store.send_draft_back(draft.clone(), "Add the date, please.".into()).unwrap();
+    assert!(alice.store.drafts_waiting_for_review(jam.clone()).unwrap().is_empty());
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    let back = bob.store.draft_review(draft.clone()).unwrap();
+    assert_eq!((back.state.as_str(), back.note.as_str(), back.i_review), ("sent_back", "Add the date, please.", false));
+
+    // Sent again, it waits again; the owner publishes it as the band, with the writer credited (no request to answer).
+    bob.store.send_draft_for_review(draft.clone(), jam.clone()).unwrap();
+    deliver(&bob, &transport);
+    sync(&alice, &transport);
+    assert_eq!(alice.store.draft_review(draft.clone()).unwrap().state, "waiting");
+    let post = alice
+        .store
+        .publish_draft_with(transport.clone(), alice.token.clone(), draft.clone(), jam.clone(), vec![], "jam".into(), crate::client::jam::PostOptions { audience: "subscribers".into(), series: None, topics: vec![] })
+        .unwrap();
+    assert_eq!(alice.store.draft_review(draft.clone()).unwrap().state, "published");
+    let credit: String = alice.store.lock().query_row("SELECT state FROM jam_credits WHERE post_id = ?1 AND user_id = 'bob'", rusqlite::params![post], |r| r.get(0)).unwrap();
+    assert_eq!(credit, "accepted", "the writer is credited automatically");
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    let done = bob.store.draft_review(draft.clone()).unwrap();
+    assert_eq!(done.state, "published");
+    assert_eq!(bob.store.draft_status(draft).unwrap().published_post, Some(post), "the writer sees which post");
+}

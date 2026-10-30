@@ -61,6 +61,24 @@ fn role_name(state: &crate::protocol::group::GroupState, user: &str) -> &'static
     }
 }
 
+/// This person's role in the band's members group on this phone (`owner`, `writer` or `member`); none if they are not in it or I have no such group.
+pub(crate) fn org_role_of(conn: &Connection, jam_id: &str, user: &str) -> Option<&'static str> {
+    let conversation = org_conversation(conn, jam_id).ok()??;
+    let group_id = groups::group_id_of(&conversation)?;
+    let group = groups::state_of(conn, group_id).ok()?;
+    group.is_member(user).then(|| role_name(&group, user))
+}
+
+/// The band's owners (its owner and admins) on this phone.
+pub(crate) fn org_owner_ids(conn: &Connection, jam_id: &str) -> Vec<String> {
+    let Ok(Some(conversation)) = org_conversation(conn, jam_id) else { return vec![] };
+    let Some(group_id) = groups::group_id_of(&conversation) else { return vec![] };
+    let Ok(group) = groups::state_of(conn, group_id) else { return vec![] };
+    let mut owners: Vec<String> = group.users().into_iter().filter(|u| role_name(&group, u) == "owner").collect();
+    owners.sort();
+    owners
+}
+
 /// The jam's members group, if there is one I am in.
 fn org_conversation(conn: &Connection, jam_id: &str) -> Result<Option<String>, StoreError> {
     conn.query_row(

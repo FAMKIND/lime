@@ -544,7 +544,12 @@ extension CoEditSession {
     }
 
     /// The draft has more than one author and someone else is the writer: no Post or Update here.
-    var isCoAuthorOnly: Bool { peers.status.map { !$0.writer.isEmpty && !$0.isWriter } ?? false }
+    var isCoAuthorOnly: Bool { (peers.status.map { !$0.writer.isEmpty && !$0.isWriter } ?? false) && !iPublishForTheBand }
+    /// A draft a band's writer sent for review, and I am an owner of that band: I see it as the publisher (LIME-273).
+    var review: DraftReview? { store.draftReview(draftID) }
+    /// The owner whose phone holds the band's jam can publish it as the band; other owners edit it and send it back.
+    var iPublishForTheBand: Bool { review.map { r in r.iReview && r.state != "published" && store.jamsMine.contains { $0.jamId == r.jamId } } ?? false }
+    var iReviewTheBand: Bool { review.map { $0.iReview && $0.state == "waiting" } ?? false }
     var isShared: Bool { peers.status.map { !$0.writer.isEmpty } ?? false }
 
     /// The writer published or updated the post: the other authors are told.

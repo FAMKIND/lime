@@ -23,7 +23,7 @@ use sha2::Sha256;
 use super::*;
 use crate::drafts::DraftPatch;
 
-pub(super) const MAX_AUTHORS: usize = 5;
+pub(crate) const MAX_AUTHORS: usize = 5;
 const FLUSH_EVERY_MS: i64 = 5_000;
 const HELLO_EVERY_MS: i64 = 60_000;
 const LIVE_OP: &str = "draft.live";
@@ -116,6 +116,66 @@ impl LimeStore {
         let state = self.load_or_create_account()?;
         state.user_id.clone().filter(|_| state.registered).ok_or(StoreError::NotRegistered)
     }
+
+    /// Adds authors to a draft I write. `require_contacts`: each must be an accepted contact (a band's owners, invited to review, need not be).
+    /// `review`: the band a writer sends it to (invited authors learn that this is a draft for that band's review).
+    pub(super) fn share_draft_in(&self, conn: &Connection, me: &str, draft_id: &str, authors: Vec<String>, require_contacts: bool, review: Option<&str>) -> Result<(), StoreError> {
+        let now = now_ms();
+        let mut wanted: Vec<String> = authors.into_iter().filter(|a| a != me).collect();
+        wanted.sort();
+        wanted.dedup();
+        let row: Option<Option<String>> = conn.query_row("SELECT writer FROM drafts WHERE draft_id = ?1", params![draft_id], |r| r.get(0)).optional().map_err(db_err)?;
+        match row {
+            None => return Err(StoreError::NotFound),
+            Some(Some(writer)) if writer != me => return Err(StoreError::Rejected),
+            _ => {}
+        }
+        if require_contacts {
+            for who in &wanted {
+                let accepted: bool = conn.query_row("SELECT EXISTS (SELECT 1 FROM conversations WHERE id = ?1 AND request_state = 'accepted')", params![format!("dm:{who}")], |r| r.get(0)).map_err(db_err)?;
+                if !accepted {
+                    return Err(StoreError::Rejected);
+                }
+            }
+        }
+        let existing = active_authors(conn, draft_id)?;
+        let total: std::collections::BTreeSet<String> = existing.iter().cloned().chain(wanted.iter().cloned()).chain(std::iter::once(me.to_owned())).collect();
+        if total.len() > MAX_AUTHORS {
+            return Err(StoreError::Rejected);
+        }
+        if row_keys(conn, draft_id)?.is_none() {
+            let channel: String = crate::store::delivery::random_key()[..16].iter().map(|b| format!("{b:02x}")).collect();
+            conn.execute("UPDATE drafts SET channel_id = ?2, draft_key = ?3, writer = ?4 WHERE draft_id = ?1", params![draft_id, channel, crate::store::delivery::random_key(), me]).map_err(db_err)?;
+        }
+        conn.execute("INSERT OR IGNORE INTO draft_authors (draft_id, user_id, status) VALUES (?1, ?2, 'active')", params![draft_id, me]).map_err(db_err)?;
+        let (channel, key, _) = row_keys(conn, draft_id)?.ok_or(StoreError::NotFound)?;
+        let (snapshot, heads) = self.with_draft_conn(conn, draft_id, false, |d| Ok((d.save(), d.heads())))?;
+        let mut invited = Vec::new();
+        for who in &wanted {
+            if existing.contains(who) {
+                continue;
+            }
+            conn.execute("INSERT OR REPLACE INTO draft_authors (draft_id, user_id, status) VALUES (?1, ?2, 'active')", params![draft_id, who]).map_err(db_err)?;
+            invited.push(who.clone());
+        }
+        if !invited.is_empty() {
+            conn.execute("UPDATE drafts SET durable_heads = ?2, instant_heads = ?2 WHERE draft_id = ?1", params![draft_id, heads_json(&heads)]).map_err(db_err)?;
+        }
+        let all = active_authors(conn, draft_id)?;
+        for who in existing.iter().filter(|u| *u != me && !invited.contains(u)) {
+            if !invited.is_empty() {
+                enqueue(conn, draft_id, who, "draft.authors", json!({ "draft_id": draft_id, "authors": all }), now)?;
+            }
+        }
+        for who in &invited {
+            let mut invite = json!({ "draft_id": draft_id, "channel_id": channel, "key": b64(&key), "writer": me, "authors": all, "snapshot": b64(&snapshot) });
+            if let Some(jam) = review {
+                invite["for_jam"] = json!(jam);
+            }
+            enqueue(conn, draft_id, who, "draft.invite", invite, now)?;
+        }
+        Ok(())
+    }
 }
 
 #[uniffi::export]
@@ -124,57 +184,7 @@ impl LimeStore {
     /// channel, key and a snapshot. Calling it again with more people adds them; people already in stay.
     pub fn share_draft(&self, draft_id: String, authors: Vec<String>) -> Result<(), StoreError> {
         let me = self.me_registered()?;
-        let now = now_ms();
-        let mut wanted: Vec<String> = authors.into_iter().filter(|a| *a != me).collect();
-        wanted.sort();
-        wanted.dedup();
-        self.with_conn(|conn| {
-            let row: Option<Option<String>> = conn.query_row("SELECT writer FROM drafts WHERE draft_id = ?1", params![draft_id], |r| r.get(0)).optional().map_err(db_err)?;
-            match row {
-                None => return Err(StoreError::NotFound),
-                Some(Some(writer)) if writer != me => return Err(StoreError::Rejected),
-                _ => {}
-            }
-            for who in &wanted {
-                let accepted: bool = conn.query_row("SELECT EXISTS (SELECT 1 FROM conversations WHERE id = ?1 AND request_state = 'accepted')", params![format!("dm:{who}")], |r| r.get(0)).map_err(db_err)?;
-                if !accepted {
-                    return Err(StoreError::Rejected);
-                }
-            }
-            let existing = active_authors(conn, &draft_id)?;
-            let total: std::collections::BTreeSet<String> = existing.iter().cloned().chain(wanted.iter().cloned()).chain(std::iter::once(me.clone())).collect();
-            if total.len() > MAX_AUTHORS {
-                return Err(StoreError::Rejected);
-            }
-            if row_keys(conn, &draft_id)?.is_none() {
-                let channel: String = crate::store::delivery::random_key()[..16].iter().map(|b| format!("{b:02x}")).collect();
-                conn.execute("UPDATE drafts SET channel_id = ?2, draft_key = ?3, writer = ?4 WHERE draft_id = ?1", params![draft_id, channel, crate::store::delivery::random_key(), me]).map_err(db_err)?;
-            }
-            conn.execute("INSERT OR IGNORE INTO draft_authors (draft_id, user_id, status) VALUES (?1, ?2, 'active')", params![draft_id, me]).map_err(db_err)?;
-            let (channel, key, _) = row_keys(conn, &draft_id)?.ok_or(StoreError::NotFound)?;
-            let (snapshot, heads) = self.with_draft_conn(conn, &draft_id, false, |d| Ok((d.save(), d.heads())))?;
-            let mut invited = Vec::new();
-            for who in &wanted {
-                if existing.contains(who) {
-                    continue;
-                }
-                conn.execute("INSERT OR REPLACE INTO draft_authors (draft_id, user_id, status) VALUES (?1, ?2, 'active')", params![draft_id, who]).map_err(db_err)?;
-                invited.push(who.clone());
-            }
-            if !invited.is_empty() {
-                conn.execute("UPDATE drafts SET durable_heads = ?2, instant_heads = ?2 WHERE draft_id = ?1", params![draft_id, heads_json(&heads)]).map_err(db_err)?;
-            }
-            let all = active_authors(conn, &draft_id)?;
-            for who in existing.iter().filter(|u| **u != me && !invited.contains(u)) {
-                if !invited.is_empty() {
-                    enqueue(conn, &draft_id, who, "draft.authors", json!({ "draft_id": draft_id, "authors": all }), now)?;
-                }
-            }
-            for who in &invited {
-                enqueue(conn, &draft_id, who, "draft.invite", json!({ "draft_id": draft_id, "channel_id": channel, "key": b64(&key), "writer": me, "authors": all, "snapshot": b64(&snapshot) }), now)?;
-            }
-            Ok(())
-        })
+        self.with_conn(|conn| self.share_draft_in(conn, &me, &draft_id, authors, true, None))
     }
 
     /// The writer takes a co-author out. They are sent nothing more; the key changes and the others are given the new one.
@@ -471,7 +481,12 @@ impl LimeStore {
                 // Only from an accepted contact, who must be the writer, for a draft I do not have.
                 let accepted: bool = conn.query_row("SELECT EXISTS (SELECT 1 FROM conversations WHERE id = ?1 AND request_state = 'accepted')", params![format!("dm:{sender}")], |r| r.get(0)).map_err(db_err)?;
                 let exists: bool = conn.query_row("SELECT EXISTS (SELECT 1 FROM drafts WHERE draft_id = ?1)", params![draft_id], |r| r.get(0)).map_err(db_err)?;
-                if !accepted || exists || text("writer").as_deref() != Some(sender) {
+                // A draft sent to a band's owners for review (LIME-273) needs no contact: the sender is a writer or owner of the band and I am one of its owners.
+                let for_jam = text("for_jam").filter(|j| !j.is_empty() && j.len() <= 64);
+                let for_review = for_jam.as_deref().is_some_and(|jam| {
+                    matches!(super::org::org_role_of(conn, jam, sender), Some("writer" | "owner")) && super::org::org_role_of(conn, jam, me) == Some("owner")
+                });
+                if !(accepted || for_review) || exists || text("writer").as_deref() != Some(sender) {
                     return Ok(());
                 }
                 let (Some(channel), Some(key), Some(snapshot)) = (text("channel_id"), text("key").and_then(|k| unb64(&k)), text("snapshot").and_then(|s| unb64(&s))) else { return Ok(()) };
@@ -487,6 +502,9 @@ impl LimeStore {
                     params![draft_id, snapshot, now, channel, key, sender, heads_json(&heads)],
                 )
                 .map_err(db_err)?;
+                if for_review {
+                    conn.execute("UPDATE drafts SET for_jam = ?2, review = 'waiting' WHERE draft_id = ?1", params![draft_id, for_jam]).map_err(db_err)?;
+                }
                 self.draft_cache.lock().unwrap_or_else(|e| e.into_inner()).insert(draft_id.clone(), doc);
                 let authors: Vec<String> = payload.get("authors").and_then(Value::as_array).map(|a| a.iter().filter_map(|u| u.as_str().map(str::to_owned)).collect()).unwrap_or_default();
                 for who in authors.iter().take(MAX_AUTHORS).chain(std::iter::once(&sender.to_owned())).chain(std::iter::once(&me.to_owned())) {

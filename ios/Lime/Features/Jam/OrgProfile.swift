@@ -190,6 +190,8 @@ struct OrgProfileView: View {
     @State private var coverSheet = false
     /// Once, on the band made from an old-style one (LIME-259): what happened to the posts.
     @State private var cleanupNote = false
+    /// The drafts writers sent to this band's owners (LIME-273).
+    @State private var reviewList = false
     @State private var topInset: CGFloat = 0
     @State private var windowHeight: CGFloat = 0
 
@@ -231,6 +233,7 @@ struct OrgProfileView: View {
                     Text("Post as \(page.title) from New post.").font(Theme.secondary).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
                         .accessibilityIdentifier("org-fresh-hint")
                 }
+                if !editingNow, store.bandRole(page.jamId) == "owner" { reviewCard }
                 if editingNow { editRows } else { content(following: following) }
             }
             .padding(.horizontal, 16).padding(.bottom, 40)
@@ -250,6 +253,7 @@ struct OrgProfileView: View {
         .toolbar { toolbarItems }
         .sheet(item: $reading) { route in NavigationStack { JamPostView(postID: route.postID).toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { reading = nil } } } } }
         .sheet(item: $fieldSheet) { OrgFieldSheet(page: page, field: $0) }
+        .sheet(isPresented: $reviewList) { ReviewListSheet(jamId: page.jamId, title: page.title) }
         .sheet(isPresented: $pictureSheet) { OrgPictureSheet(jamId: page.jamId, title: page.title) }
         .sheet(isPresented: $coverSheet) { OrgCoverSheet(jamId: page.jamId) }
         .task(id: page.jamId) { await store.ensureJamStyle(page.jamId); if store.isBandMember(page.jamId) { await store.loadOrg(page.jamId) } }
@@ -263,6 +267,26 @@ struct OrgProfileView: View {
             Button("Cancel", role: .cancel) {}
         } message: { Text("What you have stays on this phone.") }
         .accessibilityIdentifier("jam-org-page")
+    }
+
+    /// "Waiting for review (n)": what the band's writers sent; owners only, and only when there is something.
+    @ViewBuilder private var reviewCard: some View {
+        let waiting = store.waitingForReview(page.jamId)
+        if !waiting.isEmpty {
+            Button { reviewList = true } label: {
+                HStack {
+                    Image(systemName: "tray.full").font(.system(size: 18)).accessibilityHidden(true)
+                    Text("Waiting for review (\(waiting.count))").font(Theme.font(.subheadline, weight: .semibold))
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.textSecondary).accessibilityHidden(true)
+                }
+                .foregroundStyle(Theme.text).padding(.horizontal, 16).frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Waiting for review, \(waiting.count)").accessibilityHint("Opens the drafts your writers sent")
+            .accessibilityIdentifier("org-waiting-review")
+        }
     }
 
     // MARK: Header
@@ -548,6 +572,46 @@ struct OrgProfileView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.textSecondary).padding(.leading, 6)
             content().background(Theme.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }
+    }
+}
+
+/// The drafts a band's writers sent for review (LIME-273): a tap opens the draft, where an owner edits, publishes or sends it back.
+struct ReviewListSheet: View {
+    let jamId: String
+    let title: String
+    @Environment(ConversationStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            let items = store.waitingForReview(jamId)
+            List {
+                if items.isEmpty {
+                    Text("Nothing is waiting for review.").font(Theme.body).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("review-empty")
+                }
+                ForEach(items, id: \.draftId) { item in
+                    let who = store.teacher(item.writer)
+                    Button {
+                        dismiss()
+                        store.openDraftRoute = DraftRoute(id: item.draftId)
+                    } label: {
+                        HStack(spacing: 12) {
+                            AvatarView(person: who, size: 40).accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(item.title.isEmpty ? "Untitled" : item.title).font(Theme.font(.callout, weight: .medium)).foregroundStyle(Theme.text).lineLimit(2)
+                                Text("From \(who.name.split(separator: " ").first.map(String.init) ?? who.name)").font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                            }
+                            Spacer()
+                        }
+                        .frame(minHeight: 52)
+                    }
+                    .accessibilityLabel("\(item.title.isEmpty ? "Untitled" : item.title), from \(who.name)").accessibilityHint("Opens the draft")
+                    .accessibilityIdentifier("review-item-\(item.draftId)")
+                }
+            }
+            .navigationTitle("Waiting for review").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
         }
     }
 }

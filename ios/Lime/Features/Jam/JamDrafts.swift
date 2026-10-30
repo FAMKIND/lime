@@ -80,6 +80,9 @@ struct JamDraftsList: View {
                     if let writingLine {
                         Text(writingLine).font(Theme.secondary).foregroundStyle(Theme.text).lineLimit(1).accessibilityIdentifier("jam-draft-live-\(row.draftID)")
                     }
+                    if let state = row.reviewState {
+                        Text(state).font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.text).lineLimit(1).accessibilityIdentifier("jam-draft-review-\(row.draftID)")
+                    }
                     Text(["Edited \(Self.ago(row.updatedAt))"] .appending(names.isEmpty ? [] : [names.joined(separator: ", ")]).joined(separator: " \u{00B7} "))
                         .font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
                 }
@@ -89,7 +92,7 @@ struct JamDraftsList: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(row.title.isEmpty ? "Untitled" : row.title), with \(row.authors.map(\.name).joined(separator: ", ")), edited \(Self.ago(row.updatedAt))\(writingLine.map { ", " + $0 } ?? "")\(row.pinned ? ", pinned" : "")\(store.draftSelecting ? (selected ? ", selected" : ", not selected") : "")")
+        .accessibilityLabel("\(row.title.isEmpty ? "Untitled" : row.title), with \(row.authors.map(\.name).joined(separator: ", ")), edited \(Self.ago(row.updatedAt))\(writingLine.map { ", " + $0 } ?? "")\(row.pinned ? ", pinned" : "")\(row.reviewState.map { ", " + $0.lowercased() } ?? "")\(store.draftSelecting ? (selected ? ", selected" : ", not selected") : "")")
         .accessibilityHint(store.draftSelecting ? "Selects it" : "Opens the draft")
         .accessibilityAction(named: "Edit") { opening = DraftRoute(id: row.draftID) }
         .accessibilityAction(named: "Copy") { store.copyDraft(row.draftID) }
@@ -221,8 +224,12 @@ struct DraftInviteBanner: View {
                     HStack(spacing: 12) {
                         AvatarView(person: who, size: 40).accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 1) {
-                            Text("\(first) invited you to write").font(Theme.title).foregroundStyle(Theme.text).lineLimit(1)
-                            Text(title).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(2)
+                            if let band = store.reviewBannerLine(banner) {
+                                Text("\(first) sent \u{201C}\(band.title)\u{201D} for review in \(band.band)").font(Theme.title).foregroundStyle(Theme.text).lineLimit(2)
+                            } else {
+                                Text("\(first) invited you to write").font(Theme.title).foregroundStyle(Theme.text).lineLimit(1)
+                                Text(title).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(2)
+                            }
                         }
                         Spacer(minLength: 0)
                     }

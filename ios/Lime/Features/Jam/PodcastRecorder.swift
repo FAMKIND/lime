@@ -302,7 +302,7 @@ struct PodcastRecorder: View {
         }
         .preferredColorScheme(showsDetails ? nil : .dark)
         .sheet(isPresented: $choosingHosts) { JamCoauthorPicker(selected: $coauthors, title: "Add co-hosts") }
-        .sheet(isPresented: $postingAs) { PostAsSheet(selection: $postAsJam, postJam: editing?.jamId) }
+        .sheet(isPresented: $postingAs) { PostAsSheet(selection: $postAsJam, reviewBand: .constant(nil), postJam: editing?.jamId) }
         .fullScreenCover(isPresented: $pickingCover) {
             MediaLibraryPicker(limit: 1, onPick: { images, _ in
                 pickingCover = false

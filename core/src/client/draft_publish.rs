@@ -7,6 +7,7 @@
 use super::draft_sync::{active_authors, enqueue, row_keys};
 use super::*;
 use crate::store::attachments::{self as files, Descriptor};
+use crate::store::jam as jam_store;
 use crate::OutgoingAttachment;
 
 /// A picture or video in a draft.
@@ -42,6 +43,11 @@ pub struct DraftStatus {
     pub changed_since_publish: bool,
 }
 
+/// The band a draft was sent to for review, if it was.
+pub(crate) fn review_jam(conn: &Connection, draft_id: &str) -> Option<String> {
+    conn.query_row("SELECT for_jam FROM drafts WHERE draft_id = ?1", params![draft_id], |r| r.get::<_, Option<String>>(0)).optional().ok().flatten().flatten().filter(|j| !j.is_empty())
+}
+
 fn heads_text(heads: &[String]) -> String {
     json!(heads).to_string()
 }
@@ -53,11 +59,15 @@ impl LimeStore {
     /// The writer's phone has published (or updated) the post made from this draft by its own means (the article editor): the draft is linked to the
     /// post, and every author is told, with the draft's state at this moment, so "changes since the last publish" counts from here.
     pub fn draft_mark_published(&self, draft_id: String, post_id: String) -> Result<(), StoreError> {
-        let me = self.load_or_create_account()?.user_id.ok_or(StoreError::NotRegistered)?;
+        let state = self.load_or_create_account()?;
+        let me = state.user_id.clone().ok_or(StoreError::NotRegistered)?;
         let now = now_ms();
         self.with_conn(|conn| {
             let writer: Option<String> = conn.query_row("SELECT writer FROM drafts WHERE draft_id = ?1", params![draft_id], |r| r.get(0)).optional().map_err(db_err)?.ok_or(StoreError::NotFound)?;
-            if writer.as_deref().is_some_and(|w| w != me) || post_id.is_empty() || post_id.len() > 64 {
+            // A band's owner publishes a draft its writer sent for review (LIME-273).
+            let for_jam = review_jam(conn, &draft_id);
+            let as_reviewer = for_jam.as_deref().is_some_and(|jam| super::org::org_role_of(conn, jam, &me) == Some("owner"));
+            if (writer.as_deref().is_some_and(|w| w != me) && !as_reviewer) || post_id.is_empty() || post_id.len() > 64 {
                 return Err(StoreError::Rejected);
             }
             let heads = self.with_draft_conn(conn, &draft_id, false, |d| Ok(d.heads()))?;
@@ -69,6 +79,15 @@ impl LimeStore {
             conn.execute("UPDATE draft_authors SET ready = 0 WHERE draft_id = ?1", params![draft_id]).map_err(db_err)?;
             for who in active_authors(conn, &draft_id)?.iter().filter(|u| **u != me) {
                 enqueue(conn, &draft_id, who, "draft.published", json!({ "draft_id": draft_id, "post_id": post_id, "at": now, "heads": heads }), now)?;
+            }
+            // The writer who sent it for review is credited on the post at once: writing it is the consent (no request to answer).
+            if as_reviewer {
+                conn.execute("UPDATE drafts SET review = 'published' WHERE draft_id = ?1", params![draft_id]).map_err(db_err)?;
+                if let (Some(jam), Some(author)) = (for_jam.as_deref(), writer.as_deref().filter(|w| *w != me)) {
+                    jam_store::add_credit(conn, &post_id, author)?;
+                    jam_store::set_credit(conn, &post_id, author, "accepted")?;
+                    self.announce_credit(conn, &state, &me, jam, &post_id, author, now)?;
+                }
             }
             Ok(())
         })
@@ -200,8 +219,16 @@ impl LimeStore {
         let state = self.load_or_create_account()?;
         let me = state.user_id.clone().filter(|_| state.registered).ok_or(StoreError::NotRegistered)?;
         let writer: Option<String> = self.with_conn(|conn| conn.query_row("SELECT writer FROM drafts WHERE draft_id = ?1", params![draft_id], |r| r.get(0)).optional().map_err(db_err)?.ok_or(StoreError::NotFound))?;
-        if writer.as_deref().is_some_and(|w| w != me) {
+        let reviewer = self.with_conn(|conn| Ok(review_jam(conn, &draft_id).is_some_and(|jam| jam == jam_id && super::org::org_role_of(conn, &jam, &me) == Some("owner"))))?;
+        if writer.as_deref().is_some_and(|w| w != me) && !reviewer {
             return Err(StoreError::Rejected);
+        }
+        // The writer who sent it for review is credited (no request): whoever else was asked stays as chosen.
+        let mut coauthors = coauthors;
+        if reviewer {
+            if let Some(w) = writer.clone().filter(|w| *w != me && !coauthors.contains(w)) {
+                coauthors.insert(0, w);
+            }
         }
         let (meta, numbers) = self.with_conn(|conn| self.with_draft_conn(conn, &draft_id, false, |d| Ok((d.meta(), d.image_numbers()))))?;
         let mut attachments = Vec::new();
@@ -284,7 +311,11 @@ impl LimeStore {
                 }
             }
             "draft.published" => {
-                if writer.as_deref() == Some(sender) {
+                let by_reviewer = review_jam(conn, draft_id).is_some_and(|jam| super::org::org_role_of(conn, &jam, sender) == Some("owner")) && authors.iter().any(|u| u == sender);
+                if writer.as_deref() == Some(sender) || by_reviewer {
+                    if by_reviewer {
+                        conn.execute("UPDATE drafts SET review = 'published' WHERE draft_id = ?1", params![draft_id]).map_err(db_err)?;
+                    }
                     let post = payload.get("post_id").and_then(Value::as_str).unwrap_or_default();
                     let at = payload.get("at").and_then(Value::as_i64).unwrap_or(0);
                     let heads: Vec<String> = payload.get("heads").and_then(Value::as_array).map(|a| a.iter().filter_map(|h| h.as_str().map(str::to_owned)).collect()).unwrap_or_default();
@@ -295,6 +326,30 @@ impl LimeStore {
                         )
                         .map_err(db_err)?;
                         conn.execute("UPDATE draft_authors SET ready = 0 WHERE draft_id = ?1", params![draft_id]).map_err(db_err)?;
+                    }
+                }
+            }
+            "draft.review" => {
+                if !authors.iter().any(|u| u == sender) || sender == me {
+                    return Ok(());
+                }
+                let state = payload.get("state").and_then(Value::as_str).unwrap_or_default();
+                let note: String = payload.get("note").and_then(Value::as_str).unwrap_or_default().chars().take(500).collect();
+                let jam = payload.get("jam_id").and_then(Value::as_str).filter(|j| !j.is_empty() && j.len() <= 64);
+                if writer.as_deref() == Some(sender) {
+                    // The writer (re)sends it for review: only to a band they write for, and only while I am its owner.
+                    let known = review_jam(conn, draft_id);
+                    if state == "waiting" {
+                        if let Some(jam) = jam.filter(|j| known.as_deref().is_none_or(|k| k == *j)) {
+                            if super::org::org_role_of(conn, jam, me) == Some("owner") && matches!(super::org::org_role_of(conn, jam, sender), Some("writer" | "owner")) {
+                                conn.execute("UPDATE drafts SET for_jam = ?2, review = 'waiting', review_note = '', seen = 0 WHERE draft_id = ?1", params![draft_id, jam]).map_err(db_err)?;
+                            }
+                        }
+                    }
+                } else if state == "sent_back" {
+                    // An owner of the band sends it back with a note: the writer's Drafts says so.
+                    if review_jam(conn, draft_id).is_some_and(|jam| super::org::org_role_of(conn, &jam, sender) == Some("owner")) {
+                        conn.execute("UPDATE drafts SET review = 'sent_back', review_note = ?2 WHERE draft_id = ?1", params![draft_id, note]).map_err(db_err)?;
                     }
                 }
             }

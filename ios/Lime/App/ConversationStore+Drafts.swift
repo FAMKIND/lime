@@ -114,7 +114,8 @@ extension ConversationStore {
         return ((try? core.unseenDraftInvites()) ?? []).compactMap { id in
             guard let meta = try? core.draftMeta(draftId: id) else { return nil }
             let writer = ((try? core.draftAuthors(draftId: id)) ?? []).first(where: \.isWriter)?.userId ?? ""
-            return DraftInvite(draftID: id, writer: writer, title: meta.title)
+            let review = (try? core.draftReview(draftId: id)).flatMap { $0.jamId.isEmpty || $0.state != "waiting" ? nil : $0 }
+            return DraftInvite(draftID: id, writer: writer, title: meta.title, reviewJam: review?.jamId)
         }
     }
 
@@ -179,6 +180,8 @@ struct DraftInvite: Identifiable {
     let draftID: String
     let writer: String
     let title: String
+    /// The band it was sent to for review (LIME-273), if it was.
+    var reviewJam: String? = nil
     var id: String { draftID }
 }
 
@@ -196,6 +199,8 @@ struct DraftRow: Identifiable {
     let pinned: Bool
     /// I am the writer (a draft nobody shares counts): Delete removes it for everyone; otherwise the row says Leave.
     let isWriter: Bool
+    /// A band's review (LIME-273): "Waiting for review", "Sent back" or "Published" for a draft a band's writer sent; nil otherwise.
+    var reviewState: String? = nil
     var id: String { draftID }
 }
 
@@ -217,8 +222,10 @@ extension ConversationStore {
                 if let sim = simDraftAuthors[info.draftId] { others = sim.others; isWriter = sim.isWriter }
                 #endif
                 let live = others.filter { person in draftLive[info.draftId]?[person.id].map { now.timeIntervalSince($0) < 25 } ?? false }
+                let review = (try? core.draftReview(draftId: info.draftId)).flatMap { $0.jamId.isEmpty ? nil : $0 }
+                let reviewState = review.map { r in r.iReview ? nil : ({ () -> String? in switch r.state { case "waiting": "Waiting for review"; case "sent_back": "Sent back"; case "published": "Published"; default: nil } })() } ?? nil
                 return DraftRow(draftID: info.draftId, title: info.title, authors: [me] + others, updatedAt: info.updatedAt, live: live,
-                                pinned: draftPins.contains(info.draftId), isWriter: isWriter)
+                                pinned: draftPins.contains(info.draftId), isWriter: isWriter, reviewState: reviewState)
             }
         return rows.sorted { ($0.pinned ? 1 : 0, $0.updatedAt) > ($1.pinned ? 1 : 0, $1.updatedAt) }
     }

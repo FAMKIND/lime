@@ -1757,7 +1757,7 @@ impl LimeStore {
 
     /// Tells my subscribers, in the post's own session, that `user` is credited on it (a small signed message through the same queue as the posts).
     #[allow(clippy::too_many_arguments)] // the context of one announcement
-    fn announce_credit(&self, conn: &Connection, state: &AccountState, me: &str, jam_id: &str, post_id: &str, user: &str, now: i64) -> Result<(), StoreError> {
+    pub(crate) fn announce_credit(&self, conn: &Connection, state: &AccountState, me: &str, jam_id: &str, post_id: &str, user: &str, now: i64) -> Result<(), StoreError> {
         let Some(post) = jam_store::post(conn, post_id)? else { return Ok(()) };
         let mut outbound = self.ensure_jam_session(conn, state, jam_id, &post.tier, now)?;
         let op = signed_op(conn, state, "jam.credit", jam_id, None, json!({ "post_id": post_id, "user": user }), now)?;

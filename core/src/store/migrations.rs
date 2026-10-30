@@ -949,6 +949,10 @@ const MIGRATIONS: &[&str] = &[
          user_id    TEXT PRIMARY KEY NOT NULL,
          master_key TEXT NOT NULL
      );",
+    // LIME-273: a draft a band's writer sent for review. `for_jam` is the band, `review` is waiting, sent_back or published, `review_note` an owner's note.
+    "ALTER TABLE drafts ADD COLUMN for_jam TEXT;
+     ALTER TABLE drafts ADD COLUMN review TEXT;
+     ALTER TABLE drafts ADD COLUMN review_note TEXT NOT NULL DEFAULT '';",
 ];
 
 /// The schema version this build writes.

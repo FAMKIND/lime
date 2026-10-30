@@ -66,6 +66,11 @@ struct JamComposeSheet: View {
     @State private var creatingPublication = false
     /// nil: posted as me; otherwise the id of my jam (LIME-188q).
     @State private var postAsJam: String?
+    /// A band I write for (not own): the article goes to its owners for review instead of being posted (LIME-273).
+    @State private var reviewBand: String?
+    @State private var sentForReview = false
+    @State private var sendingBack = false
+    @State private var backNote = ""
     /// Who can read the post (LIME-210c): `subscribers` (the default) or `everyone`.
     @State private var audience = "subscribers"
     /// The series this post belongs to, if any (LIME-210f).
@@ -136,16 +141,37 @@ struct JamComposeSheet: View {
                                     .accessibilityHint("\(coeditWriterName) publishes this article. Tells them you are done")
                                     .accessibilityIdentifier("coedit-ready")
                             }
+                            if coedit?.iReviewTheBand == true {
+                                Button("Send back") { sendingBack = true }.accessibilityIdentifier("review-send-back")
+                                    .accessibilityHint("Returns the draft to \(coeditWriterName) with a note")
+                            }
                             Button("Done") { close() }.fontWeight(.semibold).accessibilityIdentifier("jam-coedit-done")
                         } else {
                             // Writing is step 1; Next goes to "Before you post / publish" (LIME-240).
-                            Button("Next") { focus = nil; step2 = true }.fontWeight(.semibold).disabled(!canPost).accessibilityIdentifier("jam-next")
-                                .accessibilityHint("Step 1 of 2. Goes to the choices before you \(article || hasClip ? "publish" : "post")")
+                            if coedit?.iReviewTheBand == true {
+                                Button("Send back") { sendingBack = true }.accessibilityIdentifier("review-send-back")
+                                    .accessibilityHint("Returns the draft to \(coeditWriterName) with a note")
+                            }
+                            if reviewBand != nil {
+                                Button("Send for review") { Task { await sendForReview() } }.fontWeight(.semibold).disabled(!canPost || posting).accessibilityIdentifier("jam-send-for-review")
+                                    .accessibilityHint("Sends this article to the band\u{2019}s owners. They publish it")
+                            } else {
+                                Button("Next") { focus = nil; step2 = true }.fontWeight(.semibold).disabled(!canPost).accessibilityIdentifier("jam-next")
+                                    .accessibilityHint("Step 1 of 2. Goes to the choices before you \(article || hasClip ? "publish" : "post")")
+                            }
                         }
                     }
                 }
             }
             .sheet(isPresented: $showingAuthors) { if let coedit { CoEditAuthorsSheet(session: coedit) } }
+            .alert("Sent for review", isPresented: $sentForReview) {
+                Button("OK") { JamDraft.shared.clear(); dismiss() }.accessibilityIdentifier("review-sent-ok")
+            } message: { Text("The band\u{2019}s owners were told. You will see it in Drafts, and whether it was published or sent back.") }
+            .sheet(isPresented: $sendingBack) { SendBackSheet(note: $backNote, writer: coeditWriterName) { send in
+                sendingBack = false
+                guard send, let coedit else { return }
+                Task { if await store.sendDraftBack(coedit.draftID, note: backNote) { dismiss() } else { problem = "Couldn\u{2019}t send it back. Try again." } }
+            } }
             .navigationDestination(isPresented: $step2) { stepTwo }
             .onChange(of: composer.plainText) { refreshLink() }
             .onChange(of: previewsOn) { refreshLink() }
@@ -318,7 +344,8 @@ struct JamComposeSheet: View {
     /// Who the post is from: you, or your jam (LIME-188q).
     private var postAsChip: some View {
         let jam = postAsJam.flatMap { id in store.jamsMine.first { $0.jamId == id } }
-        let name = jam?.title ?? store.meProvider().name
+        let review = reviewBand.flatMap { id in store.bandsIWriteFor.first { $0.jamId == id } }
+        let name = jam?.title ?? review.map { "\($0.name) \u{00B7} for review" } ?? store.meProvider().name
         return Button { postingAs = true } label: {
             HStack(spacing: 8) {
                 if let jam { BylineAvatar(people: [store.meProvider()] + coauthors, jam: jam.title, jamId: jam.jamId, size: 34, pending: pendingHosts).frame(width: 44, height: 34, alignment: .leading) } else { AvatarView(person: store.meProvider(), size: 32).accessibilityHidden(true) }
@@ -329,7 +356,7 @@ struct JamComposeSheet: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Posting as \(name)").accessibilityHint("Choose who this post is from").accessibilityIdentifier("jam-post-as")
-        .sheet(isPresented: $postingAs) { PostAsSheet(selection: $postAsJam, postJam: editing?.jamId) }
+        .sheet(isPresented: $postingAs) { PostAsSheet(selection: $postAsJam, reviewBand: $reviewBand, reviewBands: article && editing == nil && openDraft == nil ? store.bandsIWriteFor : [], postJam: editing?.jamId) }
     }
 
     /// One line: who the post is from, the people added as small overlapping avatars (tap to change them), and the person-with-plus **last**, so it
@@ -905,6 +932,19 @@ struct JamComposeSheet: View {
         }
     }
 
+    /// A band's writer sends the article to the band's owners (LIME-273): the draft is shared with them and waits on the band's page.
+    private func sendForReview() async {
+        guard let band = reviewBand, article, let composer = composer.textView else { return }
+        focus = nil
+        if coedit == nil { coeditChanged(self.composer) }
+        guard let coedit else { problem = "Couldn\u{2019}t start the draft. Try again."; return }
+        coedit.syncNow(title: title, subtitle: subtitle, markdown: coedit.draftMarkdown(from: composer.textStorage))
+        posting = true
+        let sent = await store.sendDraftForReview(coedit.draftID, band: band)
+        posting = false
+        if sent { sentForReview = true } else { problem = "Couldn\u{2019}t send it for review. Try again." }
+    }
+
     private func coeditChanged(_ composer: RichComposerModel) {
         guard FeatureFlags.coedit, article, let view = composer.textView else { return }
         let markdown = { ComposerDocument.markdown(from: view.textStorage, post: true) }
@@ -1008,6 +1048,11 @@ struct JamComposeSheet: View {
                 composer.textView?.attributedText = session.render(markdown: md); composer.didEdit(); session.rebase()
                 store.coeditSeen(openDraft)
                 coauthors = session.otherAuthors()
+                // A draft a writer sent for the band: the owner who holds the band publishes it as the band, crediting the writer (LIME-273).
+                if session.iPublishForTheBand, let review = session.review {
+                    postAsJam = review.jamId
+                    coauthors = [store.teacher(review.writer)]
+                }
             }
             wireCoedit()
             return
@@ -1149,6 +1194,9 @@ struct JamComposeSheet: View {
 /// comes with LIME-193.
 struct PostAsSheet: View {
     @Binding var selection: String?
+    /// A band I write for: choosing it sends the article for review rather than posting it (LIME-273).
+    @Binding var reviewBand: String?
+    var reviewBands: [OrgInfo] = []
     /// An existing post's jam (LIME-259): a post stays in its jam, so editing offers you and, for a band's post, that band; nil for a new post: you and every band.
     var postJam: String?
     @Environment(ConversationStore.self) private var store
@@ -1157,18 +1205,18 @@ struct PostAsSheet: View {
     var body: some View {
         NavigationStack {
             List {
-                Button { selection = nil; dismiss() } label: {
+                Button { selection = nil; reviewBand = nil; dismiss() } label: {
                     HStack(spacing: 12) {
                         AvatarView(person: store.meProvider(), size: 40).accessibilityHidden(true)
                         Text(store.meProvider().name).font(Theme.body).foregroundStyle(Theme.text)
                         Spacer()
-                        if selection == nil { Image(systemName: "checkmark").foregroundStyle(Theme.text) }
+                        if selection == nil && reviewBand == nil { Image(systemName: "checkmark").foregroundStyle(Theme.text) }
                     }
                     .frame(minHeight: 48)
                 }
                 .accessibilityLabel("\(store.meProvider().name)\(selection == nil ? ", selected" : "")").accessibilityIdentifier("jam-post-as-me")
                 ForEach(store.myPublications.filter { postJam == nil || $0.jamId == postJam }, id: \.jamId) { jam in
-                    Button { selection = jam.jamId; dismiss() } label: {
+                    Button { selection = jam.jamId; reviewBand = nil; dismiss() } label: {
                         HStack(spacing: 12) {
                             // Its tile with its writers' circles at the bottom right, you included (LIME-215b).
                             BylineAvatar(people: store.jamAuthors(jam.jamId), jam: jam.title, jamId: jam.jamId, size: 44).frame(width: 52, height: 44, alignment: .leading)
@@ -1182,6 +1230,22 @@ struct PostAsSheet: View {
                         .frame(minHeight: 48)
                     }
                     .accessibilityLabel("\(jam.title), with you\(store.jamAuthors(jam.jamId).count > 1 ? " and " + store.jamAuthors(jam.jamId).dropFirst().map(\.name).joined(separator: ", ") : "")\(selection == jam.jamId ? ", selected" : "")").accessibilityIdentifier("jam-post-as-jam-\(jam.jamId)")
+                }
+                ForEach(reviewBands, id: \.jamId) { band in
+                    Button { reviewBand = band.jamId; selection = nil; dismiss() } label: {
+                        HStack(spacing: 12) {
+                            BylineAvatar(people: [store.meProvider()], jam: band.name, jamId: band.jamId, size: 44).frame(width: 52, height: 44, alignment: .leading)
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text(band.name).font(Theme.font(.callout, weight: .medium)).foregroundStyle(Theme.text).lineLimit(1)
+                                Text("Send for review").font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                            }
+                            Spacer()
+                            if reviewBand == band.jamId { Image(systemName: "checkmark").foregroundStyle(Theme.text) }
+                        }
+                        .frame(minHeight: 48)
+                    }
+                    .accessibilityLabel("\(band.name), send for review\(reviewBand == band.jamId ? ", selected" : "")").accessibilityHint("Its owners publish it")
+                    .accessibilityIdentifier("jam-post-as-review-\(band.jamId)")
                 }
                 Text("Posting as a school or a subject group comes later.").font(Theme.caption).foregroundStyle(Theme.textSecondary)
             }
@@ -1295,5 +1359,35 @@ struct ArticlePhotoPicker: View {
             .task { photos = await load() }
         }
         .presentationDetents([.medium, .large])
+    }
+}
+
+/// An owner returns a band draft to its writer with a note (LIME-273).
+struct SendBackSheet: View {
+    @Binding var note: String
+    let writer: String
+    var done: (_ send: Bool) -> Void
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("\(writer) will see this in Drafts.").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
+                TextField("A note (optional)", text: $note, axis: .vertical)
+                    .lineLimit(3...6).font(Theme.body).padding(12)
+                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .focused($focused).onChange(of: note) { _, new in if new.count > 500 { note = String(new.prefix(500)) } }
+                    .accessibilityIdentifier("review-back-note")
+                Spacer()
+            }
+            .padding(20)
+            .navigationTitle("Send back").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { done(false) } }
+                ToolbarItem(placement: .confirmationAction) { Button("Send back") { done(true) }.fontWeight(.semibold).accessibilityIdentifier("review-back-send") }
+            }
+            .onAppear { focused = true }
+        }
+        .presentationDetents([.medium])
     }
 }
