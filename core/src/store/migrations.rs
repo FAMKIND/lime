@@ -920,6 +920,20 @@ const MIGRATIONS: &[&str] = &[
     // LIME-257: a group's colour (one of the 8 avatar tones) and its cover (an encrypted photo: blob id and key, like `group_photo`), from its signed `group.set_style` op.
     "ALTER TABLE conversations ADD COLUMN group_tone INTEGER;
      ALTER TABLE conversations ADD COLUMN group_cover TEXT;",
+    // LIME-246: a band's members group (`group_org`: the jam it is for; never in the chat list), a group made inside a band (`group_parent`: the jam, and `group_parent_open`),
+    // the band's groups list and invite token as the members group's signed state says them, and my own jam's members group.
+    "ALTER TABLE conversations ADD COLUMN group_org TEXT;
+     ALTER TABLE conversations ADD COLUMN group_parent TEXT;
+     ALTER TABLE conversations ADD COLUMN group_parent_open INTEGER NOT NULL DEFAULT 0;
+     CREATE TABLE org_joins (
+         jam_id  TEXT NOT NULL,
+         user_id TEXT NOT NULL,
+         token   TEXT NOT NULL DEFAULT '',
+         target  TEXT NOT NULL DEFAULT '',
+         state   TEXT NOT NULL,
+         at      INTEGER NOT NULL,
+         PRIMARY KEY (jam_id, user_id, target)
+     );",
 ];
 
 /// The schema version this build writes.

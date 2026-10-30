@@ -1479,7 +1479,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
              DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP INDEX olm_sessions_by_peer; DROP TABLE received_ciphertexts; DROP TABLE emergency_messages; DROP TABLE emergency_settings; DROP TABLE mesh_outbox; DROP TABLE mesh_packets; DROP TABLE mesh_seen; DROP TABLE mesh_uploaded; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
-             DROP TABLE draft_files; DROP TABLE draft_outbox; DROP TABLE draft_authors; DROP TABLE draft_chunks; DROP TABLE drafts; DROP TABLE deleted_peers; DROP TABLE session_repairs; DROP TABLE profile_key_requests; DROP TABLE my_extra; DROP TABLE extras; DROP TRIGGER jam_posts_fts_insert; DROP TRIGGER jam_posts_fts_update; DROP TRIGGER jam_posts_fts_delete; DROP TABLE jam_fts; DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_credits; DROP TABLE jam_credit_requests; DROP TABLE jam_credit_wires; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_blob_deletes; DROP TABLE jam_reactions; DROP TABLE jam_my_reactions; DROP TABLE jam_comments; DROP TABLE jam_counts; DROP TABLE jam_counts_out; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; DROP TABLE open_outbox; DROP TABLE jam_follow_off; DROP TABLE contact_jam_checks; DROP TABLE community_joins; DROP TABLE open_fts; DROP TABLE open_seen; ALTER TABLE conversations DROP COLUMN group_tone; ALTER TABLE conversations DROP COLUMN group_cover; PRAGMA user_version = 9;",
+             DROP TABLE draft_files; DROP TABLE draft_outbox; DROP TABLE draft_authors; DROP TABLE draft_chunks; DROP TABLE drafts; DROP TABLE deleted_peers; DROP TABLE session_repairs; DROP TABLE profile_key_requests; DROP TABLE my_extra; DROP TABLE extras; DROP TRIGGER jam_posts_fts_insert; DROP TRIGGER jam_posts_fts_update; DROP TRIGGER jam_posts_fts_delete; DROP TABLE jam_fts; DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_credits; DROP TABLE jam_credit_requests; DROP TABLE jam_credit_wires; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_blob_deletes; DROP TABLE jam_reactions; DROP TABLE jam_my_reactions; DROP TABLE jam_comments; DROP TABLE jam_counts; DROP TABLE jam_counts_out; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; DROP TABLE open_outbox; DROP TABLE jam_follow_off; DROP TABLE contact_jam_checks; DROP TABLE community_joins; DROP TABLE open_fts; DROP TABLE open_seen; ALTER TABLE conversations DROP COLUMN group_tone; ALTER TABLE conversations DROP COLUMN group_cover; ALTER TABLE conversations DROP COLUMN group_org; ALTER TABLE conversations DROP COLUMN group_parent; ALTER TABLE conversations DROP COLUMN group_parent_open; DROP TABLE org_joins; PRAGMA user_version = 9;",
         )
         .unwrap();
     }
@@ -7525,6 +7525,134 @@ fn a_community_holds_a_hundred_members_the_writer_included() {
     assert!(!crate::store::jam::community_is_full(99));
     assert!(crate::store::jam::community_is_full(100));
     assert_eq!(crate::protocol::group::MAX_MEMBERS, 100);
+}
+
+// ---------------------------------------------------------------- LIME-246a: a band's members, privately
+
+fn org_role(p: &Party, jam: &str, user: &str) -> Option<String> {
+    p.store.org_members(jam.to_owned()).ok()?.into_iter().find(|m| m.user_id == user || (m.is_me && p.user == user)).map(|m| m.role)
+}
+
+/// `who` asks to join with `code`; the owner's phone adds them at its next run; `who` hears and gets the group.
+fn join_org_by_code(owner: &Party, who: &Party, code: &str, transport: &Arc<dyn Transport>) {
+    who.store.join_org(code.to_owned()).unwrap();
+    deliver(who, transport);
+    sync(owner, transport);
+    deliver(owner, transport);
+    deliver(owner, transport);
+    sync(who, transport);
+    deliver(who, transport);
+}
+
+#[test]
+fn an_invite_code_joins_a_band_by_the_owners_phone_and_a_wrong_or_turned_off_code_does_not() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    let (dave, _) = party(&server, "dave", 4);
+    let jam = new_jam(&alice);
+    deliver(&alice, &transport);
+    // Only the owner makes a code; the members group stays out of the chat list.
+    assert!(bob.store.org_invite_code(jam.clone()).is_err());
+    let code = alice.store.org_invite_code(jam.clone()).unwrap();
+    assert_eq!(alice.store.org_invite_code(jam.clone()).unwrap(), code, "the same link until it is reset");
+    assert!(alice.store.list_conversations().unwrap().iter().all(|c| !c.id.starts_with("grp:")), "not in the chat list");
+    let invite = alice.store.parse_org_invite(code.clone()).unwrap();
+    assert_eq!((invite.jam_id.as_str(), invite.writer_id.as_str()), (jam.as_str(), "alice"));
+    // Bob joins: waiting, then in; he follows the jam by himself; he sees the members; a member is not a writer.
+    bob.store.join_org(code.clone()).unwrap();
+    assert_eq!(bob.store.org_join_state(jam.clone()).unwrap().as_deref(), Some("asked"));
+    deliver(&bob, &transport);
+    sync(&alice, &transport);
+    deliver(&alice, &transport);
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    deliver(&bob, &transport);
+    assert_eq!(bob.store.org_join_state(jam.clone()).unwrap().as_deref(), Some("joined"));
+    assert_eq!(bob.store.my_orgs().unwrap().iter().map(|o| (o.jam_id.clone(), o.my_role.clone(), o.member_count)).collect::<Vec<_>>(), vec![(jam.clone(), "member".to_string(), 2)]);
+    assert!(bob.store.list_conversations().unwrap().iter().all(|c| !c.id.starts_with("grp:")), "not in bob's chat list either");
+    let names: Vec<(String, String)> = bob.store.org_members(jam.clone()).unwrap().into_iter().map(|m| (m.user_id, m.role)).collect();
+    assert_eq!(names, vec![("alice".to_string(), "owner".to_string()), ("bob".to_string(), "member".to_string())]);
+    assert!(!bob.store.org_can_post_as(jam.clone(), "bob".into()).unwrap() && alice.store.org_can_post_as(jam.clone(), "alice".into()).unwrap());
+    deliver(&bob, &transport);
+    deliver(&alice, &transport);
+    assert!(bob.store.jam(jam.clone()).unwrap().is_some_and(|j| j.status == "active" || j.status == "requested"), "bob follows the band's jam");
+    // A non-member sees nothing of it.
+    assert!(dave.store.org_members(jam.clone()).is_err());
+    // A wrong code is refused; so is the old code once the link is reset or turned off.
+    let wrong = format!("{jam}.alice.{}", "0".repeat(32));
+    carol.store.join_org(wrong).unwrap();
+    deliver(&carol, &transport);
+    sync(&alice, &transport);
+    deliver(&alice, &transport);
+    sync(&carol, &transport);
+    assert_eq!(carol.store.org_join_state(jam.clone()).unwrap().as_deref(), Some("refused"));
+    let fresh = alice.store.reset_org_invite(jam.clone(), true).unwrap().unwrap();
+    assert_ne!(fresh, code);
+    assert_eq!(alice.store.reset_org_invite(jam.clone(), false).unwrap(), None);
+    dave.store.join_org(fresh).unwrap();
+    deliver(&dave, &transport);
+    sync(&alice, &transport);
+    deliver(&alice, &transport);
+    sync(&dave, &transport);
+    assert_eq!(dave.store.org_join_state(jam.clone()).unwrap().as_deref(), Some("refused"), "the link is off");
+    assert_eq!(alice.store.org_members(jam.clone()).unwrap().len(), 2, "still alice and bob");
+}
+
+#[test]
+fn only_owners_add_remove_and_set_roles_and_a_member_leaves() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    let (dave, _) = party(&server, "dave", 4);
+    let jam = new_jam(&alice);
+    deliver(&alice, &transport);
+    alice.store.add_org_members(jam.clone(), vec!["bob".into(), "carol".into()]).unwrap();
+    deliver(&alice, &transport);
+    for p in [&bob, &carol] {
+        sync(p, &transport);
+    }
+    assert_eq!(alice.store.org_members(jam.clone()).unwrap().len(), 3);
+    // Roles: a member may not add, remove or set roles; the owner makes bob a writer, then an owner.
+    assert!(bob.store.add_org_members(jam.clone(), vec!["dave".into()]).is_err());
+    assert!(bob.store.set_org_role(jam.clone(), "carol".into(), "writer".into()).is_err());
+    assert!(bob.store.remove_org_member(jam.clone(), "carol".into()).is_err());
+    alice.store.set_org_role(jam.clone(), "bob".into(), "writer".into()).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    assert_eq!(org_role(&alice, &jam, "bob").as_deref(), Some("writer"));
+    assert_eq!(org_role(&bob, &jam, "bob").as_deref(), Some("writer"), "bob sees it on his phone too");
+    assert!(alice.store.org_can_post_as(jam.clone(), "bob".into()).unwrap(), "a writer may post as the band");
+    assert!(!alice.store.org_can_post_as(jam.clone(), "carol".into()).unwrap(), "a member may not");
+    alice.store.set_org_role(jam.clone(), "bob".into(), "owner".into()).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    // An owner (not the band's owner) adds people and sets writers but cannot make owners.
+    bob.store.add_org_members(jam.clone(), vec!["dave".into()]).unwrap();
+    bob.store.set_org_role(jam.clone(), "carol".into(), "writer".into()).unwrap();
+    assert!(bob.store.set_org_role(jam.clone(), "carol".into(), "owner".into()).is_err(), "only the band's owner makes owners");
+    assert_eq!(org_role(&bob, &jam, "dave").as_deref(), Some("member"));
+    // Removing and leaving.
+    bob.store.remove_org_member(jam.clone(), "dave".into()).unwrap();
+    assert!(org_role(&bob, &jam, "dave").is_none());
+    deliver(&bob, &transport);
+    sync(&carol, &transport);
+    carol.store.leave_org(jam.clone()).unwrap();
+    assert!(carol.store.my_orgs().unwrap().is_empty());
+    let _ = dave;
+}
+
+#[test]
+fn the_hundred_and_first_member_is_refused() {
+    let server = FakeServer::new();
+    let (alice, _transport) = party(&server, "alice", 1);
+    let jam = new_jam(&alice);
+    let people: Vec<String> = (0..99).map(|i| format!("u{i}")).collect();
+    alice.store.add_org_members(jam.clone(), people).unwrap();
+    assert_eq!(alice.store.org_members(jam.clone()).unwrap().len(), 100);
+    assert!(alice.store.add_org_members(jam.clone(), vec!["one-too-many".into()]).is_err());
 }
 
 // ---------------------------------------------------------------- LIME-210h: publish chips and search of open posts

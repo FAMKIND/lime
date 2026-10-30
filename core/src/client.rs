@@ -39,6 +39,7 @@ pub(crate) mod groups;
 pub(crate) mod jam;
 pub(crate) mod open;
 mod community;
+mod org;
 pub(crate) mod follow;
 pub(crate) mod moderation;
 mod account;

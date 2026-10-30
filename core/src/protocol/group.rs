@@ -86,9 +86,36 @@ impl GroupPhoto {
     }
 }
 
+/// A change to what makes a group part of a band (LIME-246a/b). A band's members group says which jam it is for; its writers (who may post as the band), its
+/// invite link's token and the list of the band's groups live in its signed state. A group made inside a band says which band it belongs to and whether any
+/// member may join it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum OrgChange {
+    /// This is the members group of `jam_id` (written by the jam's writer, who made the group, once).
+    Mark { jam_id: String },
+    /// A member may (or may no longer) post as the band.
+    Writer { user: String, on: bool },
+    /// The invite link's token; none turns the link off.
+    Invite { token: Option<String> },
+    /// A group of the band is listed (or taken off the list): its conversation id, name and whether any member may join.
+    Group { id: String, name: String, open: bool, on: bool },
+    /// This group was made inside the band `jam_id`; `open`: any member of the band may join it.
+    Parent { jam_id: String, open: bool },
+}
+
+/// One group of a band, as the members group lists it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct OrgGroup {
+    pub id: String,
+    pub name: String,
+    pub open: bool,
+}
+
 /// What a state op does.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Kind {
+    /// Band membership state (LIME-246).
+    Org(OrgChange),
     Create { name: String, emoji: Option<String>, members: Vec<String> },
     Add { users: Vec<String> },
     Remove { user: String },
@@ -115,6 +142,7 @@ impl Kind {
             Kind::Rename { .. } => "group.rename",
             Kind::SetAvatar { .. } => "group.set_avatar",
             Kind::SetStyle { .. } => "group.set_style",
+            Kind::Org(_) => "group.org",
             Kind::SetRole { .. } => "group.set_role",
             Kind::Delete => "group.delete",
         }
@@ -132,6 +160,13 @@ impl Kind {
                 None => json!({ "emoji": emoji }),
             },
             Kind::SetStyle { tone, cover } => json!({ "tone": tone, "cover": cover.as_ref().map(GroupPhoto::to_json) }),
+            Kind::Org(change) => match change {
+                OrgChange::Mark { jam_id } => json!({ "change": "mark", "jam_id": jam_id }),
+                OrgChange::Writer { user, on } => json!({ "change": "writer", "user": user, "on": on }),
+                OrgChange::Invite { token } => json!({ "change": "invite", "token": token }),
+                OrgChange::Group { id, name, open, on } => json!({ "change": "group", "id": id, "name": name, "open": open, "on": on }),
+                OrgChange::Parent { jam_id, open } => json!({ "change": "parent", "jam_id": jam_id, "open": open }),
+            },
             Kind::SetRole { user, role } => json!({ "user": user, "role": role.as_str() }),
             Kind::Delete => json!({}),
         }
@@ -156,6 +191,17 @@ impl Kind {
                     Some(value) => Some(GroupPhoto::parse(value)?),
                 };
                 Kind::SetAvatar { emoji: if photo.is_some() { None } else { text("emoji") }, photo }
+            }
+            "group.org" => {
+                let flag = |k: &str| payload.get(k).and_then(Value::as_bool);
+                Kind::Org(match payload.get("change").and_then(Value::as_str)? {
+                    "mark" => OrgChange::Mark { jam_id: text("jam_id").filter(|j| !j.is_empty() && j.len() <= 64)? },
+                    "writer" => OrgChange::Writer { user: text("user").filter(|u| !u.is_empty() && u.len() <= 64)?, on: flag("on")? },
+                    "invite" => OrgChange::Invite { token: match payload.get("token") { None | Some(Value::Null) => None, Some(v) => Some(v.as_str().filter(|t| !t.is_empty() && t.len() <= 64)?.to_owned()) } },
+                    "group" => OrgChange::Group { id: text("id").filter(|g| !g.is_empty() && g.len() <= 80)?, name: clean_name(&text("name")?)?, open: flag("open")?, on: flag("on")? },
+                    "parent" => OrgChange::Parent { jam_id: text("jam_id").filter(|j| !j.is_empty() && j.len() <= 64)?, open: flag("open")? },
+                    _ => return None,
+                })
             }
             "group.set_style" => {
                 // A tone out of range or a cover that is malformed makes the op invalid.
@@ -210,6 +256,8 @@ pub(crate) enum Event {
     Photo,
     /// Its colour or cover changed (LIME-257): no line in the chat.
     Style,
+    /// Band membership state changed (LIME-246): no line in the chat.
+    Org,
     Role(String, Role),
     NewOwner(String),
     /// The owner deleted the group.
@@ -235,6 +283,13 @@ pub(crate) struct GroupState {
     /// The colour (0 to 7) and cover (LIME-257).
     pub tone: Option<u8>,
     pub cover: Option<GroupPhoto>,
+    /// A band's members group (LIME-246a): the jam it is for and its writer, who may post as it; the people who may post as the band; the invite token; the band's groups.
+    pub org: Option<String>,
+    pub writers: HashSet<String>,
+    pub invite: Option<String>,
+    pub org_groups: Vec<OrgGroup>,
+    /// A group made inside a band: which one, and whether any member of the band may join it (LIME-246b).
+    pub parent: Option<(String, bool)>,
     pub members: Vec<Member>,
     pub effects: Vec<Effect>,
     /// Everyone who has ever been a member (a message from someone since removed still shows).
@@ -437,6 +492,37 @@ fn pass(group_id: &str, sorted: &[GroupOp], ancestry: &Ancestry, voiding_removes
                 state.tone = *tone;
                 state.cover = cover.clone();
                 Some(Event::Style)
+            }
+            Kind::Org(change) => {
+                let managing = actor_role.is_some_and(Role::can_manage);
+                let applied = match change {
+                    // Once, by the owner who made the group.
+                    OrgChange::Mark { jam_id } if actor_role == Some(Role::Owner) && state.org.is_none() => {
+                        state.org = Some(jam_id.clone());
+                        true
+                    }
+                    OrgChange::Writer { user, on } if managing && state.is_member(user) => {
+                        if *on { state.writers.insert(user.clone()); } else { state.writers.remove(user); }
+                        true
+                    }
+                    OrgChange::Invite { token } if managing => {
+                        state.invite = token.clone();
+                        true
+                    }
+                    OrgChange::Group { id, name, open, on } if managing => {
+                        state.org_groups.retain(|g| g.id != *id);
+                        if *on {
+                            state.org_groups.push(OrgGroup { id: id.clone(), name: name.clone(), open: *open });
+                        }
+                        true
+                    }
+                    OrgChange::Parent { jam_id, open } if actor_role == Some(Role::Owner) && state.parent.is_none() => {
+                        state.parent = Some((jam_id.clone(), *open));
+                        true
+                    }
+                    _ => false,
+                };
+                applied.then_some(Event::Org)
             }
             // Only the owner ends a group; everyone replays this the same way, so a forged delete from anyone else changes nothing.
             Kind::Delete if actor_role == Some(Role::Owner) => {

@@ -1475,6 +1475,28 @@ impl LimeStore {
                 }
                 jam_store::set_join(conn, &jam.jam_id, sender, "pending", now)
             }
+            // Someone asks to join the band (LIME-246a): kept; the pass checks the invite token and adds them.
+            "jam.org.join" => {
+                let Some(jam) = jam.filter(|j| j.mine && j.writer == me) else { return Ok(()) };
+                if sender == me {
+                    return Ok(());
+                }
+                let token = op.payload.get("token").and_then(Value::as_str).unwrap_or_default();
+                self.note_org_join(conn, &jam.jam_id, sender, token, now)
+            }
+            // The writer's answer to my join of their band.
+            "jam.org.reply" => {
+                let Some(jam) = jam.filter(|j| !j.mine && j.writer == sender).or(None) else {
+                    // I may not follow the jam yet: the answer still counts when it comes from the person the invite named.
+                    let answer = op.payload.get("state").and_then(Value::as_str).filter(|a| matches!(*a, "joined" | "full" | "refused"));
+                    return match answer { Some(answer) => self.note_org_reply(conn, jam_id, answer, now), None => Ok(()) };
+                };
+                let answer = op.payload.get("state").and_then(Value::as_str).filter(|a| matches!(*a, "joined" | "full" | "refused"));
+                match answer {
+                    Some(answer) => self.note_org_reply(conn, &jam.jam_id, answer, now),
+                    None => Ok(()),
+                }
+            }
             // The writer's answer to my join.
             "jam.community.reply" => {
                 let Some(jam) = jam.filter(|j| !j.mine && j.writer == sender) else { return Ok(()) };
@@ -2092,6 +2114,7 @@ impl LimeStore {
     pub(super) fn deliver_jam(&self, transport: &Arc<dyn Transport>, token: &str, state: &mut AccountState, me: &str) {
         self.queue_credit_requests(state);
         self.process_community_joins();
+        self.process_orgs();
         self.deliver_jam_ops(transport, token, state, me);
         self.upload_jam_posts(transport, token);
         self.deliver_open(transport, token);

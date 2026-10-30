@@ -323,7 +323,7 @@ impl LimeStore {
                         (SELECT p.verified_at FROM peers p WHERE 'dm:' || p.user_id = c.id AND p.new_master_key IS NULL),
                         c.group_ended
                  FROM conversations c
-                 WHERE c.request_state NOT IN ('blocked', 'left') AND c.hidden = 0
+                 WHERE c.request_state NOT IN ('blocked', 'left') AND c.hidden = 0 AND c.group_org IS NULL
                  ORDER BY c.is_pinned DESC,
                           max(COALESCE((SELECT MAX(m.sent_at) FROM messages m
                                         WHERE m.conversation_id = c.id), 0),
