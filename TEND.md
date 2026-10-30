@@ -8790,3 +8790,4 @@ Others see a teacher's own jam, and their bands, on the profile. **Brief:** LIME
 - **Tests:** server `jam_test.ts` ("the oldest live jam is the writer's own, the rest come as others…") passes on the local stack **and staging**; core `a_writers_own_jam_comes_first_and_their_bands_after_ended_ones_left_out` plus the 14 other jam tests pass; UI `testAnotherTeachersProfileListsTheirOwnJamAndTheirBands`; `Org216/245`, `Jam188d/v` still pass on the iOS 27 simulator.
 - **What each party learns:** nothing new; each page was already public with its `writer_id`.
 - **Smoke (staging):** the two `by_writer` tests ran against staging with throwaway users (deleted after).
+- **Installed (254b):** all three, the iPad, Shem's 13 mini and Jean's 12 mini.
