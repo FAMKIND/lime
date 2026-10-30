@@ -8983,3 +8983,5 @@ Co-authors you can see. **Brief:** LIME-266. iOS (`PodcastRecorder`, `JamMedia`,
 - **4. The Post as row (podcast screens):** co-hosts were drawn only inside the band tile (a 42 pt frame that clipped them) and not at all when posting as yourself. They are now a separate strip of small circles beside the Post as chip, always drawn, never squeezed out by a long name; waiting ones are faded with a clock; VoiceOver says "waiting for them to accept". The article editor already had its own strip.
 - **Tests:** no new UI tests: the demo store has no pending invitations to show, and the simulator cannot run two accounts. Jam212b, Jam215, Jam188i pass.
 - **Gate (13 mini + iPad):** post a podcast with FAM as co-host: your card says "with FAM · waiting", and the Post as row shows FAM's circle beside the chip. Edit the post (change the title, add a second co-host): FAM stays waiting. On the iPad Accept → both phones' cards and About say "with FAM".
+
+- **Installed (265, 266):** all three, the 13 mini, the iPad and Jean's 12 mini.
