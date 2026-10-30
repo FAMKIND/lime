@@ -183,8 +183,10 @@ final class SystemNotifications: NSObject, LocalNotificationCenter, UNUserNotifi
 
     func schedule(_ content: NotificationContent) async {
         let item = UNMutableNotificationContent()
-        item.title = content.title
-        item.body = content.body
+        // Lock lime (LIME-269): while locked, a notification says only that something came, never from whom or what.
+        let hidden = AppLock.shared.hidesNotificationText()
+        item.title = hidden ? "lime" : content.title
+        item.body = hidden ? "New message" : content.body
         item.threadIdentifier = content.threadIdentifier
         if content.breaksThroughQuiet { item.interruptionLevel = .timeSensitive }
         item.sound = content.sound ? (soundFile().map { UNNotificationSound(named: UNNotificationSoundName($0)) } ?? .default) : nil

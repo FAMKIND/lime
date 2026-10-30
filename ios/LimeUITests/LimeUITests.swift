@@ -2566,3 +2566,24 @@ extension XCTestCase {
         row.tap()
     }
 }
+
+/// LIME-269: Lock lime, with a fake authenticator in place of Face ID.
+final class AppLock269UITests: LimeUITestCase {
+    func testLockLimeLocksWhenLimeIsLeftAndUnlockOpensIt() {
+        let app = demoApp()
+        app.launchArguments += ["-lime-fake-lock-auth"]
+        app.launch()
+        openSettings(app)
+        app.buttons["settings-privacy"].tap()
+        let toggle = app.switches["privacy-lock"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5), "Lock lime is in Privacy")
+        XCTAssertEqual(toggle.value as? String, "0", "off by default")
+        toggle.tap()
+        XCTAssertTrue(app.buttons["privacy-lock-delay"].waitForExistence(timeout: 5), "the delay appears once it is on")
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertTrue(app.otherElements["lock-screen"].waitForExistence(timeout: 10) || app.buttons["lock-unlock"].waitForExistence(timeout: 10), "coming back shows the lock")
+        if app.buttons["lock-unlock"].exists { app.buttons["lock-unlock"].tap() }
+        XCTAssertTrue(app.buttons["lock-unlock"].waitForNonExistence(timeout: 10), "unlocking opens lime")
+    }
+}

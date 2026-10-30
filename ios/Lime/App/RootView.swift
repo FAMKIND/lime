@@ -3,6 +3,9 @@ import SwiftUI
 struct RootView: View {
     @Environment(ConversationStore.self) private var store
     @Environment(AccountSession.self) private var session
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var lockWindow = LockWindow()
+    private let lock = AppLock.shared
 
     var body: some View {
         Group {
@@ -15,6 +18,23 @@ struct RootView: View {
             case .signedIn:
                 SignedInView()
             }
+        }
+        // Lock lime (LIME-269): a window above everything while lime is away (blurred) or locked.
+        .onChange(of: scenePhase) { _, phase in
+            guard session.phase == .signedIn else { return }
+            switch phase {
+            case .inactive: lock.sceneBecameInactive()
+            case .background: lock.sceneEnteredBackground()
+            case .active: lock.sceneBecameActive()
+            @unknown default: break
+            }
+            lockWindow.update(for: lock)
+        }
+        .onChange(of: lock.isLocked) { _, _ in lockWindow.update(for: lock) }
+        .onChange(of: lock.isCovered) { _, _ in lockWindow.update(for: lock) }
+        .onChange(of: session.phase) { _, phase in
+            if phase == .signedIn { lockWindow.update(for: lock); lock.askIfWanted() }
+            else { lock.turnOffForSignedOut(); lockWindow.update(for: lock) }
         }
         .alert("Call", isPresented: Binding(get: { store.calls.notice != nil }, set: { if !$0 { store.calls.notice = nil } })) {
             Button("OK", role: .cancel) {}

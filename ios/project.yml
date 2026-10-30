@@ -63,6 +63,7 @@ targets:
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "lime uses the microphone to record voice messages and the sound of videos you record."
         # A call keeps its audio going when the screen locks or Lime is in the background; "voip" is for the system call screen (CallKit).
         INFOPLIST_KEY_UIBackgroundModes: audio voip
+        INFOPLIST_KEY_NSFaceIDUsageDescription: "lime uses Face ID to unlock itself when you turn on Lock lime. Face ID stays on your iPhone."
         INFOPLIST_KEY_NSCameraUsageDescription: "lime uses the camera to scan a teacher's QR code and to take photos and videos to send."
       configs:
         # LIME-103 (the Bluetooth field test): Bluetooth and its background modes exist in Debug builds only.

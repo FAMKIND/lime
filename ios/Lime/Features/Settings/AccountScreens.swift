@@ -157,9 +157,36 @@ struct PrivacyScreen: View {
     @State private var learnMoreOffline = false
     @AppStorage(LinkPreviewSetting.key) private var linkPreviews = true
     @AppStorage(CallPrivacy.alwaysRelayKey) private var alwaysRelay = false
+    @State private var lockOn = AppLock.shared.isEnabled
+    @State private var lockDelay = AppLock.shared.delay
 
     var body: some View {
         SettingsPage(title: "Privacy") {
+            // LIME-269: off by default.
+            SettingsCard {
+                Toggle(isOn: Binding(get: { lockOn }, set: { want in
+                    if want { Task { if await AppLock.shared.turnOn() { lockOn = true } } } else { AppLock.shared.turnOff(); lockOn = false }
+                })) {
+                    Text("Lock lime").font(Theme.body).foregroundStyle(Theme.text)
+                }
+                .tint(Theme.accent)
+                .padding(.horizontal, 18).frame(minHeight: 58)
+                .accessibilityIdentifier("privacy-lock")
+                if lockOn {
+                    Divider().overlay(Theme.hairline).padding(.leading, 18)
+                    HStack {
+                        Text("Ask").font(Theme.body).foregroundStyle(Theme.text)
+                        Spacer()
+                        Picker("Ask", selection: Binding(get: { lockDelay }, set: { lockDelay = $0; AppLock.shared.delay = $0 })) {
+                            ForEach(LockDelay.allCases) { Text($0.title).tag($0) }
+                        }
+                        .labelsHidden().tint(Theme.textSecondary)
+                        .accessibilityIdentifier("privacy-lock-delay")
+                    }
+                    .padding(.horizontal, 18).frame(minHeight: 58)
+                }
+            }
+            SettingsFootnote(text: "Opens with \(SystemLockAuthenticator.methodName), or your passcode. Messages show no text while it is locked.").accessibilityIdentifier("privacy-lock-note")
             SettingsCard {
                 SettingsRow(symbol: "nosign", title: "Blocked", value: blockedCount.map { $0 == 0 ? "None" : "\($0)" }, route: .blocked, id: "privacy-blocked")
                 SettingsRow(symbol: "key.viewfinder", title: "Safety Numbers", route: .keys, id: "privacy-keys", showsDivider: false)

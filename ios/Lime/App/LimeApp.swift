@@ -18,6 +18,9 @@ struct LimeApp: App {
             auth = FakeAuthService()
         }
         #endif
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-lime-fake-lock-auth") { AppLock.shared.authenticator = FakeLockAuthenticator(); AppLock.shared.asksOnReturn = false }
+        #endif
         let coordinator = Self.makeNotifications()
         store.notifications = coordinator
         coordinator.onOpen = { [weak store] conversation, thread in store?.openFromNotification(conversation, thread: thread) }
