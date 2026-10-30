@@ -9061,3 +9061,5 @@ The invite page online at limemessenger.com, served by Caddy on `lime-turn-1`, a
 - **What each party learns:** our server serves a static page and keeps no log; it sees the request path (the username, or `/b/`), as any web request. The fingerprint and band token never reach it. No third party.
 - **Tests:** `InviteTests` pass (iOS). No Rust change.
 - **Gate:** open `https://limemessenger.com/u/shem` in Safari: the invite page; scan an invite QR with the iPhone camera: it opens the page. The app itself opens it once universal links exist (November). Still open from 172b: the three Supabase secrets and deploys.
+
+- **Installed (172d):** all three, the 13 mini, the iPad and Jean's 12 mini.
