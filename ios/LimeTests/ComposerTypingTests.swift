@@ -93,7 +93,7 @@ final class ComposerTypingTests: XCTestCase {
     }
 
     func testLinkInputIsCheckedByTheCore() {
-        XCTAssertEqual(LinkInput.url(from: "limechat.org/plan")?.absoluteString, "https://limechat.org/plan")
+        XCTAssertEqual(LinkInput.url(from: "limemessenger.com/plan")?.absoluteString, "https://limemessenger.com/plan")
         XCTAssertEqual(LinkInput.url(from: "http://a.b")?.absoluteString, "http://a.b")
         XCTAssertEqual(LinkInput.url(from: "me@example.com")?.absoluteString, "mailto:me@example.com")
         XCTAssertEqual(LinkInput.url(from: "mailto:me@example.com")?.absoluteString, "mailto:me@example.com")

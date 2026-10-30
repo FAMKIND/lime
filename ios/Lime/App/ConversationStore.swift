@@ -1167,8 +1167,8 @@ final class ConversationStore {
             // A link and an underline side by side, in each kind of bubble.
             let pat = Person(id: "pat", name: "Pat Rivera")
             conversations = [Conversation(id: "dm:links", title: pat.name, members: [pat], messages: [
-                Message(id: "k1", senderID: "pat", text: "A [link to the policy](https://limechat.org/policy) and some __underlined text__ side by side.", date: now.addingTimeInterval(-900)),
-                Message(id: "k2", senderID: nil, text: "A [link to the policy](https://limechat.org/policy) and some __underlined text__ side by side.", date: now.addingTimeInterval(-600), state: .sent),
+                Message(id: "k1", senderID: "pat", text: "A [link to the policy](https://limemessenger.com/policy) and some __underlined text__ side by side.", date: now.addingTimeInterval(-900)),
+                Message(id: "k2", senderID: nil, text: "A [link to the policy](https://limemessenger.com/policy) and some __underlined text__ side by side.", date: now.addingTimeInterval(-600), state: .sent),
                 Message(id: "k3", senderID: "pat", text: "Email [the office](mailto:office@example.com), **bold**, and plain text.", date: now.addingTimeInterval(-300)),
             ])]
             path.append("dm:links")
@@ -1179,7 +1179,7 @@ final class ConversationStore {
             // A chat of formatted messages: styles, a list, a code block, a numbered list, links.
             let pat = Person(id: "pat", name: "Pat Rivera")
             conversations = [Conversation(id: "dm:fmt", title: pat.name, members: [pat], messages: [
-                Message(id: "f1", senderID: "pat", text: "Here's the plan for **Friday**:\n\n- bring the *signed* forms\n- check `room 12`\n- read [the policy](https://limechat.org/policy)", date: now.addingTimeInterval(-7_200)),
+                Message(id: "f1", senderID: "pat", text: "Here's the plan for **Friday**:\n\n- bring the *signed* forms\n- check `room 12`\n- read [the policy](https://limemessenger.com/policy)", date: now.addingTimeInterval(-7_200)),
                 Message(id: "f2", senderID: nil, text: "Thanks! I'll run this check:\n\n```\nlet total = forms + permission_slips\nprint(\"a long line that scrolls sideways when it does not fit\")\n```\n\n__Almost__ done.", date: now.addingTimeInterval(-3_600), state: .sent),
                 Message(id: "f3", senderID: "pat", text: "~~Cancelled~~ and **__rescheduled__**\n\nSee [the old site](http://example.com/old)", date: now.addingTimeInterval(-1_800)),
                 Message(id: "f4", senderID: nil, text: "My steps:\n\n1. copy the forms\n2. sign them\n  - **both** sides\n3. hand them in", date: now.addingTimeInterval(-600), state: .sent),
@@ -1263,7 +1263,7 @@ final class ConversationStore {
             loadDemoTeachers()
             demoSheet = "scan"
             let key = screen == "scan-verified" ? Self.demoGraceFingerprint : "0000111122223333FFFF"
-            demoScanCode = "https://limechat.org/u/grace.h?k=\(key)"
+            demoScanCode = "https://limemessenger.com/u/grace.h?k=\(key)"
         case "attachments", "attachments-draft", "attachments-media", "attachments-remote", "attachment-viewer":
             loadDemoAttachments(draft: screen == "attachments-draft", screen: screen ?? "attachments")
             path.append("dm:att")

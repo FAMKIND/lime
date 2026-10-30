@@ -402,11 +402,11 @@ struct AboutScreen: View {
             }
             SettingsCard {
                 SettingsRow(symbol: "doc.text", title: "Acknowledgements", route: .acknowledgements, id: "about-acknowledgements")
-                Link(destination: URL(string: "https://limechat.org/terms")!) {
+                Link(destination: URL(string: "https://limemessenger.com/terms")!) {
                     SettingsRowLabel(symbol: "checkmark.shield", title: "Terms of Service")
                 }
                 .accessibilityIdentifier("about-terms")
-                Link(destination: URL(string: "https://limechat.org/privacy")!) {
+                Link(destination: URL(string: "https://limemessenger.com/privacy")!) {
                     SettingsRowLabel(symbol: "lock", title: "Privacy Policy", showsDivider: false)
                 }
                 .accessibilityIdentifier("about-privacy")

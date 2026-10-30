@@ -12,5 +12,5 @@ Deno.serve(handler(async (req) => {
   await rateLimit(`turn:${me}`, 1, 20, 60);
   const secret = Deno.env.get("TURN_SECRET");
   if (!secret) throw new HttpError(503, "not_configured", "Calls are not set up on this server yet.");
-  return json(await turnCredentials(secret, me, Date.now(), Deno.env.get("TURN_HOST") ?? "turn.limechat.org"));
+  return json(await turnCredentials(secret, me, Date.now(), Deno.env.get("TURN_HOST") ?? "turn.limemessenger.com"));
 }));

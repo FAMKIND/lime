@@ -616,7 +616,7 @@ fn a_formatted_message_arrives_as_the_same_markdown_and_is_searched_by_its_words
     let server = FakeServer::new();
     let (alice, transport) = party(&server, "alice", 1);
     let (bob, _) = party(&server, "bob", 2);
-    let text = "Hello **team**, see [the plan](https://limechat.org/plan)\n\n- bring `forms`\n- bring __snacks__\n\n```\nlet a = **raw**\n```";
+    let text = "Hello **team**, see [the plan](https://limemessenger.com/plan)\n\n- bring `forms`\n- bring __snacks__\n\n```\nlet a = **raw**\n```";
     say(&alice, &bob, &transport, text);
     sync(&bob, &transport);
 
@@ -629,7 +629,7 @@ fn a_formatted_message_arrives_as_the_same_markdown_and_is_searched_by_its_words
 
     // Search and previews work on the words, not the markup.
     assert_eq!(bob.store.search_messages("team".into(), None, 10).unwrap().len(), 1);
-    assert_eq!(bob.store.search_messages("limechat".into(), None, 10).unwrap().len(), 0, "a link's address is not part of the words");
+    assert_eq!(bob.store.search_messages("limemessenger".into(), None, 10).unwrap().len(), 0, "a link's address is not part of the words");
     assert_eq!(bob.store.search_messages("plan".into(), None, 10).unwrap().len(), 1, "but its text is");
     assert_eq!(bob.store.search_messages("raw".into(), None, 10).unwrap().len(), 1, "code is searchable");
     let hit = bob.store.search_messages("snacks".into(), None, 10).unwrap().remove(0);

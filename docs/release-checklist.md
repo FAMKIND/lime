@@ -8,17 +8,17 @@ Things that must be done before Lime goes to testers or the App Store. Later bri
 - [ ] **Terms and Privacy.** The welcome screen links `https://famkind.com` as a placeholder for both; point them at the real pages.
 - [ ] **The welcome illustration.** A placeholder (the logo) until the artwork exists.
 - [ ] **In-app account deletion.** The App Store requires an account created in the app to be deletable in the app. Settings → Account has no "Delete account" yet; it must delete the profile, the keys and devices, the mailbox and the Auth user on the server, and wipe the phone. **Required before release.**
-- [ ] **Terms and Privacy pages.** Settings → About links `https://limechat.org/terms` and `https://limechat.org/privacy` as placeholders; publish the real pages.
+- [ ] **Terms and Privacy pages.** Settings → About links `https://limemessenger.com/terms` and `https://limemessenger.com/privacy` as placeholders; publish the real pages.
 - [ ] **Donate link.** The "Donate to lime" row in Settings is hidden until `LIME_DONATE_URL` (an https address) is set when the project is generated (`LIME_DONATE_URL=https://… ./ios/generate.sh`).
 - [ ] **Lime's notification chime.** Settings → Notifications → Sound offers Default and None only. When the sound file exists (at most 2 s, rights owned), follow `ios/Lime/Resources/Sounds/README.md` to add `lime-chime.caf` and make it the default.
 - [ ] **Push notifications (stage 2).** Needs the paid Apple account: APNs, push tokens per device, content-free pushes from the server, and a notification service extension that decrypts on the device. Until then alerts only arrive while Lime is open or has just been in use.
 
 ## Invite links and QR codes (LIME-97b)
 
-- [ ] **Host `invite-site/`** (Cloudflare Pages or Codeberg Pages) and point `limechat.org/u/*` at it in deSEC; steps in `invite-site/README.md`. Until then the invite text's link shows nothing.
+- [ ] **Host `invite-site/`** (Cloudflare Pages or Codeberg Pages) and point `limemessenger.com/u/*` at it in deSEC; steps in `invite-site/README.md`. Until then the invite text's link shows nothing.
 - [ ] **Camera string** (`NSCameraUsageDescription`): "Lime uses the camera to scan a teacher's QR code." Already in `ios/project.yml`; re-check it in the App Store privacy answers (the camera is used only to scan QR codes; nothing is recorded or uploaded).
 - [ ] **No Contacts permission** is requested (Apple's contact picker runs out of process); keep it that way, and answer "Contacts: not collected" in the privacy labels.
-- [ ] **Universal links** for `limechat.org/u/*` (Associated Domains + `apple-app-site-association` in `invite-site/`) once the paid Apple account exists.
+- [ ] **Universal links** for `limemessenger.com/u/*` (Associated Domains + `apple-app-site-association` in `invite-site/`) once the paid Apple account exists.
 
 ## Profile photos and user-generated content (LIME-98b)
 
@@ -86,7 +86,7 @@ Things that must be done before Lime goes to testers or the App Store. Later bri
 ## Group calls (LIME-112b)
 
 - `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` and `LIVEKIT_URL` are set on each Supabase project and `livekit-token` returns 200, not 503 (`infra/sfu/README.md`).
-- `infra/sfu/setup.sh` has been run on the media server; 443/tcp, 7881/tcp and 50000-60000/udp are open (and in any Hetzner Cloud Firewall); coturn's certificate still renews (`certbot renew --dry-run --cert-name turn.limechat.org`, now through Caddy).
+- `infra/sfu/setup.sh` has been run on the media server; 443/tcp, 7881/tcp and 50000-60000/udp are open (and in any Hetzner Cloud Firewall); coturn's certificate still renews (`certbot renew --dry-run --cert-name turn.limemessenger.com`, now through Caddy).
 - **A 100-person load test before launch**, from a data-centre machine (not a home network): `lk load-test` with 50 and 100 participants in speaker-view conditions; confirm CPU, egress and packet loss on the production server size (the numbers in `TEND.md` LIME-112b are from a home link at 3, 6 and 10).
 - Real phones: a 3-person voice and video call (join, leave, mute, camera, flip); a join with the app closed (rings only while lime is open or recent); a call over mobile data and with Always relay (the SFU must connect through coturn: the same-host path was not tested); minimise to the system window; a member removed mid-call stops seeing and hearing; the chat line says "Call ended".
 - The sender-key exchange goes to the external security review with the rest of the call crypto.

@@ -76,10 +76,10 @@ mod tests {
 
     #[test]
     fn links_are_found_by_their_scheme_anywhere_in_the_words() {
-        assert!(has_link("see https://limechat.org/u/jean now"));
+        assert!(has_link("see https://limemessenger.com/u/jean now"));
         assert!(has_link("(http://example.com)"));
         assert!(has_link("HTTPS://FAMKIND.COM"));
-        assert!(!has_link("no address here, just limechat.org"));
+        assert!(!has_link("no address here, just limemessenger.com"));
         assert!(!has_link(""));
     }
 }

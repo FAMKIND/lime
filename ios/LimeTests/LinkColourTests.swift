@@ -47,7 +47,7 @@ final class LinkColourTests: XCTestCase {
             Span(text: "plain ", bold: false, italic: false, underline: false, strike: false, code: false, link: nil, mention: nil),
             Span(text: "underlined", bold: false, italic: false, underline: true, strike: false, code: false, link: nil, mention: nil),
             Span(text: " and ", bold: false, italic: false, underline: false, strike: false, code: false, link: nil, mention: nil),
-            Span(text: "link", bold: false, italic: false, underline: false, strike: false, code: false, link: "https://limechat.org", mention: nil),
+            Span(text: "link", bold: false, italic: false, underline: false, strike: false, code: false, link: "https://limemessenger.com", mention: nil),
         ]
         let text = MessageRender.attributed(spans, ink: .black, link: .green)
         var byWord: [String: AttributedString.Runs.Run] = [:]
@@ -58,10 +58,10 @@ final class LinkColourTests: XCTestCase {
         XCTAssertNil(underline?.link)
         XCTAssertEqual(link?.underlineStyle, .single, "a link is underlined too")
         XCTAssertEqual(link?.foregroundColor, .green, "but in its own colour")
-        XCTAssertEqual(link?.link?.absoluteString, "https://limechat.org")
+        XCTAssertEqual(link?.link?.absoluteString, "https://limemessenger.com")
         XCTAssertNil(link?.backgroundColor)
 
-        let pressed = MessageRender.attributed(spans, ink: .black, link: .green, pressed: "https://limechat.org")
+        let pressed = MessageRender.attributed(spans, ink: .black, link: .green, pressed: "https://limemessenger.com")
         let pressedLink = pressed.runs.first { $0.link != nil }
         XCTAssertNotNil(pressedLink?.backgroundColor, "the tapped link shows pressed")
         let others = pressed.runs.filter { $0.link == nil && $0.backgroundColor != nil }

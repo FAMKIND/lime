@@ -8,31 +8,38 @@ final class InviteTests: XCTestCase {
 
     func testTheInviteTextNamesTheInviterAndCarriesThePersonalLink() {
         XCTAssertEqual(InviteLink.message(username: "grace.h"),
-                       "Join me on lime, a private messenger made for teachers: https://limechat.org/u/grace.h")
-        XCTAssertTrue(InviteLink.generalMessage.hasPrefix("Join me on lime, a private messenger made for teachers: https://limechat.org"))
+                       "Join me on lime, a private messenger made for teachers: https://limemessenger.com/u/grace.h")
+        XCTAssertTrue(InviteLink.generalMessage.hasPrefix("Join me on lime, a private messenger made for teachers: https://limemessenger.com"))
     }
 
     func testAPayloadRoundTripsThroughItsText() throws {
         let payload = QRPayload(username: "grace.h", fingerprint: "a1b2 c3d4 e5f6 0718 2930")
         XCTAssertEqual(payload.fingerprint, code, "spaces and case are normalised")
-        XCTAssertEqual(payload.text, "https://limechat.org/u/grace.h?k=\(code)")
+        XCTAssertEqual(payload.text, "https://limemessenger.com/u/grace.h?k=\(code)")
         XCTAssertEqual(QRPayload.decode(payload.text), payload)
     }
 
     func testAPlainInviteLinkHasNoFingerprint() throws {
-        let decoded = try XCTUnwrap(QRPayload.decode("https://limechat.org/u/grace.h"))
+        let decoded = try XCTUnwrap(QRPayload.decode("https://limemessenger.com/u/grace.h"))
         XCTAssertEqual(decoded.username, "grace.h")
         XCTAssertNil(decoded.fingerprint)
     }
 
     func testOnlyLimeLinksWithAGoodUsernameAndKeyAreAccepted() {
-        for bad in ["", "hello", "http://limechat.org/u/grace.h", "https://example.com/u/grace.h", "https://limechat.org/grace.h",
-                    "https://limechat.org/u/", "https://limechat.org/u/a b", "https://limechat.org/u/admin",
-                    "https://limechat.org/u/grace.h?k=XYZ", "https://limechat.org/u/grace.h?k=A1B2", "https://limechat.org/u/grace.h/extra",
-                    "https://limechat.org.evil.com/u/grace.h?k=\(code)"] {
+        for bad in ["", "hello", "http://limemessenger.com/u/grace.h", "https://example.com/u/grace.h", "https://limemessenger.com/grace.h",
+                    "https://limemessenger.com/u/", "https://limemessenger.com/u/a b", "https://limemessenger.com/u/admin",
+                    "https://limemessenger.com/u/grace.h?k=XYZ", "https://limemessenger.com/u/grace.h?k=A1B2", "https://limemessenger.com/u/grace.h/extra",
+                    "https://limemessenger.com.evil.com/u/grace.h?k=\(code)"] {
             XCTAssertNil(QRPayload.decode(bad), bad)
         }
-        XCTAssertNotNil(QRPayload.decode("  https://www.limechat.org/u/grace.h?k=\(code.lowercased())\n"))
+        XCTAssertNotNil(QRPayload.decode("  https://www.limemessenger.com/u/grace.h?k=\(code.lowercased())\n"))
+    }
+
+    /// LIME-172b: lime lives on limemessenger.com; a link to the retired limechat.org (or its www) is not an invite.
+    func testALinkToTheOldHostIsNotAnInvite() {
+        for old in ["https://limechat.org/u/grace.h", "https://www.limechat.org/u/grace.h?k=\(code)", "https://turn.limechat.org/u/grace.h"] {
+            XCTAssertNil(QRPayload.decode(old), old)
+        }
     }
 
     func testAQRImageReadsBackToTheSameText() throws {

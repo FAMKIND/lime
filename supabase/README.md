@@ -82,7 +82,7 @@ The account's owner is emailed ("A new phone signed in and replaced your Lime ke
 
 ```
 supabase secrets set LIME_NOTIFY_RESEND_API_KEY=re_xxxxxxxx --project-ref <ref>
-# optional: supabase secrets set LIME_NOTIFY_FROM="Lime <no-reply@send.limechat.org>" --project-ref <ref>
+# optional: supabase secrets set LIME_NOTIFY_FROM="Lime <no-reply@send.limemessenger.com>" --project-ref <ref>
 ```
 
 The sending domain must be verified in Resend (it already is for the sign-in codes). Until the secret is set, no email is sent and nothing fails.

@@ -9030,3 +9030,21 @@ The call server answers to both names. **Brief:** LIME-172a (the user's go, type
 - **Calls (no phones used):** a TURN allocation with a real time-limited credential through **both** names (UDP/TCP: 0 % loss). A LiveKit room through **both** names (`lk load-test`, 1 video + 1 audio publisher, 1 subscriber, 12 s): 2/2 tracks, about 980 kbps, 0 % loss each. `turnutils_uclient -S` (TLS) prints an OpenSSL "internal error" for both names alike; the TLS certificate itself verifies with openssl on both, so I take it as that tool's quirk, not the server's; please make the phone call to confirm.
 - **Not done (by design):** the app, the Supabase secrets and the invite site are 172b's.
 - **Gate:** the table above; **a call between two phones still connects** (a 1:1 call through TURN and a group call on the current limechat.org names): please make one.
+
+## LIME-172b
+
+The switch to limemessenger.com, in the app, docs and tests. **Brief:** LIME-172b. **Nothing set or deployed:** no Supabase secrets, no DNS, no function deploy. Not the bundle id (172c).
+
+- **What moved:** every host, link and address outside `public/` now says limemessenger.com: `InviteLink.host` (invite links, QR codes and band links are `https://limemessenger.com/u/…` and `/b/…`), Settings → About's Terms and Privacy links, the STUN fallback `stun:turn.limemessenger.com:3478`, `turn-credentials`' default `TURN_HOST`, `notify.ts`' default sender `lime <no-reply@send.limemessenger.com>`, the invite site's README and comment, `docs/` (api-v2, architecture, release-checklist), the READMEs, and the tests (Rust, iOS unit and UI) and demo data that used the old host.
+- **The old link is not an invite:** `limechat.org/u/…` (and www.) no longer decodes (`testALinkToTheOldHostIsNotAnInvite`). I also tightened the band-link reader, which accepted any host ending in the invite host (`evil-limemessenger.com`): it now takes the host or `www.` only.
+- **Left on purpose:** `infra/` (the scripts and READMEs still name `turn.limechat.org` / `sfu.limechat.org` and `shem@limechat.org`, as the dual-name server of 172a: they go with the retirement in Phase D). `public/` (the frozen web app), PLOT.md and TEND.md. Otherwise `git grep -i limechat` returns nothing.
+- **`/terms` and `/privacy`:** the invite site (`invite-site/`) has **no such pages**: it only serves `/u/*` and a holding page. The Settings links will show nothing until the compliance pack writes them; the links can stay. Noted in `invite-site/README.md`.
+- **Tests:** Rust 403 pass; iOS unit (Invite, ComposerDocument, ComposerTyping, LinkColour) and Band246 UI pass.
+
+**Your steps, not done by me** (in this order; rollback = the old secret values):
+1. **Cloudflare Pages → `lime-invite` → Custom domains → add `limemessenger.com`** (and `www` if you want it); add the DNS records Cloudflare shows in deSEC (apex A/AAAA as shown). Check `https://limemessenger.com/u/grace.h` loads.
+2. **Supabase secrets**, staging first, then production: `TURN_HOST=turn.limemessenger.com`, `LIVEKIT_URL=wss://sfu.limemessenger.com`, `LIME_NOTIFY_FROM="lime <no-reply@send.limemessenger.com>"`. Before the third: **check the Resend key is not limited to limechat's domain**, and that `send.limemessenger.com` is verified in Resend (SPF/DKIM) (1e241).
+3. **Deploy the functions that read them:** `supabase functions deploy turn-credentials livekit-token` and the notify functions (every function that imports `_shared/notify.ts`), for each project.
+4. Rollback: set the three secrets back to `turn.limechat.org`, `wss://sfu.limechat.org`, and the old sender; redeploy.
+
+- **Gate (after your steps):** a message both ways; a 1:1 call (TURN) and a group call; scan an invite QR (it opens `limemessenger.com/u/…`); a sign-in email arrives from `send.limemessenger.com`. Until the steps are done, calls still work (the app asks the function for the host, and the function's default now points at a name the 172a certificate already covers), but an invite link opens nothing and mail still comes from the old sender.

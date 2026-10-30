@@ -1673,10 +1673,10 @@ final class LimeUITestsThreadsAndFormatting: LimeUITestCase {
         address.typeText("javascript:alert(1)")
         app.buttons["link-apply"].tap()
         XCTAssertTrue(app.staticTexts["link-error"].waitForExistence(timeout: 5), "a javascript link is refused")
-        address.clearAndType("limechat.org/plan")
+        address.clearAndType("limemessenger.com/plan")
         app.buttons["link-apply"].tap()
         XCTAssertTrue(app.textViews["composer-field"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.textViews["composer-field"].value as? String, "[see the plan](https://limechat.org/plan)", "https is assumed, on the selected text")
+        XCTAssertEqual(app.textViews["composer-field"].value as? String, "[see the plan](https://limemessenger.com/plan)", "https is assumed, on the selected text")
     }
 
     func testALinkWithNoSelectionAsksForTheTextToShow() {
@@ -1687,11 +1687,11 @@ final class LimeUITestsThreadsAndFormatting: LimeUITestCase {
         XCTAssertTrue(app.buttons["fmt-link"].waitForExistence(timeout: 5))
         app.buttons["fmt-link"].tap()
         XCTAssertTrue(app.textFields["link-text"].waitForExistence(timeout: 5), "no selection: the text to show is asked for too")
-        app.textFields["link-url"].typeText("https://limechat.org")
+        app.textFields["link-url"].typeText("https://limemessenger.com")
         app.textFields["link-text"].tap()
         app.textFields["link-text"].typeText("Lime")
         app.buttons["link-apply"].tap()
-        XCTAssertEqual(app.textViews["composer-field"].value as? String, "[Lime](https://limechat.org)")
+        XCTAssertEqual(app.textViews["composer-field"].value as? String, "[Lime](https://limemessenger.com)")
     }
 
     func testMessagesWithFormattingAreDrawnAndAnHttpLinkAsksFirst() {

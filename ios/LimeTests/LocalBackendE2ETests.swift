@@ -572,7 +572,7 @@ final class LocalBackendE2ETests: XCTestCase {
         let chat = "dm:\(person.userId)"
 
         let written = ComposerDocument.markdown(from: ComposerDocument.attributed(fromMarkdown:
-            "Plan for **Friday**, see [the policy](https://limechat.org/policy)\n\n- bring *signed* forms\n- check `room 12`\n\n```\nlet a = **raw**\n```\n\n1. copy\n2. sign"))
+            "Plan for **Friday**, see [the policy](https://limemessenger.com/policy)\n\n- bring *signed* forms\n- check `room 12`\n\n```\nlet a = **raw**\n```\n\n1. copy\n2. sign"))
         await ada.store.sendNow(written, in: chat)
         await eventually("the formatted message reaches Bob") { bob.store.requests.count == 1 }
         let theirs = try XCTUnwrap(bob.store.requests.first?.messages.first)
@@ -584,7 +584,7 @@ final class LocalBackendE2ETests: XCTestCase {
 
         let byWord = await bob.store.search("friday")
         XCTAssertEqual(byWord.messages.count, 1, "found by its words")
-        let byMarkup = await bob.store.search("limechat")
+        let byMarkup = await bob.store.search("limemessenger")
         XCTAssertTrue(byMarkup.messages.isEmpty, "a link's address is not searched")
         let preview = messagePlainText(text: theirs.text).replacingOccurrences(of: "\n", with: " ")
         XCTAssertTrue(preview.hasPrefix("Plan for Friday, see the policy"), preview)

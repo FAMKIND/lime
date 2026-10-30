@@ -1272,8 +1272,8 @@ mod tests {
         assert_eq!(parse("~~gone~~"), para(vec![Span { strike: true, ..s("gone") }]));
         assert_eq!(parse("use `x + 1` here"), para(vec![s("use "), Span { code: true, ..s("x + 1") }, s(" here")]));
         assert_eq!(
-            parse("see [Lime](https://limechat.org) now"),
-            para(vec![s("see "), Span { link: Some("https://limechat.org".into()), ..s("Lime") }, s(" now")])
+            parse("see [Lime](https://limemessenger.com) now"),
+            para(vec![s("see "), Span { link: Some("https://limemessenger.com".into()), ..s("Lime") }, s(" now")])
         );
     }
 

@@ -5,7 +5,7 @@ import UIKit
 /// The invite text and link a teacher sends from their own phone. lime's servers never send invites
 /// and never learn who was invited.
 enum InviteLink {
-    static let host = "limechat.org"
+    static let host = "limemessenger.com"
 
     static func url(username: String) -> String { "https://\(host)/u/\(username)" }
 
@@ -18,7 +18,7 @@ enum InviteLink {
 }
 
 /// What a teacher's QR code holds: their invite link plus their identity-key fingerprint, e.g.
-/// `https://limechat.org/u/grace.h?k=A1B2C3D4E5F607182930`. A phone camera that scans it opens the
+/// `https://limemessenger.com/u/grace.h?k=A1B2C3D4E5F607182930`. A phone camera that scans it opens the
 /// invite page; lime reads the fingerprint too.
 @MainActor
 struct QRPayload: Equatable {

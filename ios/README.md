@@ -202,7 +202,7 @@ The unattended overnight test (LIME-103b) is the **Auto test** button on that sc
 
 ## Invite teachers and QR codes (LIME-97b)
 
-- **Invite** (New Message → More → Invite teachers to Lime, and the empty-state card): Apple's `CNContactPickerViewController` (no Contacts permission; only the picked entries reach the app) then Messages / Mail / Share with "Join me on Lime, a private messenger made for teachers: https://limechat.org/u/<username>". Sent from the teacher's own phone; Lime's servers never see it. Code: `Lime/Features/Invite/`.
+- **Invite** (New Message → More → Invite teachers to Lime, and the empty-state card): Apple's `CNContactPickerViewController` (no Contacts permission; only the picked entries reach the app) then Messages / Mail / Share with "Join me on Lime, a private messenger made for teachers: https://limemessenger.com/u/<username>". Sent from the teacher's own phone; Lime's servers never see it. Code: `Lime/Features/Invite/`.
 - **My QR code** (Settings → Profile) and **Scan QR Code** (New Message → Find by Username). The camera is only used to read QR codes. The simulator has no camera: Debug builds have a "Paste a code" field on the scan screen, and `-lime-demo-screen scan-verified|scan-mismatch|chat-verified|settings/profile/my-qr` show each state.
 - A matching fingerprint marks the person **Verified in person** (core: `verify_in_person`, migration 13); a mismatch shows a warning and marks nothing.
 - The page behind the invite link is in `invite-site/` (steps to host it and point DNS are in its README).

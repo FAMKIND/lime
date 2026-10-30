@@ -26,7 +26,7 @@ final class StoreSignalling: CallSignalling {
     }
 
     func iceServers() async -> [IceServer] {
-        let fallback = [IceServer(urls: ["stun:turn.limechat.org:3478"], username: nil, credential: nil)]
+        let fallback = [IceServer(urls: ["stun:turn.limemessenger.com:3478"], username: nil, credential: nil)]
         guard let store, let core = store.core, let link = store.link else { return fallback }
         let turn = await Retry.once(after: .seconds(1), log: { CallDiagnostics.shared.log($0) }) { () async throws -> TurnServers? in
             let token = try await link.token()

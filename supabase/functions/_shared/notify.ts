@@ -2,7 +2,7 @@
 // function secret (LIME_NOTIFY_RESEND_API_KEY, never in the repo); without the secret nothing is
 // sent and nothing fails. It is best effort: a failed send never blocks what triggered it.
 
-const DEFAULT_FROM = "lime <no-reply@send.limechat.org>";
+const DEFAULT_FROM = "lime <no-reply@send.limemessenger.com>";
 
 export type Notice = { subject: string; text: string; html: string };
 

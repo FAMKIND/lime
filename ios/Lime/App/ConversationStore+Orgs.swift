@@ -6,10 +6,10 @@ extension ConversationStore {
     /// The link that joins a band: it carries the jam, its writer and the invite token (the code), and opens lime.
     static func bandLink(code: String) -> String { "https://\(InviteLink.host)/b/\(code)" }
 
-    /// A code read from a link (`https://limechat.org/b/<code>` or `lime://b/<code>`).
+    /// A code read from a link (`https://limemessenger.com/b/<code>` or `lime://b/<code>`).
     static func bandCode(from url: URL) -> String? {
         let parts = url.pathComponents.filter { $0 != "/" }
-        if url.scheme == "https", url.host?.lowercased().hasSuffix(InviteLink.host) == true, parts.count == 2, parts[0] == "b" { return parts[1] }
+        if url.scheme == "https", [InviteLink.host, "www.\(InviteLink.host)"].contains(url.host?.lowercased() ?? ""), parts.count == 2, parts[0] == "b" { return parts[1] }
         if url.scheme == "lime", url.host == "b", let code = parts.first { return code }
         return nil
     }
