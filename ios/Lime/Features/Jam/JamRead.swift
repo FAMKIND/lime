@@ -10,5 +10,8 @@ enum JamRead {
         now.append(id)
         UserDefaults.standard.set(Array(now.suffix(2000)), forKey: key)
     }
+    static func unmark(_ id: String) {
+        UserDefaults.standard.set((UserDefaults.standard.stringArray(forKey: key) ?? []).filter { $0 != id }, forKey: key)
+    }
     static func isUnread(_ post: JamPostInfo, me: String) -> Bool { post.kind == "article" && post.state == "ready" && post.author != me && !ids.contains(post.postId) }
 }

@@ -17,12 +17,14 @@ final class Series210fUITests: LimeUITestCase {
         XCTAssertTrue(any(app, "series-page").waitForExistence(timeout: 5))
         XCTAssertEqual(any(app, "series-page-title").label, "Fractions that stick")
         let one = any(app, "series-part-demo-post-1"), two = any(app, "series-part-demo-open-sam-part2"), three = any(app, "series-part-demo-post-2")
+        XCTAssertEqual(any(app, "series-progress").label, "1 of 3 read")   // in the hero (LIME-260b)
+        // The page opens on the cover hero: the parts are further down.
+        for _ in 0..<5 where !three.exists { app.swipeUp() }
         XCTAssertTrue(one.exists && two.exists && three.exists)
         XCTAssertLessThan(one.frame.minY, two.frame.minY, "in order")
         XCTAssertLessThan(two.frame.minY, three.frame.minY, "in order")
         XCTAssertTrue(any(app, "series-lock-demo-open-sam-part2").exists, "the open part is a Preview")
         XCTAssertTrue(any(app, "series-read-demo-post-1").exists, "progress is kept on the phone")
-        XCTAssertEqual(any(app, "series-progress").label, "1 of 3 read")
     }
 
     func testMakingANewSeriesOnBeforeYouPublishPutsPartOneOnTheCard() {

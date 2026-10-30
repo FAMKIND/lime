@@ -18,6 +18,13 @@ struct SeriesPart: Identifiable {
     let local: Bool
     let preview: Bool
     let read: Bool
+    /// What the series page's rows show (LIME-260b): when, a line under the title, who, which jam, how long a recording is.
+    var created: Int64 = 0
+    var subtitle = ""
+    var author = ""
+    var jamID = ""
+    var durationMs: UInt32 = 0
+    var words = 0
 }
 
 extension ConversationStore {
@@ -44,11 +51,16 @@ extension ConversationStore {
         for posts in jamPosts.values {
             for post in posts where post.series?.id == seriesID {
                 guard seen.insert(post.postId).inserted, let series = post.series else { continue }
-                parts.append(SeriesPart(id: post.postId, part: series.part, title: post.title.isEmpty ? String(post.plain.prefix(40)) : post.title, kind: post.kind, local: true, preview: false, read: read.contains(post.postId) || post.author == meProvider().id))
+                let length = jamAttachments(post.postId).first { $0.kind == "audio" || $0.kind == "video" }?.durationMs ?? 0
+                parts.append(SeriesPart(id: post.postId, part: series.part, title: post.title.isEmpty ? String(post.plain.prefix(40)) : post.title, kind: post.kind, local: true, preview: false,
+                                        read: read.contains(post.postId) || JamPlayed.contains(post.postId) || post.author == meProvider().id,
+                                        created: post.created, subtitle: post.subtitle.isEmpty ? String(post.plain.prefix(140)) : post.subtitle, author: post.author, jamID: post.jamId,
+                                        durationMs: length, words: post.plain.split(separator: " ").count))
             }
         }
         for item in discoverItems where item.series?.id == seriesID && seen.insert(item.postId).inserted {
-            if let series = item.series { parts.append(SeriesPart(id: item.postId, part: series.part, title: item.title, kind: item.kind, local: false, preview: item.previewOf != nil, read: read.contains(item.postId))) }
+            if let series = item.series { parts.append(SeriesPart(id: item.postId, part: series.part, title: item.title, kind: item.kind, local: false, preview: item.previewOf != nil, read: read.contains(item.postId),
+                                                      created: item.created, subtitle: item.subtitle.isEmpty ? String(item.excerpt.prefix(140)) : item.subtitle, author: item.authorId, jamID: item.jamId)) }
         }
         return parts.sorted { $0.part < $1.part }
     }
@@ -163,53 +175,3 @@ struct SeriesPickerSheet: View {
     }
 }
 
-/// A series (LIME-210f, `docs/jam.md` 13.7): its parts in order, which you have read (kept on this phone, never sent), and for a part that is only a Preview the
-/// lock. Built from what this phone has: the posts of jams you follow or write, and open posts from Discover.
-struct SeriesPage: View {
-    let seriesID: String
-    @Environment(ConversationStore.self) private var store
-
-    var body: some View {
-        let info = store.seriesInfo(seriesID)
-        let parts = store.seriesParts(seriesID)
-        let readCount = parts.filter(\.read).count
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("SERIES").font(Theme.font(.caption, weight: .semibold)).tracking(1).foregroundStyle(Theme.textSecondary)
-                    Text(info?.title ?? "Series").font(Theme.font(.title2, weight: .bold)).foregroundStyle(Theme.text).accessibilityAddTraits(.isHeader).accessibilityIdentifier("series-page-title")
-                    Text(info?.of.map { "\(readCount) of \($0) read" } ?? "\(readCount) of \(parts.count) read").font(Theme.secondary).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("series-progress")
-                }
-                .padding(.horizontal, 20).padding(.vertical, 16)
-                ForEach(parts) { part in
-                    Button { open(part) } label: {
-                        HStack(spacing: 12) {
-                            Text("\(part.part)").font(Theme.font(.headline, weight: .semibold)).foregroundStyle(Theme.textSecondary).frame(width: 28)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(part.title).font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text).multilineTextAlignment(.leading)
-                                Text(kindName(part.kind)).font(Theme.caption).foregroundStyle(Theme.textSecondary)
-                            }
-                            Spacer(minLength: 0)
-                            if part.preview { HStack(spacing: 4) { Image(systemName: "lock").font(.system(size: 12)); Text("Preview").font(Theme.caption) }.foregroundStyle(Theme.textSecondary).accessibilityIdentifier("series-lock-\(part.id)") }
-                            else if part.read { Image(systemName: "checkmark.circle").font(.system(size: 16)).foregroundStyle(Theme.textSecondary).accessibilityLabel("Read").accessibilityIdentifier("series-read-\(part.id)") }
-                        }
-                        .padding(.horizontal, 20).padding(.vertical, 12).frame(minHeight: 56).contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityIdentifier("series-part-\(part.id)")
-                    Divider().overlay(Theme.hairline)
-                }
-                if parts.isEmpty { Text("No parts here yet.").font(Theme.body).foregroundStyle(Theme.textSecondary).padding(20) }
-            }
-        }
-        .background(Theme.canvas)
-        .accessibilityIdentifier("series-page")
-    }
-
-    private func kindName(_ kind: String) -> String { kind == "article" ? "Article" : kind == "record" ? "Podcast" : "Post" }
-
-    private func open(_ part: SeriesPart) {
-        if part.local { store.jamPath.append(JamPostRoute(postID: part.id)) } else { store.jamPath.append(OpenPostRoute(postID: part.id)) }
-    }
-}

@@ -96,6 +96,9 @@ final class ConversationStore {
     /// An invite opened from a link, waiting for "Join?".
     var joiningBand: OrgInvite?
     var demoOrgInviteOn = true
+    /// What a writer said about a series, and its cover (LIME-260b), by series id.
+    var seriesMetas: [String: SeriesMeta] = [:]
+    var seriesCovers: [String: Data] = [:]
     var demoCleanupState: String?
     var demoBandNotes: Set<String> = []
     var jamVisibleCount = 20

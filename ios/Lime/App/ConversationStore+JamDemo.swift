@@ -237,6 +237,15 @@ extension ConversationStore {
         func planning(_ part: UInt32) -> SeriesInfo { SeriesInfo(id: "demo-series-planning", title: "Planning", part: part, of: 2) }
         for post in jamPosts[page.jamId] ?? [] where post.postId == "demo-post-3" || post.postId == "demo-post-4" { demoSetSeries(post, planning(post.postId == "demo-post-4" ? 1 : 2)) }
         JamRead.mark("demo-post-1")
+        // The writer described the series (LIME-260a/b): a description and a cover.
+        let cover = UIGraphicsImageRenderer(size: CGSize(width: 240, height: 240)).jpegData(withCompressionQuality: 0.7) { c in
+            let colours = [UIColor.systemTeal.cgColor, UIColor.systemIndigo.cgColor] as CFArray
+            let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colours, locations: [0, 1])!
+            c.cgContext.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: 240, y: 240), options: [])
+        }
+        let description = "Short lessons on fractions, one idea each. Build a wall of bricks, fold paper, and see why one half is bigger than one third. Written for grades 3 to 5, and good to read aloud."
+        seriesMetas["demo-series-fractions"] = SeriesMeta(seriesId: "demo-series-fractions", title: "Fractions that stick", description: description, cover: cover)
+        seriesCovers["demo-series-fractions"] = cover
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         discoverItems = [OpenFeedItem(postId: "demo-open-sam-part2", authorId: "sam", jamId: page.jamId, kind: "article", title: "Fraction walls", subtitle: "", excerpt: "Build a wall of bricks.", topics: ["Maths"], fileIds: [],
                                       series: series(2), previewOf: "demo-open-sam-part2", hasRest: true, version: 1, created: now - 600_000, seq: 1)]
