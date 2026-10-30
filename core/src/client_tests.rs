@@ -7655,6 +7655,100 @@ fn the_hundred_and_first_member_is_refused() {
     assert!(alice.store.add_org_members(jam.clone(), vec!["one-too-many".into()]).is_err());
 }
 
+// ---------------------------------------------------------------- LIME-246b: members-only posts and a band's groups
+
+/// Alice (the band's owner) adds `who`; they hear, follow the jam by themselves, and alice's phone makes them members of the tier.
+fn member_joins(alice: &Party, who: &Party, jam: &str, transport: &Arc<dyn Transport>) {
+    alice.store.add_org_members(jam.to_owned(), vec![who.user.clone()]).unwrap();
+    deliver(alice, transport);
+    deliver(alice, transport);
+    sync(who, transport);
+    deliver(who, transport);
+    sync(alice, transport);
+    deliver(alice, transport);
+    deliver(alice, transport);
+    sync(who, transport);
+    deliver(who, transport);
+}
+
+#[test]
+fn a_members_only_post_reaches_the_members_and_not_a_subscriber_who_is_not_one() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    let jam = new_jam(&alice);
+    join_jam(&alice, &carol, &jam, &transport);
+    // The tier exists once the band does.
+    alice.store.org_invite_code(jam.clone()).unwrap();
+    assert!(alice.store.jam(jam.clone()).unwrap().unwrap().tiers.contains(&"members".to_string()));
+    member_joins(&alice, &bob, &jam, &transport);
+    let everyone = publish(&alice, &jam, "For everyone", "free");
+    let members = publish(&alice, &jam, "Staff only", "members");
+    catch_up(&alice, &[&bob, &carol], &transport);
+    catch_up(&alice, &[&bob, &carol], &transport);
+    let titles = |p: &Party| p.store.list_jam_posts(jam.clone()).unwrap().into_iter().filter(|x| x.state != "fetching" || true).map(|x| x.title).collect::<Vec<_>>();
+    assert!(titles(&bob).contains(&"For everyone".to_string()) && titles(&bob).contains(&"Staff only".to_string()), "bob, a member, reads both: {:?}", titles(&bob));
+    assert!(titles(&carol).contains(&"For everyone".to_string()) && !titles(&carol).contains(&"Staff only".to_string()), "carol, only a subscriber, reads the open one: {:?}", titles(&carol));
+    let _ = (everyone, members);
+    // A member who is removed is a plain subscriber again and does not read what follows.
+    alice.store.remove_org_member(jam.clone(), "bob".into()).unwrap();
+    deliver(&alice, &transport);
+    let later = publish(&alice, &jam, "Staff only, later", "members");
+    catch_up(&alice, &[&bob, &carol], &transport);
+    catch_up(&alice, &[&bob, &carol], &transport);
+    assert!(!titles(&bob).contains(&"Staff only, later".to_string()), "{:?}", titles(&bob));
+    let _ = later;
+}
+
+#[test]
+fn a_bands_groups_show_to_members_an_open_one_is_joined_by_request_an_invite_only_one_is_not_and_leaving_the_band_leaves_them() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    let (dave, _) = party(&server, "dave", 4);
+    let jam = new_jam(&alice);
+    deliver(&alice, &transport);
+    alice.store.add_org_members(jam.clone(), vec!["bob".into(), "carol".into()]).unwrap();
+    deliver(&alice, &transport);
+    deliver(&alice, &transport);
+    for p in [&bob, &carol] {
+        sync(p, &transport);
+    }
+    // Alice makes two groups: "Science" open with bob in it, "Leads" invitation-only. A person outside the band cannot be put in one.
+    let science = alice.store.create_org_group(jam.clone(), "Science".into(), None, true, vec!["bob".into(), "dave".into()]).unwrap();
+    let leads = alice.store.create_org_group(jam.clone(), "Leads".into(), Some("⭐".into()), false, vec![]).unwrap();
+    deliver(&alice, &transport);
+    deliver(&alice, &transport);
+    for p in [&bob, &carol] {
+        sync(p, &transport);
+    }
+    let listed = |p: &Party| p.store.org_groups(jam.clone()).unwrap().into_iter().map(|g| (g.name, g.open, g.joined)).collect::<Vec<_>>();
+    assert_eq!(listed(&alice), vec![("Science".to_string(), true, true), ("Leads".to_string(), false, true)]);
+    assert_eq!(listed(&carol), vec![("Science".to_string(), true, false), ("Leads".to_string(), false, false)], "carol sees them, is in neither");
+    assert_eq!(listed(&bob)[0], ("Science".to_string(), true, true), "bob was put in Science");
+    assert_eq!(alice.store.org_group_parent(science.clone()).unwrap().as_deref(), Some(jam.as_str()));
+    assert_eq!(alice.store.group_details(science.clone()).unwrap().members.len(), 2, "dave is not in the band, so not in the group");
+    assert!(dave.store.org_groups(jam.clone()).is_err(), "outsiders see nothing");
+    // Carol asks to join the open one: waiting, then in and chatting. The invitation-only one cannot be asked for.
+    carol.store.join_org_group(jam.clone(), science.clone()).unwrap();
+    assert_eq!(carol.store.org_group_join_state(jam.clone(), science.clone()).unwrap().as_deref(), Some("asked"));
+    assert!(carol.store.join_org_group(jam.clone(), leads.clone()).is_err());
+    deliver(&carol, &transport);
+    sync(&alice, &transport);
+    deliver(&alice, &transport);
+    deliver(&alice, &transport);
+    sync(&carol, &transport);
+    assert_eq!(carol.store.org_group_join_state(jam.clone(), science.clone()).unwrap().as_deref(), Some("joined"));
+    assert!(carol.store.list_conversations().unwrap().iter().any(|c| c.id == science), "the group is in carol's chat list as an ordinary group");
+    assert!(carol.store.list_conversations().unwrap().iter().all(|c| c.id != leads));
+    // Leaving the band leaves its groups.
+    carol.store.leave_org(jam.clone()).unwrap();
+    assert!(carol.store.my_orgs().unwrap().is_empty());
+    assert!(carol.store.list_conversations().unwrap().iter().all(|c| c.id != science) || carol.store.group_details(science.clone()).map(|d| d.my_role == "none").unwrap_or(true));
+}
+
 // ---------------------------------------------------------------- LIME-210h: publish chips and search of open posts
 
 #[test]

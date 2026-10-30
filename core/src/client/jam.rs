@@ -1375,7 +1375,7 @@ impl LimeStore {
     }
 
     /// Takes a subscriber in (or says why not) and queues the welcome and the archive.
-    fn accept_subscriber(&self, conn: &Connection, state: &AccountState, jam: &jam_store::JamRow, user: &str, now: i64) -> Result<(), StoreError> {
+    pub(super) fn accept_subscriber(&self, conn: &Connection, state: &AccountState, jam: &jam_store::JamRow, user: &str, now: i64) -> Result<(), StoreError> {
         let jam_id = jam.jam_id.as_str();
         let existing = jam_store::subscriber(conn, jam_id, user)?;
         let refuse = |reason: &str| -> Result<(), StoreError> {
@@ -1476,6 +1476,22 @@ impl LimeStore {
                 jam_store::set_join(conn, &jam.jam_id, sender, "pending", now)
             }
             // Someone asks to join the band (LIME-246a): kept; the pass checks the invite token and adds them.
+            // A member of a band asks to join one of its groups (LIME-246b): kept; the pass checks and adds them.
+            "jam.org.group_join" => {
+                let Some(group) = op.payload.get("group").and_then(Value::as_str).filter(|g| !g.is_empty() && g.len() <= 80) else { return Ok(()) };
+                if sender == me {
+                    return Ok(());
+                }
+                self.note_org_group_join(conn, jam_id, sender, group, now)
+            }
+            // The answer of the group's owner to my join.
+            "jam.org.group_reply" => {
+                let answer = op.payload.get("state").and_then(Value::as_str).filter(|a| matches!(*a, "joined" | "full" | "refused"));
+                match (op.payload.get("group").and_then(Value::as_str), answer) {
+                    (Some(group), Some(answer)) => self.note_org_group_reply(conn, jam_id, group, answer, now),
+                    _ => Ok(()),
+                }
+            }
             "jam.org.join" => {
                 let Some(jam) = jam.filter(|j| j.mine && j.writer == me) else { return Ok(()) };
                 if sender == me {

@@ -98,7 +98,7 @@ pub(crate) enum OrgChange {
     /// The invite link's token; none turns the link off.
     Invite { token: Option<String> },
     /// A group of the band is listed (or taken off the list): its conversation id, name and whether any member may join.
-    Group { id: String, name: String, open: bool, on: bool },
+    Group { id: String, name: String, open: bool, on: bool, owner: String },
     /// This group was made inside the band `jam_id`; `open`: any member of the band may join it.
     Parent { jam_id: String, open: bool },
 }
@@ -109,6 +109,8 @@ pub(crate) struct OrgGroup {
     pub id: String,
     pub name: String,
     pub open: bool,
+    /// Who made it: the person a request to join goes to.
+    pub owner: String,
 }
 
 /// What a state op does.
@@ -164,7 +166,7 @@ impl Kind {
                 OrgChange::Mark { jam_id } => json!({ "change": "mark", "jam_id": jam_id }),
                 OrgChange::Writer { user, on } => json!({ "change": "writer", "user": user, "on": on }),
                 OrgChange::Invite { token } => json!({ "change": "invite", "token": token }),
-                OrgChange::Group { id, name, open, on } => json!({ "change": "group", "id": id, "name": name, "open": open, "on": on }),
+                OrgChange::Group { id, name, open, on, owner } => json!({ "change": "group", "id": id, "name": name, "open": open, "on": on, "owner": owner }),
                 OrgChange::Parent { jam_id, open } => json!({ "change": "parent", "jam_id": jam_id, "open": open }),
             },
             Kind::SetRole { user, role } => json!({ "user": user, "role": role.as_str() }),
@@ -198,7 +200,7 @@ impl Kind {
                     "mark" => OrgChange::Mark { jam_id: text("jam_id").filter(|j| !j.is_empty() && j.len() <= 64)? },
                     "writer" => OrgChange::Writer { user: text("user").filter(|u| !u.is_empty() && u.len() <= 64)?, on: flag("on")? },
                     "invite" => OrgChange::Invite { token: match payload.get("token") { None | Some(Value::Null) => None, Some(v) => Some(v.as_str().filter(|t| !t.is_empty() && t.len() <= 64)?.to_owned()) } },
-                    "group" => OrgChange::Group { id: text("id").filter(|g| !g.is_empty() && g.len() <= 80)?, name: clean_name(&text("name")?)?, open: flag("open")?, on: flag("on")? },
+                    "group" => OrgChange::Group { id: text("id").filter(|g| !g.is_empty() && g.len() <= 80)?, name: clean_name(&text("name")?)?, open: flag("open")?, on: flag("on")?, owner: text("owner").filter(|u| !u.is_empty() && u.len() <= 64)? },
                     "parent" => OrgChange::Parent { jam_id: text("jam_id").filter(|j| !j.is_empty() && j.len() <= 64)?, open: flag("open")? },
                     _ => return None,
                 })
@@ -509,10 +511,10 @@ fn pass(group_id: &str, sorted: &[GroupOp], ancestry: &Ancestry, voiding_removes
                         state.invite = token.clone();
                         true
                     }
-                    OrgChange::Group { id, name, open, on } if managing => {
+                    OrgChange::Group { id, name, open, on, owner } if managing => {
                         state.org_groups.retain(|g| g.id != *id);
                         if *on {
-                            state.org_groups.push(OrgGroup { id: id.clone(), name: name.clone(), open: *open });
+                            state.org_groups.push(OrgGroup { id: id.clone(), name: name.clone(), open: *open, owner: owner.clone() });
                         }
                         true
                     }

@@ -269,6 +269,16 @@ impl LimeStore {
             let users = statement.query_map(params![jam_id], |r| r.get::<_, String>(0)).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
             Ok((jam.title, users))
         })?;
+        // Members-only posts need the tier (LIME-246b).
+        self.with_conn(|conn| {
+            let jam = jam_store::get(conn, jam_id)?.ok_or(StoreError::NotFound)?;
+            if !jam.tiers.iter().any(|t| t == jam_store::TIER_MEMBERS) {
+                let mut tiers = jam.tiers.clone();
+                tiers.push(jam_store::TIER_MEMBERS.to_owned());
+                conn.execute("UPDATE jams SET tiers = ?2 WHERE jam_id = ?1", params![jam_id, json!(tiers).to_string()]).map_err(db_err)?;
+            }
+            Ok(())
+        })?;
         let name = crate::protocol::group::clean_name(&title.chars().take(50).collect::<String>()).unwrap_or_else(|| "Band".to_owned());
         let group_id = new_id();
         let people: Vec<String> = coauthors.into_iter().filter(|u| *u != me).collect();
@@ -285,6 +295,8 @@ impl LimeStore {
     pub(super) fn process_orgs(&self) {
         let _ = self.migrate_coauthors_to_writers();
         self.process_org_joins();
+        self.process_org_group_joins();
+        self.sync_member_tiers();
         self.follow_my_orgs();
     }
 
@@ -386,9 +398,244 @@ impl LimeStore {
         Ok(())
     }
 
-    /// A member removed from the band goes from its groups as well (246b).
-    pub(crate) fn remove_from_org_groups(&self, _jam_id: &str, _user_id: &str) {}
+    /// A member removed from the band goes from its groups as well: the groups I run take them out (best effort).
+    pub(crate) fn remove_from_org_groups(&self, jam_id: &str, user_id: &str) {
+        let Ok(groups_here) = self.org_group_entries(jam_id) else { return };
+        for (conversation, _, _, _) in groups_here {
+            let _ = self.remove_group_member(conversation, user_id.to_owned());
+        }
+    }
 
-    /// Leaving the band leaves its groups (246b).
-    pub(crate) fn leave_org_groups(&self, _jam_id: &str) {}
+    /// Leaving the band leaves its groups.
+    pub(crate) fn leave_org_groups(&self, jam_id: &str) {
+        let Ok(groups_here) = self.org_group_entries(jam_id) else { return };
+        for (conversation, _, _, _) in groups_here {
+            let _ = self.leave_group(conversation);
+        }
+    }
+
+    /// The band's groups as its members group lists them: (conversation id, name, open, owner).
+    fn org_group_entries(&self, jam_id: &str) -> Result<Vec<(String, String, bool, String)>, StoreError> {
+        self.with_conn(|conn| {
+            let Some(conversation) = org_conversation(conn, jam_id)? else { return Ok(Vec::new()) };
+            let Some(group_id) = groups::group_id_of(&conversation) else { return Ok(Vec::new()) };
+            Ok(groups::state_of(conn, group_id)?.org_groups.into_iter().map(|g| (g.id, g.name, g.open, g.owner)).collect())
+        })
+    }
+
+    /// Members of my bands are subscribers of the members tier (so a members-only post goes to them and no one else); someone no longer a member goes back to free,
+    /// and the members session is replaced so they read nothing that follows. Run by the band's owner's phone each pass.
+    fn sync_member_tiers(&self) {
+        let Ok(state) = self.load_or_create_account() else { return };
+        let Some(me) = state.user_id.clone() else { return };
+        let now = now_ms();
+        let jams: Vec<(String, String)> = self
+            .with_conn(|conn| {
+                let mut statement = conn
+                    .prepare("SELECT j.jam_id, c.id FROM jams j JOIN conversations c ON c.group_org = j.jam_id WHERE j.mine = 1 AND j.ended = 0 AND c.request_state NOT IN ('blocked', 'left')")
+                    .map_err(db_err)?;
+                let rows = statement.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+                Ok(rows)
+            })
+            .unwrap_or_default();
+        for (jam_id, conversation) in jams {
+            let _ = self.with_conn(|conn| {
+                let Some(group_id) = groups::group_id_of(&conversation) else { return Ok(()) };
+                let group = groups::state_of(conn, group_id)?;
+                let Some(jam) = jam_store::get(conn, &jam_id)?.filter(|j| j.mine) else { return Ok(()) };
+                for user in group.users().into_iter().filter(|u| *u != me) {
+                    if let Some((status, tier)) = jam_store::subscriber(conn, &jam_id, &user)? {
+                        if status == "active" && tier != jam_store::TIER_MEMBERS {
+                            conn.execute("UPDATE jam_subscribers SET tier = 'members' WHERE jam_id = ?1 AND user_id = ?2", params![jam_id, user]).map_err(db_err)?;
+                            // Again as a welcome: the sessions and the archive of what a member may now read.
+                            self.accept_subscriber(conn, &state, &jam, &user, now)?;
+                        }
+                    }
+                }
+                let mut statement = conn.prepare("SELECT user_id FROM jam_subscribers WHERE jam_id = ?1 AND tier = 'members'").map_err(db_err)?;
+                let held = statement.query_map(params![jam_id], |r| r.get::<_, String>(0)).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+                for user in held.into_iter().filter(|u| !group.is_member(u)) {
+                    conn.execute("UPDATE jam_subscribers SET tier = 'free' WHERE jam_id = ?1 AND user_id = ?2", params![jam_id, user]).map_err(db_err)?;
+                    jam_store::mark_rotate(conn, &jam_id)?;
+                }
+                Ok(())
+            });
+        }
+    }
+
+    fn process_org_group_joins(&self) {
+        let Ok(pending) = self.with_conn(|conn| {
+            let mut statement = conn
+                .prepare("SELECT jam_id, user_id, target FROM org_joins WHERE state = 'pending' AND user_id <> '' AND target <> '' ORDER BY at LIMIT ?1")
+                .map_err(db_err)?;
+            let rows = statement
+                .query_map(params![ORG_JOINS_PER_PASS as i64], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)))
+                .map_err(db_err)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(db_err)?;
+            Ok(rows)
+        }) else {
+            return;
+        };
+        for (jam_id, user, target) in pending {
+            let Ok(answer) = self.make_org_group_join(&jam_id, &user, &target) else { continue };
+            let Ok(state) = self.load_or_create_account() else { return };
+            let now = now_ms();
+            let _ = self.with_conn(|conn| {
+                conn.execute("DELETE FROM org_joins WHERE jam_id = ?1 AND user_id = ?2 AND target = ?3", params![jam_id, user, target]).map_err(db_err)?;
+                let op = signed_op(conn, &state, "jam.org.group_reply", &jam_id, None, json!({ "jam_id": jam_id, "group": target, "state": answer }), now)?;
+                queue_op(conn, &jam_id, &user, &op)
+            });
+        }
+    }
+
+    /// `joined`, `full` or `refused` for a member's request to join one of the band's groups, which I run. An invite-only group refuses every request, and so
+    /// does anyone who is not a member of the band.
+    fn make_org_group_join(&self, jam_id: &str, user: &str, target: &str) -> Result<&'static str, StoreError> {
+        let (group_id, _, me) = self.group_context(target)?;
+        let group = self.with_conn(|conn| groups::state_of(conn, &group_id))?;
+        let open = group.parent.as_ref().is_some_and(|(jam, open)| jam == jam_id && *open);
+        if !group.may_manage(&me) || !open {
+            return Ok("refused");
+        }
+        let in_band = self.with_conn(|conn| {
+            let Some(conversation) = org_conversation(conn, jam_id)? else { return Ok(false) };
+            let Some(band) = groups::group_id_of(&conversation) else { return Ok(false) };
+            Ok(groups::state_of(conn, band)?.is_member(user))
+        })?;
+        if !in_band {
+            return Ok("refused");
+        }
+        if group.is_member(user) {
+            return Ok("joined");
+        }
+        if group.members.len() >= MAX_MEMBERS {
+            return Ok("full");
+        }
+        self.add_group_members(target.to_owned(), vec![user.to_owned()])?;
+        Ok("joined")
+    }
+
+    pub(super) fn note_org_group_join(&self, conn: &Connection, jam_id: &str, sender: &str, group: &str, now: i64) -> Result<(), StoreError> {
+        conn.execute(
+            "INSERT OR REPLACE INTO org_joins (jam_id, user_id, token, target, state, at) VALUES (?1, ?2, '', ?3, 'pending', ?4)",
+            params![jam_id, sender, group, now],
+        )
+        .map_err(db_err)?;
+        Ok(())
+    }
+
+    pub(super) fn note_org_group_reply(&self, conn: &Connection, jam_id: &str, group: &str, answer: &str, now: i64) -> Result<(), StoreError> {
+        conn.execute(
+            "INSERT OR REPLACE INTO org_joins (jam_id, user_id, token, target, state, at) VALUES (?1, '', '', ?2, ?3, ?4)",
+            params![jam_id, group, answer, now],
+        )
+        .map_err(db_err)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct OrgGroupInfo {
+    pub conversation_id: String,
+    pub name: String,
+    /// Any member of the band may join (otherwise by invitation only).
+    pub open: bool,
+    /// I am in it.
+    pub joined: bool,
+    /// I made it (and so run it).
+    pub mine: bool,
+}
+
+#[uniffi::export]
+impl LimeStore {
+    /// The groups of a band, as its members group lists them (only a member sees them).
+    pub fn org_groups(&self, jam_id: String) -> Result<Vec<OrgGroupInfo>, StoreError> {
+        let state = self.load_or_create_account()?;
+        let me = state.user_id.clone().ok_or(StoreError::NotRegistered)?;
+        self.with_conn(|conn| {
+            let conversation = org_conversation(conn, &jam_id)?.ok_or(StoreError::NotFound)?;
+            let band = groups::group_id_of(&conversation).ok_or(StoreError::NotFound)?;
+            let band_state = groups::state_of(conn, band)?;
+            if !band_state.is_member(&me) {
+                return Err(StoreError::NotFound);
+            }
+            let mut out = Vec::new();
+            for entry in band_state.org_groups {
+                let joined = groups::group_id_of(&entry.id).is_some_and(|g| groups::state_of(conn, g).map(|s| s.is_member(&me)).unwrap_or(false));
+                out.push(OrgGroupInfo { mine: entry.owner == me, conversation_id: entry.id, name: entry.name, open: entry.open, joined });
+            }
+            Ok(out)
+        })
+    }
+
+    /// Which band a group belongs to, if it was made inside one (so the chat list can show the band's picture on it).
+    pub fn org_group_parent(&self, conversation_id: String) -> Result<Option<String>, StoreError> {
+        self.with_conn(|conn| {
+            Ok(conn
+                .query_row("SELECT group_parent FROM conversations WHERE id = ?1", params![conversation_id], |r| r.get::<_, Option<String>>(0))
+                .optional()
+                .map_err(db_err)?
+                .flatten())
+        })
+    }
+
+    /// An owner makes a group inside the band (`open`: any member may join; otherwise by invitation only), with people from the band. Returns its conversation id.
+    pub fn create_org_group(&self, jam_id: String, name: String, emoji: Option<String>, open: bool, members: Vec<String>) -> Result<String, StoreError> {
+        let name = crate::protocol::group::clean_name(&name).ok_or(StoreError::Rejected)?;
+        let band_conversation = self.with_conn(|conn| org_conversation(conn, &jam_id))?.ok_or(StoreError::NotFound)?;
+        let (band_id, state, me) = self.group_context(&band_conversation)?;
+        let band = self.with_conn(|conn| groups::state_of(conn, &band_id))?;
+        if !band.may_manage(&me) {
+            return Err(StoreError::Rejected);
+        }
+        let mut people: Vec<String> = Vec::new();
+        for user in members {
+            if user != me && band.is_member(&user) && !people.contains(&user) {
+                people.push(user);
+            }
+        }
+        if people.len() + 1 > MAX_MEMBERS {
+            return Err(StoreError::Rejected);
+        }
+        let group_id = new_id();
+        self.make_group_op(&state, &me, &group_id, Some(group_id.clone()), Kind::Create { name: name.clone(), emoji: crate::protocol::group::clean_emoji(&emoji), members: people })?;
+        self.make_group_op(&state, &me, &group_id, None, Kind::Org(OrgChange::Parent { jam_id: jam_id.clone(), open }))?;
+        let conversation = groups::conversation_id(&group_id);
+        self.make_group_op(&state, &me, &band_id, None, Kind::Org(OrgChange::Group { id: conversation.clone(), name, open, on: true, owner: me.clone() }))?;
+        Ok(conversation)
+    }
+
+    /// Asks to join one of the band's groups. Open ones only: the group's owner's phone adds me when it next runs. An invitation-only group is refused here.
+    pub fn join_org_group(&self, jam_id: String, conversation_id: String) -> Result<(), StoreError> {
+        let entry = self.org_group_entries(&jam_id)?.into_iter().find(|(id, ..)| *id == conversation_id).ok_or(StoreError::NotFound)?;
+        if !entry.2 {
+            return Err(StoreError::Rejected);
+        }
+        let state = self.load_or_create_account()?;
+        let me = self.registered_user(&state)?;
+        if entry.3 == me {
+            return Ok(());
+        }
+        let now = now_ms();
+        self.with_conn(|conn| {
+            conn.execute("INSERT OR REPLACE INTO org_joins (jam_id, user_id, token, target, state, at) VALUES (?1, '', '', ?2, 'asked', ?3)", params![jam_id, conversation_id, now]).map_err(db_err)?;
+            let op = signed_op(conn, &state, "jam.org.group_join", &jam_id, None, json!({ "jam_id": jam_id, "group": conversation_id }), now)?;
+            queue_op(conn, &jam_id, &entry.3, &op)
+        })
+    }
+
+    /// My own request to join a band's group: `asked`, `joined`, `full` or `refused`; none if I have not asked.
+    pub fn org_group_join_state(&self, jam_id: String, conversation_id: String) -> Result<Option<String>, StoreError> {
+        let state = self.load_or_create_account()?;
+        let me = state.user_id.clone().ok_or(StoreError::NotRegistered)?;
+        self.with_conn(|conn| {
+            if let Some(group_id) = groups::group_id_of(&conversation_id) {
+                if groups::state_of(conn, group_id)?.is_member(&me) {
+                    return Ok(Some("joined".to_owned()));
+                }
+            }
+            conn.query_row("SELECT state FROM org_joins WHERE jam_id = ?1 AND user_id = '' AND target = ?2", params![jam_id, conversation_id], |r| r.get(0)).optional().map_err(db_err)
+        })
+    }
 }

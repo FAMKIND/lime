@@ -27,6 +27,8 @@ pub(crate) const BLOBS_PER_PASS: usize = 20;
 
 pub(crate) const TIER_FREE: &str = "free";
 pub(crate) const TIER_SUBSCRIBERS: &str = "subscribers";
+/// The members of a band (LIME-246b): what only they read; a member is a subscriber of this tier.
+pub(crate) const TIER_MEMBERS: &str = "members";
 
 pub(crate) fn conversation_id(jam_id: &str) -> String {
     format!("jam:{jam_id}")
@@ -57,12 +59,14 @@ pub(crate) fn clean_optional_line(text: &str, max: usize) -> Option<String> {
 }
 
 pub(crate) fn valid_tier(tier: &str) -> bool {
-    tier == TIER_FREE || tier == TIER_SUBSCRIBERS
+    tier == TIER_FREE || tier == TIER_SUBSCRIBERS || tier == TIER_MEMBERS
 }
 
 /// The tiers a subscriber of a tier may read: a free subscriber only the free posts, a paying one both.
 pub(crate) fn tiers_for(subscriber_tier: &str) -> &'static [&'static str] {
-    if subscriber_tier == TIER_SUBSCRIBERS {
+    if subscriber_tier == TIER_MEMBERS {
+        &[TIER_FREE, TIER_SUBSCRIBERS, TIER_MEMBERS]
+    } else if subscriber_tier == TIER_SUBSCRIBERS {
         &[TIER_FREE, TIER_SUBSCRIBERS]
     } else {
         &[TIER_FREE]
@@ -178,7 +182,9 @@ pub(crate) fn post_count(conn: &Connection, jam_id: &str) -> Result<i64, StoreEr
 pub(crate) fn audience(conn: &Connection, jam_id: &str, tier: &str) -> Result<Vec<String>, StoreError> {
     let mut statement = conn
         .prepare(
-            "SELECT user_id FROM jam_subscribers WHERE jam_id = ?1 AND status = 'active' AND (?2 = 'free' OR tier = 'subscribers') ORDER BY since, user_id",
+            "SELECT user_id FROM jam_subscribers WHERE jam_id = ?1 AND status = 'active'
+               AND CASE tier WHEN 'members' THEN 2 WHEN 'subscribers' THEN 1 ELSE 0 END >= CASE ?2 WHEN 'members' THEN 2 WHEN 'subscribers' THEN 1 ELSE 0 END
+             ORDER BY since, user_id",
         )
         .map_err(db_err)?;
     let rows = statement.query_map(params![jam_id, tier], |r| r.get::<_, String>(0)).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
@@ -459,7 +465,7 @@ pub(crate) fn index_for(conn: &Connection, jam_id: &str, subscriber_tier: &str) 
     let mut statement = conn
         .prepare(
             "SELECT post_id, tier, title, created, blob_id, blob_key, blob_sha, blob_size, kind, subtitle FROM jam_posts
-             WHERE jam_id = ?1 AND uploaded = 1 AND deleted_at IS NULL AND blob_id IS NOT NULL AND (?2 = 'subscribers' OR tier = 'free') ORDER BY created, post_id",
+             WHERE jam_id = ?1 AND uploaded = 1 AND deleted_at IS NULL AND blob_id IS NOT NULL AND CASE ?2 WHEN 'members' THEN 2 WHEN 'subscribers' THEN 1 ELSE 0 END >= CASE tier WHEN 'members' THEN 2 WHEN 'subscribers' THEN 1 ELSE 0 END ORDER BY created, post_id",
         )
         .map_err(db_err)?;
     let rows = statement
@@ -475,7 +481,7 @@ pub(crate) fn index_for(conn: &Connection, jam_id: &str, subscriber_tier: &str) 
 /// Posts of a jam still waiting for their blob to go up (a new subscriber is queued their notice, as the index cannot name them yet).
 pub(crate) fn not_uploaded_ids(conn: &Connection, jam_id: &str, subscriber_tier: &str) -> Result<Vec<String>, StoreError> {
     let mut statement = conn
-        .prepare("SELECT post_id FROM jam_posts WHERE jam_id = ?1 AND uploaded = 0 AND wire IS NOT NULL AND deleted_at IS NULL AND (?2 = 'subscribers' OR tier = 'free') ORDER BY created, post_id")
+        .prepare("SELECT post_id FROM jam_posts WHERE jam_id = ?1 AND uploaded = 0 AND wire IS NOT NULL AND deleted_at IS NULL AND CASE ?2 WHEN 'members' THEN 2 WHEN 'subscribers' THEN 1 ELSE 0 END >= CASE tier WHEN 'members' THEN 2 WHEN 'subscribers' THEN 1 ELSE 0 END ORDER BY created, post_id")
         .map_err(db_err)?;
     let rows = statement.query_map(params![jam_id, subscriber_tier], |r| r.get(0)).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
     Ok(rows)
