@@ -9141,3 +9141,5 @@ A contact's old cover doesn't outlive their key change. **Brief:** LIME-271. Cor
 - **What each party learns:** nothing new; the phone drops stale data.
 - **Tests (core 407 pass, 2 new):** Alice's cover is read by Bob; Alice comes back on new keys; Bob's next send drops the old key and cover, the old blob isn't fetched again, and after Bob accepts and Alice shares her new key and a new cover, the new cover shows. And a stale key accepted "before the update" is dropped at the next send.
 - **Gate:** after install, FAM's profile on the 13 mini and Jean's shows the default (no old cover) once either sends FAM something (a message to FAM is enough); when FAM sets a new photo and cover on the iPad, both phones show them (the iPad must have shared its new key: a message from FAM to them does it).
+
+- **Installed (271):** all three, the 13 mini, the iPad and Jean's 12 mini.
