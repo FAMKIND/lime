@@ -21,7 +21,7 @@ pub struct MyExtra {
 
 fn content_type(slot: &str) -> &'static str {
     match slot {
-        extras::LINKS => "application/json",
+        extras::LINKS | extras::TONE => "application/json",
         extras::BACKGROUND_VIDEO => "video/mp4",
         _ => "image/jpeg",
     }
@@ -167,7 +167,7 @@ impl LimeStore {
 
     /// After a block rotated my profile key, the contacts-only copies are under the old one: upload them again under the new. Best effort.
     pub(super) fn refresh_my_extras_if_stale(&self, transport: &Arc<dyn Transport>, token: &str) {
-        for slot in [extras::LINKS, extras::BACKGROUND, extras::BACKGROUND_VIDEO] {
+        for slot in [extras::LINKS, extras::BACKGROUND, extras::BACKGROUND_VIDEO, extras::TONE] {
             let stale = self.with_conn(|conn| {
                 let mine = extras::mine(conn, slot)?;
                 if mine.data.is_none() || mine.visibility != "contacts" {
@@ -190,7 +190,7 @@ impl LimeStore {
     /// One person's links and background: public first, then the contacts-only copy if I hold their profile key. `true` when anything changed.
     pub(super) fn refresh_extras_of_one(&self, transport: &Arc<dyn Transport>, token: &str, user: &str) -> Result<bool, StoreError> {
         let mut changed = false;
-        for slot in [extras::LINKS, extras::BACKGROUND, extras::BACKGROUND_VIDEO] {
+        for slot in [extras::LINKS, extras::BACKGROUND, extras::BACKGROUND_VIDEO, extras::TONE] {
             changed |= self.refresh_extra(transport, token, user, slot, false)?;
         }
         Ok(changed)

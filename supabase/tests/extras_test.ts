@@ -97,3 +97,21 @@ Deno.test("profile-get gives a findable person's account date and nothing for so
     assert(typeof own.body.profile.since === "number", "your own profile has it");
   });
 });
+
+Deno.test("a profile colour is its own tiny slot: published, read by someone else, hidden, removed, and capped at 64 bytes (LIME-277e)", opts, async () => {
+  await withUsers(2, async ([alice, bob]) => {
+    const tone = new TextEncoder().encode('{"tone":4}');
+    const committed = await publish(alice, "tone", tone, "application/json");
+    assertEquals(committed.status, 200, JSON.stringify(committed.body));
+    const got = await call("avatar", bob.token, { action: "get", user_id: alice.id, slot: "tone" });
+    assertEquals(got.status, 200);
+    assertEquals(await download(got.body.url), tone, "the colour comes back byte for byte");
+    assertEquals((await call("avatar", bob.token, { action: "get", user_id: alice.id, slot: "background" })).status, 404, "the cover slot is separate");
+    assertEquals((await call("avatar", alice.token, { action: "put", slot: "tone", size: 65 })).status, 400, "over 64 bytes");
+    assertEquals((await call("avatar", alice.token, { action: "visibility", slot: "tone", visibility: "contacts" })).status, 200);
+    assertEquals((await call("avatar", bob.token, { action: "get", user_id: alice.id, slot: "tone" })).status, 404, "contacts only: the public copy is gone");
+    await publish(alice, "tone", tone, "application/json");
+    assertEquals((await call("avatar", alice.token, { action: "remove", slot: "tone" })).status, 200);
+    assertEquals((await call("avatar", bob.token, { action: "get", user_id: alice.id, slot: "tone" })).status, 404, "removed");
+  });
+});

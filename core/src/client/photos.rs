@@ -111,7 +111,7 @@ impl LimeStore {
             }
         }
         // The cover still comes before its clip: the clip is only kept with a still.
-        for slot in [store_extras::LINKS, store_extras::BACKGROUND, store_extras::BACKGROUND_VIDEO] {
+        for slot in [store_extras::LINKS, store_extras::BACKGROUND, store_extras::BACKGROUND_VIDEO, store_extras::TONE] {
             if self.with_conn(|conn| store_extras::has_mine(conn, slot))? {
                 continue;
             }
@@ -288,7 +288,7 @@ impl LimeStore {
                 Some(true) => {}
             }
         }
-        for slot in [crate::store::extras::LINKS, crate::store::extras::BACKGROUND, crate::store::extras::BACKGROUND_VIDEO] {
+        for slot in [crate::store::extras::LINKS, crate::store::extras::BACKGROUND, crate::store::extras::BACKGROUND_VIDEO, crate::store::extras::TONE] {
             let Ok(mine) = self.with_conn(|conn| crate::store::extras::mine(conn, slot)) else { continue };
             if mine.data.is_none() {
                 continue;

@@ -79,6 +79,8 @@ struct ProfileView: View {
     @State private var heroImage: UIImage?
     /// Whether their background has been looked for yet: until then the default hero shows what was kept from last time, or only the paper (LIME-261b).
     @State private var heroLoaded = false
+    /// This person's profile colour (LIME-277e): theirs reaches me like their background does.
+    @State private var toneChosen: Int?
     // A background video (LIME-226b).
     @State private var heroVideo: URL?
     @State private var videoPending = false
@@ -233,6 +235,7 @@ struct ProfileView: View {
                 heroVideo = HeroVideoCache.url(for: clip, key: "\(route.userID)-\(store.extrasVersion)")
             } else { heroVideo = nil }
             videoPending = heroImage != nil && heroVideo == nil && !route.isMe ? await store.peerExtraPending(route.userID, .backgroundVideo) : false
+            toneChosen = ProfileColour.decode(await store.peerExtra(route.userID, .tone))
             Hero.noteCover(id: "hero-\(route.userID)", has: heroImage != nil)
             heroLoaded = true
         }
@@ -310,6 +313,9 @@ struct ProfileView: View {
                                   onVideoReady: { heroVideoReady = $0 }, ambient: ambientSpec, awaitingAmbient: Hero.style == .ambient && ambientSpec == nil, exposedForTests: store.isDemo)
                 .padding(.top, -inset).padding(.bottom, -8).padding(.leading, -(16 + windowSideInsets.leading)).padding(.trailing, -(16 + windowSideInsets.trailing))
                 .animation(.easeInOut(duration: 0.25), value: shown.key)
+                #if DEBUG
+                .overlay(alignment: .topLeading) { if let toneChosen { Color.clear.frame(width: 1, height: 1).accessibilityElement().accessibilityIdentifier("profile-hero-tone-\(toneChosen)") } }
+                #endif
         }
     }
 
@@ -319,7 +325,7 @@ struct ProfileView: View {
         let id = "hero-\(route.userID)"
         // Not looked for yet: what was kept from last time (a page with a cover keeps none, so no bright mesh shows first), else nothing.
         guard heroLoaded else { return Hero.remembered(id: id, chosen: nil).spec }
-        return Hero.ambient(photo: AvatarCache.shared.image(for: person.id), chosen: route.userID == store.myUserID ? ProfileColour.chosen(for: route.userID) : nil, tone: person.tone, key: "\(id)-\(AvatarCache.shared.image(for: person.id).map { ObjectIdentifier($0).hashValue } ?? 0)", id: id)
+        return Hero.ambient(photo: AvatarCache.shared.image(for: person.id), chosen: toneChosen, tone: person.tone, key: "\(id)-\(AvatarCache.shared.image(for: person.id).map { ObjectIdentifier($0).hashValue } ?? 0)", id: id)
     }
 
     private var shownHero: (image: UIImage, key: String) {

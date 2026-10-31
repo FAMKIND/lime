@@ -4,7 +4,7 @@
 //   hide_post        { report_id, target: blob id }   jam-blob-get refuses the post's blob from now on (a phone that already has it keeps it)
 //   take_down_page   { report_id, target: jam id }    jam-page answers 410 for the page
 //   hide_open_post   { report_id, target: open post id }   open-post-get answers 410, the feed lists it as gone, its public files are deleted (LIME-210a)
-//   remove_public    { report_id, target: user id, slot: photo|links|background|background_video }   the Everyone object is deleted
+//   remove_public    { report_id, target: user id, slot: photo|links|background|background_video|tone }   the Everyone object is deleted
 //   suspend          { report_id, target: user id, reason }   sign-in and every session call are refused: "This account is suspended"
 //   unsuspend        { target: user id }
 // Nothing here reaches into anyone's phone: end-to-end encrypted messages and what a phone already holds are out of the server's reach.
@@ -20,6 +20,7 @@ const SLOTS: Record<string, { path: (u: string) => string; version: string }> = 
   links: { path: (u) => `${u}-links.json`, version: "links_version" },
   background: { path: (u) => `${u}-background.jpg`, version: "background_version" },
   background_video: { path: (u) => `${u}-background.mp4`, version: "background_video_version" },
+  tone: { path: (u) => `${u}-tone.json`, version: "tone_version" },
 };
 
 Deno.serve(handler(async (req) => {

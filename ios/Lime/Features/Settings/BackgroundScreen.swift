@@ -166,6 +166,7 @@ struct BackgroundScreen: View {
             busy = true; problem = nil
             Task {
                 let ok = await store.setExtraVisibility(.background, value)
+                if ok { _ = await store.setExtraVisibility(.tone, value) }   // the colour is as public as the background (LIME-277e)
                 busy = false
                 if !ok { visibility = previous; problem = "That couldn't be changed. Check your connection and try again." }
             }
@@ -328,22 +329,20 @@ struct VideoTrimSheet: View {
 }
 
 
-/// The profile's colour (LIME-277a): one of lime's 8 colours for the default hero when there is no background, the same set as a band's or group's cover. For now it is
-/// kept on this iPhone and only shows on your own profile; sharing it with contacts like the background needs the profile record to carry it (a core change).
+/// The profile's colour (LIME-277a, 277e): one of lime's 8 colours for the default hero when there is no background, the same set as a band's or group's cover. It
+/// travels like the cover (an extras slot of a few bytes: `{"tone":4}`), public or contacts-only as the background is, so a contact's view of your profile uses it too.
 enum ProfileColour {
-    static func key(_ userID: String) -> String { "lime.profile.colour.\(userID)" }
-    static func chosen(for userID: String?) -> Int? {
-        guard let userID, UserDefaults.standard.object(forKey: key(userID)) != nil else { return nil }
-        return UserDefaults.standard.integer(forKey: key(userID))
-    }
-    static func set(_ tone: Int?, for userID: String) {
-        if let tone { UserDefaults.standard.set(tone, forKey: key(userID)) } else { UserDefaults.standard.removeObject(forKey: key(userID)) }
+    static func encode(_ tone: Int) -> Data { Data("{\"tone\":\(min(7, max(0, tone)))}".utf8) }
+    static func decode(_ data: Data?) -> Int? {
+        guard let data, let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let tone = object["tone"] as? Int, (0...7).contains(tone) else { return nil }
+        return tone
     }
 }
 
 struct ProfileColourCard: View {
     @Environment(ConversationStore.self) private var store
     @State private var chosen: Int?
+    @State private var problem: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -351,7 +350,7 @@ struct ProfileColourCard: View {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 44), spacing: 10), count: 4), spacing: 10) {
                 ForEach(0..<8, id: \.self) { tone in
                     let on = chosen == tone
-                    Button { chosen = tone; if let id = store.myUserID { ProfileColour.set(tone, for: id) } } label: {
+                    Button { choose(tone) } label: {
                         ZStack {
                             Circle().fill(Theme.avatar(tone))
                             if on { Image(systemName: "checkmark").font(.system(size: 17, weight: .bold)).foregroundStyle(Color(red: 0.075, green: 0.106, blue: 0.09)) }
@@ -364,12 +363,25 @@ struct ProfileColourCard: View {
                 }
             }
             if chosen != nil {
-                Button("Use the default colour") { chosen = nil; if let id = store.myUserID { ProfileColour.set(nil, for: id) } }
+                Button("Use the default colour") { choose(nil) }
                     .font(Theme.secondary).frame(minHeight: 44).accessibilityIdentifier("profile-colour-default")
             }
-            Text("The colour of your profile's top when you have no background. Only on this iPhone for now.").font(Theme.caption).foregroundStyle(Theme.textSecondary)
+            Text(problem ?? "The colour of your profile's top when you have no background. Teachers who can see your background can see it too.").font(Theme.caption).foregroundStyle(Theme.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .task { chosen = ProfileColour.chosen(for: store.myUserID) }
+        .task { chosen = ProfileColour.decode(await store.myExtra(.tone).data) }
+    }
+
+    /// Saved at once, with the same visibility as the background (so the two are as public as each other).
+    private func choose(_ tone: Int?) {
+        let previous = chosen
+        chosen = tone
+        problem = nil
+        Task {
+            let visibility = await store.myExtra(.background).visibility
+            _ = await store.setExtraVisibility(.tone, visibility)
+            let ok = await store.setMyExtra(.tone, tone.map(ProfileColour.encode))
+            if !ok { chosen = previous; problem = "That couldn't be saved. Check your connection and try again." }
+        }
     }
 }

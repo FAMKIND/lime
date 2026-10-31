@@ -8475,3 +8475,46 @@ fn only_the_new_phones_proof_lets_the_old_phone_remove_its_copy() {
     assert!(!std::path::Path::new(&format!("{}.move", path_of(&m.alice))).exists());
     let _ = &m.server;
 }
+
+// ---- LIME-277e: a profile's colour reaches contacts ----
+
+#[test]
+fn a_profile_colour_travels_like_the_cover_contacts_only_or_public() {
+    use crate::store::extras::{self, TONE};
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    befriend(&alice, &bob, &transport);
+    say(&alice, &carol, &transport, "hello stranger");
+    sync(&carol, &transport);
+
+    let tone = br#"{"tone":4}"#.to_vec();
+    assert_eq!(alice.store.my_extra(TONE.into()).unwrap().visibility, "contacts", "contacts only until chosen otherwise");
+    alice.store.set_my_extra(transport.clone(), alice.token.clone(), TONE.into(), tone.clone()).unwrap();
+    {
+        let state = server.state.lock().unwrap();
+        assert!(!state.objects.keys().any(|k| k.starts_with("public-avatars/")), "nothing public");
+        let blobs: Vec<_> = state.objects.iter().filter(|(k, _)| k.starts_with("blobs/")).collect();
+        assert_eq!(blobs.len(), 1);
+        assert!(!blobs[0].1.windows(6).any(|w| w == &tone[..6]), "the stored bytes are ciphertext, not the colour");
+    }
+    assert_eq!(refresh(&bob, &transport), vec!["alice".to_string()], "a contact is told it changed");
+    assert_eq!(bob.store.peer_extra("alice".into(), TONE.into()).unwrap(), Some(tone.clone()));
+    refresh(&carol, &transport);
+    assert_eq!(carol.store.peer_extra("alice".into(), TONE.into()).unwrap(), None, "a stranger sees none while it is contacts only");
+
+    // Everyone: the public copy, a stranger reads it, the encrypted one is gone.
+    alice.store.set_extra_visibility(transport.clone(), alice.token.clone(), TONE.into(), "everyone".into()).unwrap();
+    assert!(server.state.lock().unwrap().objects.contains_key("public-avatars/alice-tone.jpg"));
+    assert!(!server.state.lock().unwrap().objects.keys().any(|k| k.starts_with("blobs/")));
+    refresh(&carol, &transport);
+    assert_eq!(carol.store.peer_extra("alice".into(), TONE.into()).unwrap(), Some(tone));
+
+    // A few bytes only, and removing clears it everywhere.
+    assert!(alice.store.set_my_extra(transport.clone(), alice.token.clone(), TONE.into(), vec![b'1'; extras::max_bytes(TONE) + 1]).is_err());
+    alice.store.remove_my_extra(transport.clone(), alice.token.clone(), TONE.into()).unwrap();
+    refresh(&carol, &transport);
+    assert_eq!(carol.store.peer_extra("alice".into(), TONE.into()).unwrap(), None);
+}
+

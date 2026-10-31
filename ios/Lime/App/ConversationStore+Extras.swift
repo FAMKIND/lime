@@ -3,7 +3,7 @@ import Foundation
 /// A profile's links and background image (LIME-214, LIME-217): the photo's scheme again. Mine are stored on this phone and mirrored to the server as
 /// Everyone's (a public copy) or contacts-only (ciphertext); other people's are fetched with their photo. The bytes and keys live in LimeCore.
 extension ConversationStore {
-    enum ExtraSlot: String, Sendable { case links, background, backgroundVideo = "background_video" }
+    enum ExtraSlot: String, Sendable { case links, background, backgroundVideo = "background_video", tone }
 
     /// What I hold for a slot, and who may see it (contacts only until I choose).
     func myExtra(_ slot: ExtraSlot) async -> (data: Data?, visibility: PhotoVisibility) {
@@ -92,7 +92,10 @@ extension ConversationStore {
     #if DEBUG
     /// Demo: Sam's links are contacts-only, so they show only while he is one of my contacts.
     private func demoPeerExtra(_ userID: String, _ slot: ExtraSlot) async -> Data? {
+        // Lee has only a colour, and only with `-lime-demo-lee-tone` (LIME-277e): a contact whose profile colour reaches this phone.
+        if userID == "lee", slot == .tone, ProcessInfo.processInfo.arguments.contains("-lime-demo-lee-tone") { return ProfileColour.encode(4) }
         guard userID == "sam", let chat = conversation("dm:sam"), !chat.isRequest else { return nil }
+        if slot == .tone { return nil }
         if slot == .background { return ProfilePhotoScreen.demoPicture.jpegData(compressionQuality: 0.6) }
         if slot == .backgroundVideo {
             // Sam has a short clip behind his name only with `-lime-demo-video` (with `-lime-demo-video-pending` it also waits for a tap first).

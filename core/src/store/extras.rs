@@ -15,6 +15,8 @@ use super::{db_err, StoreError};
 
 pub(crate) const LINKS: &str = "links";
 pub(crate) const BACKGROUND: &str = "background";
+/// A profile's colour (LIME-277e): one of the 8 avatar colours for the default hero, a few bytes of JSON (`{"tone":4}`), public or contacts-only like the cover.
+pub(crate) const TONE: &str = "tone";
 /// A short silent clip behind the profile (LIME-226a); the still in `BACKGROUND` is its poster and is always there with it.
 pub(crate) const BACKGROUND_VIDEO: &str = "background_video";
 /// A jam page's public picture (LIME-194), cached here under the owner `jam:<jam_id>`; never a profile slot, so `is_slot` does not accept it.
@@ -25,13 +27,14 @@ pub(crate) const JAM_TONE: &str = "jam_tone";
 const NONCE_BYTES: usize = 12;
 
 pub(crate) fn is_slot(slot: &str) -> bool {
-    slot == LINKS || slot == BACKGROUND || slot == BACKGROUND_VIDEO
+    slot == LINKS || slot == BACKGROUND || slot == BACKGROUND_VIDEO || slot == TONE
 }
 
 /// The most a slot may hold: a short list of links, a 1 MiB image, or a 6 MiB clip.
 pub(crate) fn max_bytes(slot: &str) -> usize {
     match slot {
         LINKS => 8 * 1024,
+        TONE => 64,
         BACKGROUND_VIDEO => 6 * 1024 * 1024,
         // The background and a jam's picture are both a 1 MiB image.
         _ => 1024 * 1024,
