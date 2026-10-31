@@ -69,6 +69,7 @@ struct SeriesPage: View {
         .limeBackground()
         .ignoresSafeArea(edges: .top)
         .toolbarBackground(.hidden, for: .navigationBar).toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbar(.hidden, for: .tabBar)   // a pushed page, as the others (LIME-260c)
         .toolbar { toolbarItems(jam: jam, title: title) }
         .sheet(isPresented: $editing) { EditSeriesSheet(seriesID: seriesID, title: title, description: meta?.description ?? "") }
         .task { await store.loadSeries(seriesID) }
@@ -107,9 +108,7 @@ struct SeriesPage: View {
         let creator = jam.flatMap { id in (store.jamsMine + store.jamSubscriptions).first { $0.jamId == id }?.title } ?? writer
         return VStack(spacing: 0) {
             ZStack(alignment: .bottomLeading) {
-                coverView(cover)
-                    .frame(maxWidth: .infinity).aspectRatio(1, contentMode: .fill).clipped()
-                    .overlay(LinearGradient(colors: [.clear, wash.opacity(0.95)], startPoint: .center, endPoint: .bottom))
+                coverArea(cover, wash: wash)
                 Text(title).font(Theme.font(.title, weight: .bold)).foregroundStyle(.white).shadow(color: .black.opacity(0.35), radius: 4, y: 1)
                     .padding(.horizontal, 20).padding(.bottom, 14).accessibilityAddTraits(.isHeader).accessibilityIdentifier("series-page-title")
             }
@@ -136,7 +135,8 @@ struct SeriesPage: View {
                     }
                 }
                 Text(metaLine(creator: creator, parts: parts)).font(Theme.secondary).foregroundStyle(.white.opacity(0.8)).accessibilityIdentifier("series-meta")
-                Text(info?.of.map { "\(readCount) of \($0) read" } ?? "\(readCount) of \(parts.count) read").font(Theme.secondary).foregroundStyle(.white.opacity(0.8)).accessibilityIdentifier("series-progress")
+                // Read marks among the parts this page lists, never more than them (LIME-260c; the declared total is not mixed in).
+                Text("\(min(readCount, parts.count)) of \(parts.count) read").font(Theme.secondary).foregroundStyle(.white.opacity(0.8)).accessibilityIdentifier("series-progress")
             }
             .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 24)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -144,10 +144,37 @@ struct SeriesPage: View {
         }
     }
 
-    /// The cover, or the series' colour as a gradient when there is none.
+    /// The top of the page (LIME-260c). A square box whose size comes from the page's width and nothing else: the picture fills it from inside a clip, so no
+    /// picture, however large its own size, can widen the page and push every row off the left edge. A cover too small to be sharp full-bleed (the series
+    /// cover is a small JPEG kept in the series' record) is shown as centred artwork on its own wash instead.
+    @ViewBuilder
+    private func coverArea(_ cover: UIImage?, wash: Color) -> some View {
+        Color.clear.aspectRatio(1, contentMode: .fit)
+            .overlay {
+                if let cover, !Self.isSmall(cover) {
+                    Image(uiImage: cover).resizable().scaledToFill()
+                } else if let cover {
+                    ZStack {
+                        wash
+                        Image(uiImage: cover).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .shadow(color: .black.opacity(0.3), radius: 12, y: 4).padding(.horizontal, 64).padding(.top, 90).padding(.bottom, 56)
+                            .accessibilityIdentifier("series-cover-art")
+                    }
+                } else {
+                    coverView(nil)
+                }
+            }
+            .clipped()
+            .overlay(LinearGradient(colors: [.clear, wash.opacity(0.95)], startPoint: .center, endPoint: .bottom))
+    }
+
+    /// Under about 600 px wide, a cover is too soft to stretch across the whole top.
+    static func isSmall(_ image: UIImage) -> Bool { image.size.width * image.scale < 600 }
+
+    /// The series' colour as a gradient when there is no cover.
     @ViewBuilder
     private func coverView(_ cover: UIImage?) -> some View {
-        if let cover { Image(uiImage: cover).resizable().scaledToFill() }
+        if let cover { Image(uiImage: cover).resizable().scaledToFit() }
         else { Rectangle().fill(LinearGradient(colors: [Theme.avatar(AvatarTone.tone(for: seriesID)), Theme.avatar(AvatarTone.tone(for: seriesID)).opacity(0.6)], startPoint: .topLeading, endPoint: .bottomTrailing)).overlay(Image(systemName: "square.stack").font(.system(size: 54)).foregroundStyle(.white.opacity(0.7))) }
     }
 

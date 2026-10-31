@@ -9347,3 +9347,15 @@ Reactions on the bubble; times per run, swipe for all (the blend). **Brief:** LI
 - **Gate (13 mini):** a chat with short messages and reactions: each reaction sits on its bubble's corner (a short bubble like "hi" too); times only at the ends of runs (and "Sending…", "Edited"); drag the chat left and every time shows, letting go snaps back.
 
 - **Installed (278):** all three, the 13 mini, the iPad and Jean's 12 mini.
+
+## LIME-260c
+
+The series page fits the screen and its art stays sharp. **Brief:** LIME-260c. iOS only (`Features/Jam/SeriesShow.swift`, demo data).
+
+- **Layout:** the top of the page is now `Color.clear.aspectRatio(1, .fit)` with the cover filling it from an `overlay` inside `.clipped()`, so no picture's own size can widen the List row (the old `scaledToFill` on the image itself widened the column and pushed every row off the left edge). Audit of the other heroes: the profile hero (`ProfileHero.swift:240`, sized and clipped), the avatar shape and the group photo (fixed frames) are fine; nothing else needed the fix.
+- **Sharpness:** a cover under 600 px wide (the series cover is a small JPEG in the series' record, ≤ 24 KB) is shown as **centred artwork** (rounded, shadowed, with side margins) on the series' own dark wash instead of a full-width hero; a larger one stays full-bleed. I did not raise 260a's 24 KB cap (it lives in the jam's state record).
+- **Dock:** hidden on the series page (`.toolbar(.hidden, for: .tabBar)`), like the other pushed pages.
+- **Counts:** "n of m read" now uses the parts this page lists (`min(read, parts)` of `parts`); the series' declared total (`of`) is no longer mixed in. That mix was the likely "1 part … 2 read": a one-part list with a declared total of 2.
+- **Tests:** UI `Series260cUITests` (2): a big cover is full-bleed, nothing cut off at either edge, no dock, "1 of 3 read"; a small cover (`-lime-demo-series-small-cover`) is centred artwork narrower than the screen. `Series260bUITests` and `Series210fUITests` still pass.
+- **Screenshots:** `docs/qa-shots/260c/` (after only: a big cover, a 3-part series; a small cover in dark). I did not capture "before" (that needed the old build).
+- **Gate:** open a series on the 13 mini: nothing cut at the left, title and pill visible, the art sharp, no dock, "1 of 1 read" consistent.
