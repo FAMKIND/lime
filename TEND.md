@@ -9323,3 +9323,5 @@ Buttons keep their words whole; every theme pair passes contrast; search and ava
 - 277g had put them 6 pt closer; they are now **4 pt closer than before 277g** (2 pt given back): the iOS 26 one-item bubble in `MessagesView.swift` and `RootHeader.swift` (link, call, jam) goes from `-6` to `-4`, and the pre-iOS 26 pill in `MessagesView.swift` from 6 to 8. Nothing else changed; targets are the same.
 - Visual change: no new test (your rule); the 277g header test still passes.
 - **Gate:** on Messages, Calls and jam, search and your avatar are a little further apart than after 277g, still closer than before it.
+
+- **Installed (277h):** all three, the 13 mini, the iPad and Jean's 12 mini.
