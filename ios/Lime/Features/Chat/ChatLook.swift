@@ -1,3 +1,4 @@
+import ImageIO
 import Observation
 import SwiftUI
 import UIKit
@@ -88,6 +89,16 @@ final class ChatLooks: @unchecked Sendable {
         if let data = defaults.data(forKey: key("chats")), let decoded = try? JSONDecoder().decode([String: ChatLook].self, from: data) { chats = decoded }
         if let data = defaults.data(forKey: key("all")) { all = try? JSONDecoder().decode(ChatLook.self, from: data) }
         #if DEBUG
+        // `-lime-demo-photo-wallpaper` (LIME-277k): Sam's chat has a big photo as its wallpaper, 1600 x 1200 like one chosen from Photos.
+        if ProcessInfo.processInfo.arguments.contains("-lime-demo-photo-wallpaper") {
+            let image = UIGraphicsImageRenderer(size: CGSize(width: 1600, height: 1200), format: { let f = UIGraphicsImageRendererFormat.default(); f.scale = 1; return f }()).image { c in
+                let colours = [UIColor.systemOrange.cgColor, UIColor.systemPink.cgColor, UIColor.systemIndigo.cgColor] as CFArray
+                c.cgContext.drawLinearGradient(CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colours, locations: [0, 0.5, 1])!, start: .zero, end: CGPoint(x: 1600, y: 1200), options: [])
+            }
+            setPhoto(image, for: "dm:sam")
+        }
+        #endif
+        #if DEBUG
         // Screenshots and tests: `-lime-demo-chatlook <bubbleTone> <deep|pastel> <wallpaper id>` styles Sam's chat.
         let arguments = ProcessInfo.processInfo.arguments
         if let at = arguments.firstIndex(of: "-lime-demo-chatlook"), at + 3 < arguments.count {
@@ -173,9 +184,30 @@ final class ChatLooks: @unchecked Sendable {
         photoRevision += 1
     }
 
-    func photo(_ chat: String) -> UIImage? {
-        _ = photoRevision
-        return photoURL(chat).flatMap { UIImage(contentsOfFile: $0.path) }
+    // The decoded wallpaper, once per chat and revision (LIME-277k): downsampled with ImageIO to about the screen's pixels and kept in memory, loaded off the main
+    // thread. It used to be read from disk and decoded on every pass of a view body, so typing with the keyboard up churned the main thread.
+    private let decoded = NSCache<NSString, UIImage>()
+
+    /// The cached picture, if it is already decoded (never reads the disk).
+    func cachedPhoto(_ chat: String) -> UIImage? { decoded.object(forKey: cacheKey(chat)) }
+
+    private func cacheKey(_ chat: String) -> NSString { "\(chat)|\(photoRevision)" as NSString }
+
+    func photo(_ chat: String) async -> UIImage? {
+        let key = cacheKey(chat)
+        if let hit = decoded.object(forKey: key) { return hit }
+        guard let url = photoURL(chat) else { return nil }
+        let longest = await MainActor.run { max(UIScreen.main.bounds.width, UIScreen.main.bounds.height) * UIScreen.main.scale }
+        let image = await Task.detached(priority: .userInitiated) { Self.downsample(url, maxPixel: min(longest, 2000)) }.value
+        if let image { decoded.setObject(image, forKey: key) }
+        return image
+    }
+
+    nonisolated static func downsample(_ url: URL, maxPixel: CGFloat) -> UIImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary) else { return nil }
+        let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true,
+                                        kCGImageSourceShouldCacheImmediately: true, kCGImageSourceThumbnailMaxPixelSize: maxPixel]
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary).map { UIImage(cgImage: $0) }
     }
 }
 
@@ -197,12 +229,16 @@ struct WallpaperLayer: View {
             PresetWallpaper(id: id)
         case .photo:
             if let photo {
-                ZStack {
-                    Image(uiImage: photo).resizable().scaledToFill()
-                    // Dimmed in the dark, and a little veil in the light, so bubbles and the words around them stay readable.
-                    Color.black.opacity(scheme == .dark ? 0.38 : 0.06)
-                }
-                .clipped()
+                // The size comes from the container, never from the picture (LIME-277k): a clear box takes whatever it is given and the picture fills it from inside a
+                // clip. A `scaledToFill` image on its own reports its whole size and widened the chat's layout, pushing its buttons and composer off the screen.
+                Color.clear
+                    .overlay {
+                        Image(uiImage: photo).resizable().scaledToFill()
+                        // Dimmed in the dark, and a little veil in the light, so bubbles and the words around them stay readable.
+                        Color.black.opacity(scheme == .dark ? 0.38 : 0.06)
+                    }
+                    .clipped()
+                    .allowsHitTesting(false)
             } else { ThemeBackgroundView() }
         }
     }
@@ -256,9 +292,12 @@ private struct PresetWallpaper: View {
 /// A chat's page background.
 struct ChatWallpaperView: View {
     let chatID: String
+    @State private var photo: UIImage?
     var body: some View {
         let look = ChatLooks.shared.look(for: chatID)
-        WallpaperLayer(wallpaper: look.wallpaper, photo: look.wallpaper == .photo ? ChatLooks.shared.photo(chatID) : nil)
+        let usesPhoto = look.wallpaper == .photo
+        WallpaperLayer(wallpaper: look.wallpaper, photo: usesPhoto ? (photo ?? ChatLooks.shared.cachedPhoto(chatID)) : nil)
+            .task(id: "\(chatID)|\(usesPhoto)|\(ChatLooks.shared.photoRevision)") { photo = usesPhoto ? await ChatLooks.shared.photo(chatID) : nil }
             #if DEBUG
             // UI tests: which look this chat has (`chat-look-<wallpaper>-<bubble>`).
             .overlay(alignment: .topLeading) { Color.clear.frame(width: 1, height: 1).accessibilityElement().accessibilityIdentifier("chat-look-\(look.wallpaper.key)-\(look.bubbleTone.map { "\($0)-\(look.bubbleDeep ? "deep" : "pastel")" } ?? "follow")") }

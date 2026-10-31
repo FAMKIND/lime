@@ -165,7 +165,7 @@ final class ChatLook277dTests: XCTestCase {
         XCTAssertTrue(looks.look(for: "dm:a").isDefault, "using a plain chat for all clears it")
     }
 
-    func testAWallpaperPhotoIsKeptLocallyAndGoesWithItsChat() throws {
+    func testAWallpaperPhotoIsKeptLocallyAndGoesWithItsChat() async throws {
         let looks = ChatLooks()
         let account = "photo-test-\(UUID().uuidString)"
         addTeardownBlock { try? FileManager.default.removeItem(at: (try! StorageBootstrap.Location.live(for: account)).directory) }
@@ -176,7 +176,10 @@ final class ChatLook277dTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
         XCTAssertTrue(url.path.contains("lime-wallpapers"), "inside a folder Remove everything deletes")
         XCTAssertEqual(looks.look(for: "dm:sam").wallpaper, .photo)
-        XCTAssertLessThanOrEqual(try XCTUnwrap(looks.photo("dm:sam")).size.width, 1600, "shrunk")
+        let loaded = await looks.photo("dm:sam")
+        let decoded = try XCTUnwrap(loaded)
+        XCTAssertLessThanOrEqual(max(decoded.size.width, decoded.size.height) * decoded.scale, 2000, "decoded once, to about the screen's pixels (LIME-277k)")
+        XCTAssertNotNil(looks.cachedPhoto("dm:sam"), "and kept: asking again never reads the disk")
         looks.remove("dm:sam")
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path), "deleted with the chat")
         XCTAssertTrue(looks.look(for: "dm:sam").isDefault)

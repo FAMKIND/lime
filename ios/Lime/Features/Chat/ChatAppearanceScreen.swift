@@ -21,6 +21,7 @@ struct ChatAppearanceScreen: View {
     @Environment(\.colorScheme) private var scheme
     @State private var picked: PhotosPickerItem?
     @State private var problem: String?
+    @State private var photoImage: UIImage?
     private var looks: ChatLooks { ChatLooks.shared }
     private var look: ChatLook { looks.look(for: chatID) }
 
@@ -32,7 +33,7 @@ struct ChatAppearanceScreen: View {
 
     var body: some View {
         SettingsPage(title: "Chat appearance") {
-            ChatLookPreview(look: look, photo: look.wallpaper == .photo ? looks.photo(chatID) : nil)
+            ChatLookPreview(look: look, photo: photoImage)
             wallpaperSection
             bubbleSection
             textSection
@@ -44,6 +45,7 @@ struct ChatAppearanceScreen: View {
                 .background(Theme.surface, in: Capsule()).accessibilityIdentifier("chat-reset")
             SettingsFootnote(text: "Only you see these. They stay on this iPhone and are never sent to the people in the chat.")
         }
+        .task(id: "\(look.wallpaper.key)|\(looks.photoRevision)") { photoImage = look.wallpaper == .photo ? await looks.photo(chatID) : nil }
         .onChange(of: picked) { _, item in
             guard let item else { return }
             Task {

@@ -102,11 +102,12 @@ struct ChatView: View {
     @available(iOS 26, *)
     private func nativeContent(_ conversation: Conversation) -> some View {
         ZStack {
-            ChatWallpaperView(chatID: conversationID).ignoresSafeArea()
             messageScroll(conversation, top: 8)
                 .scrollEdgeEffectStyle(.soft, for: .top)
                 .scrollEdgeEffectStyle(.soft, for: .bottom)
         }
+        // The wallpaper is a background: it never takes part in the chat's layout (LIME-277k).
+        .background { ChatWallpaperView(chatID: conversationID).ignoresSafeArea() }
         .safeAreaBar(edge: .bottom) { bottomBar(conversation) }
         .safeAreaInset(edge: .top) { if finding { findBar }  }
         .navigationBarTitleDisplayMode(.inline)
@@ -135,9 +136,9 @@ struct ChatView: View {
 
     private func legacyContent(_ conversation: Conversation) -> some View {
         ZStack {
-            ChatWallpaperView(chatID: conversationID).ignoresSafeArea()
             messageScroll(conversation, top: 84)
         }
+        .background { ChatWallpaperView(chatID: conversationID).ignoresSafeArea() }
         .overlay(alignment: .top) { TopFade() }
         .overlay(alignment: .top) { header(conversation) }
         .overlay(alignment: .top) { if finding { findBar.padding(.top, 62) } }
@@ -1083,7 +1084,24 @@ struct BubbleColumn: Layout {
     var trailing: Bool
     var spacing: CGFloat = 4
 
-    private func widths(_ subviews: Subviews, _ proposal: ProposedViewSize) -> (content: CGFloat, footer: CGFloat?) {
+    /// What the last measurement found, kept for the pass (LIME-277k): `sizeThatFits` and `placeSubviews` each measured every part again, and a chat re-measures all
+    /// its rows when the text size, a colour or a wallpaper changes. SwiftUI throws the cache away when the parts change.
+    final class Memo {
+        var width: CGFloat??
+        var measured: (content: CGFloat, footer: CGFloat?) = (0, nil)
+    }
+
+    func makeCache(subviews: Subviews) -> Memo { Memo() }
+
+    private func widths(_ subviews: Subviews, _ proposal: ProposedViewSize, _ memo: Memo) -> (content: CGFloat, footer: CGFloat?) {
+        if let key = memo.width, key == proposal.width { return memo.measured }
+        let found = measure(subviews, proposal)
+        memo.width = .some(proposal.width)
+        memo.measured = found
+        return found
+    }
+
+    private func measure(_ subviews: Subviews, _ proposal: ProposedViewSize) -> (content: CGFloat, footer: CGFloat?) {
         var content: CGFloat = 0
         var footer: CGFloat?
         for view in subviews {
@@ -1101,8 +1119,8 @@ struct BubbleColumn: Layout {
         return min(wanted, proposal.width ?? wanted)
     }
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let w = widths(subviews, proposal)
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Memo) -> CGSize {
+        let w = widths(subviews, proposal, cache)
         let footer = footerWidth(w, proposal)
         var height: CGFloat = 0
         var width = max(w.content, footer)
@@ -1115,8 +1133,8 @@ struct BubbleColumn: Layout {
         return CGSize(width: width, height: height)
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let w = widths(subviews, ProposedViewSize(width: bounds.width, height: nil))
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Memo) {
+        let w = widths(subviews, ProposedViewSize(width: bounds.width, height: nil), cache)
         let footer = footerWidth(w, ProposedViewSize(width: bounds.width, height: nil))
         var y = bounds.minY
         for view in subviews {
