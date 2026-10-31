@@ -265,7 +265,7 @@ struct MyGIFsSheet: View {
 }
 
 /// A still frame of a saved GIF (the grid does not animate: it follows Reduce Motion and stays light).
-private struct GIFThumb: View {
+struct GIFThumb: View {
     let id: String
     @Environment(ConversationStore.self) private var store
     @State private var image: UIImage?

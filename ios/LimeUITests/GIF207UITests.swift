@@ -8,6 +8,17 @@ final class GIF207UITests: LimeUITestCase {
         app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'attachment-image-' AND label == 'GIF'"))
     }
 
+    /// 😊 → the GIFs tab → Search (LIME-279: the GIF button became a tab of the panel behind 😊).
+    private func openGIFSearch(_ app: XCUIApplication) {
+        let emoji = app.buttons["composer-emoji"]
+        XCTAssertTrue(emoji.waitForExistence(timeout: 8))
+        emoji.tap()
+        let tabs = app.segmentedControls["panel-tabs"]
+        XCTAssertTrue(tabs.waitForExistence(timeout: 5))
+        tabs.buttons["GIFs"].tap()
+        app.buttons["panel-search"].tap()
+    }
+
     func testSaveAGIFFromAChatFindItByAWordAndTapToSendIt() {
         let app = XCUIApplication()
         app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-screen", "attachments-gif"]
@@ -20,9 +31,7 @@ final class GIF207UITests: LimeUITestCase {
         XCTAssertTrue(save.waitForExistence(timeout: 5), "Save to my GIFs is in the long-press menu")
         save.tap()
         // The GIF button: a sheet with search; the message it came with ("Happy Friday!") finds it.
-        let button = app.buttons["composer-gif"]
-        XCTAssertTrue(button.waitForExistence(timeout: 8))
-        button.tap()
+        openGIFSearch(app)
         let search = app.textFields["gif-search"]
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         search.tap(); search.typeText("friday")

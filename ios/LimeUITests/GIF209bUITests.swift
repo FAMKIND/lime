@@ -16,6 +16,14 @@ final class GIF209bUITests: LimeUITestCase {
         return (app, field)
     }
 
+    private func openGIFSearch(_ app: XCUIApplication) {
+        app.buttons["composer-emoji"].tap()
+        let tabs = app.segmentedControls["panel-tabs"]
+        XCTAssertTrue(tabs.waitForExistence(timeout: 5))
+        tabs.buttons["GIFs"].tap()
+        app.buttons["panel-search"].tap()
+    }
+
     func testSlashBirthdayShowsLimesBirthdayStickerAndATapSendsIt() {
         let (app, field) = chat()
         let before = gifBubbles(app).count
@@ -31,7 +39,7 @@ final class GIF209bUITests: LimeUITestCase {
 
     func testTheGIFButtonShowsTheLimeRowFirstAndTypingNarrowsIt() {
         let (app, _) = chat()
-        app.buttons["composer-gif"].tap()
+        openGIFSearch(app)
         XCTAssertTrue(any(app, "sticker-row").waitForExistence(timeout: 5), "the lime row")
         XCTAssertTrue(any(app, "sticker-cell-thank-you").exists)
         XCTAssertTrue(any(app, "sticker-cell-summer").exists || any(app, "sticker-row").exists)
@@ -43,7 +51,7 @@ final class GIF209bUITests: LimeUITestCase {
 
     func testHidingThePackRemovesTheRowAndTheSlashStickers() {
         let (app, field) = chat(["-lime.showStickers", "NO"])
-        app.buttons["composer-gif"].tap()
+        openGIFSearch(app)
         XCTAssertTrue(app.textFields["gif-search"].waitForExistence(timeout: 5))
         XCTAssertFalse(any(app, "sticker-row").exists, "no lime row")
         app.buttons["gif-close"].tap()

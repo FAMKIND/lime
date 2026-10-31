@@ -96,8 +96,8 @@ struct ChatComposer: View {
                         trace("composer tap plus")
                         if onSendAttachments == nil { store.comingSoon("Attachments") } else { choosing = true }
                     }
-                    // 😊 is a toggle (LIME-174): the emoji keyboard on the composer's own text view; tapping it again goes back to the text keyboard. It stays a
-                    // face, highlighted like Aa while the emoji keyboard shows (the keyboard button is LIME-175's).
+                    // 😊 is a toggle (LIME-174): the panel on the composer's own text view (LIME-279: Emoji, GIFs, Stickers; the emoji keyboard where the chat cannot
+                    // send GIFs); tapping it again goes back to the text keyboard. It stays a face, highlighted like Aa while the panel shows.
                     Button { trace("composer tap emoji"); model.toggleEmojiKeyboard() } label: {
                         Image(systemName: "face.smiling").font(.system(size: 20)).foregroundStyle(Theme.text)
                             .frame(width: 44, height: 40)
@@ -105,15 +105,6 @@ struct ChatComposer: View {
                     }
                     .accessibilityLabel("Emoji").accessibilityIdentifier("composer-emoji")
                     .accessibilityAddTraits(model.showsEmojiKeyboard ? [.isSelected] : [])
-                    // GIF: my saved GIFs, searchable; one tap sends one (LIME-207).
-                    if onSendAttachments != nil {
-                        Button { trace("composer tap GIF"); model.hideKeyboard(); showingGIFs = true } label: {
-                            Text("GIF").font(.system(size: 13, weight: .bold)).foregroundStyle(Theme.text)
-                                .padding(.horizontal, 6).padding(.vertical, 3).overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Theme.text, lineWidth: 1.5))
-                                .frame(width: 44, height: 40)
-                        }
-                        .accessibilityLabel("GIF").accessibilityHint("Your saved GIFs").accessibilityIdentifier("composer-gif")
-                    }
                     Button { trace("composer tap Aa"); model.formattingTapped() } label: {
                         Text("Aa").font(.system(size: 17, weight: model.toolbarVisible ? .bold : .medium)).foregroundStyle(Theme.text)
                             .frame(width: 44, height: 40)
@@ -158,10 +149,13 @@ struct ChatComposer: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if model.showsStrip {
                 FormattingToolbar(model: model).transition(.opacity)
+            } else if model.showsEmojiKeyboard && model.hasPanel {
+                ComposerPanelTabs(model: model) { model.closePanel(); showingGIFs = true }.transition(.opacity)
             }
         }
         .background { if model.expanded { Theme.canvas } }
         .animation(.easeOut(duration: 0.2), value: model.showsStrip)
+        .animation(.easeOut(duration: 0.2), value: model.showsEmojiKeyboard)
         .onDisappear { model.expanded = false }
         .sheet(item: $model.linkRequest) { request in LinkSheet(request: request, composer: model) }
         .sheet(isPresented: $choosing) {
@@ -203,6 +197,8 @@ struct ChatComposer: View {
         .sheet(isPresented: $showingGIFs) { MyGIFsSheet { item, caption in onSendAttachments?([item], caption) } }
         .alert(GIF.tooBigMessage, isPresented: $gifTooBig) { Button("OK", role: .cancel) {} } message: { Text("A GIF can be up to 10 MB and 500 frames.") }
         .alert("That file is too large", isPresented: $tooLarge) { Button("OK", role: .cancel) {} } message: { Text("Files can be up to 50 MB.") }
+        .onAppear { setUpPanel() }
+        .onChange(of: onSendAttachments == nil) { setUpPanel() }
         .onChange(of: model.plainText) { refreshPreview() }
         .onChange(of: previewsOn) { refreshPreview() }
         .onChange(of: drafts.count) { refreshPreview() }
@@ -210,6 +206,29 @@ struct ChatComposer: View {
         .task { if store.demoDrafts { drafts = ChatComposer.demoDrafts }; recorder.simulated = store.isDemo }
         .onAppear { model.onPasteGIF = { data in addGIF(data: data, name: "Pasted GIF.gif") } }
         #endif
+    }
+
+    // MARK: The panel behind 😊 (LIME-279)
+
+    /// The GIFs and Stickers tabs send at once and the panel goes; a Genmoji or Memoji sticker typed in becomes a picture in the message.
+    private func setUpPanel() {
+        guard onSendAttachments != nil else { model.makePanelView = nil; model.onAdaptiveGlyphs = nil; return }
+        let environmentStore = store
+        model.makePanelView = { [weak model] tab, height in
+            let content = ComposerPanelContent(tab: tab) { item in
+                model?.closePanel()
+                onSendAttachments?([item], "")
+            }
+            return ComposerPanelInputView(content: AnyView(content.environment(environmentStore)), height: height)
+        }
+        model.onAdaptiveGlyphs = { datas in
+            Task {
+                for data in datas where drafts.count < AttachmentProcessing.maxPerMessage {
+                    guard let image = UIImage(data: data), let item = AttachmentProcessing.sticker(image) else { continue }
+                    drafts.append(DraftAttachment(outgoing: item, preview: PhotoProcessing.crop(image, viewport: 128, scale: 1, offset: .zero)))
+                }
+            }
+        }
     }
 
     // MARK: Voice messages

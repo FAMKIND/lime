@@ -38,6 +38,14 @@ final class RichComposerModel {
     /// The emoji keyboard is up (LIME-174): the composer's own text view shows it, so there is one keyboard owner and the keyboard, its accessory and
     /// the composer's place always agree. 😊 toggles it; the icon becomes a keyboard while it shows.
     private(set) var showsEmojiKeyboard = false
+    /// The panel behind 😊 (LIME-279): which tab is up (the last one used comes back), how to build the GIFs and Stickers views (nil where a composer cannot send
+    /// them: then 😊 is only the emoji keyboard), and what to do with a Genmoji or Memoji sticker that was typed in.
+    private(set) var panelTab = ComposerPanelTab.remembered
+    @ObservationIgnored var makePanelView: ((ComposerPanelTab, CGFloat) -> UIView?)?
+    @ObservationIgnored var onAdaptiveGlyphs: (([Data]) -> Void)?
+    /// The height the emoji keyboard had, so the other tabs stand where it stood.
+    private var panelHeight: CGFloat = 300
+    var hasPanel: Bool { makePanelView != nil }
     /// Whether the keyboard was up (the person was writing) when 😊 was tapped: the second tap returns to that, text keyboard or none.
     private var returnsToWriting = true
 
@@ -175,7 +183,7 @@ final class RichComposerModel {
             textView.textModeToReturnTo = textView.textInputMode ?? UITextInputMode.activeInputModes.first { $0.primaryLanguage != "emoji" }
         }
         showsEmojiKeyboard = on
-        textView.showsEmoji = on
+        applyPanelTab()
         if textView.isFirstResponder { textView.reloadInputViews() } else { _ = textView.becomeFirstResponder() }
         #if DEBUG
         CallDiagnostics.shared.log("composer keyboard switch to \(on ? "emoji" : "text"): input mode now \(textView.textInputMode?.primaryLanguage ?? "?")")
@@ -187,10 +195,41 @@ final class RichComposerModel {
         }
     }
 
+    /// Puts the panel's tab in the text view: Emoji is the system emoji keyboard, the others are a view of ours standing in the keyboard's place.
+    private func applyPanelTab() {
+        guard let textView else { return }
+        if showsEmojiKeyboard, panelTab == .emoji || makePanelView == nil {
+            if textView.showsEmoji == false, textView.isFirstResponder, keyboardHeight > 200 { panelHeight = keyboardHeight }
+            textView.panelView = nil
+            textView.showsEmoji = true
+        } else if showsEmojiKeyboard, let view = makePanelView?(panelTab, panelHeight) {
+            textView.panelView = view
+            textView.showsEmoji = false
+        } else {
+            textView.panelView = nil
+            textView.showsEmoji = false
+        }
+    }
+
+    /// A tab of the panel: the keyboard or the panel changes in place; the choice is remembered.
+    func selectPanelTab(_ tab: ComposerPanelTab) {
+        guard tab != panelTab, let textView else { return }
+        if panelTab == .emoji, keyboardHeight > 200 { panelHeight = keyboardHeight }
+        panelTab = tab
+        UserDefaults.standard.set(tab.rawValue, forKey: ComposerPanelTab.rememberedKey)
+        applyPanelTab()
+        textView.reloadInputViews()
+        UIAccessibility.post(notification: .announcement, argument: tab.rawValue)
+    }
+
+    /// The panel goes (a GIF or sticker was sent, Search opened): the keyboard lets go, the chat shows whole.
+    func closePanel() { textView?.resignFirstResponder() }
+
     /// The keyboard let go (a sheet, send, the person tapped away): the next focus starts on the text keyboard.
     func keyboardEnded() {
         showsEmojiKeyboard = false
         textView?.showsEmoji = false
+        textView?.panelView = nil
         textView?.textModeToReturnTo = nil
     }
 
@@ -498,6 +537,12 @@ final class ComposerTextView: UITextView {
 
     /// Shows the emoji keyboard instead of the text one (the model flips it, then reloads the input views).
     var showsEmoji = false
+    /// The panel's GIFs or Stickers view, standing where the keyboard stands (LIME-279); nil is the system keyboard.
+    var panelView: UIView?
+    override var inputView: UIView? {
+        get { panelView ?? super.inputView }
+        set { super.inputView = newValue }
+    }
     /// The text keyboard that was up before the emoji one, and the one to return to: iOS answers `super.textInputMode` with the mode in use, which
     /// while emoji shows is emoji itself, so going back needs this one named (it was the bug in the first build: only the icon changed back).
     var textModeToReturnTo: UITextInputMode?
@@ -629,6 +674,8 @@ struct RichComposerField: UIViewRepresentable {
 
     func updateUIView(_ view: ComposerTextView, context: Context) {
         context.coordinator.model = model
+        // Genmoji and Memoji stickers only where the message can carry them as pictures (LIME-279).
+        if #available(iOS 18.0, *) { view.supportsAdaptiveImageGlyph = model.onAdaptiveGlyphs != nil }
         // The field grew or shrank (a taller cap, the keyboard going, expanding): the caret stays in view.
         let size = (maxHeight ?? 0) + (fills ? 100_000 : 0)
         if context.coordinator.lastSize != size {
@@ -746,6 +793,11 @@ struct RichComposerField: UIViewRepresentable {
         func textViewDidChange(_ textView: UITextView) { changed(textView) }
 
         private func changed(_ textView: UITextView) {
+        // A Genmoji or Memoji sticker typed in goes to the message as a picture, not as a glyph other phones could not show (LIME-279).
+        if model.onAdaptiveGlyphs != nil {
+            let glyphs = AdaptiveGlyphs.take(from: textView.textStorage)
+            if !glyphs.isEmpty { model.onAdaptiveGlyphs?(glyphs) }
+        }
             // An edit UIKit made itself (a selection deleted or cut, two lines joined) may leave half a marker or
             // list attributes on plain words: tidy them first.
             let selection = ComposerDocument.cleanUpAfterEdit(textView.textStorage, selection: textView.selectedRange)

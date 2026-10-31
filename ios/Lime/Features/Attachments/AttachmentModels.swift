@@ -113,6 +113,19 @@ enum AttachmentProcessing {
                                   durationMs: nil, thumb: thumbnail(image), poster: Data())
     }
 
+    /// A Genmoji or Memoji sticker as a picture (LIME-279): a PNG at most 512 px on the long edge, its transparency kept.
+    static func sticker(_ image: UIImage, name: String = "Sticker.png") -> OutgoingAttachment? {
+        let pixels = CGSize(width: image.size.width * image.scale, height: image.size.height * image.scale)
+        let factor = min(1, 512 / max(pixels.width, pixels.height))
+        let target = CGSize(width: max(1, (pixels.width * factor).rounded()), height: max(1, (pixels.height * factor).rounded()))
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        let drawn = UIGraphicsImageRenderer(size: target, format: format).image { _ in image.draw(in: CGRect(origin: .zero, size: target)) }
+        guard let png = drawn.pngData(), png.count <= maxFileBytes else { return nil }
+        return OutgoingAttachment(bytes: png, name: name, mime: "image/png", width: UInt32(target.width), height: UInt32(target.height),
+                                  durationMs: nil, thumb: thumbnail(drawn), poster: Data())
+    }
+
     /// At most `maxEdge` pixels on the long edge, orientation applied, no metadata.
     static func redraw(_ image: UIImage, maxEdge: CGFloat) -> UIImage {
         let pixels = CGSize(width: image.size.width * image.scale, height: image.size.height * image.scale)
