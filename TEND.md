@@ -9496,3 +9496,17 @@ A photo wallpaper no longer breaks or freezes the chat. **Brief:** LIME-277k. iO
 - **Gate (13 mini):** a chat with a photo wallpaper shows ‹, the name, search and video, the whole composer, no dock; type a few lines: no freeze; change wallpapers back and forth: no crash.
 
 - **Installed (277k):** all three, the 13 mini, the iPad and Jean's 12 mini, from a clean build (one attempt each; all took it). A first install attempt ran after a failed build (stale derived data) and put an older build on them; the second, from a fresh build, replaced it.
+
+## 277e staging deploy (on your go, STAGING ONLY)
+
+- `supabase db push --linked --dry-run` listed exactly one migration, `20261031000000_profile_tone.sql`; `db push --linked` applied it to `lime-staging` (`ddshpgfkjygftkuorrqw`, the only linked project). `supabase functions deploy avatar` and `moderation-act` (`--use-api`) deployed. No secrets set or changed, no Auth setting touched, **production not touched**.
+- **Smoke:** `smoke-extras-staging.sh` 5 passed, 0 failed, including the profile-colour slot (published, read by someone else, hidden, removed, capped at 64 bytes); `smoke-moderation-staging.sh` passed; `check-staging-mesh-key.sh` ok. Throwaway users were deleted by the scripts.
+- Production is still yours to go.
+
+## LIME-277j
+
+1 pt more between search and your avatar. **Brief:** LIME-277j. `RootHeader.swift` and `MessagesView.swift`: the bubble's spacing −2 → −1 (link, call, jam and Messages), and `TopControls`' 10 → 11 so all three top-right bubbles stay alike. Nothing else. **Gate:** the gap between search and your avatar is 1 pt wider on the 13 mini.
+
+## The three stale tests
+
+No brief ID. `OnboardingTests.AccountSessionTests`: sign-out now asserts the tokens and profile go and the store and its key **stay**, then `signOut(removingData: true)` deletes both (renamed `…AndKeepsTheStoreUnlessAskedToRemoveIt`). `ChatTests`: `testEndingASessionKeepsTheChats`; I **dropped its second-account half** because the test's store is one fixed location, so it cannot model spaces; `AccountSpaces268Tests` already covers "another account gets its own empty space". `JamFilterTests.testTheSegmentsSplitByKind`: the titles now include Drafts and Discover, and neither takes feed items. All pass (with `AccountSpaces268Tests`).
