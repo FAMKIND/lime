@@ -20,6 +20,9 @@ struct AttachmentItem: Identifiable, Hashable, Sendable {
     /// Removed from this phone on purpose ("Media removed"); it is not fetched again.
     var removed = false
 
+    /// One of lime's own stickers (LIME-209b): shown bare in a chat (LIME-279b), with no frame and no GIF badge.
+    var isSticker: Bool { name.hasPrefix(StickerPack.namePrefix) }
+
     enum Kind: Sendable { case image, video, audio, file }
 
     var kind: Kind {

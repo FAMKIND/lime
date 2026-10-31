@@ -270,10 +270,12 @@ struct GIFThumb: View {
     @Environment(ConversationStore.self) private var store
     @State private var image: UIImage?
     var body: some View {
-        ZStack {
+        // Sized by what it is given, never by the picture (the same lesson as the wallpaper's, LIME-277k).
+        Color.clear.overlay {
             Theme.surface
             if let image { Image(uiImage: image).resizable().scaledToFill() }
         }
+        .clipped()
         .task(id: id) {
             if let data = await store.myGIFData(id) { image = GIF.firstFrame(data) }
         }

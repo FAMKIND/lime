@@ -5,7 +5,7 @@ import XCTest
 final class Panel279UITests: LimeUITestCase {
     private func any(_ app: XCUIApplication, _ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
     private func gifBubbles(_ app: XCUIApplication) -> XCUIElementQuery {
-        app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'attachment-image-' AND label == 'GIF'"))
+        app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'attachment-image-' AND (label == 'GIF' OR label == 'Sticker')"))
     }
     private func chat() -> XCUIApplication {
         let app = XCUIApplication()
@@ -56,6 +56,52 @@ final class Panel279UITests: LimeUITestCase {
         XCTAssertTrue(tabs.buttons["Stickers"].isSelected, "the last tab used is remembered")
         tabs.buttons["Emoji"].tap()
         XCTAssertTrue(tabs.buttons["Emoji"].isSelected, "and back to the emoji keyboard")
+    }
+
+    /// LIME-279b: on GIFs and Stickers the tabs are inside the panel (one surface), and the search is ours, above the keyboard it brings up.
+    func testSearchIsOursAndCancelGoesBackToThePanel() {
+        let app = chat()
+        let before = gifBubbles(app).count
+        app.buttons["composer-emoji"].tap()
+        app.segmentedControls["panel-tabs"].buttons["GIFs"].tap()
+        let search = app.buttons["panel-search"]
+        XCTAssertTrue(search.waitForExistence(timeout: 5), "🔍 is in the panel's top")
+        let bar = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] 'Search Emoji' OR identifier CONTAINS[c] 'Search Emoji' OR placeholderValue CONTAINS[c] 'Search Emoji'")).firstMatch
+        XCTAssertFalse(bar.exists, "no system emoji search bar on GIFs")
+        search.tap()
+        let field = app.textFields["panel-search-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("birth")
+        XCTAssertTrue(any(app, "panel-found-gif-demo-gif-0").waitForExistence(timeout: 5), "my birthday GIF is found")
+        XCTAssertFalse(any(app, "panel-found-gif-demo-gif-1").exists, "not the thank-you one")
+        app.buttons["panel-search-cancel"].tap()
+        XCTAssertTrue(app.segmentedControls["panel-tabs"].waitForExistence(timeout: 5), "Cancel returns to the panel")
+        XCTAssertFalse(field.exists)
+        // And a search that sends.
+        app.buttons["panel-search"].tap()
+        let again = app.textFields["panel-search-field"]
+        XCTAssertTrue(again.waitForExistence(timeout: 5)); again.typeText("birth")
+        any(app, "panel-found-gif-demo-gif-0").tap()
+        expectation(for: NSPredicate(format: "count > %d", before), evaluatedWith: gifBubbles(app))
+        waitForExpectations(timeout: 8)
+        XCTAssertFalse(app.segmentedControls["panel-tabs"].exists, "everything closed")
+    }
+
+    func testAStickerSitsBareInTheChatAtAFixedSize() {
+        let app = chat()
+        app.buttons["composer-emoji"].tap()
+        app.segmentedControls["panel-tabs"].buttons["Stickers"].tap()
+        app.buttons["panel-search"].tap()
+        let field = app.textFields["panel-search-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5)); field.typeText("snow")
+        let found = any(app, "panel-found-sticker-snow-day")
+        XCTAssertTrue(found.waitForExistence(timeout: 5))
+        found.tap()
+        let images = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'attachment-image-' AND label == 'Sticker'"))
+        XCTAssertTrue(images.firstMatch.waitForExistence(timeout: 8), "it is a sticker in the chat")
+        let frame = images.firstMatch.frame
+        XCTAssertEqual(frame.width, 160, accuracy: 2); XCTAssertEqual(frame.height, 160, accuracy: 2)
+        XCTAssertFalse(app.descendants(matching: .any).matching(NSPredicate(format: "label == 'GIF'")).element(boundBy: 99).exists)
     }
 
     func testTheSlashStripStillWorks() {

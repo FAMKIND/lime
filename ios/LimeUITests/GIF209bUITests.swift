@@ -5,7 +5,7 @@ import XCTest
 final class GIF209bUITests: LimeUITestCase {
     private func any(_ app: XCUIApplication, _ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
     private func gifBubbles(_ app: XCUIApplication) -> XCUIElementQuery {
-        app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'attachment-image-' AND label == 'GIF'"))
+        app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'attachment-image-' AND (label == 'GIF' OR label == 'Sticker')"))
     }
     private func chat(_ extra: [String] = []) -> (XCUIApplication, XCUIElement) {
         let app = XCUIApplication()
@@ -21,7 +21,7 @@ final class GIF209bUITests: LimeUITestCase {
         let tabs = app.segmentedControls["panel-tabs"]
         XCTAssertTrue(tabs.waitForExistence(timeout: 5))
         tabs.buttons["GIFs"].tap()
-        app.buttons["panel-search"].tap()
+        app.descendants(matching: .any).matching(identifier: "panel-manage").firstMatch.tap()
     }
 
     func testSlashBirthdayShowsLimesBirthdayStickerAndATapSendsIt() {

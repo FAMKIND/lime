@@ -16,7 +16,7 @@ final class GIF207UITests: LimeUITestCase {
         let tabs = app.segmentedControls["panel-tabs"]
         XCTAssertTrue(tabs.waitForExistence(timeout: 5))
         tabs.buttons["GIFs"].tap()
-        app.buttons["panel-search"].tap()
+        app.descendants(matching: .any).matching(identifier: "panel-manage").firstMatch.tap()
     }
 
     func testSaveAGIFFromAChatFindItByAWordAndTapToSendIt() {

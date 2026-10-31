@@ -43,6 +43,10 @@ final class RichComposerModel {
     private(set) var panelTab = ComposerPanelTab.remembered
     @ObservationIgnored var makePanelView: ((ComposerPanelTab, CGFloat) -> UIView?)?
     @ObservationIgnored var onAdaptiveGlyphs: (([Data]) -> Void)?
+    /// Searching GIFs or stickers (the magnifier in the panel): the search field above the keyboard it brings up replaces the panel, which waits to come back.
+    private(set) var searching = false
+    /// The text view lets go of the keyboard for an instant to change from the emoji keyboard to our panel: not a real end of the keyboard.
+    private var switchingMode = false
     /// The height the emoji keyboard had, so the other tabs stand where it stood.
     private var panelHeight: CGFloat = 300
     var hasPanel: Bool { makePanelView != nil }
@@ -201,12 +205,16 @@ final class RichComposerModel {
         if showsEmojiKeyboard, panelTab == .emoji || makePanelView == nil {
             if textView.showsEmoji == false, textView.isFirstResponder, keyboardHeight > 200 { panelHeight = keyboardHeight }
             textView.panelView = nil
+            textView.inputAccessoryView = nil
             textView.showsEmoji = true
         } else if showsEmojiKeyboard, let view = makePanelView?(panelTab, panelHeight) {
             textView.panelView = view
             textView.showsEmoji = false
+            // An empty accessory of no height: the emoji keyboard's own "Search Emoji" bar would otherwise stay above our panel (LIME-279b).
+            textView.inputAccessoryView = ComposerTextView.noAccessory
         } else {
             textView.panelView = nil
+            textView.inputAccessoryView = nil
             textView.showsEmoji = false
         }
     }
@@ -215,11 +223,30 @@ final class RichComposerModel {
     func selectPanelTab(_ tab: ComposerPanelTab) {
         guard tab != panelTab, let textView else { return }
         if panelTab == .emoji, keyboardHeight > 200 { panelHeight = keyboardHeight }
+        let previous = panelTab
         panelTab = tab
         UserDefaults.standard.set(tab.rawValue, forKey: ComposerPanelTab.rememberedKey)
+        let leavingEmoji = previous == .emoji && tab != .emoji
         applyPanelTab()
-        textView.reloadInputViews()
+        if leavingEmoji {
+            // The system keeps the emoji keyboard's own "Search Emoji" bar for as long as the keyboard has been in emoji mode, whatever input view stands in
+            // it, and only a fresh focus drops it: so the text view lets go and takes the keyboard again at once (the panel is kept, not closed).
+            switchingMode = true
+            textView.resignFirstResponder()
+            textView.becomeFirstResponder()
+            switchingMode = false
+        } else {
+            textView.reloadInputViews()
+        }
         UIAccessibility.post(notification: .announcement, argument: tab.rawValue)
+    }
+
+    func beginSearch() { searching = true }
+
+    /// Leaves search: back to the panel (Cancel), or all the way out (something was sent).
+    func endSearch(reopen: Bool) {
+        searching = false
+        if reopen { textView?.becomeFirstResponder() } else { textView?.resignFirstResponder(); keyboardEnded() }
     }
 
     /// The panel goes (a GIF or sticker was sent, Search opened): the keyboard lets go, the chat shows whole.
@@ -227,6 +254,8 @@ final class RichComposerModel {
 
     /// The keyboard let go (a sheet, send, the person tapped away): the next focus starts on the text keyboard.
     func keyboardEnded() {
+        // The keyboard let go because the panel's search field took focus: the panel stays, waiting to come back.
+        if searching || switchingMode { return }
         showsEmojiKeyboard = false
         textView?.showsEmoji = false
         textView?.panelView = nil
@@ -539,6 +568,7 @@ final class ComposerTextView: UITextView {
     var showsEmoji = false
     /// The panel's GIFs or Stickers view, standing where the keyboard stands (LIME-279); nil is the system keyboard.
     var panelView: UIView?
+    static var noAccessory: UIView { let view = UIView(frame: CGRect(x: 0, y: 0, width: 1, height: 0)); view.isUserInteractionEnabled = false; return view }
     override var inputView: UIView? {
         get { panelView ?? super.inputView }
         set { super.inputView = newValue }

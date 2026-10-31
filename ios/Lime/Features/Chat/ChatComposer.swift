@@ -149,8 +149,11 @@ struct ChatComposer: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if model.showsStrip {
                 FormattingToolbar(model: model).transition(.opacity)
-            } else if model.showsEmojiKeyboard && model.hasPanel {
-                ComposerPanelTabs(model: model) { model.closePanel(); showingGIFs = true }.transition(.opacity)
+            } else if model.searching, model.hasPanel {
+                ComposerPanelSearch(model: model, tab: model.panelTab) { item in model.endSearch(reopen: false); onSendAttachments?([item], "") }.transition(.opacity)
+            } else if model.showsEmojiKeyboard && model.hasPanel && model.panelTab == .emoji {
+                // Over the emoji keyboard the tabs are the panel's top edge; on GIFs and Stickers they are inside the panel itself.
+                ComposerPanelTabs(model: model).transition(.opacity)
             }
         }
         .background { if model.expanded { Theme.canvas } }
@@ -215,11 +218,13 @@ struct ChatComposer: View {
         guard onSendAttachments != nil else { model.makePanelView = nil; model.onAdaptiveGlyphs = nil; return }
         let environmentStore = store
         model.makePanelView = { [weak model] tab, height in
-            let content = ComposerPanelContent(tab: tab) { item in
-                model?.closePanel()
+            guard let model else { return nil }
+            let content = ComposerPanelContent(tab: tab, model: model, onSend: { item in
+                model.closePanel()
                 onSendAttachments?([item], "")
-            }
-            return ComposerPanelInputView(content: AnyView(content.environment(environmentStore)), height: height)
+            }, onManage: { model.closePanel(); showingGIFs = true })
+            // The tab row is inside this panel, so it is as tall as the keyboard and the row that stood above it: switching tabs never moves anything.
+            return ComposerPanelInputView(content: AnyView(content.environment(environmentStore)), height: height + composerPanelTopHeight)
         }
         model.onAdaptiveGlyphs = { datas in
             Task {

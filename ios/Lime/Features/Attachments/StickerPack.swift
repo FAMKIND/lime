@@ -65,10 +65,11 @@ struct StickerThumb: View {
     let sticker: LimeSticker
     @State private var image: UIImage?
     var body: some View {
-        ZStack {
+        Color.clear.overlay {
             Theme.surface
             if let image { Image(uiImage: image).resizable().scaledToFill() }
         }
+        .clipped()
         .task(id: sticker.id) {
             if let url = sticker.url, let data = try? Data(contentsOf: url) { image = GIF.firstFrame(data) }
         }

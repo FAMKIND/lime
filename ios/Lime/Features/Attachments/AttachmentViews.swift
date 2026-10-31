@@ -51,7 +51,14 @@ struct AttachmentStack: View {
     @ViewBuilder
     private var album: some View {
         let width: CGFloat = 248
-        if images.count == 1, let only = images.first {
+        if images.count == 1, let only = images.first, only.isSticker {
+            // A sticker sits bare in the chat: no frame behind it, no corners cut, no badge, one fixed size.
+            ImageTile(item: only, uploading: uploading, bare: true)
+                .frame(width: 160, height: 160)
+                .mediaTap { openPicture(0) }
+                .accessibilityLabel("Sticker")
+                .accessibilityIdentifier("attachment-image-\(only.id)")
+        } else if images.count == 1, let only = images.first {
             let aspect = min(max(only.aspect, 0.6), 1.7)
             ImageTile(item: only, uploading: uploading)
                 .frame(width: width, height: width / aspect)
@@ -120,6 +127,8 @@ extension View {
 struct ImageTile: View {
     let item: AttachmentItem
     var uploading = false
+    /// A sticker: nothing behind it and no GIF badge (LIME-279b).
+    var bare = false
     @Environment(ConversationStore.self) private var store
     @State private var full: UIImage?
     /// An animated GIF (LIME-206): the file's bytes, played a frame at a time; still with Reduce Motion until the person taps play.
@@ -132,13 +141,13 @@ struct ImageTile: View {
 
     var body: some View {
         ZStack {
-            Theme.surface
+            if !bare { Theme.surface }
             if let gifData {
                 GIFView(data: gifData, playing: !reduceMotion || gifPlaying)
-                gifBadge
+                if !bare { gifBadge }
             } else if let full {
                 Image(uiImage: full).resizable().scaledToFill()
-                if GIF.isGIF(mime: item.mime) { gifBadge }
+                if GIF.isGIF(mime: item.mime), !bare { gifBadge }
             } else if let thumb = UIImage(data: item.thumb) {
                 Image(uiImage: thumb).resizable().scaledToFill().blur(radius: 8).clipped()
             }
