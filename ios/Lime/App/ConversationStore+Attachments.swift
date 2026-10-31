@@ -23,8 +23,8 @@ extension ConversationStore {
 
     func sendAttachmentsNow(_ items: [OutgoingAttachment], caption: String, in id: Conversation.ID, replyTo root: String? = nil) async {
         let text = caption.trimmingCharacters(in: .whitespacesAndNewlines)
-        // A GIF I send is saved to my GIFs by itself (LIME-207).
-        for item in items where GIF.isGIF(mime: item.mime) { Task { await saveMyGIF(item.bytes, messageText: text) } }
+        // A GIF I send is saved to my GIFs by itself (LIME-207); lime's own stickers are not (they are always there: LIME-209b).
+        for item in items where GIF.isGIF(mime: item.mime) && !item.name.hasPrefix(StickerPack.namePrefix) { Task { await saveMyGIF(item.bytes, messageText: text) } }
         #if DEBUG
         if isDemo { demoSendAttachments(items, caption: text, in: id, replyTo: root); return }
         #endif

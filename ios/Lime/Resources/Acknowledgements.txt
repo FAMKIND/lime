@@ -69,6 +69,8 @@ sold on its own. The copyright notice of each:
   Copyright 2025 The Mozilla Text Project Authors (https://github.com/mozilla/mozilla-text-type)
   Copyright 2020 The Newsreader Project Authors (http://github.com/productiontype/Newsreader)
 
+lime's stickers (Settings, My GIFs) are drawn by lime in code; their words are set in Lexend Bold, listed above.
+
 Copyright 2020-2024 The Atkinson Hyperlegible Next Project Authors (https://github.com/googlefonts/atkinson-hyperlegible-next)
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.

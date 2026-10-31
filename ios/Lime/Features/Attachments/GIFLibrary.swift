@@ -145,6 +145,9 @@ struct MyGIFsSheet: View {
     @State private var wordsText = ""
     @State private var notice: String?
 
+    /// lime's stickers that match the search (all of them with nothing typed), first (LIME-209b).
+    private var stickers: [LimeSticker] { StickerPack.matching(query.trimmingCharacters(in: .whitespacesAndNewlines)) }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -156,6 +159,27 @@ struct MyGIFsSheet: View {
                 .padding(.horizontal, 14).frame(minHeight: 44).background(Theme.surface, in: Capsule()).padding(.horizontal, 16).padding(.top, 8)
                 if let notice { Text(notice).font(Theme.caption).foregroundStyle(Theme.textSecondary).padding(.top, 8).accessibilityIdentifier("gif-notice") }
                 ScrollView {
+                    if !stickers.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("lime").font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.textSecondary).accessibilityAddTraits(.isHeader)
+                                .accessibilityIdentifier("sticker-row-title")
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    ForEach(stickers) { sticker in
+                                        Button { sendSticker(sticker) } label: {
+                                            StickerThumb(sticker: sticker).frame(width: 96, height: 96)
+                                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous)).contentShape(Rectangle())
+                                        }
+                                        .buttonStyle(.plain)
+                                        .accessibilityLabel(sticker.label).accessibilityHint("Sends it")
+                                        .accessibilityIdentifier("sticker-cell-\(sticker.id)")
+                                    }
+                                }
+                            }
+                            .accessibilityIdentifier("sticker-row")
+                        }
+                        .padding(.horizontal, 16).padding(.top, 14)
+                    }
                     if gifs.isEmpty && loaded {
                         Text(query.isEmpty ? "Save a GIF from a chat (touch and hold it), or tap + to add one." : "No GIFs match “\(query)”.")
                             .font(Theme.body).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center).padding(.horizontal, 40).padding(.top, 50)
@@ -214,6 +238,12 @@ struct MyGIFsSheet: View {
         .accessibilityAction(named: "Remove") { Task { await store.removeMyGIF(gif.id) } }
     }
 
+    private func sendSticker(_ sticker: LimeSticker) {
+        guard let item = StickerPack.attachment(sticker) else { notice = GIF.tooBigMessage; return }
+        dismiss()
+        onSend(item, "")
+    }
+
     private func send(_ gif: MyGif) async {
         guard let data = await store.myGIFData(gif.id), let made = try? GIF.attachment(data, name: "GIF.gif") else { notice = GIF.tooBigMessage; return }
         await store.touchMyGIF(gif.id)
@@ -258,9 +288,19 @@ struct MyGIFsSettingsScreen: View {
     @Environment(ConversationStore.self) private var store
     @State private var usage: MyGifUsage?
     @State private var confirming = false
+    @AppStorage(StickerPack.shownKey) private var showStickers = true
 
     var body: some View {
         SettingsPage(title: "My GIFs") {
+            SettingsCard {
+                Toggle(isOn: $showStickers) {
+                    Text("Show lime\u{2019}s stickers").font(Theme.body).foregroundStyle(Theme.text)
+                }
+                .tint(Theme.accent)
+                .padding(.horizontal, 18).frame(minHeight: 58)
+                .accessibilityIdentifier("my-gifs-show-stickers")
+            }
+            SettingsFootnote(text: "24 animated stickers drawn by lime, at the top of the GIF button and when you type /. They are part of the app.")
             SettingsCard {
                 HStack {
                     Text("GIFs").font(Theme.body).foregroundStyle(Theme.text)
@@ -303,15 +343,22 @@ struct GIFSlashStrip: View {
     @State private var gifs: [MyGif] = []
     @State private var loaded = false
 
+    /// lime's stickers that match, at most 12 with my GIFs: for the words typed they come first, for a bare "/" my recent GIFs do.
+    private var stickers: [LimeSticker] {
+        let found = StickerPack.matching(query)
+        return Array(found.prefix(query.isEmpty ? max(0, 12 - gifs.count) : 12))
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if gifs.isEmpty && loaded {
+            if gifs.isEmpty && stickers.isEmpty && loaded {
                 Text(query.isEmpty ? "No saved GIFs yet. Save GIFs from chats or add them in the GIF button." : "No GIFs for \u{2018}\(query)\u{2019}. Save GIFs from chats or add them in the GIF button.")
                     .font(Theme.secondary).foregroundStyle(Theme.textSecondary).fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("gif-slash-empty")
-            } else if !gifs.isEmpty {
+            } else if !gifs.isEmpty || !stickers.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
+                        if !query.isEmpty { stickerButtons }
                         ForEach(gifs, id: \.id) { gif in
                             Button { Task { await pick(gif) } } label: {
                                 SlashThumb(id: gif.id).frame(width: 72, height: 72).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -320,6 +367,7 @@ struct GIFSlashStrip: View {
                             .accessibilityLabel([gif.words, gif.frameText, gif.messageText].first { !$0.isEmpty }.map { "GIF, \($0)" } ?? "GIF").accessibilityHint("Sends it")
                             .accessibilityIdentifier("gif-slash-\(gif.id)")
                         }
+                        if query.isEmpty { stickerButtons }
                     }
                 }
                 .accessibilityIdentifier("gif-slash-strip")
@@ -328,10 +376,22 @@ struct GIFSlashStrip: View {
         .padding(.horizontal, 6).padding(.top, 8)
         .task(id: "\(query)|\(store.myGIFRevision)") {
             let found = await store.myGIFs(matching: query)
-            gifs = Array(found.prefix(12))
+            gifs = Array(found.prefix(query.isEmpty ? 12 : max(0, 12 - min(12, StickerPack.matching(query).count))))
             loaded = true
-            let said = gifs.isEmpty ? "No GIFs for \(query)" : "\(gifs.count) \(gifs.count == 1 ? "GIF" : "GIFs")\(query.isEmpty ? "" : " for \(query)")"
+            let total = gifs.count + stickers.count
+            let said = total == 0 ? "No GIFs for \(query)" : "\(total) \(total == 1 ? "GIF" : "GIFs")\(query.isEmpty ? "" : " for \(query)")"
             UIAccessibility.post(notification: .announcement, argument: said)
+        }
+    }
+
+    private var stickerButtons: some View {
+        ForEach(stickers) { sticker in
+            Button { if let item = StickerPack.attachment(sticker) { onPick(item) } } label: {
+                StickerThumb(sticker: sticker).frame(width: 72, height: 72).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .buttonStyle(.plain).frame(minWidth: 44, minHeight: 44)
+            .accessibilityLabel(sticker.label).accessibilityHint("Sends it")
+            .accessibilityIdentifier("sticker-slash-\(sticker.id)")
         }
     }
 

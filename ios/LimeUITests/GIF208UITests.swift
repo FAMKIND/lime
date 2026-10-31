@@ -46,9 +46,9 @@ final class GIF208UITests: LimeUITestCase {
 
     func testSendingASlashMessageWithoutPickingSendsTheTextAsTyped() {
         let (app, field) = chat()
-        field.tap(); field.typeText("/hello")
+        field.tap(); field.typeText("/hullo")   // not "/hello": lime's Hi! sticker answers that (209b)
         XCTAssertTrue(any(app, "gif-slash-empty").waitForExistence(timeout: 5))
         app.buttons["send-button"].tap()
-        XCTAssertTrue(app.staticTexts["/hello"].waitForExistence(timeout: 8), "the text went as typed")
+        XCTAssertTrue(app.staticTexts["/hullo"].waitForExistence(timeout: 8), "the text went as typed")
     }
 }
