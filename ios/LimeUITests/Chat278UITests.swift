@@ -14,7 +14,7 @@ final class Chat278UITests: LimeUITestCase {
 
     private func chip(_ app: XCUIApplication, _ message: String, _ emoji: String) -> XCUIElement { any(app, "reaction-chip-\(message)-\(emoji)") }
 
-    func testAShortBubblesReactionCirclesSitOnItsBottomEdgeFromItsCorner() {
+    func testTheFirstCircleSitsAtTheInnerCornerOnTheBubblesBottomEdge() {
         let app = chat()
         let first = chip(app, "s2", "😂")
         XCTAssertTrue(first.waitForExistence(timeout: 10))
@@ -23,32 +23,36 @@ final class Chat278UITests: LimeUITestCase {
         XCTAssertLessThan(first.frame.minY, bubble.frame.maxY, "a circle overlaps the bubble's bottom edge")
         XCTAssertGreaterThan(first.frame.maxY, bubble.frame.maxY, "and hangs below it")
         XCTAssertLessThan(abs(first.frame.midY - bubble.frame.maxY), 8, "about half of it on the bubble")
-        XCTAssertLessThan(first.frame.minX, bubble.frame.midX + 20, "starting at my bubble's inner (leading) corner")
+        XCTAssertEqual(first.frame.minX, bubble.frame.minX - 2, accuracy: 3, "the first circle is at my bubble's inner (left) corner")
         XCTAssertTrue(first.label.contains("😂") && first.label.contains("1 person"), first.label)
     }
 
-    /// LIME-278c: four reactions on a short bubble are four circles, each with its own count, all on the screen, flowing toward the middle.
-    func testSeveralReactionsOnAShortBubbleAreOneCirclePerEmojiWithTheirOwnCountsAllOnScreen() {
+    /// LIME-278d: circles are added toward the sender's side, never past the bubble's inner edge, never off the screen; each has its own count.
+    func testCirclesGrowTowardTheSendersSideFromTheInnerCornerAndNeverPastIt() {
         let app = chat()
         let window = app.windows.firstMatch.frame
         XCTAssertTrue(chip(app, "s2", "😂").waitForExistence(timeout: 10))
         let own = app.descendants(matching: .any).matching(identifier: "own-bubble").element(boundBy: 0)
-        for emoji in ["😂", "👍", "❤️", "🎉"] {
-            let c = chip(app, "s2", emoji)
-            XCTAssertTrue(c.exists, emoji)
-            XCTAssertGreaterThanOrEqual(c.frame.minX, 0, emoji)
-            XCTAssertLessThanOrEqual(c.frame.maxX, window.maxX, "\(emoji) is on the screen")
+        let ownCircles = ["😂", "👍", "❤️", "🎉"].map { chip(app, "s2", $0) }
+        for c in ownCircles {
+            XCTAssertTrue(c.exists, c.label)
+            XCTAssertGreaterThanOrEqual(c.frame.minX, own.frame.minX - 5, "mine: nothing past the inner (left) edge into the middle")
+            XCTAssertLessThanOrEqual(c.frame.maxX, window.maxX, "on the screen")
         }
-        XCTAssertTrue(chip(app, "s2", "❤️").label.contains("3 people"), "❤️ has its own count of 3")
-        XCTAssertTrue(chip(app, "s2", "👍").label.contains("including you"), "mine says so")
-        XCTAssertLessThan(chip(app, "s2", "🎉").frame.minX, chip(app, "s2", "😂").frame.minX, "later ones go toward the middle")
-        XCTAssertLessThan(chip(app, "s2", "🎉").frame.minX, own.frame.minX, "past the bubble's corner, into the screen")
-        // Someone else's short bubble: the circles flow toward the middle too, never past the right edge.
-        let theirs = chip(app, "s1", "🙏")
-        XCTAssertTrue(theirs.exists)
-        XCTAssertLessThanOrEqual(theirs.frame.maxX, window.maxX)
+        XCTAssertLessThan(ownCircles[0].frame.minX, ownCircles[1].frame.minX, "the second is toward my side (right) of the first")
+        XCTAssertTrue(ownCircles[2].label.contains("3 people"), "❤️ has its own count of 3")
+        XCTAssertTrue(ownCircles[1].label.contains("including you"), "mine says so")
+        // Someone else's bubble: the first at its inner (right) corner, the rest toward their avatar (left); never past the inner edge.
+        let theirBubble = app.descendants(matching: .any).matching(identifier: "other-bubble").element(boundBy: 0)
+        let theirs = ["❤️", "👍", "😮", "🙏"].map { chip(app, "s1", $0) }
+        XCTAssertTrue(theirs[0].exists)
+        for c in theirs where c.exists {
+            XCTAssertLessThanOrEqual(c.frame.maxX, theirBubble.frame.maxX + 5, "theirs: nothing past the inner (right) edge")
+            XCTAssertGreaterThanOrEqual(c.frame.minX, 0)
+        }
+        if theirs[1].exists { XCTAssertGreaterThan(theirs[0].frame.minX, theirs[1].frame.minX - 1, "the second is toward their avatar (left)") }
         // Tapping one is the who-reacted card, with the people stacked under each reaction.
-        chip(app, "s2", "❤️").tap()
+        ownCircles[2].tap()
         XCTAssertTrue(app.staticTexts["You"].waitForExistence(timeout: 5) || app.staticTexts["Sam Park"].waitForExistence(timeout: 5), "who reacted")
     }
 

@@ -224,8 +224,10 @@ struct MessageActionsHost: ViewModifier {
                             state.menu = nil
                             state.picking = message
                         } label: {
-                            Text("\u{1F60A}").font(.system(size: 22)).frame(width: 36, height: 36).background(Theme.surface, in: Circle())
-                                .overlay(alignment: .bottomTrailing) { Image(systemName: "plus.circle.fill").font(.system(size: 13)).foregroundStyle(Theme.text, Theme.canvas).offset(x: 3, y: 3) }
+                            // A plain plus in a circle the size of the emoji (LIME-278d).
+                            Image(systemName: "plus").font(.system(size: 22, weight: .semibold)).foregroundStyle(Theme.text)
+                                .frame(width: 40, height: 44)
+                                .background(Theme.surface, in: Circle().inset(by: 2))
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("More emoji").accessibilityIdentifier("react-more")

@@ -1,7 +1,7 @@
 import XCTest
 @testable import Lime
 
-/// LIME-278c: where the reaction circles go.
+/// LIME-278c and LIME-278d: where the reaction circles go.
 final class ReactionPlan278cTests: XCTestCase {
     func testChipsPerRowFollowTheRoomAndNeverDropBelowOne() {
         XCTAssertEqual(ReactionPlan.perRow(room: 0), 1)
@@ -16,26 +16,37 @@ final class ReactionPlan278cTests: XCTestCase {
         XCTAssertEqual(ReactionPlan.circles(kinds: 9), 7, "six circles and one +3")
     }
 
-    func testAShortBubbleFlowsTowardTheMiddleOnOneLineOnEveryPhone() {
-        for width in [320.0, 375, 393, 430] {
-            for own in [true, false] {
-                let plan = ReactionPlan.layout(circles: 4, bubbleWidth: 40, own: own, screenWidth: width)
-                XCTAssertEqual(plan.flow, .middle)
-                XCTAssertEqual(plan.rows, 1, "4 circles fit on a \(width) pt screen (own: \(own))")
+    func testTheFirstCircleIsAtTheInnerCornerAndTheRestGrowTowardTheSendersSide() {
+        let width: CGFloat = 200
+        let mine = (0..<4).map { ReactionPlan.x(index: $0, bubbleWidth: width, own: true, perRow: 4) }
+        XCTAssertEqual(mine[0], ReactionPlan.inset, "mine start at the left (inner) corner")
+        XCTAssertTrue(zip(mine, mine.dropFirst()).allSatisfy { $0 < $1 }, "and go right, toward my side: \(mine)")
+        let theirs = (0..<4).map { ReactionPlan.x(index: $0, bubbleWidth: width, own: false, perRow: 4) }
+        XCTAssertEqual(theirs[0] + ReactionPlan.chip, width - ReactionPlan.inset, "theirs start at the right (inner) corner")
+        XCTAssertTrue(zip(theirs, theirs.dropFirst()).allSatisfy { $0 > $1 }, "and go left, toward their avatar: \(theirs)")
+        XCTAssertGreaterThanOrEqual(theirs.min()!, 0, "never off the bubble's outer end for a wide enough bubble")
+    }
+
+    func testAnyCountStartsAtTheCornerAndNeverPassesTheInnerEdge() {
+        for width in [44.0, 90, 200, 300] {
+            for count in [1, 2, 3, 5, 7] {
+                let plan = ReactionPlan.layout(circles: count, bubbleWidth: width)
+                for index in 0..<count {
+                    let mine = ReactionPlan.x(index: index, bubbleWidth: width, own: true, perRow: plan.perRow)
+                    XCTAssertGreaterThanOrEqual(mine, 0, "mine never go left of the bubble (width \(width), \(count) circles)")
+                    let theirs = ReactionPlan.x(index: index, bubbleWidth: width, own: false, perRow: plan.perRow)
+                    XCTAssertLessThanOrEqual(theirs + ReactionPlan.chip, width, "theirs never go right of the bubble")
+                }
             }
         }
     }
 
-    func testALongBubbleKeepsTheCirclesOnOneLineAlongItself() {
-        let plan = ReactionPlan.layout(circles: 4, bubbleWidth: 300, own: true, screenWidth: 393)
-        XCTAssertEqual(plan.flow, .along, "no room toward the middle: along the bubble")
-        XCTAssertEqual(plan.rows, 1)
-    }
-
-    func testWhenNeitherSideHasRoomTheyWrapOntoMoreLinesNeverOffTheScreen() {
-        let plan = ReactionPlan.layout(circles: 7, bubbleWidth: 150, own: true, screenWidth: 320)
-        XCTAssertGreaterThan(plan.rows, 1)
-        XCTAssertEqual(plan.rows, (7 + plan.perRow - 1) / plan.perRow)
-        XCTAssertGreaterThan(ReactionPlan.hang(rows: plan.rows), ReactionPlan.hang(rows: 1), "the room under the bubble grows with the rows")
+    func testTheyWrapAtTheBubblesOuterEdgeAndTheRoomUnderItGrows() {
+        let small = ReactionPlan.layout(circles: 4, bubbleWidth: 44)
+        XCTAssertEqual(small.perRow, 2, "a small bubble holds two, with the little overhang")
+        XCTAssertEqual(small.rows, 2)
+        let wide = ReactionPlan.layout(circles: 4, bubbleWidth: 300)
+        XCTAssertEqual(wide.rows, 1, "a wide one keeps them on one line")
+        XCTAssertGreaterThan(ReactionPlan.hang(rows: small.rows), ReactionPlan.hang(rows: wide.rows))
     }
 }

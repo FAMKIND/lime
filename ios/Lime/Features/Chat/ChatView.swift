@@ -995,7 +995,7 @@ struct MessageBubble: View {
 
     /// How far the reaction circles hang below the bubble, a line more for each row they wrap onto.
     private var reactionHang: CGFloat {
-        let plan = ReactionPlan.layout(circles: ReactionPlan.circles(kinds: message.reactions.count), bubbleWidth: bubbleWidth, own: message.isOwn, screenWidth: UIScreen.main.bounds.width)
+        let plan = ReactionPlan.layout(circles: ReactionPlan.circles(kinds: message.reactions.count), bubbleWidth: bubbleWidth)
         return ReactionPlan.hang(rows: plan.rows)
     }
 
