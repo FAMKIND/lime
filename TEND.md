@@ -9600,3 +9600,7 @@ Reactions: one round chip per emoji, with its own count, attached to the bubble.
 - **Gate (13 mini):** react ❤️, 👍, 😂, 🎉 to "Hi" and have Jean add ❤️: ❤️ with a 2, 👍, 😂, 🎉 as circles on the bubble's bottom edge, nothing cut off; a long message's reactions stay on one line; tap a circle: the card with avatars; long-press: the glass picker with your current reaction in an accent circle.
 
 - **Installed (278c):** the **13 mini** and the **iPad** (one attempt each, both took it). **Jean's 12 mini refused** (CoreDevice error 4016: it was locked or its screen had gone off when I tried; not retried). Build: `$TMPDIR/dd29/Build/Products/Debug-iphoneos/Lime.app` (this commit). This build also carries 209b, 279, 280 and 167 for the 13 mini (it had none of them), so **167 still needs Jean's phone on it**.
+
+## LIME-209c
+
+The Brain break basketball's seams. **Brief:** LIME-209c. In `tools/stickers/make-stickers.swift` the ball is redrawn: one seam up and down, one across, and a curve on each side bulging toward the middle, all **clipped to the ball's circle** and drawn inside the rotating transform, so they turn with the ball as it bounces. (The old arcs used stray centres and poked outside it.) Regenerated: only `brain-break.gif` changed (75 KB; the generator is deterministic) and the contact sheet; a crop of the ball is `docs/qa-shots/209c/brain-break.png`. No app code. **Gate:** open the Brain break sticker: the seams stay on the ball and turn with it.

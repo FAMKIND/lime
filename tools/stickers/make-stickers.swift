@@ -410,11 +410,15 @@ let stickers: [Sticker] = [
         c.setFillColor(color(0x2A1A4A, 0.18)); oval(c, 160, 172, 44 - h * 14, 8 - h * 3)
         c.saveGState(); c.translateBy(x: 160, y: y + (1 - h) * 6); c.scaleBy(x: 1 + (1 - h) * 0.08, y: 1 - (1 - h) * 0.08); c.rotate(by: t * tau)
         c.setFillColor(color(0xF08A24)); circle(c, 0, 0, 44)
-        c.setStrokeColor(color(0x7A3A0A)); c.setLineWidth(4); c.setLineCap(.round)
-        c.move(to: CGPoint(x: -44, y: 0)); c.addLine(to: CGPoint(x: 44, y: 0)); c.move(to: CGPoint(x: 0, y: -44)); c.addLine(to: CGPoint(x: 0, y: 44))
-        c.addArc(center: CGPoint(x: -52, y: 0), radius: 34, startAngle: -.pi / 2.4, endAngle: .pi / 2.4, clockwise: false)
-        c.move(to: CGPoint(x: 18, y: -40)); c.addArc(center: CGPoint(x: 52, y: 0), radius: 34, startAngle: .pi - .pi / 2.4, endAngle: .pi + .pi / 2.4, clockwise: false)
-        c.strokePath()
+        // The seams are cut off at the ball's edge and turn with it: one up and down, one across, and a curve on each side bulging toward the middle.
+        c.saveGState()
+        c.addEllipse(in: CGRect(x: -44, y: -44, width: 88, height: 88)); c.clip()
+        c.setStrokeColor(color(0x7A3A0A)); c.setLineWidth(4); c.setLineCap(.butt)
+        c.move(to: CGPoint(x: -44, y: 0)); c.addLine(to: CGPoint(x: 44, y: 0))
+        c.move(to: CGPoint(x: 0, y: -44)); c.addLine(to: CGPoint(x: 0, y: 44)); c.strokePath()
+        c.strokeEllipse(in: CGRect(x: -62 - 36, y: -36, width: 72, height: 72))
+        c.strokeEllipse(in: CGRect(x: 62 - 36, y: -36, width: 72, height: 72))
+        c.restoreGState()
         c.restoreGState()
     },
     Sticker(file: "field-trip", words: ["Field trip!"], find: ["field trip", "trip"], card: 0xC4EFA6, ink: 0x1F3A14, motion: .hop) { c, t in
