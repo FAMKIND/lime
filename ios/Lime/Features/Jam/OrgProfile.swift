@@ -301,7 +301,7 @@ struct OrgProfileView: View {
     private var legacyItems: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarTrailing) {
             if editingNow { editCoverButton; doneButton } else {
-                if isMe { editButton }
+                if isMe { themeButton; editButton }
                 moreMenu
             }
         }
@@ -318,11 +318,19 @@ struct OrgProfileView: View {
             ToolbarItem(placement: .topBarTrailing) { doneButton }
         } else {
             if isMe {
+                CircleToolbarItem { themeButton }
+                ToolbarSpacer(.fixed, placement: .topBarTrailing)
                 ToolbarItem(placement: .topBarTrailing) { editButton }
                 ToolbarSpacer(.fixed, placement: .topBarTrailing)
             }
             CircleToolbarItem { moreMenu }
         }
+    }
+
+    /// Left of Edit (LIME-277f): the band's cover and colour without entering Edit first.
+    private var themeButton: some View {
+        Button { coverSheet = true } label: { ToolIconLabel(symbol: "paintpalette") }
+            .accessibilityLabel("Cover and colour").accessibilityIdentifier("org-theme")
     }
 
     private var editButton: some View {

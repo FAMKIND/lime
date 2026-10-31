@@ -94,6 +94,7 @@ struct ProfileView: View {
     @State private var photoSheet = false
     @State private var linksSheet = false
     @State private var backgroundSheet = false
+    @State private var themeSheet = false
     @State private var hideError: String?
     /// The top safe area (status bar and header) the photo reaches up into.
     @State private var topInset: CGFloat = 0
@@ -213,6 +214,7 @@ struct ProfileView: View {
         .sheet(isPresented: $photoSheet) { EditSheet { ProfilePhotoScreen() } }
         .sheet(isPresented: $linksSheet) { EditSheet { LinksScreen() } }
         .sheet(isPresented: $backgroundSheet) { EditSheet { BackgroundScreen() } }
+        .sheet(isPresented: $themeSheet) { EditSheet { CustomizeScreen() } }   // LIME-277f
         .sheet(isPresented: $labelling) {
             LabelSheet(name: displayName, text: $labelText) { saved in
                 labelling = false
@@ -549,7 +551,7 @@ struct ProfileView: View {
     private var legacyItems: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarTrailing) {
             if route.isMe {
-                if editing { editCoverButton; doneButton } else { editButton }
+                if editing { editCoverButton; doneButton } else { themeButton; editButton }
             } else if accepted {
                 Button { store.openFromNotification("dm:\(route.userID)", thread: nil) } label: { ToolIconLabel(symbol: "message") }
                     .accessibilityLabel("Message \(displayName)").accessibilityIdentifier("profile-message")
@@ -573,6 +575,8 @@ struct ProfileView: View {
                 ToolbarSpacer(.fixed, placement: .topBarTrailing)
                 ToolbarItem(placement: .topBarTrailing) { doneButton }
             } else {
+                CircleToolbarItem { themeButton }
+                ToolbarSpacer(.fixed, placement: .topBarTrailing)
                 ToolbarItem(placement: .topBarTrailing) { editButton }
                 ToolbarSpacer(.fixed, placement: .topBarTrailing)
                 CircleToolbarItem { moreMenu }
@@ -599,6 +603,12 @@ struct ProfileView: View {
     /// Done turns the editor back into your profile (LIME-225).
     private var doneButton: some View {
         Button("Done") { editing = false }.fontWeight(.semibold).accessibilityLabel("Done editing").accessibilityIdentifier("profile-done")
+    }
+
+    /// Left of Edit (LIME-277f): the accent and background, one tap from your own profile.
+    private var themeButton: some View {
+        Button { themeSheet = true } label: { ToolIconLabel(symbol: "paintpalette") }
+            .accessibilityLabel("Customize appearance").accessibilityIdentifier("profile-theme")
     }
 
     private var editButton: some View {

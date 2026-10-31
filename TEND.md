@@ -9274,3 +9274,13 @@ Eight backgrounds. **Brief:** LIME-277b. iOS only; uses 277a's engine and guard.
 - **Gate:** Settings → Customize: try each background on a phone and the iPad, light and dark: Messages, a chat, Calls, jam, Settings. Text must be easy to read everywhere (try Increase Contrast and Reduce Transparency in iOS Accessibility); Chalkboard makes the whole app dark; Living moves slowly.
 
 - **Installed (277a, 277b):** all three, the 13 mini, the iPad and Jean's 12 mini.
+
+## LIME-277f
+
+A theme button left of Edit. **Brief:** LIME-277f. iOS only: `ProfileView.swift`, `OrgProfile.swift`, `GroupDetailsView.swift`.
+
+- **Own profile:** a round `paintpalette` button (247c's 44 pt glass circle) immediately left of Edit; "Customize appearance" opens Settings → Customize (the 8 accents and 8 backgrounds) as a sheet with Done. 277c will repoint it at the Appearance screen.
+- **A band you own / a group you run:** the same button, "Cover and colour", opens its `CoverColourSheet` directly (no need to enter Edit first). Shown where Edit is shown (band owner; group owner or admin), never on someone else's profile or for members who can't edit. Before iOS 26 it joins the same toolbar group; on iOS 26 it is its own circle with the usual fixed spacer.
+- **Header:** Edit's neighbours are now ‹ … palette · Edit · ⋯ and nothing is squeezed (checked on the group page in the simulator). Editing state is unchanged (‹ · Edit Cover · Done).
+- **Tests:** UI `Theme277fUITests` (4, demo): the palette button is left of Edit and opens the accent pickers on your profile; absent on Sam's profile; opens the cover and colour sheet on a band you own and on a group you run. `Cover257UITests` and `Cover258UITests` still pass; no header ids changed.
+- **Gate:** your profile, a band you own and a group you run: the palette button sits left of Edit; your profile's opens the accents and backgrounds, the band's and group's open Cover and colour.

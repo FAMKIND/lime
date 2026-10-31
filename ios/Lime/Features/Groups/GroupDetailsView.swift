@@ -150,6 +150,8 @@ struct GroupDetailsView: View {
                 ToolbarItem(placement: .topBarTrailing) { doneButton }
             } else {
                 if details?.canRename == true {
+                    CircleToolbarItem { themeButton }
+                    ToolbarSpacer(.fixed, placement: .topBarTrailing)
                     ToolbarItem(placement: .topBarTrailing) { editButton }
                     ToolbarSpacer(.fixed, placement: .topBarTrailing)
                 }
@@ -158,12 +160,18 @@ struct GroupDetailsView: View {
         } else {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 if editingNow { editCoverButton; doneButton } else {
-                    if details?.canRename == true { editButton }
+                    if details?.canRename == true { themeButton; editButton }
                     moreMenu
                 }
             }
             ToolbarItem(placement: .topBarLeading) { if editingNow { backToGroup } }
         }
+    }
+
+    /// Left of Edit (LIME-277f): the group's cover and colour without entering Edit first.
+    private var themeButton: some View {
+        Button { coverSheet = true } label: { ToolIconLabel(symbol: "paintpalette") }
+            .accessibilityLabel("Cover and colour").accessibilityIdentifier("group-theme")
     }
 
     private var editButton: some View {
