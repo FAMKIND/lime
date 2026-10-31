@@ -9,6 +9,12 @@
 //   picture_get { jam_id }       -> { url, version }: a signed download URL, any signed-in user (404 if none).
 //   picture_remove { jam_id }    -> { ok }: deletes it. Ending a jam deletes it too.
 //   cover_put { jam_id, size } / cover_commit / cover_get / cover_remove: a public cover (LIME-258), like the picture, under `jam-cover-<jam_id>.jpg`; `tone_set { jam_id, tone }` sets the colour (0 to 7, or null).
+//   handover_offer { jam_id, new_writer_id } -> { ok }: the band's writer offers its publishing to another teacher (LIME-275). Never a teacher's own profile space (their oldest jam), never an ended
+//        band. One offer per band; a new one replaces the old. Nothing changes until the other teacher accepts.
+//   handover_cancel { jam_id } -> { ok }: the writer takes the offer back.
+//   handover_offers {} -> { offers: [{ jam_id, from_writer, title }] }: the offers made to ME.
+//   handover_accept { jam_id } -> { ok }: the named teacher takes the band: `writer_id` becomes theirs and the band's post ciphertext (blobs of class `jam`) is theirs too. 404 if there is no such offer.
+//   handover_decline { jam_id } -> { ok }: the named teacher turns it down.
 //   by_writer { writer_id }                              -> { jam, others }: that teacher's own (oldest live, not ended) page, or { jam: null }, and their other live pages (bands), oldest first, at most 20. Any signed-in user, the same trust
 //                                                           as reading their profile (the server learns that this account looked).
 
@@ -40,11 +46,20 @@ Deno.serve(handler(async (req) => {
     // LIME-254b: `jam` is the writer's own jam (the oldest); `others` are their other live pages (bands), oldest first, at most 20.
     return json({ jam: data?.[0] ?? null, others: data?.slice(1) ?? [] });
   }
+  if (body.action === "handover_offers") {
+    const { data: offers, error } = await admin().from("jam_handovers").select("jam_id, from_writer").eq("to_writer", me).limit(50);
+    if (error) throw new HttpError(500, "internal");
+    const ids = (offers ?? []).map((o) => o.jam_id);
+    const { data: jams } = ids.length ? await admin().from("jams").select("jam_id, title").in("jam_id", ids) : { data: [] };
+    return json({ offers: (offers ?? []).map((o) => ({ jam_id: o.jam_id, from_writer: o.from_writer, title: jams?.find((j) => j.jam_id === o.jam_id)?.title ?? "" })) });
+  }
   if (!isUuid(body.jam_id)) throw new HttpError(400, "bad_request", "jam_id must be a UUID.");
   const jamId = (body.jam_id as string).toLowerCase();
   const db = admin();
   const { data: existing } = await db.from("jams").select("jam_id, writer_id, ended_at").eq("jam_id", jamId).maybeSingle();
-  if (body.action !== "get" && body.action !== "picture_get" && body.action !== "cover_get" && existing && existing.writer_id !== me) throw new HttpError(409, "id_taken", "That jam belongs to someone else.");
+  // The new writer answers an offer on a jam that is not yet theirs.
+  const answersOffer = body.action === "handover_accept" || body.action === "handover_decline";
+  if (body.action !== "get" && body.action !== "picture_get" && body.action !== "cover_get" && !answersOffer && existing && existing.writer_id !== me) throw new HttpError(409, "id_taken", "That jam belongs to someone else.");
 
   switch (body.action) {
     case "set": {
@@ -155,6 +170,39 @@ Deno.serve(handler(async (req) => {
       const { error: endError } = await db.from("jams").update({ ended_at: new Date().toISOString(), post_count: 0, picture_version: null, cover_version: null }).eq("jam_id", jamId);
       if (endError) throw new HttpError(500, "internal");
       return json({ ok: true, removed: (posts ?? []).length });
+    }
+    case "handover_offer": {
+      if (!existing || existing.ended_at) throw new HttpError(404, "not_found", "No such jam.");
+      if (!isUuid(body.new_writer_id)) throw new HttpError(400, "bad_request", "new_writer_id must be a UUID.");
+      const to = (body.new_writer_id as string).toLowerCase();
+      if (to === me) throw new HttpError(400, "bad_request", "That is you.");
+      // My own profile space is the teacher, never a band (LIME-259, LIME-281): the oldest jam I write cannot be handed over.
+      const { data: oldest } = await db.from("jams").select("jam_id").eq("writer_id", me).order("created_at", { ascending: true }).limit(1).maybeSingle();
+      if (oldest?.jam_id === jamId) throw new HttpError(409, "own_space", "A profile space can't be handed over.");
+      const { data: person } = await db.auth.admin.getUserById(to);
+      if (!person?.user) throw new HttpError(404, "not_found", "No such teacher.");
+      // The new writer needs a space of their own first: the band must not become their oldest jam, which counts as their profile.
+      const { data: theirs } = await db.from("jams").select("jam_id").eq("writer_id", to).limit(1).maybeSingle();
+      if (!theirs) throw new HttpError(409, "no_space", "They need a profile space of their own first.");
+      const { error } = await db.from("jam_handovers").upsert({ jam_id: jamId, from_writer: me, to_writer: to, offered_at: new Date().toISOString() }, { onConflict: "jam_id" });
+      if (error) throw new HttpError(500, "internal");
+      return json({ ok: true });
+    }
+    case "handover_cancel": {
+      const { error } = await db.from("jam_handovers").delete().eq("jam_id", jamId).eq("from_writer", me);
+      if (error) throw new HttpError(500, "internal");
+      return json({ ok: true });
+    }
+    case "handover_decline": {
+      const { error } = await db.from("jam_handovers").delete().eq("jam_id", jamId).eq("to_writer", me);
+      if (error) throw new HttpError(500, "internal");
+      return json({ ok: true });
+    }
+    case "handover_accept": {
+      const { data: done, error } = await db.rpc("jam_handover_accept", { p_jam: jamId, p_to: me });
+      if (error) throw new HttpError(500, "internal");
+      if (!done) throw new HttpError(404, "not_found", "There is no offer for you on that band.");
+      return json({ ok: true });
     }
     default:
       throw new HttpError(400, "bad_request", "Unknown action.");
