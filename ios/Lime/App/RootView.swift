@@ -15,6 +15,9 @@ struct RootView: View {
             case .signedOut:
                 SignedOutView()
                     .id(session.onboardingGeneration)
+                    .overlay { if session.movedAway { MovedAwayNotice() } }
+            case .choosingMove:
+                MoveOfferView()
             case .signedIn:
                 SignedInView()
             }

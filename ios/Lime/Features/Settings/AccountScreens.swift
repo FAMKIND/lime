@@ -20,7 +20,9 @@ struct AccountScreen: View {
                 }
                 .padding(.horizontal, 18).frame(minHeight: 58)
                 Divider().overlay(Theme.hairline).padding(.leading, 60)
-                SettingsRow(symbol: "key", title: "Change Password", route: .changePassword, id: "account-change-password", showsDivider: false)
+                SettingsRow(symbol: "key", title: "Change Password", route: .changePassword, id: "account-change-password")
+                Divider().overlay(Theme.hairline).padding(.leading, 60)
+                SettingsRow(symbol: "iphone.and.arrow.forward", title: "Transfer to a new phone", route: .moveToNewPhone, id: "account-move", showsDivider: false)
             }
             SettingsFootnote(text: "Your email is only used to sign in and to send you codes. Other teachers never see it.")
             SettingsCard {

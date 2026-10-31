@@ -432,6 +432,8 @@ final class ConversationStore {
 
     /// A signed-in account has an account: a send is always queued, never kept local-only (the demo and tests have none).
     @ObservationIgnored var accountSignedIn = false
+    /// Moving to a new phone (LIME-272b): nothing is fetched or sent from this phone until the move ends, so nothing arrives after the copy.
+    @ObservationIgnored var movePaused = false
 
     /// Turns the local-only messages of a registered account into queued sends, in order, and delivers them. Each is converted once.
     func resendLocalMessages() async {
@@ -479,6 +481,7 @@ final class ConversationStore {
     /// Delivers what is waiting to be sent, then fetches the mailbox and refreshes the list. Calls
     /// that arrive while one is running are folded into one more round afterwards.
     func syncNow() async {
+        if movePaused { return }
         if link == nil || needsRegistration, let registrar { await registrar() }
         guard let core, let link else { return }
         if isSyncing { syncAgain = true; return }
@@ -523,7 +526,7 @@ final class ConversationStore {
 
     /// Sends what is queued (a message that failed is retried here).
     func deliverNow() async {
-        guard let core, let link else { return }
+        guard !movePaused, let core, let link else { return }
         publishStatus()
         do {
             let token: String

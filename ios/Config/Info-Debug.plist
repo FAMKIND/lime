@@ -10,5 +10,10 @@
 		<string>audio</string>
 		<string>voip</string>
 	</array>
+	<!-- LIME-272b: moving to a new phone finds the other phone by Bonjour. -->
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_lime-move._tcp</string>
+	</array>
 </dict>
 </plist>

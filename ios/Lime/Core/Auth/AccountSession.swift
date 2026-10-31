@@ -7,7 +7,7 @@ import UIKit
 @MainActor
 @Observable
 final class AccountSession {
-    enum Phase: Equatable { case launching, signedOut, signedIn }
+    enum Phase: Equatable { case launching, signedOut, choosingMove, signedIn }
 
     private(set) var phase: Phase = .launching
     private(set) var profile: Profile?
@@ -15,6 +15,11 @@ final class AccountSession {
     private(set) var maskedEmail: String?
     /// This account's user id, once the device is registered (tests use it).
     private(set) var userID: String?
+    /// Signed in on a phone that has no copy of this account while the account already has a phone (LIME-272b): waiting for "Transfer" or
+    /// "Start fresh". Nothing is saved until the person chooses, so quitting here signs in again from the start and never replaces keys by accident.
+    private(set) var pendingMove: PendingMove?
+    /// This phone just handed its account to a new phone: the signed-out screen says so once.
+    var movedAway = false
     /// Bumped on sign-out so the onboarding screens start fresh.
     private(set) var onboardingGeneration = 0
 
@@ -64,6 +69,13 @@ final class AccountSession {
             SessionKeychain.clear(service: sessionService)
             defaults.removeObject(forKey: Self.profileKey)
             store.wipe()
+        }
+        if arguments.contains("-lime-demo-move-offer") {
+            // UI tests (LIME-272b): the new phone's choice, with a scripted old phone.
+            MoveFactory.demo = true
+            pendingMove = PendingMove(tokens: AuthTokens(accessToken: "fake-access", refreshToken: "fake-refresh", expiresAt: Date().addingTimeInterval(86_400), userID: "test-user"), profile: nil, maskedEmail: nil)
+            phase = .choosingMove
+            return
         }
         if arguments.contains("-lime-skip-sign-in") {
             // UI tests: signed in, without a backend.
@@ -116,6 +128,15 @@ final class AccountSession {
 
     /// Both steps passed (and the profile exists): keep the session and register this device.
     func completeSignIn(tokens: AuthTokens, profile: Profile?, maskedEmail: String? = nil) async {
+        if await shouldOfferMove(tokens) {
+            pendingMove = PendingMove(tokens: tokens, profile: profile, maskedEmail: maskedEmail)
+            phase = .choosingMove
+            return
+        }
+        await finishSignIn(tokens: tokens, profile: profile, maskedEmail: maskedEmail)
+    }
+
+    private func finishSignIn(tokens: AuthTokens, profile: Profile?, maskedEmail: String?) async {
         // Each account has its own space (LIME-268): the same person coming back opens their locked store and keeps their keys; another
         // account opens its own and leaves this one intact.
         openSpace(for: tokens.userID)
@@ -128,6 +149,100 @@ final class AccountSession {
         await store.bootstrap()
         phase = .signedIn
         await registerDevice()
+    }
+
+    // MARK: Moving to a new phone (LIME-272b)
+
+    struct PendingMove {
+        let tokens: AuthTokens
+        let profile: Profile?
+        let maskedEmail: String?
+    }
+
+    /// True when this phone has no copy of the account and the server already lists a phone for it. A phone that cannot ask (no internet) starts
+    /// fresh as before; so does one that already holds the account's store (signed out earlier: 268).
+    private func shouldOfferMove(_ tokens: AuthTokens) async -> Bool {
+        guard let config, !hasLocalCopy(of: tokens.userID) else { return false }
+        let transport = URLSessionTransport(baseURL: config.url, apiKey: config.apiKey)
+        let body = (try? JSONSerialization.data(withJSONObject: ["user_id": tokens.userID])) ?? Data()
+        let answer: TransportResponse? = try? await Task.detached {
+            try transport.request(method: "POST", path: "/functions/v1/users-devices",
+                                  headers: [HeaderPair(name: "Authorization", value: "Bearer \(tokens.accessToken)"),
+                                            HeaderPair(name: "Content-Type", value: "application/json")], body: body)
+        }.value
+        guard let answer, answer.status == 200,
+              let json = try? JSONSerialization.jsonObject(with: answer.body) as? [String: Any],
+              let devices = json["devices"] as? [Any] else { return false }
+        return !devices.isEmpty
+    }
+
+    private func hasLocalCopy(of userID: String) -> Bool {
+        guard let location = try? StorageBootstrap.Location.live(for: userID) else { return false }
+        return FileManager.default.fileExists(atPath: location.databaseURL.path) && StorageKeychain.existingKey(service: location.keychainService) != nil
+    }
+
+    /// "Start fresh": the sign-in carries on as it always did (new keys; contacts are asked to accept them).
+    func startFresh() async {
+        guard let pending = pendingMove else { return }
+        pendingMove = nil
+        await continueSignIn(pending)
+    }
+
+    /// Back to the sign-in screens without signing in.
+    func cancelPendingMove() async {
+        guard let pending = pendingMove else { return }
+        pendingMove = nil
+        if let auth { await auth.signOut(tokens: pending.tokens) }
+        onboardingGeneration += 1
+        phase = .signedOut
+    }
+
+    /// The moved store is in place with its key in the Keychain: sign in with it. The same keys and device register again (nothing changes).
+    func moveArrived() async {
+        guard let pending = pendingMove else { return }
+        pendingMove = nil
+        await continueSignIn(pending)
+    }
+
+    private func continueSignIn(_ pending: PendingMove) async {
+        #if DEBUG
+        if MoveFactory.demo {
+            // The demo: signed in on the demo chats, no backend.
+            tokens = pending.tokens
+            await store.bootstrap(arguments: ProcessInfo.processInfo.arguments)
+            store.loadDemo(screen: nil)
+            phase = .signedIn
+            return
+        }
+        #endif
+        await finishSignIn(tokens: pending.tokens, profile: pending.profile, maskedEmail: pending.maskedEmail)
+    }
+
+    /// The account a move for the person signing in is for.
+    var pendingMoveUserID: String? { pendingMove?.tokens.userID }
+
+    /// The old phone is sending its account: no sync, no sending, no live listening, and the screen stays on, so nothing arrives after the copy.
+    func beginMove() async {
+        store.movePaused = true
+        await nudges?.stop()
+        UIApplication.shared.isIdleTimerDisabled = true
+    }
+
+    /// The move did not finish: carry on as before.
+    func endMove() async {
+        store.movePaused = false
+        UIApplication.shared.isIdleTimerDisabled = false
+        guard phase == .signedIn else { return }
+        await nudges?.start()
+        await store.syncNow()
+    }
+
+    /// The new phone has everything: this phone's store is already removed, so sign out, remove its key, and say so on the next screen.
+    func finishedMoving() async {
+        UIApplication.shared.isIdleTimerDisabled = false
+        store.movePaused = false
+        await signOut(removingData: true)
+        movedAway = true
     }
 
     /// Opens the space of the account that is signing in. A store from before spaces existed goes to the account that owned it (the recorded owner,
