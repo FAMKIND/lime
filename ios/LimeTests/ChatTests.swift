@@ -212,7 +212,7 @@ final class ChatTests: XCTestCase {
     }
 
     @MainActor
-    func testEndingASessionKeepsTheChatsAndASecondAccountNeverSeesThem() async throws {
+    func testEndingASessionKeepsTheChats() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("lime-end-\(UUID().uuidString)", isDirectory: true)
         let location = StorageBootstrap.Location(directory: directory, keychainService: "app.lime.tests.end.\(UUID().uuidString)")
         let sessionService = "app.lime.tests.end.session.\(UUID().uuidString)"
@@ -237,11 +237,7 @@ final class ChatTests: XCTestCase {
         await session.completeSignIn(tokens: mine, profile: nil)
         XCTAssertEqual(store.conversations.map(\.id), [id])
 
-        // A different person signing in on this phone never gets someone else's chats.
-        await session.endSession()
-        let other = AuthTokens(accessToken: "b", refreshToken: "r", expiresAt: Date().addingTimeInterval(3600), userID: "user-9")
-        await session.completeSignIn(tokens: other, profile: nil)
-        XCTAssertTrue(store.conversations.isEmpty)
+        // Another account gets its own space, not this one (LIME-268): that is AccountSpaces268Tests, since this test's store is one fixed location.
     }
 }
 

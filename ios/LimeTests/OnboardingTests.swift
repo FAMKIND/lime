@@ -317,7 +317,7 @@ final class SessionKeychainTests: XCTestCase {
 
 @MainActor
 final class AccountSessionTests: XCTestCase {
-    func testSigningOutClearsTheTokensTheProfileAndTheLocalStore() async throws {
+    func testSigningOutClearsTheTokensAndTheProfileAndKeepsTheStoreUnlessAskedToRemoveIt() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("lime-signout-\(UUID().uuidString)", isDirectory: true)
         let keychainService = "app.lime.tests.storage.\(UUID().uuidString)"
         let sessionService = "app.lime.tests.session.\(UUID().uuidString)"
@@ -340,13 +340,21 @@ final class AccountSessionTests: XCTestCase {
         XCTAssertEqual(store.conversations.count, 0, "a new account's Messages is empty")
         let generation = session.onboardingGeneration
 
+        // Signing out (LIME-268) keeps the chats and keys on the phone: only the tokens and the profile go.
         await session.signOut()
         XCTAssertEqual(session.phase, .signedOut)
         XCTAssertNil(SessionKeychain.load(service: sessionService), "the tokens are gone from the Keychain")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: location.databaseURL.path), "the local store is gone")
-        XCTAssertNil(StorageKeychain.existingKey(service: keychainService), "and its key")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: location.databaseURL.path), "the local store stays")
+        XCTAssertNotNil(StorageKeychain.existingKey(service: keychainService), "and its key")
         XCTAssertNil(session.profile)
         XCTAssertEqual(session.onboardingGeneration, generation + 1, "the onboarding starts fresh")
+
+        // "Remove from this phone" is the one path that deletes them.
+        await session.completeSignIn(tokens: tokens, profile: Profile(displayName: "Ada", username: nil, school: nil))
+        await session.signOut(removingData: true)
+        XCTAssertEqual(session.phase, .signedOut)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: location.databaseURL.path), "the local store is gone")
+        XCTAssertNil(StorageKeychain.existingKey(service: keychainService), "and its key")
     }
 }
 

@@ -13,7 +13,8 @@ final class JamFilterTests: XCTestCase {
         XCTAssertTrue(ok("quick", seg: .posts)); XCTAssertFalse(ok("article", seg: .posts)); XCTAssertFalse(ok("record", seg: .posts))
         XCTAssertTrue(ok("article", seg: .articles)); XCTAssertFalse(ok("quick", seg: .articles))
         XCTAssertTrue(ok("record", ["audio"], seg: .podcasts)); XCTAssertFalse(ok("quick", seg: .podcasts))
-        XCTAssertEqual(JamSegment.allCases.map(\.title), ["All", "Posts", "Articles", "Podcasts"])
+        XCTAssertEqual(JamSegment.allCases.map(\.title), ["All", "Posts", "Articles", "Podcasts", "Drafts", "Discover"])
+        XCTAssertFalse(ok("quick", seg: .drafts)); XCTAssertFalse(ok("quick", seg: .discover), "Drafts and Discover list other things, not the feed")
     }
 
     func testMediaNarrowsAndAnArticleIgnoresIt() {
