@@ -34,6 +34,7 @@ pub use store::search::{ConversationMatch, JamSearchHit, SearchHit};
 pub use store::threads::ThreadSummary;
 pub use store::link_preview::{LinkPreview, OutgoingPreview};
 pub use store::calls::{CallEvent, CallHistoryRecord};
+pub use store::my_gifs::{MyGif, MyGifUsage};
 pub use store::shared::SharedKind;
 pub use client::emergency::{emergency_alert_policy, emergency_number};
 pub use store::emergency::{EmergencyAlert, EmergencyDraft, EmergencyInfo, EmergencyRollup, EmergencySettings, RollupEntry};

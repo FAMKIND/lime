@@ -219,6 +219,9 @@ final class ConversationStore {
     /// Debug demo: my photo and who may see it (no server).
     /// Debug demo: the decrypted bytes of the demo attachments, by id, and whether the composer opens with drafts.
     var demoAttachmentData: [String: Data] = [:]
+    /// My GIFs in the demo (LIME-207), and a counter the GIF views watch.
+    var demoMyGIFs: [(gif: MyGif, data: Data)] = []
+    var myGIFRevision = 0
     var demoEmergencySettings = EmergencySettings(groupId: "", schoolActions: true, sound: false, lastStudents: 0, lastPlace: "")
     var demoEmergencySessions: [String: String] = [:]
     var demoEmergencyStatuses: [String: (EmergencyDraft, Date)] = [:]

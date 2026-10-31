@@ -953,6 +953,37 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE drafts ADD COLUMN for_jam TEXT;
      ALTER TABLE drafts ADD COLUMN review TEXT;
      ALTER TABLE drafts ADD COLUMN review_note TEXT NOT NULL DEFAULT '';",
+    // LIME-207: My GIFs, saved on this phone with the words that find them: an FTS5 index over my words, the message text it came with and the text read from its
+    // frames, kept in step by triggers. Never sent anywhere; goes with the account.
+    "CREATE TABLE my_gifs (
+         id           TEXT PRIMARY KEY,
+         bytes        BLOB NOT NULL,
+         words        TEXT NOT NULL DEFAULT '',
+         message_text TEXT NOT NULL DEFAULT '',
+         frame_text   TEXT NOT NULL DEFAULT '',
+         width        INTEGER,
+         height       INTEGER,
+         size         INTEGER NOT NULL,
+         digest       TEXT NOT NULL UNIQUE,
+         added_at     INTEGER NOT NULL,
+         last_used    INTEGER NOT NULL
+     );
+     CREATE VIRTUAL TABLE my_gifs_fts USING fts5(
+         words,
+         message_text,
+         frame_text,
+         id UNINDEXED,
+         tokenize = 'unicode61 remove_diacritics 2'
+     );
+     CREATE TRIGGER my_gifs_fts_insert AFTER INSERT ON my_gifs BEGIN
+         INSERT INTO my_gifs_fts (words, message_text, frame_text, id) VALUES (new.words, new.message_text, new.frame_text, new.id);
+     END;
+     CREATE TRIGGER my_gifs_fts_update AFTER UPDATE OF words, message_text, frame_text ON my_gifs BEGIN
+         UPDATE my_gifs_fts SET words = new.words, message_text = new.message_text, frame_text = new.frame_text WHERE id = old.id;
+     END;
+     CREATE TRIGGER my_gifs_fts_delete AFTER DELETE ON my_gifs BEGIN
+         DELETE FROM my_gifs_fts WHERE id = old.id;
+     END;",
 ];
 
 /// The schema version this build writes.

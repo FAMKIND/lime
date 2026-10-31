@@ -23,6 +23,7 @@ struct ChatComposer: View {
     @State private var chooser: Chooser?
     @State private var tooLarge = false
     @State private var gifTooBig = false
+    @State private var showingGIFs = false
     @State private var choosing = false
     @State private var recent = RecentMedia()
     @State private var recorder = VoiceRecorder()
@@ -97,6 +98,15 @@ struct ChatComposer: View {
                     }
                     .accessibilityLabel("Emoji").accessibilityIdentifier("composer-emoji")
                     .accessibilityAddTraits(model.showsEmojiKeyboard ? [.isSelected] : [])
+                    // GIF: my saved GIFs, searchable; one tap sends one (LIME-207).
+                    if onSendAttachments != nil {
+                        Button { trace("composer tap GIF"); model.hideKeyboard(); showingGIFs = true } label: {
+                            Text("GIF").font(.system(size: 13, weight: .bold)).foregroundStyle(Theme.text)
+                                .padding(.horizontal, 6).padding(.vertical, 3).overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Theme.text, lineWidth: 1.5))
+                                .frame(width: 44, height: 40)
+                        }
+                        .accessibilityLabel("GIF").accessibilityHint("Your saved GIFs").accessibilityIdentifier("composer-gif")
+                    }
                     Button { trace("composer tap Aa"); model.formattingTapped() } label: {
                         Text("Aa").font(.system(size: 17, weight: model.toolbarVisible ? .bold : .medium)).foregroundStyle(Theme.text)
                             .frame(width: 44, height: 40)
@@ -183,6 +193,7 @@ struct ChatComposer: View {
         .alert("That video can't be sent", isPresented: Binding(get: { videoProblem != nil }, set: { if !$0 { videoProblem = nil } })) {
             Button("OK", role: .cancel) {}
         } message: { Text(videoProblem ?? "") }
+        .sheet(isPresented: $showingGIFs) { MyGIFsSheet { item, caption in onSendAttachments?([item], caption) } }
         .alert(GIF.tooBigMessage, isPresented: $gifTooBig) { Button("OK", role: .cancel) {} } message: { Text("A GIF can be up to 10 MB and 500 frames.") }
         .alert("That file is too large", isPresented: $tooLarge) { Button("OK", role: .cancel) {} } message: { Text("Files can be up to 50 MB.") }
         .onChange(of: model.plainText) { refreshPreview() }

@@ -14,6 +14,7 @@ pub(crate) mod attachments;
 pub(crate) mod delivery;
 pub(crate) mod groups;
 pub(crate) mod labels;
+pub(crate) mod my_gifs;
 pub(crate) mod message_ops;
 mod migrations;
 pub(crate) mod order;

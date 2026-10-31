@@ -280,6 +280,21 @@ struct MessageActionsHost: ViewModifier {
                             else { store.copyToPasteboard(message) }
                         }
                     }
+                    // Any GIF in a chat can be kept in my GIFs (LIME-207).
+                    if !message.deleted, let gif = message.attachments.first(where: { GIF.isGIF(mime: $0.mime) && !$0.removed }) {
+                        row("square.and.arrow.down", "Save to my GIFs", id: "action-save-gif") {
+                            state.menu = nil
+                            let caption = message.text
+                            Task {
+                                guard let data = await store.attachmentData(gif) else { store.showBanner("That GIF isn’t on this iPhone yet."); return }
+                                switch await store.saveMyGIF(data, messageText: caption) {
+                                case .saved: store.showBanner("Saved to my GIFs")
+                                case .full: store.showBanner("My GIFs is full. Remove some in Settings.")
+                                case .failed: store.showBanner("That GIF couldn’t be saved.")
+                                }
+                            }
+                        }
+                    }
                     if message.call == nil {
                         row("checkmark.circle", "Select", id: "action-select") { state.menu = nil; selection = [message.id] }
                     }
