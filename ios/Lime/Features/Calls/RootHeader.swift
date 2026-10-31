@@ -34,7 +34,7 @@ struct RootHeader: ViewModifier {
                         }
                         // Link, call and jam keep one glass bubble for search and your avatar: you are searching all of your information (LIME-255).
                         ToolbarItem(placement: .topBarTrailing) {
-                            HStack(spacing: -4) {   // 4 pt closer than before 277g (LIME-277h); each is still a 44 pt target
+                            HStack(spacing: -2) {   // 2 pt closer than before 277g (LIME-277h, again); each is still a 44 pt target
                                 Button(action: search) { ToolIconLabel(symbol: "magnifyingglass") }
                                     .accessibilityLabel("Search")
                                     .accessibilityIdentifier(searchID)

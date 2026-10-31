@@ -106,7 +106,7 @@ struct MessagesView: View {
             }
             // One glass bubble for search and your avatar (LIME-255).
             ToolbarItem(placement: .topBarTrailing) {
-                HStack(spacing: -4) {   // search and your avatar 4 pt closer than before 277g (6 closer, 2 given back: LIME-277h); each is still a 44 pt target
+                HStack(spacing: -2) {   // search and your avatar 2 pt closer than before 277g (277g: 6, 277h: 4, then 2 more given back); each is still a 44 pt target
                     Button { store.path.append(MessagesRoute.search) } label: { ToolIconLabel(symbol: "magnifyingglass") }
                         .accessibilityLabel("Search")
                         .accessibilityIdentifier("messages-search-button")
@@ -558,7 +558,7 @@ struct TopControls: View {
             .simultaneousGesture(LongPressGesture(minimumDuration: 0.6).onEnded { _ in onAbout() })
             #endif
             Spacer()
-            HStack(spacing: 8) {   // 4 pt closer than before 277g (LIME-277h)
+            HStack(spacing: 10) {   // 2 pt closer than before 277g (LIME-277h, again)
                 Button(action: onSearch) {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 20, weight: .regular))
