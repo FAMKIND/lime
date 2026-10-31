@@ -286,7 +286,10 @@ pub(crate) use fetch::tests as fetch_test_support;
 
 impl MeshEngine {
     fn build(store: Arc<LimeStore>, server_key: Option<ServerKey>) -> Arc<Self> {
-        let node = MeshNode::new(MeshConfig { seed: now_ms() as u64, ..MeshConfig::default() }, SqlMeshStore { store: store.clone() }, SystemClock);
+        // The seed feeds the relay jitter and the one-time value in every Hello (LIME-167): from the OS random source, the clock only if that fails.
+        let mut seed = [0u8; 8];
+        let seed = if getrandom::getrandom(&mut seed).is_ok() { u64::from_be_bytes(seed) } else { now_ms() as u64 };
+        let node = MeshNode::new(MeshConfig { seed, ..MeshConfig::default() }, SqlMeshStore { store: store.clone() }, SystemClock);
         let engine = Self::assemble(store, node, server_key);
         engine.remark_copies();
         engine

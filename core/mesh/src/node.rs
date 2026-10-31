@@ -17,7 +17,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::config::MeshConfig;
 use crate::frame::Frame;
-use crate::packet::{short, Digest, Packet, Short, Tag};
+use crate::packet::{blind, short, Digest, Nonce, Packet, Short, Tag};
 use crate::{Clock, LinkId, MeshStore, StoredPacket, Tier};
 
 /// What the platform should do.
@@ -64,6 +64,8 @@ pub struct NodeStats {
     pub evicted: u64,
     pub expired: u64,
     pub bad_frames: u64,
+    /// Hellos in the first protocol (raw tags) that were refused (LIME-167).
+    pub old_hellos: u64,
     pub sent_packets: u64,
 }
 
@@ -79,11 +81,27 @@ struct Carried {
 #[derive(Default)]
 struct LinkState {
     peer_summary: HashSet<Short>,
-    peer_tags: Vec<Tag>,
+    /// The neighbour's last Hello: its nonce and its tags blinded with it (LIME-167). A packet's tag is recognised by blinding it the same way.
+    peer_nonce: Nonce,
+    peer_tags: HashSet<Tag>,
     /// Packets sent on this link and not acked yet: short digest → (digest, copies handed over, whether it went to its recipient).
     pending: HashMap<Short, (Digest, u8, bool)>,
     window_start: u64,
     accepted_in_window: u32,
+}
+
+/// What a neighbour's Hello said about the mail it is the recipient of.
+#[derive(Clone, Default)]
+struct PeerTags {
+    nonce: Nonce,
+    blinded: HashSet<Tag>,
+}
+
+impl PeerTags {
+    /// Whether the neighbour announced this tag: blinding it with the neighbour's own nonce gives one of the values it sent.
+    fn wants(&self, tag: &Tag) -> bool {
+        !self.blinded.is_empty() && self.blinded.contains(&blind(tag, &self.nonce))
+    }
 }
 
 /// What happened to a copy of mail already on the server (LIME-156c), for the platform's log.
@@ -134,6 +152,7 @@ pub struct MeshNode<S: MeshStore, C: Clock> {
     /// Packets another phone has acknowledged taking (a copy handed over): what "Passed to a nearby phone" is made from.
     handed: HashSet<Digest>,
     rng: u64,
+    nonce_counter: u64,
     stats: NodeStats,
     /// Counts every change to what is carried or recently seen (what a Hello's summary is made of): the platform sends a new Hello only when it moved.
     version: u64,
@@ -166,7 +185,7 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
         let seen_set = seen.iter().map(|(d, _)| *d).collect();
         let uploaded: HashMap<Digest, u64> = store.load_uploaded().into_iter().filter(|(_, at)| now.saturating_sub(*at) <= UPLOADED_MEMORY_SECS).collect();
         let rng = config.seed | 1;
-        MeshNode { config, store, clock, carried, seen, seen_set, links: HashMap::new(), contact_tags: HashSet::new(), my_tags: Vec::new(), uploading: HashSet::new(), refused: HashMap::new(), handed: HashSet::new(), uploaded, offline_only: HashMap::new(), link_online: HashMap::new(), already_uploaded: 0, copy_events: Vec::new(), copy_held_logged: HashSet::new(), next_seq, rng, stats: NodeStats::default(), version: 0 }
+        MeshNode { config, store, clock, carried, seen, seen_set, links: HashMap::new(), contact_tags: HashSet::new(), my_tags: Vec::new(), uploading: HashSet::new(), refused: HashMap::new(), handed: HashSet::new(), uploaded, offline_only: HashMap::new(), link_online: HashMap::new(), already_uploaded: 0, copy_events: Vec::new(), copy_held_logged: HashSet::new(), next_seq, rng, nonce_counter: 0, stats: NodeStats::default(), version: 0 }
     }
 
     pub fn config(&self) -> &MeshConfig {
@@ -368,7 +387,9 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
         self.housekeeping();
         // A Hello sent again on a live link (a wake, a queued copy) must not forget what the neighbour said about itself (its tags).
         self.links.entry(link).or_default();
-        let hello = Frame::Hello { summary: self.summary_for(link), tags: self.my_tags.iter().take(255).copied().collect() };
+        // A fresh nonce in every Hello: the tags in it are blinded with it, so they are not the same on any two links (LIME-167).
+        let nonce = self.fresh_nonce();
+        let hello = Frame::hello(self.summary_for(link), nonce, &self.my_tags);
         vec![self.send(link, hello)]
     }
 
@@ -385,11 +406,15 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
             self.links.insert(link, LinkState::default());
         }
         let Some(frame) = Frame::decode(bytes) else {
-            self.stats.bad_frames += 1;
+            if bytes.first() == Some(&crate::frame::LEGACY_HELLO) {
+                self.stats.old_hellos += 1;   // a phone on the first protocol: it cannot mesh with this one
+            } else {
+                self.stats.bad_frames += 1;
+            }
             return Vec::new();
         };
         match frame {
-            Frame::Hello { summary, tags } => self.on_hello(link, summary, tags),
+            Frame::Hello { summary, nonce, tags } => self.on_hello(link, summary, nonce, tags),
             Frame::Want { digests } => self.on_want(link, digests),
             Frame::Packet { copies, bytes } => self.on_packet(link, copies, bytes),
             Frame::Ack { digest } => {
@@ -399,7 +424,7 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
         }
     }
 
-    fn on_hello(&mut self, link: LinkId, summary: Vec<Short>, tags: Vec<Tag>) -> Vec<Action> {
+    fn on_hello(&mut self, link: LinkId, summary: Vec<Short>, nonce: Nonce, tags: Vec<Tag>) -> Vec<Action> {
         let have: HashSet<Short> = self.carried.keys().map(short).collect();
         let want: Vec<Short> = summary
             .iter()
@@ -409,7 +434,8 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
             .collect();
         if let Some(state) = self.links.get_mut(&link) {
             state.peer_summary = summary.into_iter().collect();
-            state.peer_tags = tags;
+            state.peer_nonce = nonce;
+            state.peer_tags = tags.into_iter().collect();
         }
         if want.is_empty() { Vec::new() } else { vec![self.send(link, Frame::Want { digests: want })] }
     }
@@ -417,14 +443,14 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
     /// What this phone would hand `link` for one carried packet, under every rule: a copy of mail already on the server only to an offline
     /// neighbour (and a group copy only to its own recipient), nothing expired, the recipient gets it whatever the copies, anyone else half the
     /// copies and one hop less. `(copies handed, the packet to put on the wire, whether it goes to its recipient)`.
-    fn plan_offer(&mut self, link: LinkId, digest: &Digest, peer_tags: &[Tag], now: u64, cap: u8) -> Option<(u8, Packet, bool)> {
+    fn plan_offer(&mut self, link: LinkId, digest: &Digest, peer: &PeerTags, now: u64, cap: u8) -> Option<(u8, Packet, bool)> {
         let carried = self.carried.get(digest)?;
         // A copy of mail already on the server goes only to a neighbour that said it is offline.
         if let Some(direct) = self.offline_only.get(digest).copied() {
             let why = match self.link_online.get(&link) {
                 Some(true) => Some("online"),
                 None => Some("unknown"),
-                Some(false) if direct && !peer_tags.contains(&carried.packet.tag) => Some("no_tag_match"),
+                Some(false) if direct && !peer.wants(&carried.packet.tag) => Some("no_tag_match"),
                 Some(false) => None,
             };
             if let Some(why) = why {
@@ -437,7 +463,7 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
         if carried.packet.expires_at <= now {
             return None;
         }
-        if peer_tags.contains(&carried.packet.tag) {
+        if peer.wants(&carried.packet.tag) {
             // The recipient is here: hand it over, whatever the hops and copies.
             Some((1, carried.packet.clone(), true))
         } else if carried.copies > 1 && carried.packet.hops_left >= 1 {
@@ -459,13 +485,13 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
     fn on_want(&mut self, link: LinkId, wanted: Vec<Short>) -> Vec<Action> {
         let now = self.clock.now_secs();
         let by_short: HashMap<Short, Digest> = self.carried.keys().map(|d| (short(d), *d)).collect();
-        let peer_tags = self.links.get(&link).map(|l| l.peer_tags.clone()).unwrap_or_default();
+        let peer = self.links.get(&link).map(|l| PeerTags { nonce: l.peer_nonce, blinded: l.peer_tags.clone() }).unwrap_or_default();
         let cap = self.effective_ttl();
         // Best first: higher tier, then in the order they arrived here (a message before the reaction made after it).
         let mut eligible: Vec<(Digest, u8, Packet, bool)> = Vec::new();
         for want in wanted.iter().take(self.config.want_max) {
             let Some(digest) = by_short.get(want) else { continue };
-            if let Some((copies, packet, to_recipient)) = self.plan_offer(link, digest, &peer_tags, now, cap) {
+            if let Some((copies, packet, to_recipient)) = self.plan_offer(link, digest, &peer, now, cap) {
                 eligible.push((*digest, copies, packet, to_recipient));
             }
         }
@@ -507,13 +533,13 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
         links.sort();
         let mut actions = Vec::new();
         for link in links {
-            let peer_tags = self.links.get(&link).map(|l| l.peer_tags.clone()).unwrap_or_default();
+            let peer = self.links.get(&link).map(|l| PeerTags { nonce: l.peer_nonce, blinded: l.peer_tags.clone() }).unwrap_or_default();
             for digest in digests {
                 let known = self.links.get(&link).map(|l| l.peer_summary.contains(&short(digest)) || l.pending.contains_key(&short(digest))).unwrap_or(true);
                 if known {
                     continue;
                 }
-                if let Some((copies, packet, to_recipient)) = self.plan_offer(link, digest, &peer_tags, now, cap) {
+                if let Some((copies, packet, to_recipient)) = self.plan_offer(link, digest, &peer, now, cap) {
                     actions.push(self.packet_action(link, digest, copies, packet, to_recipient));
                 }
             }
@@ -711,6 +737,22 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
     }
 
     // ------------------------------------------------------------------ small things
+
+    /// A value for one Hello that has not been used before (LIME-167): the node's generator (seeded from the phone's random source) and a counter,
+    /// hashed, so it neither repeats nor can be told from a random value.
+    fn fresh_nonce(&mut self) -> Nonce {
+        use sha2::{Digest as _, Sha256};
+        self.rng ^= self.rng << 13;
+        self.rng ^= self.rng >> 7;
+        self.rng ^= self.rng << 17;
+        self.nonce_counter += 1;
+        let mut hash = Sha256::new();
+        hash.update(b"lime-mesh-link-nonce-v1");
+        hash.update(self.rng.to_be_bytes());
+        hash.update(self.nonce_counter.to_be_bytes());
+        hash.update(self.clock.now_secs().to_be_bytes());
+        hash.finalize()[..16].try_into().expect("16 of 32 bytes")
+    }
 
     fn jitter(&mut self) -> u32 {
         // xorshift64: deterministic for a given seed.
@@ -1259,7 +1301,7 @@ mod tests {
     /// A link that is up and whose Hello has been heard (`tags` its owner's).
     fn linked(node: &mut Node, link: u64, tags: Vec<Tag>) {
         node.on_link_up(LinkId(link));
-        node.on_frame(LinkId(link), &Frame::Hello { summary: Vec::new(), tags }.encode());
+        node.on_frame(LinkId(link), &Frame::hello(Vec::new(), [link as u8; 16], &tags).encode());
     }
 
     #[test]
@@ -1345,5 +1387,78 @@ mod tests {
         let pushed = sender.push_new(&[copy]);
         let links: Vec<u64> = pushed.iter().map(|a| { let Action::SendFrame { link, .. } = a; link.0 }).collect();
         assert_eq!(links, vec![2], "an online neighbour and a phone that is not its recipient get nothing");
+    }
+
+    // ---------------------------------------------------------------- blinded tags (LIME-167, F-04)
+
+    fn hello_of(actions: &[Action]) -> (Nonce, Vec<Tag>) {
+        let Action::SendFrame { bytes, .. } = &actions[0];
+        let Some(Frame::Hello { nonce, tags, .. }) = Frame::decode(bytes) else { panic!("not a Hello") };
+        (nonce, tags)
+    }
+
+    #[test]
+    fn the_same_phones_hello_shares_no_value_on_two_links() {
+        let c = clock();
+        let mut node = node_with(MeshConfig::default(), &c);
+        let mine = [[7u8; 16], [8u8; 16]];
+        node.set_my_tags(&mine);
+        let (n1, t1) = hello_of(&node.on_link_up(LinkId(1)));
+        let (n2, t2) = hello_of(&node.on_link_up(LinkId(2)));
+        let (n3, t3) = hello_of(&node.on_link_up(LinkId(1)));   // the same link saying its Hello again
+        assert!(n1 != n2 && n2 != n3 && n1 != n3, "a fresh nonce every time");
+        for (a, b) in [(&t1, &t2), (&t2, &t3), (&t1, &t3)] {
+            assert_eq!(a.len(), 2);
+            assert!(a.iter().all(|t| !b.contains(t)), "no value is shared between two Hellos");
+        }
+        assert!(t1.iter().all(|t| !mine.contains(t)), "and a raw tag never goes on the air");
+    }
+
+    #[test]
+    fn a_v1_hello_is_refused_and_counted_not_taken_as_garbage() {
+        let c = clock();
+        let mut node = node_with(MeshConfig::default(), &c);
+        let mut v1 = vec![crate::frame::LEGACY_HELLO, 0, 0, 1];
+        v1.extend_from_slice(&[7; 16]);
+        assert!(node.on_frame(LinkId(1), &v1).is_empty());
+        assert_eq!(node.stats().old_hellos, 1);
+        assert_eq!(node.stats().bad_frames, 0);
+    }
+
+    #[test]
+    fn a_holder_still_hands_a_packet_straight_to_its_recipient_and_not_to_a_stranger() {
+        let c = clock();
+        // The wait phase: one copy left, so only the packet's recipient can be handed it.
+        let mut holder = node_with(MeshConfig { copies_initial: 1, ..MeshConfig::default() }, &c);
+        let digest = holder.enqueue(packet(7, 1, &c)).unwrap();
+        let want = |holder: &mut Node, link: u64, raw: &[Tag]| {
+            holder.on_link_up(LinkId(link));
+            holder.on_frame(LinkId(link), &Frame::hello(Vec::new(), [link as u8; 16], raw).encode());
+            holder.on_frame(LinkId(link), &Frame::Want { digests: vec![short(&digest)] }.encode()).len()
+        };
+        assert_eq!(want(&mut holder, 1, &[[9; 16]]), 0, "a stranger's blinded tags match nothing");
+        assert_eq!(want(&mut holder, 2, &[[7; 16]]), 1, "the recipient's blinded tag matches, whatever nonce it chose");
+    }
+
+    #[test]
+    fn a_holder_with_many_packets_stays_within_the_time_bound() {
+        let c = clock();
+        let mut holder = node_with(MeshConfig::default(), &c);
+        let mut digests = Vec::new();
+        for n in 0..300u16 {
+            let mut p = packet((n % 250) as u8, 1, &c);
+            p.header = vec![(n >> 8) as u8, n as u8, 3, 4];
+            p.hops_left = 0;
+            if let Ok(d) = holder.enqueue(p) { digests.push(d); }
+        }
+        assert!(digests.len() >= 200, "the store holds a few hundred");
+        let raw: Vec<Tag> = (0..255u8).map(|i| [i; 16]).collect();
+        holder.on_link_up(LinkId(1));
+        holder.on_frame(LinkId(1), &Frame::hello(Vec::new(), [5; 16], &raw).encode());
+        let started = std::time::Instant::now();
+        let wanted: Vec<Short> = digests.iter().take(200).map(short).collect();
+        let sent = holder.on_frame(LinkId(1), &Frame::Want { digests: wanted }.encode());
+        assert!(!sent.is_empty());
+        assert!(started.elapsed() < std::time::Duration::from_secs(1), "{:?}", started.elapsed());
     }
 }

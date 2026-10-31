@@ -9556,3 +9556,32 @@ An Effects button in video calls. **Brief:** LIME-280.
 - **Accessibility:** the button reads "Effects, reactions and video effects"; each reaction is a labelled menu item with its symbol; Reduce Motion is the system's (Apple's effects respect it where the system allows, nothing of ours animates).
 - **Tests:** unit `CallEffects280Tests` (3, fake camera answers): all reactions when the camera lists them, only the listed ones, only the panel when it cannot react, nothing with the camera off or absent, every reaction has a name and a symbol. UI `Effects280UITests` (2, `-lime-demo-call video`): with `-lime-demo-effects` the button opens a menu of Hearts, Thumbs up, Confetti, Lasers and Video effects…; without it (no camera in the simulator) there is no button. `CallScreenUITests` (13, including the landscape fit) pass.
 - **Gate (two phones, a video call):** tap Effects → Hearts: the other phone sees hearts in your video; Effects → Video effects… → Background: your background blurs. **If the button is missing on the 13 mini mid-call, the format did not support effects: say so and I will pin a supported format** (1:1 already prefers one).
+
+## LIME-167
+
+Blinded Bluetooth tags (F-04). **Brief:** LIME-167 (DESIGN-27). Core only; the app needs a rebuild of the core library (done), no Swift change.
+
+- **The change:** a **Hello v2** (`core/mesh/src/frame.rs`, frame kind **9**; kinds 5 to 8 are the relay download's, so 5 was taken) carries a **fresh 16-byte link nonce** and, for each of this phone's tags, `blind(tag, nonce)` = SHA-256 over `"lime-mesh-blind-tag-v1" ‖ tag ‖ nonce`, cut to 16 bytes (`packet::blind`; domain-separated; the mesh crate still depends only on `sha2`). The node makes a new nonce for **every Hello it sends** (`fresh_nonce`: the node's generator, a counter and the clock, hashed), so the same phone's Hellos share no value, on any link or on the same link said again. The core now seeds the node from the **OS random source** (`getrandom`) instead of the clock (`core/src/mesh.rs`). A holder with packets for tag T blinds each held packet's tag with **the nonce in the Hello it heard** and compares (`PeerTags::wants`), so the direct hand-over of the wait phase works as before. **Hello v1 (kind 1, raw tags) is refused** and counted (`stats.old_hellos`, not `bad_frames`); the kind change is the protocol version bump: **old builds cannot mesh with this one, so the three test phones update together.** Cost bound: one SHA-256 per held packet per Want; at most 255 tags per Hello, and the store caps bound the packets (a test with 300 packets and 255 tags answers 200 wants in well under a second).
+- **What each party learns:** a linked stranger: a one-time value per Hello, nothing reusable, and cannot tell whether two Hellos are from the same phone; a carrier holding your packet: that this Hello wants it (as today); contacts and the server: unaffected. `docs/security-review-2026-10.md` 3(c) and `docs/architecture.md` are updated (F-04 marked fixed).
+- **Tests (core):** `core/mesh` 36 unit + 12 sim, all pass: a Hello is not the raw tags and shares no value with another Hello of the same phone (two links, and the same link twice); a v1 Hello is refused and counted; the last copy is handed to its recipient and not to a stranger (the 156b behaviour, with a nonce the recipient chose); a holder with 300 packets stays within a second; blinding depends on the nonce, and a holder recomputes it. `cargo test --lib` in `lime_core`: **421 passed** (the three mesh client tests that trade frames pass: they exposed the kind-5 clash). Not run: the iOS tests (nothing in Swift changed; the core library was regenerated with `generate.sh`).
+
+### How to test with plot (the guided device test; all three phones need this build)
+
+| Phone | Role | Internet | Bluetooth | lime |
+|---|---|---|---|---|
+| 13 mini | sender (Alice) | **off** (Wi-Fi and cellular) | on | open, on screen |
+| iPad | carrier | **off** | on | open, on screen |
+| Jean's 12 mini | recipient (Bob) | **off** at first | on | open, on screen |
+
+Settings → "Help pass on nearby messages" must be on (the default) on all three.
+
+1. **Install this build on all three** (an older build cannot mesh with it; if one phone has the old build nothing will pass and `old_hellos` goes up).
+2. Put the three phones' Wi-Fi and cellular off; keep Bluetooth on; open lime on each.
+3. **13 mini → Jean:** send "blind 1". Expect **Waiting for signal**.
+4. Bring the **iPad** within a few metres of the 13 mini (Jean's phone far away, in another room). Expect on the 13 mini: **Passed to a nearby phone** (the iPad took a copy).
+5. Carry the iPad next to **Jean's 12 mini** (away from the 13 mini). Expect **"blind 1" appears on Jean's phone** (the iPad handed it straight to its recipient: this is the direct hand-over, now with blinded tags).
+6. **Direct case:** 13 mini and 12 mini side by side, both offline: the 13 mini sends "blind 2": it arrives on Jean's phone without the iPad.
+7. **Two phones that must not match:** put the iPad with the 13 mini, send "blind 3" to Jean, and do **not** bring Jean's phone near: the iPad must **not** deliver it to the 13 mini's own contacts or show it anywhere (it is carried, not read).
+8. **Look at the log (plot reads it with you):** the mesh log (Settings → Help pass on nearby messages → the log, or the Debug build's mesh log) should show `tags_set` and the hand-overs but **no line with a recipient tag in the clear**; on the 13 mini and the iPad, `old_hellos` stays 0.
+9. **What would be wrong:** a message that passes in step 4 but never reaches Jean in step 5 (the blinding does not match: tell plot at once); `old_hellos` above 0 (an old build on one phone).
+10. Turn the internet back on; Jean's chat shows the messages only once each.

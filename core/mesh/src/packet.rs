@@ -18,9 +18,22 @@
 use sha2::{Digest as _, Sha256};
 
 pub type Tag = [u8; 16];
+/// A fresh random value a phone puts in each Hello (LIME-167): the blinded tags of that Hello are made with it, so they differ on every link.
+pub type Nonce = [u8; 16];
 pub type Digest = [u8; 32];
 /// The first 8 bytes of a digest: what two phones exchange in summaries (a false "you have it" costs one missed forward, never a loss).
 pub type Short = [u8; 8];
+
+/// A recipient tag as it goes in one Hello: `H(tag, nonce)`, a domain-separated SHA-256 cut to 16 bytes (LIME-167, F-04). Whoever holds a packet for
+/// the tag computes the same value for the nonce in the Hello it hears and compares; someone who does not hold the tag learns a value that is good for
+/// this Hello only, and the same phone's next Hello (any link, any time) shares nothing with it.
+pub fn blind(tag: &Tag, nonce: &Nonce) -> Tag {
+    let mut hash = Sha256::new();
+    hash.update(b"lime-mesh-blind-tag-v1");
+    hash.update(tag);
+    hash.update(nonce);
+    hash.finalize()[..16].try_into().expect("16 of 32 bytes")
+}
 
 pub const VERSION: u8 = 1;
 /// Version, tag, hops, expiry, header length, payload length.
