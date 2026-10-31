@@ -83,8 +83,12 @@ final class CallHistoryTests: XCTestCase {
         let appearance = TabBadgeStyle.appearance()
         for layout in [appearance.stackedLayoutAppearance, appearance.inlineLayoutAppearance, appearance.compactInlineLayoutAppearance] {
             for state in [layout.normal, layout.selected] {
-                XCTAssertEqual(state.badgeBackgroundColor, UIColor(Theme.accent))
-                XCTAssertEqual(state.badgeTextAttributes[.foregroundColor] as? UIColor, UIColor(Theme.accentInk))
+                // The theme's tokens are drawn fresh from the choice each time (LIME-277a), so they are compared as the colours they resolve to.
+                for style in [UIUserInterfaceStyle.light, .dark] {
+                    let traits = UITraitCollection(userInterfaceStyle: style)
+                    XCTAssertEqual(state.badgeBackgroundColor?.resolvedColor(with: traits), UIColor(Theme.accent).resolvedColor(with: traits))
+                    XCTAssertEqual((state.badgeTextAttributes[.foregroundColor] as? UIColor)?.resolvedColor(with: traits), UIColor(Theme.accentInk).resolvedColor(with: traits))
+                }
             }
         }
     }
