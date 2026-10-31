@@ -9300,3 +9300,5 @@ One Appearance screen with a live preview. **Brief:** LIME-277c (with 1e514/1e51
 - **Screenshots:** `docs/qa-shots/277c/` (11: the main screen light, dark and in Blue/Graph, Pink/Chalkboard and Orange/Bulletin; the Accent, Background (both modes), Mode and Font pages).
 - **One thing to look at:** my own chat bubble in the preview stays lime whatever accent is chosen. Bubble colours are 277d's per-chat setting, so I left it; say if the global accent should tint your bubbles too.
 - **Gate:** your profile → the palette button: the Appearance sheet; change the accent, the background, the font and the size and watch the preview and then the app follow; Reset to lime restores everything. Settings → Customize → Appearance opens the same screen.
+
+- **Installed (277c):** all three, the 13 mini, the iPad and Jean's 12 mini.
