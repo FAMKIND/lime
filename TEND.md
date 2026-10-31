@@ -9272,3 +9272,5 @@ Eight backgrounds. **Brief:** LIME-277b. iOS only; uses 277a's engine and guard.
 - **Two deviations to look at:** (1) **Bulletin board in dark** uses deep brown cork and lighter-brown cards, not light cards: one text colour has to read on both the cork and the cards. (2) **Living** is deliberately quiet (80% / 72% veil).
 - **Tests:** unit: the guard passes for every background in both modes (277a's 256 combinations); UI `Theme277UITests` (3, demo): the eight accents and eight backgrounds with the selected state, a chosen background shows on the page and Reset returns lime/Plain, a launch on Chalkboard draws it on Messages, the profile's colour swatches.
 - **Gate:** Settings → Customize: try each background on a phone and the iPad, light and dark: Messages, a chat, Calls, jam, Settings. Text must be easy to read everywhere (try Increase Contrast and Reduce Transparency in iOS Accessibility); Chalkboard makes the whole app dark; Living moves slowly.
+
+- **Installed (277a, 277b):** all three, the 13 mini, the iPad and Jean's 12 mini.
