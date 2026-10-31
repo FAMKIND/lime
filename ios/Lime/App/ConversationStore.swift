@@ -1056,7 +1056,7 @@ final class ConversationStore {
             var hi2 = Message(id: "s1b", senderID: "sam", text: "Hi", date: now.addingTimeInterval(-3550))
             hi2.reactions = [ReactionChip(emoji: "👍", count: 2, mine: true, people: ["You", "Sam Park"])]
             var mine = Message(id: "s2", senderID: nil, text: "hi", date: now.addingTimeInterval(-3000), state: .sent)
-            mine.reactions = [ReactionChip(emoji: "😂", count: 1, mine: false, people: ["Sam Park"]), ReactionChip(emoji: "👍", count: 1, mine: true, people: ["You"]), ReactionChip(emoji: "❤️", count: 1, mine: false, people: ["Lee Wong"]), ReactionChip(emoji: "🎉", count: 1, mine: false, people: ["Jean"])]
+            mine.reactions = [ReactionChip(emoji: "😂", count: 1, mine: false, people: ["Sam Park"]), ReactionChip(emoji: "👍", count: 1, mine: true, people: ["You"]), ReactionChip(emoji: "❤️", count: 3, mine: false, people: ["Lee Wong", "Sam Park", "Jean"]), ReactionChip(emoji: "🎉", count: 1, mine: false, people: ["Jean"])]
             return [hi, hi2,
                     Message(id: "s1c", senderID: "sam", text: "Are you coming to the staff meeting?", date: now.addingTimeInterval(-3520)),
                     mine,

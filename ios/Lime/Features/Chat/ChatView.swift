@@ -819,6 +819,8 @@ struct MessageBubble: View {
     /// Where the bubble is on the screen, so the menu can lift a copy of it to the same place. A plain box, not state: the frame changes
     /// while a chat is opening and while it scrolls, and SwiftUI must not redraw every bubble each time (LIME-152a-fix).
     @State private var frameBox = FrameBox()
+    /// The bubble's width, for where its reaction circles wrap (LIME-278c).
+    @State private var bubbleWidth: CGFloat = 0
     @Environment(\.pressedLink) private var pressedLink
     /// How far the chat has been dragged left to show every time, 0 to 1 (LIME-278).
     @Environment(\.timeReveal) private var reveal
@@ -867,7 +869,7 @@ struct MessageBubble: View {
                 // Top to bottom: the bubble (its reactions are a pill on its inner bottom corner, LIME-278); a footer with the time and status, only
                 // where it matters (the last of a run, a message with a status or an edit), as wide as the bubble; then the replies.
                 content
-                    .padding(.bottom, hasReactions ? Self.pillOverhang + 2 : 0)
+                    .padding(.bottom, hasReactions ? reactionHang : 0)
                 if showsTime {
                     HStack(spacing: 6) {
                         Spacer(minLength: 8)
@@ -901,8 +903,6 @@ struct MessageBubble: View {
 
     /// The gutter the chat slides over when it is dragged left, which is where each message's time appears.
     static let revealGutter: CGFloat = 64
-    /// How far the reaction pill hangs below the bubble: half its height.
-    static let pillOverhang: CGFloat = 12
 
     /// Whether the footer under this message shows a time: the end of a run, or a message with something to say (a delivery state, an edit).
     private var showsTime: Bool { !message.deleted && (endsRun || showState || message.edited) }
@@ -970,15 +970,13 @@ struct MessageBubble: View {
                 }
             }
         }
-        // The reactions are a pill on the bubble's inner bottom corner (the side facing the middle), hanging half its height below, so it always touches the bubble.
-        .overlay(alignment: message.isOwn ? .bottomLeading : .bottomTrailing) {
-            // Anchored at the bubble's inner bottom corner and growing toward the middle of the screen, so it never runs past the edge or under the avatar.
+        // The reactions are round chips on the bubble's bottom edge (LIME-278c), one per emoji, from its inner corner toward the middle of the screen.
+        .overlay(alignment: .bottomLeading) {
             if hasReactions {
-                // A 16 pt frame at the corner: the pill is wider, so it hangs out of it on the side facing the middle.
-                if message.isOwn { reactionChips.frame(width: 16, alignment: .trailing).offset(y: Self.pillOverhang) }
-                else { reactionChips.frame(width: 16, alignment: .leading).offset(y: Self.pillOverhang) }
+                ReactionCluster(reactions: message.reactions, messageID: message.id, own: message.isOwn) { if selection == nil { onShowReactions?() } }
             }
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { bubbleWidth = $0 }
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frameBox.frame = $0 }
         .onLongPressGesture(minimumDuration: 0.4) { if selection == nil { lift() } }
         .environment(\.mediaLongPress, selection == nil && onActions != nil ? MediaLongPress(messageID: message.id, action: { lift() }) : nil)
@@ -994,6 +992,12 @@ struct MessageBubble: View {
     }
 
     private var hasReactions: Bool { !message.reactions.isEmpty && !message.deleted }
+
+    /// How far the reaction circles hang below the bubble, a line more for each row they wrap onto.
+    private var reactionHang: CGFloat {
+        let plan = ReactionPlan.layout(circles: ReactionPlan.circles(kinds: message.reactions.count), bubbleWidth: bubbleWidth, own: message.isOwn, screenWidth: UIScreen.main.bounds.width)
+        return ReactionPlan.hang(rows: plan.rows)
+    }
 
     /// The time, "Edited" and the delivery state, on the trailing side of the footer.
     private var timeStamp: some View {
@@ -1037,39 +1041,6 @@ struct MessageBubble: View {
         .foregroundStyle(Theme.textSecondary)
         .lineLimit(1)
         .wallpaperChip()
-    }
-
-
-    private func reactionsSpoken(kinds: [ReactionChip], total: Int, mine: Bool) -> String {
-        let emoji = kinds.map(\.emoji).joined(separator: " ")
-        let yours = mine ? ", including yours" : ""
-        return "Reactions: \(emoji), \(total) in total\(yours). Double-tap to see who reacted."
-    }
-
-    /// The reactions as one pill on the bubble (LIME-278b): up to three distinct emoji, overlapped a little, and the total count when more than one person
-    /// reacted. My own reaction rings the pill. Tapping it lists who reacted with what.
-    private var reactionChips: some View {
-        let kinds = Array(message.reactions.prefix(3))
-        let total = message.reactions.reduce(0) { $0 + $1.count }
-        let mine = message.reactions.contains(where: \.mine)
-        return HStack(spacing: 4) {
-            HStack(spacing: -4) {
-                ForEach(Array(kinds.enumerated()), id: \.element.id) { index, chip in
-                    Text(chip.emoji).font(.system(size: 14)).zIndex(Double(kinds.count - index))
-                }
-            }
-            if total > 1 { Text("\(total)").font(Theme.font(.caption, weight: .semibold)).foregroundStyle(Theme.text) }
-        }
-        .padding(.horizontal, 8).padding(.vertical, 3)
-        .background(mine ? Theme.chipFillMine : Theme.chipFill, in: Capsule())
-        .overlay(Capsule().strokeBorder(mine ? Theme.text.opacity(0.35) : Color.clear, lineWidth: 1))
-        .fixedSize()
-        .contentShape(Rectangle().inset(by: -10))
-        .onTapGesture { if selection == nil { onShowReactions?() } }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(reactionsSpoken(kinds: kinds, total: total, mine: mine))
-        .accessibilityAddTraits(.isButton)
-        .accessibilityIdentifier("reaction-cluster-\(message.id)")
     }
 }
 

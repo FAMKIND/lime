@@ -1,6 +1,6 @@
 import XCTest
 
-/// LIME-278 (demo, `-lime-demo-short-chat`): a reaction is a pill on its bubble, times show once per run, a drag left shows every time.
+/// LIME-278 (demo, `-lime-demo-short-chat`): a reaction is a circle on its bubble, times show once per run, a drag left shows every time.
 @MainActor
 final class Chat278UITests: LimeUITestCase {
     private func any(_ app: XCUIApplication, _ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
@@ -12,38 +12,43 @@ final class Chat278UITests: LimeUITestCase {
         return app
     }
 
-    func testAShortBubblesReactionSitsOnItsCornerWhateverItsWidth() {
+    private func chip(_ app: XCUIApplication, _ message: String, _ emoji: String) -> XCUIElement { any(app, "reaction-chip-\(message)-\(emoji)") }
+
+    func testAShortBubblesReactionCirclesSitOnItsBottomEdgeFromItsCorner() {
         let app = chat()
-        let cluster = any(app, "reaction-cluster-s2")
-        XCTAssertTrue(cluster.waitForExistence(timeout: 10))
+        let first = chip(app, "s2", "😂")
+        XCTAssertTrue(first.waitForExistence(timeout: 10))
         let bubble = app.descendants(matching: .any).matching(identifier: "own-bubble").element(boundBy: 0)
         XCTAssertTrue(bubble.exists)
-        XCTAssertLessThan(cluster.frame.minY, bubble.frame.maxY, "the pill overlaps the bubble's bottom edge")
-        XCTAssertGreaterThan(cluster.frame.maxY, bubble.frame.maxY, "and hangs below it")
-        XCTAssertLessThan(cluster.frame.minX, bubble.frame.midX, "on the inner corner of my bubble (the leading side)")
-        XCTAssertLessThan(abs(cluster.frame.midY - bubble.frame.maxY), 8, "about half of it on the bubble")
-        XCTAssertTrue(cluster.label.contains("😂"), cluster.label)
+        XCTAssertLessThan(first.frame.minY, bubble.frame.maxY, "a circle overlaps the bubble's bottom edge")
+        XCTAssertGreaterThan(first.frame.maxY, bubble.frame.maxY, "and hangs below it")
+        XCTAssertLessThan(abs(first.frame.midY - bubble.frame.maxY), 8, "about half of it on the bubble")
+        XCTAssertLessThan(first.frame.minX, bubble.frame.midX + 20, "starting at my bubble's inner (leading) corner")
+        XCTAssertTrue(first.label.contains("😂") && first.label.contains("1 person"), first.label)
     }
 
-    /// LIME-278b: four reactions on a short bubble fold into one pill that stays on the screen, growing toward the middle.
-    func testSeveralReactionsOnAShortBubbleAreOnePillFullyOnTheScreen() {
+    /// LIME-278c: four reactions on a short bubble are four circles, each with its own count, all on the screen, flowing toward the middle.
+    func testSeveralReactionsOnAShortBubbleAreOneCirclePerEmojiWithTheirOwnCountsAllOnScreen() {
         let app = chat()
         let window = app.windows.firstMatch.frame
-        let mineCluster = any(app, "reaction-cluster-s2")
-        XCTAssertTrue(mineCluster.waitForExistence(timeout: 10))
+        XCTAssertTrue(chip(app, "s2", "😂").waitForExistence(timeout: 10))
         let own = app.descendants(matching: .any).matching(identifier: "own-bubble").element(boundBy: 0)
-        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "reaction-cluster-s2").count, 1, "one pill, not four chips")
-        XCTAssertGreaterThanOrEqual(mineCluster.frame.minX, 0)
-        XCTAssertLessThanOrEqual(mineCluster.frame.maxX, window.maxX, "my pill is fully on the screen")
-        XCTAssertLessThan(mineCluster.frame.minX, own.frame.minX + 20, "and grows toward the middle from the bubble's inner corner")
-        XCTAssertTrue(mineCluster.label.contains("4 in total") && mineCluster.label.contains("including yours"), mineCluster.label)
-        // Someone else's short bubble: the pill grows toward the middle too, never past the right edge.
-        let theirs = any(app, "reaction-cluster-s1")
+        for emoji in ["😂", "👍", "❤️", "🎉"] {
+            let c = chip(app, "s2", emoji)
+            XCTAssertTrue(c.exists, emoji)
+            XCTAssertGreaterThanOrEqual(c.frame.minX, 0, emoji)
+            XCTAssertLessThanOrEqual(c.frame.maxX, window.maxX, "\(emoji) is on the screen")
+        }
+        XCTAssertTrue(chip(app, "s2", "❤️").label.contains("3 people"), "❤️ has its own count of 3")
+        XCTAssertTrue(chip(app, "s2", "👍").label.contains("including you"), "mine says so")
+        XCTAssertLessThan(chip(app, "s2", "🎉").frame.minX, chip(app, "s2", "😂").frame.minX, "later ones go toward the middle")
+        XCTAssertLessThan(chip(app, "s2", "🎉").frame.minX, own.frame.minX, "past the bubble's corner, into the screen")
+        // Someone else's short bubble: the circles flow toward the middle too, never past the right edge.
+        let theirs = chip(app, "s1", "🙏")
         XCTAssertTrue(theirs.exists)
         XCTAssertLessThanOrEqual(theirs.frame.maxX, window.maxX)
-        XCTAssertTrue(theirs.label.contains("4 in total") && !theirs.label.contains("including yours"), theirs.label)
-        // Tapping it is the who-reacted sheet.
-        mineCluster.tap()
+        // Tapping one is the who-reacted card, with the people stacked under each reaction.
+        chip(app, "s2", "❤️").tap()
         XCTAssertTrue(app.staticTexts["You"].waitForExistence(timeout: 5) || app.staticTexts["Sam Park"].waitForExistence(timeout: 5), "who reacted")
     }
 

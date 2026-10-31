@@ -842,8 +842,8 @@ final class LimeUITestsMessageActions: LimeUITestCase {
         openSam(app)
         longPress(app, "staff meeting")
         app.buttons["react-👍"].tap()
-        let cluster = app.descendants(matching: .any)["reaction-cluster-s1"]
-        XCTAssertTrue(cluster.waitForExistence(timeout: 5), "a cluster appears on the bubble")
+        let cluster = app.descendants(matching: .any)["reaction-chip-s1-👍"]
+        XCTAssertTrue(cluster.waitForExistence(timeout: 5), "a circle appears on the bubble")
         // The reactions are a pill on the bubble's bottom edge (LIME-278), on the side facing the middle: they touch the bubble, whatever its width.
         let bubble = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'staff meeting'")).firstMatch
         XCTAssertLessThan(cluster.frame.minY, bubble.frame.maxY, "the pill overlaps the bubble's bottom edge")
@@ -854,14 +854,14 @@ final class LimeUITestsMessageActions: LimeUITestCase {
         app.buttons["react-more"].tap()
         XCTAssertTrue(app.buttons["pick-🎉"].waitForExistence(timeout: 5))
         app.buttons["pick-🎉"].tap()
-        XCTAssertTrue(cluster.label.contains("🎉") && cluster.label.contains("👍"), cluster.label)
-        // Tap the cluster: everyone's reactions and who; tap my own to take it off.
+        XCTAssertTrue(app.descendants(matching: .any)["reaction-chip-s1-🎉"].waitForExistence(timeout: 5) && cluster.exists, "one circle each")
+        // Tap a circle: everyone's reactions and who; tap my own to take it off.
         cluster.tap()
         XCTAssertTrue(app.staticTexts["reactor-remove-👍"].exists || app.buttons["reactor-remove-👍"].waitForExistence(timeout: 5), "who reacted, with my own removable")
         XCTAssertTrue(app.descendants(matching: .any)["reaction-row-🎉"].exists)
         app.buttons["reactor-remove-👍"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["reaction-cluster-s1"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.descendants(matching: .any)["reaction-cluster-s1"].label.contains("👍"), "toggled off")
+        XCTAssertTrue(app.descendants(matching: .any)["reaction-chip-s1-🎉"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any)["reaction-chip-s1-👍"].exists, "toggled off")
     }
 
     func testLongPressingAPhotoAlbumAndFileOpensTheMenuAndReactionsShowOnTheMedia() {
@@ -877,8 +877,8 @@ final class LimeUITestsMessageActions: LimeUITestCase {
         XCTAssertTrue(app.buttons["action-select"].exists)
         XCTAssertTrue(app.buttons["action-delete"].exists)
         app.buttons["react-👍"].tap()
-        let cluster = app.descendants(matching: .any)["reaction-cluster-a1"]
-        XCTAssertTrue(cluster.waitForExistence(timeout: 5), "the cluster sits on the album")
+        let cluster = app.descendants(matching: .any)["reaction-chip-a1-👍"]
+        XCTAssertTrue(cluster.waitForExistence(timeout: 5), "the circle sits on the album")
         XCTAssertGreaterThanOrEqual(cluster.frame.minY, image.frame.maxY - 1, "under the media")
         XCTAssertFalse(app.descendants(matching: .any)["attachment-viewer"].exists, "a long-press does not open the viewer")
         // A file card.
@@ -887,7 +887,7 @@ final class LimeUITestsMessageActions: LimeUITestCase {
         file.press(forDuration: 1.0)
         XCTAssertTrue(app.descendants(matching: .any)["message-actions"].waitForExistence(timeout: 5), "and on a file card")
         app.buttons["react-❤️"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["reaction-cluster-a2"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["reaction-chip-a2-❤️"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.descendants(matching: .any)["file-opener"].exists)
         // The viewer has a react button for the album.
         image.tap()
@@ -898,7 +898,7 @@ final class LimeUITestsMessageActions: LimeUITestCase {
         XCTAssertTrue(app.buttons["viewer-react-more"].exists, "with a + for any emoji")
         app.buttons["viewer-react-😂"].tap()
         app.buttons["attachment-viewer-close"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["reaction-cluster-a1"].label.contains("😂"), "reacting in the viewer reacts to the message")
+        XCTAssertTrue(app.descendants(matching: .any)["reaction-chip-a1-😂"].waitForExistence(timeout: 5), "reacting in the viewer reacts to the message")
     }
 
     func testLongPressingAVoiceMessageAndAVideoOpensTheMenuAndReactionsShow() {

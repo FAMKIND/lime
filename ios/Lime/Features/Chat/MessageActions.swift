@@ -77,7 +77,9 @@ struct MessageActionsHost: ViewModifier {
             .sheet(isPresented: Binding(get: { state.reactors != nil }, set: { if !$0 { state.reactors = nil } })) {
                 if let message = state.reactors {
                     // Read the live message, so the list is current if someone reacts while it is open.
-                    ReactorsSheet(chips: liveChips(message), mineToggle: { emoji in
+                    ReactorsSheet(chips: liveChips(message), person: { name in
+                        name == "You" ? store.conversation(conversationID)?.members.first { $0.id == "me" } : store.conversation(conversationID)?.members.first { $0.name == name }
+                    }, mineToggle: { emoji in
                         state.reactors = nil
                         Task { await store.toggleReaction(emoji, on: message, in: conversationID) }
                     }) { state.reactors = nil }
@@ -212,7 +214,7 @@ struct MessageActionsHost: ViewModifier {
                                 Task { await store.toggleReaction(emoji, on: message, in: conversationID) }
                             } label: {
                                 Text(emoji).font(.system(size: 28)).frame(width: 40, height: 44)
-                                    .background(mine ? Theme.pressed : Color.clear, in: Circle())
+                                    .background(mine ? Theme.accent : Color.clear, in: Circle())
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel("React with \(emoji)")
@@ -222,15 +224,14 @@ struct MessageActionsHost: ViewModifier {
                             state.menu = nil
                             state.picking = message
                         } label: {
-                            Image(systemName: "plus").font(.system(size: 18, weight: .semibold)).foregroundStyle(Theme.text)
-                                .frame(width: 36, height: 36).background(Theme.surface, in: Circle())
+                            Text("\u{1F60A}").font(.system(size: 22)).frame(width: 36, height: 36).background(Theme.surface, in: Circle())
+                                .overlay(alignment: .bottomTrailing) { Image(systemName: "plus.circle.fill").font(.system(size: 13)).foregroundStyle(Theme.text, Theme.canvas).offset(x: 3, y: 3) }
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("More emoji").accessibilityIdentifier("react-more")
                     }
                     .padding(.horizontal, 8).padding(.vertical, 6)
-                    .background(Theme.canvas, in: Capsule())
-                    .overlay(Capsule().strokeBorder(Theme.hairline, lineWidth: 0.5))
+                    .limeGlass()
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("reaction-row")
                 }
@@ -412,6 +413,8 @@ struct EmojiPickerSheet: View {
 /// Every reaction on a message with who reacted; tap your own to remove it.
 struct ReactorsSheet: View {
     let chips: [ReactionChip]
+    /// A person by the name the reaction lists ("You" is me); nil falls back to initials in a colour from the name.
+    var person: (String) -> Person? = { _ in nil }
     var mineToggle: (String) -> Void
     var finish: () -> Void
 
@@ -429,7 +432,17 @@ struct ReactorsSheet: View {
                             HStack(spacing: 8) {
                                 Text(chip.emoji).font(.system(size: 30))
                                 Text("\(chip.count)").font(Theme.title).foregroundStyle(Theme.textSecondary)
+                                Spacer(minLength: 8)
+                                // The people who used it, stacked (Apple's tapback card).
+                                HStack(spacing: -10) {
+                                    ForEach(Array(chip.people.prefix(5).enumerated()), id: \.offset) { index, name in
+                                        AvatarView(person: person(name) ?? Person(id: name, name: name, tone: AvatarTone.tone(for: name)), size: 30)
+                                            .overlay(Circle().strokeBorder(Theme.canvas, lineWidth: 2)).zIndex(Double(5 - index))
+                                    }
+                                }
+                                .accessibilityHidden(true)
                             }
+                            .accessibilityElement(children: .combine)
                             .accessibilityIdentifier("reaction-row-\(chip.emoji)")
                             ForEach(chip.people, id: \.self) { name in
                                 if chip.mine && name == "You" {
@@ -457,6 +470,7 @@ struct ReactorsSheet: View {
         .padding(20)
         .background(Theme.canvas.ignoresSafeArea())
         .presentationDetents([.medium, .large])
+        .presentationCornerRadius(28)
     }
 }
 
