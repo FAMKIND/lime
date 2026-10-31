@@ -23,6 +23,8 @@ extension ConversationStore {
         }
         let requests = (try? core.listCoauthorRequests()) ?? []
         let credited = (try? core.listCoauthoredPosts()) ?? []
+        let handoverList = (try? core.listHandovers()) ?? []
+        if handoverList != handovers { handovers = handoverList }
         if requests != jamRequests { jamRequests = requests }
         if credited != coauthoredPosts { coauthoredPosts = credited }
         if mine != jamsMine { jamsMine = mine }

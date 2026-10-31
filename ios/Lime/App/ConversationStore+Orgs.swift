@@ -227,7 +227,7 @@ extension ConversationStore {
         let me = meProvider().id
         orgMembersByJam[jamID] = [
             OrgMemberInfo(userId: me, name: "You", tone: 4, role: mine ? "owner" : "member", isMe: true, canManage: false),
-            OrgMemberInfo(userId: "sam", name: "Sam Park", tone: UInt32(AvatarTone.tone(for: "sam")), role: mine ? "writer" : "owner", isMe: false, canManage: mine),
+            OrgMemberInfo(userId: "sam", name: "Sam Park", tone: UInt32(AvatarTone.tone(for: "sam")), role: mine ? (ProcessInfo.processInfo.arguments.contains("-lime-demo-band-owner") ? "owner" : "writer") : "owner", isMe: false, canManage: mine),
             OrgMemberInfo(userId: "lee", name: "Lee Wong", tone: UInt32(AvatarTone.tone(for: "lee")), role: "member", isMe: false, canManage: mine),
         ]
         orgGroupsByJam[jamID] = [

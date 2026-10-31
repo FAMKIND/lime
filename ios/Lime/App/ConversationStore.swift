@@ -161,6 +161,8 @@ final class ConversationStore {
     var jamLastKick = Date.distantPast
     /// Credits I am asked to accept, and the posts I am credited on (LIME-188f).
     var jamRequests: [CoauthorRequest] = []
+    /// Hands-over of a band's publishing this phone is part of (LIME-275c): offers I made, offers made to me, and ones on their way.
+    var handovers: [HandoverInfo] = []
     var coauthoredPosts: [JamPostInfo] = []
     /// Demo mode (UI tests): jam pages of other teachers by user id.
     var demoJamPages: [String: JamPageInfo] = [:]
@@ -1271,6 +1273,7 @@ final class ConversationStore {
                 demoPublish("demo-my-jam", kind: "record", title: "Songs for the circle", subtitle: "Korean children's songs", markdown: "## Explore the different types of songs.\n\nThree songs we sing.", items: [audio, cover])
             }
             if screen == "jam-request" { demoRequest() }
+            if ProcessInfo.processInfo.arguments.contains("-lime-demo-handover-offer") { demoSeedHandoverOffer() }
             if screen == "jam-discover" { demoDiscover() }
             if screen == "jam-series" { demoSeriesScreen() }
             if screen == "jam-community", let page = demoJamPages["sam"] { demoSubscribe(page); demoSetCommunity(page.jamId, on: true); jamPath.append(ProfileRoute(userID: "sam", name: "Sam Park", isMe: false)) }

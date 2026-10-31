@@ -196,6 +196,7 @@ struct OrgProfileView: View {
     @State private var fieldSheet: OrgField?
     @State private var pictureSheet = false
     @State private var coverSheet = false
+    @State private var handoverSheet = false
     /// Once, on the band made from an old-style one (LIME-259): what happened to the posts.
     @State private var cleanupNote = false
     /// The drafts writers sent to this band's owners (LIME-273).
@@ -265,6 +266,7 @@ struct OrgProfileView: View {
         .sheet(isPresented: $reviewList) { ReviewListSheet(jamId: page.jamId, title: page.title) }
         .sheet(isPresented: $pictureSheet) { OrgPictureSheet(jamId: page.jamId, title: page.title) }
         .sheet(isPresented: $coverSheet) { OrgCoverSheet(jamId: page.jamId) }
+        .sheet(isPresented: $handoverSheet) { HandoverSheet(page: page) }
         .task(id: page.jamId) { await store.ensureJamStyle(page.jamId); if store.isBandMember(page.jamId) { await store.loadOrg(page.jamId) } }
         .onAppear {
             if isMe, store.takeBandNote(page.jamId) { cleanupNote = true }
@@ -360,10 +362,23 @@ struct OrgProfileView: View {
         Button { editing = false } label: { ToolIconLabel(symbol: "chevron.left") }.accessibilityLabel("Back to the band").accessibilityIdentifier("org-edit-back")
     }
 
+    /// Hand over publishing; while an offer waits, who it waits for and a way to take it back.
+    @ViewBuilder
+    private var handoverItems: some View {
+        if let waiting = store.handover(of: page.jamId), waiting.outgoing {
+            Button {} label: { Label("Waiting for \(store.teacherName(waiting.peer)) to accept", systemImage: "clock") }.disabled(true).accessibilityIdentifier("handover-pending")
+            if waiting.state != "sent" { Button { Task { await store.cancelHandover(page.jamId) } } label: { Label("Cancel hand-over", systemImage: "xmark") }.accessibilityIdentifier("handover-cancel") }
+        } else {
+            Button { handoverSheet = true } label: { Label("Hand over publishing", systemImage: "arrow.left.arrow.right") }.accessibilityIdentifier("handover-start")
+        }
+    }
+
     private var moreMenu: some View {
         Menu {
             if isMe {
                 Button { action = .subscribers(page) } label: { Label("Subscribers", systemImage: "person.2") }.accessibilityIdentifier("jam-subscribers")
+                // Hand over publishing: a real band only, never my profile space (LIME-275).
+                if !isOwnSpace { handoverItems }
                 if !isOwnSpace { Button(role: .destructive) { action = .end(page) } label: { Label("Delete band", systemImage: "xmark.circle") }.accessibilityIdentifier("jam-end") }
             }
             if let username = store.publicProfiles[page.writerId]?.username, let url = URL(string: InviteLink.url(username: username)) {
@@ -577,6 +592,9 @@ struct OrgProfileView: View {
                         if index < authors.count - 1 { Divider().overlay(Theme.hairline).padding(.leading, 66) }
                     }
                 }
+            }
+            if store.isBandMember(page.jamId) {
+                Text("Published by \(store.publisherName(page))").font(Theme.secondary).foregroundStyle(Theme.textSecondary).frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 6).accessibilityIdentifier("org-published-by")
             }
             if !isMe && page.hasCommunity { CommunityJoinRow(jamID: page.jamId) }
             let count = page.subscriberCount == 1 ? "1 subscriber" : "\(page.subscriberCount) subscribers"

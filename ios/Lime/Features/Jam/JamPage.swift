@@ -56,6 +56,9 @@ struct JamPage: View {
     /// ("4 invitations to co-write") that opens a sheet with each, so they never push the filter pills down (LIME-267).
     @ViewBuilder
     private var requests: some View {
+        ForEach(store.incomingHandovers, id: \.jamId) { offer in
+            HandoverOfferCard(offer: offer).padding(.horizontal, 16).padding(.top, 8)
+        }
         if store.jamRequests.count == 1, let request = store.jamRequests.first {
             requestCard(request).padding(.horizontal, 16).padding(.top, 8)
         } else if let first = store.jamRequests.first {
