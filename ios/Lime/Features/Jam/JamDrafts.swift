@@ -7,6 +7,9 @@ struct JamDraftsList: View {
     @Environment(ConversationStore.self) private var store
     @State private var opening: DraftRoute?
     @State private var deleting: [DraftRow] = []
+    /// Podcasts and quick posts kept on this phone (LIME-276).
+    @State private var openingLocal: LocalDraft?
+    @State private var deletingLocal: LocalDraft?
 
     private static let rowHeight: CGFloat = 84
 
@@ -15,9 +18,10 @@ struct JamDraftsList: View {
         // drafts or who is writing change (and a few seconds after someone stops).
         Group {
             let rows = store.draftRows()
+            let local = LocalDrafts.shared.drafts
             VStack(spacing: 0) {
                 if store.draftSelecting { selectionBar(rows) }
-                if rows.isEmpty {
+                if rows.isEmpty && local.isEmpty {
                     Text("Drafts you write, and drafts you\u{2019}re invited to, show here.").font(Theme.body).foregroundStyle(Theme.textSecondary)
                         .multilineTextAlignment(.center).padding(.horizontal, 40).padding(.top, 60).accessibilityIdentifier("jam-drafts-empty")
                 } else {
@@ -34,6 +38,7 @@ struct JamDraftsList: View {
                     .listStyle(.plain).scrollContentBackground(.hidden).scrollDisabled(true)
                     .frame(height: CGFloat(rows.count) * Self.rowHeight + 8)
                 }
+                if !local.isEmpty { localSection(local) }
             }
         }
         .task {
@@ -44,6 +49,11 @@ struct JamDraftsList: View {
             }
         }
         .fullScreenCover(item: $opening) { JamComposeSheet(openDraft: $0.id) }
+        .fullScreenCover(item: $openingLocal) { JamComposeSheet(localDraft: $0) }
+        .confirmationDialog("Delete this draft?", isPresented: Binding(get: { deletingLocal != nil }, set: { if !$0 { deletingLocal = nil } }), titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { if let draft = deletingLocal { LocalDrafts.shared.delete(draft.id) }; deletingLocal = nil }.accessibilityIdentifier("jam-local-draft-delete-confirm")
+            Button("Cancel", role: .cancel) { deletingLocal = nil }
+        } message: { Text("It is only on this iPhone. This can\u{2019}t be undone.") }
         .confirmationDialog(deleteTitle, isPresented: Binding(get: { !deleting.isEmpty }, set: { if !$0 { deleting = [] } }), titleVisibility: .visible) {
             Button(deleting.allSatisfy(\.isWriter) ? "Delete" : "Delete or leave", role: .destructive) {
                 for row in deleting { store.removeDraft(row) }
@@ -53,6 +63,60 @@ struct JamDraftsList: View {
             .accessibilityIdentifier("jam-drafts-delete-confirm")
             Button("Cancel", role: .cancel) { deleting = [] }
         } message: { Text(deleteMessage) }
+    }
+
+    // MARK: Drafts kept on this phone (LIME-276)
+
+    private func localSection(_ drafts: [LocalDraft]) -> some View {
+        List {
+            ForEach(drafts) { draft in
+                localRow(draft)
+                    .listRowInsets(EdgeInsets()).listRowSeparator(.hidden).listRowBackground(Color.clear)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button { deletingLocal = draft } label: { Label("Delete", systemImage: "trash") }.tint(.red).accessibilityIdentifier("swipe-local-draft-delete-\(draft.id)")
+                    }
+                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                        Button { openingLocal = draft } label: { Label("Edit", systemImage: "pencil") }.tint(.blue)
+                    }
+                    .contextMenu {
+                        Button { openingLocal = draft } label: { Label("Edit", systemImage: "pencil") }
+                        Button(role: .destructive) { deletingLocal = draft } label: { Label("Delete", systemImage: "trash") }
+                    }
+            }
+        }
+        .listStyle(.plain).scrollContentBackground(.hidden).scrollDisabled(true)
+        .frame(height: CGFloat(drafts.count) * Self.rowHeight + 8)
+        .accessibilityIdentifier("jam-local-drafts")
+    }
+
+    private func localRow(_ draft: LocalDraft) -> some View {
+        let picture = (draft.cover ?? draft.photos.first ?? draft.clip).flatMap { item -> UIImage? in
+            let poster = LocalDrafts.shared.data(draft, item.file + ".poster"), thumb = LocalDrafts.shared.data(draft, item.file + ".thumb")
+            return (poster?.isEmpty == false ? poster : thumb).flatMap(UIImage.init(data:)) ?? (item.mime.hasPrefix("image/") ? LocalDrafts.shared.data(draft, item.file).flatMap(UIImage.init(data:)) : nil)
+        }
+        let ago = Self.ago(Int64(draft.updated.timeIntervalSince1970 * 1000))
+        return Button { openingLocal = draft } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.surface)
+                    if let picture { Image(uiImage: picture).resizable().scaledToFill() }
+                    else { Image(systemName: draft.kind == "podcast" ? "waveform" : "text.alignleft").font(.system(size: 20)).foregroundStyle(Theme.textSecondary) }
+                }
+                .frame(width: 52, height: 52).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)).accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(draft.headline).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
+                    Text("\(draft.label) \u{00B7} Edited \(ago)").font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 20).frame(maxWidth: .infinity, minHeight: Self.rowHeight, alignment: .leading).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(draft.headline), \(draft.label), edited \(ago)")
+        .accessibilityHint("Opens the draft")
+        .accessibilityAction(named: "Delete") { deletingLocal = draft }
+        .accessibilityIdentifier("jam-local-draft-\(draft.id)")
     }
 
     // MARK: One row

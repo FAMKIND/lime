@@ -25,6 +25,10 @@ struct JamComposeSheet: View {
     var editing: JamPostInfo? = nil
     /// A shared draft to write in (LIME-233d): an invitation accepted, or the post's ⋯ "Open draft".
     var openDraft: String? = nil
+    /// A podcast or a quick post kept on this phone to carry on with (LIME-276).
+    var localDraft: LocalDraft? = nil
+    @State private var localDraftID: String?
+    @State private var confirmingQuickClose = false
     @Environment(ConversationStore.self) private var store
     @Environment(AccountSession.self) private var session
     @Environment(\.dismiss) private var dismiss
@@ -225,6 +229,11 @@ struct JamComposeSheet: View {
             .onDisappear { coedit?.stop() }
             .task { await loadInitialState() }
         }
+        .confirmSheet("Keep this post?", isPresented: $confirmingQuickClose) {
+            Button("Save draft") { saveQuickDraft() }.accessibilityIdentifier("jam-compose-save-draft")
+            Button("Discard", role: .destructive) { if let id = localDraftID ?? localDraft?.id { LocalDrafts.shared.delete(id) }; JamDraft.shared.clear(); coedit?.stop(); dismiss() }.accessibilityIdentifier("jam-compose-discard")
+            Button("Keep writing", role: .cancel) {}
+        } message: { Text("A draft stays on this iPhone, in Drafts.") }
     }
 
     /// A quick post: your name, the words at the top growing down, photos under them.
@@ -973,11 +982,54 @@ struct JamComposeSheet: View {
         guard let made = store.jamsMine.first(where: { $0.jamId == jamID }) else { return }
         let page = JamPageInfo(jamId: made.jamId, writerId: made.writer, title: made.title, about: made.about, topics: made.topics, postCount: made.postCount,
                                subscriberCount: made.subscriberCount, hasCommunity: made.community, pictureVersion: nil)
-        close()
+        closeNow()
         store.openOrg(page, isMe: true, fresh: true)
     }
 
+    /// Cancel: a quick post with words or pictures asks first whether to keep it as a draft (LIME-276); everything else closes as it did.
     private func close() {
+        if !article, editing == nil, openDraft == nil, hasWords || !photos.isEmpty || !clips.isEmpty { confirmingQuickClose = true; return }
+        closeNow()
+    }
+
+    /// Keeps the quick post as a draft on this phone and closes.
+    private func saveQuickDraft() {
+        let id = localDraftID ?? localDraft?.id ?? UUID().uuidString
+        var draft = LocalDraft(id: id, kind: "post", updated: Date())
+        draft.words = composer.markdown(); draft.audience = audience; draft.topics = topics; draft.postAsJam = postAsJam
+        draft.coauthors = coauthors.map(\.id)
+        var media: [String: Data] = [:]
+        for (index, photo) in photos.enumerated() {
+            let (item, files) = LocalDrafts.item(photo.outgoing, file: "photo-\(index)")
+            draft.photos.append(item); media.merge(files) { $1 }
+        }
+        if let clip = clips.first {
+            let (item, files) = LocalDrafts.item(clip, file: "clip")
+            draft.clip = item; media.merge(files) { $1 }
+        }
+        if LocalDrafts.shared.save(draft, media: media) { JamDraft.shared.clear(); coedit?.stop(); dismiss() } else { problem = "The draft could not be saved." }
+    }
+
+    /// A draft kept on this phone: a podcast opens the studio on its details page, a post fills the composer again.
+    private func applyLocalDraft(_ draft: LocalDraft) async {
+        localDraftID = draft.id
+        postAsJam = draft.postAsJam; audience = draft.audience; topics = draft.topics; topicsSet = true
+        coauthors = draft.coauthors.map { store.teacher($0) }
+        if draft.kind == "podcast" {
+            recordMode = (draft.clip?.mime.hasPrefix("video/") ?? false) ? 0 : 1
+            return
+        }
+        photos = draft.photos.compactMap { item in
+            guard let outgoing = LocalDrafts.shared.outgoing(draft, item) else { return nil }
+            return DraftAttachment(outgoing: outgoing, preview: UIImage(data: outgoing.bytes))
+        }
+        if let item = draft.clip, let clip = LocalDrafts.shared.outgoing(draft, item) { clips = [clip] }
+        try? await Task.sleep(for: .milliseconds(300))
+        composer.textView?.attributedText = ComposerDocument.attributed(fromMarkdown: draft.words, post: true); composer.didEdit()
+        composer.focus()
+    }
+
+    private func closeNow() {
         coedit?.stop()
         if editing != nil || openDraft != nil { if let coedit, let view = composer.textView { coedit.syncNow(title: title, subtitle: subtitle, markdown: coedit.draftMarkdown(from: view.textStorage)) }; dismiss(); return }
         let draft = JamDraft.shared
@@ -1002,7 +1054,7 @@ struct JamComposeSheet: View {
                 takeClip(clip)
                 try? await Task.sleep(for: .milliseconds(450))
                 return await publishAll()
-            }, attach: { clip in takeClip(clip) })
+            }, resume: localDraft?.kind == "podcast" ? localDraft : nil, closeAll: { recordMode = nil; dismiss() }, attach: { clip in takeClip(clip) })
         }
     }
 
@@ -1022,6 +1074,7 @@ struct JamComposeSheet: View {
             photos = [DraftAttachment(outgoing: OutgoingAttachment(bytes: image.jpegData(compressionQuality: 0.8) ?? Data(), name: "photo.jpg", mime: "image/jpeg", width: 40, height: 40, durationMs: nil, thumb: Data(), poster: Data()), preview: image)]
         }
         #endif
+        if let localDraft { await applyLocalDraft(localDraft); return }
         if let editing {
             // The post's own words, in its own layout (a recording shows its title, subtitle and description on the article page).
             article = editing.kind != "quick"; title = editing.title; subtitle = editing.subtitle
@@ -1177,6 +1230,7 @@ struct JamComposeSheet: View {
         switch result {
         case .success:
             if let coedit { coedit.published(postID: store.lastPublishedPostID); store.coeditFinish(coedit.draftID) }
+            if let localDraftID { LocalDrafts.shared.delete(localDraftID) }   // published: the kept draft is gone (LIME-276)
             JamDraft.shared.clear()
             let landed = store.lastPublishedPostID
             UIImpactFeedbackGenerator(style: .light).impactOccurred()

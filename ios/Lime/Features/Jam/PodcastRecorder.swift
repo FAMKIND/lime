@@ -223,12 +223,16 @@ struct PodcastRecorder: View {
     var post: ((OutgoingAttachment) async -> Bool)?
     /// A podcast of mine being edited (LIME-227): the same studio with a pencil by each line, a camera badge on the cover and Re-record; Cancel · Update on top.
     var editing: JamPostInfo?
+    /// A draft kept on this phone to carry on with (LIME-276): the recording, its trim, the words and the choices come back on the details page.
+    var resume: LocalDraft?
+    /// Asked when the draft was saved and the whole flow should close (the studio sits on top of the composer).
+    var closeAll: (() -> Void)?
     init(title: Binding<String>, coauthors: Binding<[Person]>, camera: Bool, forArticle: Bool = false,
          subtitle: Binding<String> = .constant(""), details: Binding<String> = .constant(""), cover: Binding<OutgoingAttachment?> = .constant(nil),
-         postAsJam: Binding<String?> = .constant(nil), series: Binding<SeriesInfo?> = .constant(nil), audience: Binding<String> = .constant("subscribers"), topics: Binding<[String]> = .constant([]), post: ((OutgoingAttachment) async -> Bool)? = nil, editing: JamPostInfo? = nil,
+         postAsJam: Binding<String?> = .constant(nil), series: Binding<SeriesInfo?> = .constant(nil), audience: Binding<String> = .constant("subscribers"), topics: Binding<[String]> = .constant([]), post: ((OutgoingAttachment) async -> Bool)? = nil, editing: JamPostInfo? = nil, resume: LocalDraft? = nil, closeAll: (() -> Void)? = nil,
          attach: @escaping (OutgoingAttachment) -> Void = { _ in }) {
         _title = title; _coauthors = coauthors; self.camera = camera; self.forArticle = forArticle
-        _subtitle = subtitle; _details = details; _cover = cover; _postAsJam = postAsJam; _series = series; _audience = audience; _topics = topics; self.post = post; self.editing = editing; self.attach = attach
+        _subtitle = subtitle; _details = details; _cover = cover; _postAsJam = postAsJam; _series = series; _audience = audience; _topics = topics; self.post = post; self.editing = editing; self.resume = resume; self.closeAll = closeAll; self.attach = attach
     }
 
     @Environment(ConversationStore.self) private var store
@@ -252,6 +256,9 @@ struct PodcastRecorder: View {
     @State private var confirmingRerecord = false
     @State private var confirmingDiscard = false
     @State private var confirmingClose = false
+    /// The local draft this podcast is, once saved or resumed (LIME-276).
+    @State private var draftID: String?
+    @State private var draftSaved = false
     @State private var torchOn = false
     // The details page (LIME-239b)
     @State private var descModel = RichComposerModel()
@@ -318,7 +325,8 @@ struct PodcastRecorder: View {
             Button("Keep recording", role: .cancel) {}
         } message: { Text("What you recorded is thrown away.") }
         .confirmSheet("Discard this podcast?", isPresented: $confirmingClose) {
-            Button("Discard", role: .destructive) { cancel() }.accessibilityIdentifier("podcast-close-confirm")
+            Button("Discard", role: .destructive) { if let draftID { LocalDrafts.shared.delete(draftID) }; cancel() }.accessibilityIdentifier("podcast-close-confirm")
+            Button("Save draft") { saveDraft(closing: true) }.accessibilityIdentifier("podcast-close-save-draft")
             Button("Keep editing", role: .cancel) {}
         } message: { Text("Your recording and what you\u{2019}ve written will be deleted.") }
         .alert("Can\u{2019}t record", isPresented: Binding(get: { problem != nil }, set: { if !$0 { problem = nil } })) {
@@ -332,6 +340,7 @@ struct PodcastRecorder: View {
             voice.simulated = store.isDemo
             #endif
             mic.refresh(demo: store.isDemo)
+            if let resume { resumeDraft(resume); return }
             if let editing { prefill(editing); return }
             if camera { Task { await turnCamera(on: true) } }
         }
@@ -558,6 +567,7 @@ struct PodcastRecorder: View {
             Text("Step 1 of 2").font(Theme.font(.headline, weight: .semibold)).foregroundStyle(Theme.text).accessibilityAddTraits(.isHeader).accessibilityIdentifier("podcast-step")
             Spacer()
             Menu {
+                Button { saveDraft(closing: false) } label: { Label(draftSaved ? "Draft saved" : "Save draft", systemImage: "square.and.arrow.down") }.disabled(clip == nil).accessibilityIdentifier("podcast-save-draft")
                 Button { confirmingRerecord = true } label: { Label("Record again", systemImage: "arrow.counterclockwise") }.accessibilityIdentifier("podcast-again")
             } label: {
                 Image(systemName: "ellipsis").font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.text).frame(width: 44, height: 44).limeGlass(in: Circle())
@@ -823,6 +833,7 @@ struct PodcastRecorder: View {
             publishing = true
             let ok = await post(current)
             publishing = false
+            if ok, let draftID { LocalDrafts.shared.delete(draftID) }   // published: the draft is gone (LIME-276)
             if !ok { problem = "Could not publish the podcast. Nothing is lost: try again." }
         } else { attach(current); dismiss() }
     }
@@ -1251,6 +1262,47 @@ struct PodcastRecorder: View {
     private func postNow() {
         guard let clip, let post else { return }
         Task { _ = await post(clip) }
+    }
+
+    /// Keeps the recording and everything written on this phone as a draft (LIME-276); `closing` also closes the studio.
+    private func saveDraft(closing: Bool) {
+        guard let current = clip else { return }
+        let id = draftID ?? UUID().uuidString
+        details = descModel.markdown().isEmpty ? details : descModel.markdown()
+        var draft = LocalDraft(id: id, kind: "podcast", updated: Date())
+        draft.title = title; draft.subtitle = subtitle; draft.words = details; draft.audience = audience; draft.topics = topics; draft.postAsJam = postAsJam
+        draft.seriesID = series?.id; draft.seriesTitle = series?.title; draft.seriesPart = series?.part; draft.seriesOf = series?.of
+        draft.coauthors = coauthors.map(\.id)
+        draft.trimStart = trimStart; draft.trimEnd = trimEnd
+        var media: [String: Data] = [:]
+        let (clipItem, clipFiles) = LocalDrafts.item(current, file: "clip")
+        draft.clip = clipItem; media.merge(clipFiles) { $1 }
+        if let cover {
+            let (item, files) = LocalDrafts.item(cover, file: "cover")
+            draft.cover = item; media.merge(files) { $1 }
+        }
+        guard LocalDrafts.shared.save(draft, media: media) else { problem = "The draft could not be saved."; return }
+        draftID = id
+        draftSaved = true
+        UIAccessibility.post(notification: .announcement, argument: "Draft saved")
+        if closing { cancel(); closeAll?() }
+    }
+
+    /// A draft kept earlier comes back: the recording on the details page, its trim, the words and the choices.
+    private func resumeDraft(_ draft: LocalDraft) {
+        draftID = draft.id
+        draftSaved = true
+        guard let item = draft.clip, let restored = LocalDrafts.shared.outgoing(draft, item) else { problem = "The recording of this draft is missing."; return }
+        clip = restored
+        title = draft.title; subtitle = draft.subtitle; details = draft.words; audience = draft.audience; topics = draft.topics; postAsJam = draft.postAsJam
+        if let id = draft.seriesID { series = SeriesInfo(id: id, title: draft.seriesTitle ?? "", part: draft.seriesPart ?? 1, of: draft.seriesOf) }
+        if let coverItem = draft.cover { cover = LocalDrafts.shared.outgoing(draft, coverItem) }
+        coauthors = draft.coauthors.map { store.teacher($0) }
+        trimStart = draft.trimStart; trimEnd = draft.trimEnd
+        Task {
+            try? await Task.sleep(for: .milliseconds(300))
+            if !details.isEmpty { descModel.textView?.attributedText = ComposerDocument.attributed(fromMarkdown: details, post: true); descModel.didEdit() }
+        }
     }
 
     private func cancel() {
