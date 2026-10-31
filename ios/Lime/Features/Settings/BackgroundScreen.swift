@@ -49,6 +49,7 @@ struct BackgroundScreen: View {
                 visibilityChoice(.contacts, "Only my contacts (encrypted)", detail: "Teachers you message see it. It's encrypted; everyone else sees none.", id: "background-vis-contacts")
             }
             SettingsFootnote(text: "Who can see my background")
+            ProfileColourCard()
         }
         .task {
             let mine = await store.myExtra(.background)
@@ -257,7 +258,7 @@ struct BackgroundCropScreen: View {
             }
             .frame(maxWidth: .infinity)
         }
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
     }
 
     /// The part of the frame this phone's hero shows: the full width, centred, as tall as the hero's shape says (never more than the frame).
@@ -318,10 +319,57 @@ struct VideoTrimSheet: View {
             }
             .padding(.horizontal, 20).padding(.bottom, 20)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity).background(Theme.canvas.ignoresSafeArea())
+        .frame(maxWidth: .infinity, maxHeight: .infinity).limeBackground()
         .presentationDetents([.medium])
         .task(id: Int(start)) { poster = await BackgroundVideoProcessing.frame(of: video.url, at: start) }
     }
 
     private func clock(_ seconds: Double) -> String { String(format: "%d:%02d", Int(seconds) / 60, Int(seconds) % 60) }
+}
+
+
+/// The profile's colour (LIME-277a): one of lime's 8 colours for the default hero when there is no background, the same set as a band's or group's cover. For now it is
+/// kept on this iPhone and only shows on your own profile; sharing it with contacts like the background needs the profile record to carry it (a core change).
+enum ProfileColour {
+    static func key(_ userID: String) -> String { "lime.profile.colour.\(userID)" }
+    static func chosen(for userID: String?) -> Int? {
+        guard let userID, UserDefaults.standard.object(forKey: key(userID)) != nil else { return nil }
+        return UserDefaults.standard.integer(forKey: key(userID))
+    }
+    static func set(_ tone: Int?, for userID: String) {
+        if let tone { UserDefaults.standard.set(tone, forKey: key(userID)) } else { UserDefaults.standard.removeObject(forKey: key(userID)) }
+    }
+}
+
+struct ProfileColourCard: View {
+    @Environment(ConversationStore.self) private var store
+    @State private var chosen: Int?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Colour").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.textSecondary).accessibilityAddTraits(.isHeader)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 44), spacing: 10), count: 4), spacing: 10) {
+                ForEach(0..<8, id: \.self) { tone in
+                    let on = chosen == tone
+                    Button { chosen = tone; if let id = store.myUserID { ProfileColour.set(tone, for: id) } } label: {
+                        ZStack {
+                            Circle().fill(Theme.avatar(tone))
+                            if on { Image(systemName: "checkmark").font(.system(size: 17, weight: .bold)).foregroundStyle(Color(red: 0.075, green: 0.106, blue: 0.09)) }
+                        }
+                        .frame(width: 48, height: 48).frame(maxWidth: .infinity, minHeight: 48).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(LimeColours.name(tone)).accessibilityAddTraits(on ? [.isSelected] : [])
+                    .accessibilityIdentifier("profile-colour-\(tone)")
+                }
+            }
+            if chosen != nil {
+                Button("Use the default colour") { chosen = nil; if let id = store.myUserID { ProfileColour.set(nil, for: id) } }
+                    .font(Theme.secondary).frame(minHeight: 44).accessibilityIdentifier("profile-colour-default")
+            }
+            Text("The colour of your profile's top when you have no background. Only on this iPhone for now.").font(Theme.caption).foregroundStyle(Theme.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .task { chosen = ProfileColour.chosen(for: store.myUserID) }
+    }
 }

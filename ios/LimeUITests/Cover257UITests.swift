@@ -19,7 +19,7 @@ final class Cover257UITests: LimeUITestCase {
         app.buttons["group-edit-cover"].tap()
         XCTAssertTrue(app.buttons["org-cover-choose"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["org-cover-remove"].exists, "nothing to remove")
-        XCTAssertEqual(app.buttons["org-colour-6"].label, "Purple")
+        XCTAssertEqual(app.buttons["org-colour-6"].label, "Lavender")
         app.buttons["org-colour-6"].tap()
         XCTAssertTrue(app.buttons["org-colour-default"].waitForExistence(timeout: 3), "a colour is chosen")
         app.buttons["new-message-cancel"].tap()

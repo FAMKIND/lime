@@ -385,6 +385,7 @@ struct CustomizeScreen: View {
                 }
             }
             SettingsFootnote(text: "Appearance applies to the whole app and is kept on this iPhone.")
+            ThemeChoices()
             SettingsCard {
                 ForEach(MentionStyle.allCases) { option in
                     Button { mentionStyle = option.rawValue } label: {
@@ -500,7 +501,7 @@ struct AcknowledgementsScreen: View {
             .padding(16)
             .accessibilityIdentifier("acknowledgements-text")
         }
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         .navigationTitle("Acknowledgements")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
@@ -519,5 +520,41 @@ struct AcknowledgementsScreen: View {
         }
         if !current.isEmpty { result.append(current.joined(separator: "\n")) }
         return result
+    }
+}
+
+
+// MARK: Accent and background (LIME-277a, 277b; the single Appearance screen comes in 277c)
+
+struct ThemeChoices: View {
+    private var store: ThemeStore { ThemeStore.shared }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Accent").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.textSecondary).accessibilityAddTraits(.isHeader)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 44), spacing: 10), count: 4), spacing: 10) {
+                ForEach(0..<8, id: \.self) { tone in
+                    let on = store.accent == tone
+                    Button { store.accent = tone } label: {
+                        ZStack {
+                            Circle().fill(Color(uiColor: UIColor(hex: LimeColours.accentHex[tone])))
+                            if on {
+                                Image(systemName: "checkmark").font(.system(size: 17, weight: .bold))
+                                    .foregroundStyle(Color(ContrastGuard.ink(on: UIColor(hex: LimeColours.accentHex[tone]))))
+                            }
+                        }
+                        .overlay(Circle().strokeBorder(on ? Theme.text : Color.clear, lineWidth: 2.5).padding(-4))
+                        .frame(width: 44, height: 44).frame(maxWidth: .infinity, minHeight: 52)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(LimeColours.name(tone)).accessibilityAddTraits(on ? [.isSelected] : [])
+                    .accessibilityIdentifier("theme-accent-\(tone)")
+                }
+            }
+            Button("Reset to lime") { store.reset() }.font(Theme.body).frame(minHeight: 44).accessibilityIdentifier("theme-reset")
+            Text("The accent colours buttons and selections. Text adjusts to stay easy to read. Kept on this iPhone.")
+                .font(Theme.caption).foregroundStyle(Theme.textSecondary)
+        }
+        .padding(.horizontal, 4)
     }
 }

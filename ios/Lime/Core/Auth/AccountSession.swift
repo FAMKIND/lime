@@ -82,6 +82,7 @@ final class AccountSession {
             profile = Profile(displayName: "Test Teacher", username: "teacher", school: nil, maskedEmail: "t•••@example.invalid")
             maskedEmail = "t•••@example.invalid"
             tokens = AuthTokens(accessToken: "fake-access", refreshToken: "fake-refresh", expiresAt: Date().addingTimeInterval(86_400), userID: "test-user")
+            ThemeStore.shared.load(for: "demo")
             await store.bootstrap(arguments: arguments)
             if arguments.contains("-lime-load-sample-chats") { await store.loadSampleChats() }
             if arguments.contains("-lime-demo-chat") {
@@ -394,6 +395,7 @@ final class AccountSession {
         } else {
             store.closeStore()
         }
+        ThemeStore.shared.load(for: nil)
         tokens = nil
         profile = nil
         maskedEmail = nil

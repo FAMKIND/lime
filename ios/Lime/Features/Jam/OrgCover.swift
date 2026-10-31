@@ -37,7 +37,7 @@ struct CoverColourSheet: View {
     }
 
     /// The names of the eight avatar colours, in tone order (what VoiceOver says).
-    static let names = ["Pink", "Coral", "Orange", "Yellow", "Blue", "Periwinkle", "Purple", "Aqua"]
+    static let names = LimeColours.names
 
     var body: some View {
         VStack(spacing: 0) {
@@ -53,7 +53,7 @@ struct CoverColourSheet: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         .presentationDetents([.medium, .large])
         .disabled(busy)
         .fullScreenCover(item: $step) { s in

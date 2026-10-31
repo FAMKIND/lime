@@ -315,7 +315,7 @@ struct ProfileView: View {
         let id = "hero-\(route.userID)"
         // Not looked for yet: what was kept from last time (a page with a cover keeps none, so no bright mesh shows first), else nothing.
         guard heroLoaded else { return Hero.remembered(id: id, chosen: nil).spec }
-        return Hero.ambient(photo: AvatarCache.shared.image(for: person.id), chosen: nil, tone: person.tone, key: "\(id)-\(AvatarCache.shared.image(for: person.id).map { ObjectIdentifier($0).hashValue } ?? 0)", id: id)
+        return Hero.ambient(photo: AvatarCache.shared.image(for: person.id), chosen: route.userID == store.myUserID ? ProfileColour.chosen(for: route.userID) : nil, tone: person.tone, key: "\(id)-\(AvatarCache.shared.image(for: person.id).map { ObjectIdentifier($0).hashValue } ?? 0)", id: id)
     }
 
     private var shownHero: (image: UIImage, key: String) {
@@ -942,7 +942,7 @@ struct SharedListView: View {
                 }
             }
         }
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         .navigationTitle(route.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)

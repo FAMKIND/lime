@@ -39,28 +39,29 @@ enum Theme {
         Color(name, bundle: Bundle(for: BundleToken.self))
     }
 
-    static let canvas = color(Name.canvas)
-    static let surface = color(Name.surface)
+    // The tokens the theme drives (LIME-277a): computed from the accent and background chosen, light or dark, and checked by the contrast guard.
+    static var canvas: Color { ThemeStore.shared.colour(.canvas) }
+    static var surface: Color { ThemeStore.shared.colour(.surface) }
     static let bubbleOther = color(Name.bubbleOther)
     static let bubbleEdge = color(Name.bubbleEdge)
     static let primary = color(Name.primary)
     static let primaryInk = color(Name.primaryInk)
-    static let accent = color(Name.accent)
+    static var accent: Color { ThemeStore.shared.colour(.accent) }
     /// A filled heart (LIME-189d): the buttons' Red (docs: `ButtonPalette.red`): #B3261E in light, #FFB4AB in dark; on a black screen always the light one.
     static let heartHex: (light: UInt32, dark: UInt32) = (0xB3261E, 0xFFB4AB)
     static let heart = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: heartHex.dark) : UIColor(hex: heartHex.light) })
     static let heartOnBlack = Color(UIColor(hex: heartHex.dark))
-    static let accentInk = color(Name.accentInk)
+    static var accentInk: Color { ThemeStore.shared.colour(.accentInk) }
     static let ownBubble = primary
     static let ownBubbleInk = primaryInk
-    static let text = color(Name.text)
-    static let textSecondary = color(Name.textSecondary)
+    static var text: Color { ThemeStore.shared.colour(.text) }
+    static var textSecondary: Color { ThemeStore.shared.colour(.secondary) }
     /// The soft grey of an empty field's hint (LIME-188f): one grey for every placeholder, readable (4.5:1) on the canvas in light and dark.
     /// (LIME-188l: softer than the text grey, still 4.5:1 on the canvas in light and dark.)
     static let placeholder = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0x8C / 255, green: 0x85 / 255, blue: 0x7E / 255, alpha: 1) : UIColor(red: 0x6E / 255, green: 0x66 / 255, blue: 0x5E / 255, alpha: 1) })
     /// The hint of a large field, the article's title (bold, over 14 pt, so WCAG's 3:1 for large text applies): lighter still.
     static let placeholderLarge = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0x6F / 255, green: 0x69 / 255, blue: 0x62 / 255, alpha: 1) : UIColor(red: 0x8E / 255, green: 0x86 / 255, blue: 0x7E / 255, alpha: 1) })
-    static let hairline = color(Name.hairline)
+    static var hairline: Color { ThemeStore.shared.colour(.hairline) }
     /// A link in someone else's bubble, and in the composer.
     static let linkOther = color(Name.linkOther)
     /// A link in my own bubble.
@@ -98,9 +99,9 @@ enum Theme {
         TextPreferences.shared.typeface.font(style, weight: weight)
     }
 
-    /// The web app's avatar pastels (`--lime-avatar-0…7`), light and dark.
-    private static let avatarLight: [UInt32] = [0xFEB2BF, 0xFED2CA, 0xF3BF91, 0xEFDF91, 0x92D4FF, 0xD1DEFE, 0xD9BAFF, 0x99EEFF]
-    private static let avatarDark: [UInt32] = [0xDF8193, 0xEF9B8D, 0xC59770, 0xC3B571, 0x51ABE2, 0x98B2F7, 0xB091D6, 0x78C2D1]
+    /// The web app's avatar pastels (`--lime-avatar-0…7`), light and dark; index 5 is lime green (LIME-277a: it replaced periwinkle, so avatars, covers and the accent share one set of 8).
+    private static let avatarLight: [UInt32] = [0xFEB2BF, 0xFED2CA, 0xF3BF91, 0xEFDF91, 0x92D4FF, 0xC4EFA6, 0xD9BAFF, 0x99EEFF]
+    private static let avatarDark: [UInt32] = [0xDF8193, 0xEF9B8D, 0xC59770, 0xC3B571, 0x51ABE2, 0x7FBF5F, 0xB091D6, 0x78C2D1]
 
     /// The avatar pastel as a plain colour, for one appearance.
     static func avatarUIColor(_ tone: Int, dark: Bool) -> UIColor {
