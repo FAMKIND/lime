@@ -1042,6 +1042,31 @@ final class ConversationStore {
 
     /// Made-up conversations in memory: a request waiting, a chat with a message in each delivery state.
     /// `screen` opens one screen for a screenshot: `requests`, `request-chat`, `chat`, `new-message`, `new-message-found`.
+    /// Sam's chat in the demo. `-lime-demo-short-chat` (LIME-278): very short messages in runs, with reactions, for the bubble's reaction pill and the times per run.
+    private static func demoSamMessages(now: Date) -> [Message] {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-lime-demo-short-chat") {
+            var hi = Message(id: "s1", senderID: "sam", text: "hi", date: now.addingTimeInterval(-3600))
+            hi.reactions = [ReactionChip(emoji: "❤️", count: 1, mine: false, people: ["Sam Park"])]
+            var hi2 = Message(id: "s1b", senderID: "sam", text: "Hi", date: now.addingTimeInterval(-3550))
+            hi2.reactions = [ReactionChip(emoji: "👍", count: 2, mine: true, people: ["You", "Sam Park"])]
+            var mine = Message(id: "s2", senderID: nil, text: "hi", date: now.addingTimeInterval(-3000), state: .sent)
+            mine.reactions = [ReactionChip(emoji: "😂", count: 1, mine: false, people: ["Sam Park"])]
+            return [hi, hi2,
+                    Message(id: "s1c", senderID: "sam", text: "Are you coming to the staff meeting?", date: now.addingTimeInterval(-3520)),
+                    mine,
+                    Message(id: "s2b", senderID: nil, text: "yes", date: now.addingTimeInterval(-2990), state: .sent),
+                    Message(id: "s2c", senderID: nil, text: "see you there", date: now.addingTimeInterval(-2980), state: .sent),
+                    Message(id: "s3", senderID: nil, text: "Bringing the new schedule", date: now.addingTimeInterval(-60), state: .sending)]
+        }
+        #endif
+        return [
+            Message(id: "s1", senderID: "sam", text: "Are you coming to the staff meeting?", date: now.addingTimeInterval(-3600)),
+            Message(id: "s2", senderID: nil, text: "Yes, see you there", date: now.addingTimeInterval(-3000), state: .sent),
+            Message(id: "s3", senderID: nil, text: "Bringing the new schedule", date: now.addingTimeInterval(-60), state: .sending),
+        ]
+    }
+
     func loadDemo(screen: String? = nil) {
         isDemo = true
         jamsLoaded = true
@@ -1059,11 +1084,7 @@ final class ConversationStore {
             Conversation(id: "dm:ada", title: ada.name, members: [ada], messages: [
                 Message(id: "d1", senderID: "ada", text: "Hello! Do you have the field trip forms?", date: now.addingTimeInterval(-600)),
             ], unread: 1, isRequest: true),
-            Conversation(id: "dm:sam", title: sam.name, members: [sam], messages: [
-                Message(id: "s1", senderID: "sam", text: "Are you coming to the staff meeting?", date: now.addingTimeInterval(-3600)),
-                Message(id: "s2", senderID: nil, text: "Yes, see you there", date: now.addingTimeInterval(-3000), state: .sent),
-                Message(id: "s3", senderID: nil, text: "Bringing the new schedule", date: now.addingTimeInterval(-60), state: .sending),
-            ]),
+            Conversation(id: "dm:sam", title: sam.name, members: [sam], messages: Self.demoSamMessages(now: now)),
             Conversation(id: "dm:lee", title: lee.name, members: [lee], messages: [
                 Message(id: "l1", senderID: "lee", text: "Can we plan the fractions lesson together?", date: now.addingTimeInterval(-90_000)),
                 Message(id: "l2", senderID: nil, text: "Yes! I'll draft the lesson outline tonight", date: now.addingTimeInterval(-89_000), state: .sent),

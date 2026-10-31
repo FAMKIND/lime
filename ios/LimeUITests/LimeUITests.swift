@@ -844,14 +844,11 @@ final class LimeUITestsMessageActions: LimeUITestCase {
         app.buttons["react-👍"].tap()
         let cluster = app.descendants(matching: .any)["reaction-cluster-s1"]
         XCTAssertTrue(cluster.waitForExistence(timeout: 5), "a cluster appears on the bubble")
-        // The reactions sit under the bubble on the same row as the time, which is pushed to the trailing side.
+        // The reactions are a pill on the bubble's bottom edge (LIME-278), on the side facing the middle: they touch the bubble, whatever its width.
         let bubble = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'staff meeting'")).firstMatch
-        XCTAssertGreaterThanOrEqual(cluster.frame.minY, bubble.frame.maxY - 2, "the reactions are under the bubble")
-        let time = app.staticTexts["message-time-s1"]
-        XCTAssertTrue(time.exists)
-        XCTAssertLessThan(abs(time.frame.midY - cluster.frame.midY), 10, "on the same row as the time")
-        XCTAssertLessThan(cluster.frame.maxX, time.frame.minX, "reactions on the leading side, the time on the trailing side")
-        XCTAssertLessThan(time.frame.minY - bubble.frame.maxY, 24, "directly under the bubble")
+        XCTAssertLessThan(cluster.frame.minY, bubble.frame.maxY, "the pill overlaps the bubble's bottom edge")
+        XCTAssertGreaterThan(cluster.frame.maxY, bubble.frame.maxY, "and hangs below it")
+        XCTAssertGreaterThanOrEqual(cluster.frame.minX, bubble.frame.minX - 4, "from the bubble's corner")
         // Any emoji, through the +.
         longPress(app, "staff meeting")
         app.buttons["react-more"].tap()
@@ -1105,10 +1102,10 @@ final class LimeUITestsStatusAndGroupRows: LimeUITestCase {
         let time = app.staticTexts["message-time-a6"]
         let summary = app.buttons["thread-summary-a6"]
         XCTAssertTrue(chips.exists && time.exists && summary.exists)
-        XCTAssertEqual(chips.frame.minX, video.frame.minX, accuracy: 2, "the chips start at the group's leading edge")
-        XCTAssertEqual(summary.frame.minX, video.frame.minX, accuracy: 2, "so does the reply summary")
+        XCTAssertEqual(summary.frame.minX, video.frame.minX, accuracy: 2, "the reply summary starts at the group's leading edge")
         XCTAssertEqual(time.frame.maxX, video.frame.maxX, accuracy: 3, "the time ends at the group's trailing edge")
-        XCTAssertGreaterThan(chips.frame.minY, video.frame.maxY, "under the video and its caption")
+        XCTAssertGreaterThan(chips.frame.midY, video.frame.maxY - 2, "the chips hang on the bottom of the group (LIME-278)")
+        XCTAssertLessThanOrEqual(chips.frame.maxY, summary.frame.minY, "and clear the reply summary below"); _ = time
         XCTAssertTrue(summary.label.hasPrefix("1 reply · "), summary.label)
         XCTAssertFalse(summary.label.contains("Last reply"))
     }

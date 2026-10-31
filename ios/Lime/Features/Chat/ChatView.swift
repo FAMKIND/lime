@@ -31,6 +31,8 @@ struct ChatView: View {
     @State private var scrollRequest: ScrollRequest?
     /// How many of the newest rows are laid out (LIME-164): the first page, growing as you scroll up.
     @State private var windowRows = ChatWindow.first
+    /// Dragging the chat left slides it over to show every message's time (LIME-278); letting go snaps back.
+    @State private var timeReveal: CGFloat = 0
     /// The chat has settled at its newest message once. Coming back from a screen pushed on top (a thread, a profile) re-runs the open task; it must
     /// leave the scroll where it was (LIME-234).
     @State private var settledOnce = false
@@ -173,6 +175,23 @@ struct ChatView: View {
                 .padding(.bottom, 8)
             }
             .accessibilityIdentifier("chat-scroll")
+            .environment(\.timeReveal, timeReveal)
+            // As in Messages: a left drag (mostly sideways, so scrolling is untouched) shows every time; letting go snaps back.
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 14)
+                    .onChanged { drag in
+                        guard abs(drag.translation.width) > abs(drag.translation.height) * 1.4, drag.translation.width < 0 else { return }
+                        timeReveal = min(1, -drag.translation.width / 90)
+                    }
+                    .onEnded { _ in withAnimation(.snappy(duration: 0.25)) { timeReveal = 0 } }
+            )
+            // Not everyone can drag: the same thing as an action (VoiceOver already reads every time with its message).
+            .accessibilityAction(named: timeReveal > 0 ? "Hide message times" : "Show message times") {
+                withAnimation(.snappy(duration: 0.25)) { timeReveal = timeReveal > 0 ? 0 : 1 }
+            }
+            #if DEBUG
+            .task { if ProcessInfo.processInfo.arguments.contains("-lime-demo-reveal-times") { timeReveal = 1 } }
+            #endif
             .modifier(OlderOnScrollModifier(metrics: metrics, restorer: restorer, enabled: openSettled && !loadingOlder && ChatWindow.hidden(total: ChatRow.rows(for: conversation).count, window: windowRows) > 0) {
                 let all = ChatRow.rows(for: conversation)
                 loadOlder(proxy: proxy, firstShown: ChatWindow.shown(all, window: windowRows).first?.id, total: all.count)
@@ -338,6 +357,7 @@ struct ChatView: View {
                                           showAvatar: showAvatar,
                                           showName: showAvatar && conversation.isGroup,
                                           showState: message.isOwn && (message.state != .sent || message.id == lastOwnID),
+                                          endsRun: row.endsRun,
                                           highlighted: highlightedID == message.id,
                                           findWords: highlightWords,
                                           onRetry: { Task { await store.resend(message.id) } },
@@ -761,6 +781,8 @@ struct MessageBubble: View {
     let showName: Bool
     /// Own messages say "Sending…" or "Sent" (the last one always; others only while unsettled).
     var showState: Bool = false
+    /// The last message of a run (LIME-278): only it shows its time (and any message with a status or an edit); the rest are one swipe away.
+    var endsRun: Bool = true
     /// The message a search or find landed on.
     var highlighted: Bool = false
     /// The words find (or a search result) is looking for: highlighted inside the bubble.
@@ -790,6 +812,8 @@ struct MessageBubble: View {
     /// while a chat is opening and while it scrolls, and SwiftUI must not redraw every bubble each time (LIME-152a-fix).
     @State private var frameBox = FrameBox()
     @Environment(\.pressedLink) private var pressedLink
+    /// How far the chat has been dragged left to show every time, 0 to 1 (LIME-278).
+    @Environment(\.timeReveal) private var reveal
     @ScaledMetric(relativeTo: .body) private var scaledAvatar: CGFloat = 36
     /// Grows with the text, but not so far that it crowds the bubble (LIME-168).
     private var avatarSize: CGFloat { min(scaledAvatar, 48) }
@@ -829,15 +853,17 @@ struct MessageBubble: View {
                         .font(Theme.font(.caption, weight: .medium))
                         .foregroundStyle(Theme.text)
                 }
-                // Top to bottom: the bubble; one footer row (reactions on the leading side, the time and status on the trailing
-                // side, as wide as the bubble); then the replies.
+                // Top to bottom: the bubble (its reactions are a pill on its inner bottom corner, LIME-278); a footer with the time and status, only
+                // where it matters (the last of a run, a message with a status or an edit), as wide as the bubble; then the replies.
                 content
-                HStack(spacing: 6) {
-                    if hasReactions { reactionChips }
-                    Spacer(minLength: 8)
-                    timeStamp
+                    .padding(.bottom, hasReactions ? Self.pillOverhang + 2 : 0)
+                if showsTime {
+                    HStack(spacing: 6) {
+                        Spacer(minLength: 8)
+                        timeStamp
+                    }
+                    .layoutValue(key: BubbleFooterKey.self, value: true)
                 }
-                .layoutValue(key: BubbleFooterKey.self, value: true)
                 if let thread = message.thread, let onOpenThread {
                     ThreadSummaryRow(messageID: message.id, thread: thread, action: onOpenThread)
                 }
@@ -845,12 +871,41 @@ struct MessageBubble: View {
             if !message.isOwn { Spacer(minLength: 56) }
             if let selection, message.isOwn { selectionCircle(selection) }
         }
+        .offset(x: -reveal * Self.revealGutter)
+        .overlay(alignment: .trailing) { revealedTime }
+        // A message whose time is not drawn still has it for VoiceOver (LIME-278).
+        .overlay(alignment: .bottomTrailing) {
+            if !showsTime && !message.deleted {
+                Color.clear.frame(width: 1, height: 1).accessibilityElement().accessibilityLabel(MessageFormat.clock(message.date))
+                    .accessibilityIdentifier("message-time-silent-\(message.id)")
+            }
+        }
         .contentShape(Rectangle())
         .onTapGesture { if selection != nil { onToggleSelect?() } }
         .accessibilityElement(children: selection != nil ? .ignore : .contain)
         .accessibilityLabel(selection != nil ? "\(message.deleted ? "Deleted message" : messagePlainText(text: message.text))" : "")
         .accessibilityAddTraits(selection == true ? [.isButton, .isSelected] : (selection == false ? .isButton : []))
         .accessibilityIdentifier(selection != nil ? "select-row-\(message.id)" : "")
+    }
+
+    /// The gutter the chat slides over when it is dragged left, which is where each message's time appears.
+    static let revealGutter: CGFloat = 64
+    /// How far the reaction pill hangs below the bubble: half its height.
+    static let pillOverhang: CGFloat = 12
+
+    /// Whether the footer under this message shows a time: the end of a run, or a message with something to say (a delivery state, an edit).
+    private var showsTime: Bool { !message.deleted && (endsRun || showState || message.edited) }
+
+    /// The time at the trailing edge, in the gutter the drag opens; not for VoiceOver (it has every time already).
+    @ViewBuilder
+    private var revealedTime: some View {
+        if reveal > 0 && !message.deleted {
+            Text(MessageFormat.clock(message.date)).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1).fixedSize()
+                .opacity(reveal)
+                .offset(x: Self.revealGutter * (1 - reveal) + 4)
+                .accessibilityHidden(true)
+                .accessibilityIdentifier("message-time-revealed-\(message.id)")
+        }
     }
 
     private func selectionCircle(_ on: Bool) -> some View {
@@ -903,6 +958,10 @@ struct MessageBubble: View {
                         }
                 }
             }
+        }
+        // The reactions are a pill on the bubble's inner bottom corner (the side facing the middle), hanging half its height below, so it always touches the bubble.
+        .overlay(alignment: message.isOwn ? .bottomLeading : .bottomTrailing) {
+            if hasReactions { reactionChips.offset(x: message.isOwn ? -8 : 8, y: Self.pillOverhang) }   // sticks out toward the middle, as in Messages
         }
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frameBox.frame = $0 }
         .onLongPressGesture(minimumDuration: 0.4) { if selection == nil { lift() } }
@@ -986,7 +1045,7 @@ struct MessageBubble: View {
             }
         }
         .fixedSize()
-        .contentShape(Rectangle())
+        .contentShape(Rectangle().inset(by: -10))
         .onTapGesture { if selection == nil { onShowReactions?() } }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Reactions: " + message.reactions.map { "\($0.emoji) \($0.count)" }.joined(separator: ", ") + (mine ? ", including yours" : ""))
@@ -1055,6 +1114,8 @@ struct BubbleColumn: Layout {
 extension EnvironmentValues {
     /// The link a person just tapped, so its text can show pressed.
     @Entry var pressedLink: URL? = nil
+    /// How far the chat is dragged left to show every message's time, 0 to 1 (LIME-278).
+    @Entry var timeReveal: CGFloat = 0
 }
 
 /// An icon of the header's tool group: a full 44 pt target (the group overlaps neighbours by 6 pt to sit closer).

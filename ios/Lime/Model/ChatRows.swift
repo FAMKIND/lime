@@ -14,6 +14,12 @@ struct ChatRow: Identifiable {
 
     let id: String
     let kind: Kind
+    /// The last message of a run (LIME-278): the next row is not a message from the same sender within a few minutes, so this is where its time shows. Every
+    /// other time is one swipe away.
+    var endsRun = true
+
+    /// Messages from one sender this close together are one run.
+    static let runGap: TimeInterval = 5 * 60
 
     static func rows(for conversation: Conversation, calendar: Calendar = .current) -> [ChatRow] {
         var result: [ChatRow] = []
@@ -34,7 +40,20 @@ struct ChatRow: Identifiable {
             result.append(ChatRow(id: message.id, kind: .message(message, showAvatar: showAvatar)))
             lastSender = .some(message.senderID)
         }
-        return collapsingDeletedRuns(result)
+        return markingRunEnds(collapsingDeletedRuns(result))
+    }
+
+    /// Sets `endsRun` on every message row (a message ends its run unless the next row is a message by the same sender less than five minutes later).
+    static func markingRunEnds(_ rows: [ChatRow]) -> [ChatRow] {
+        var out = rows
+        for index in out.indices {
+            guard case .message(let message, _) = out[index].kind else { continue }
+            if index + 1 < out.count, case .message(let next, _) = out[index + 1].kind, next.senderID == message.senderID,
+               next.date.timeIntervalSince(message.date) < runGap {
+                out[index].endsRun = false
+            }
+        }
+        return out
     }
 
     /// Runs of two or more consecutive "This message was deleted" placeholders become one line.
