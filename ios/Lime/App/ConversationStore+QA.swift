@@ -39,6 +39,7 @@ extension ConversationStore {
 
     /// Deletes a chat from this phone only. A group I am still in is left first.
     func deleteChat(_ id: Conversation.ID) async {
+        ChatLooks.shared.remove(id)   // its wallpaper and colours go with it (LIME-277d)
         #if DEBUG
         if isDemo { conversations.removeAll { $0.id == id }; return }
         #endif

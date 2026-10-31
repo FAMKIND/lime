@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ChatView: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.dynamicTypeSize) private var globalTypeSize
     let conversationID: Conversation.ID
     /// Opened from a search result: scroll to this message and highlight it for a moment.
     var focusMessageID: String? = nil
@@ -67,6 +68,10 @@ struct ChatView: View {
                     legacyContent(conversation)
                 }
             }
+            // This chat's own look (LIME-277d): my bubble colour, a chip behind text outside the bubbles when it has a wallpaper, a text size.
+            .environment(\.ownBubbleStyle, ChatLooks.shared.look(for: conversationID).ownBubble)
+            .environment(\.chatWallpaperActive, ChatLooks.shared.look(for: conversationID).wallpaper != .none)
+            .environment(\.dynamicTypeSize, ChatLooks.shared.look(for: conversationID).textStep.map { TextStep.all[$0].size } ?? globalTypeSize)
             .confirmSheet(conversation.isGroup ? "Call \(conversation.title) again?" : "Call \(conversation.title) back?", isPresented: Binding(get: { callBack != nil }, set: { if !$0 { callBack = nil } })) {
                 // The same two rows, icons and order as the header's call menu (one pattern everywhere).
                 CallChoiceRows(voice: { startCall(conversation, video: false) }, video: { startCall(conversation, video: true) }, idPrefix: "call-back")
@@ -97,7 +102,7 @@ struct ChatView: View {
     @available(iOS 26, *)
     private func nativeContent(_ conversation: Conversation) -> some View {
         ZStack {
-            ThemeBackgroundView().ignoresSafeArea()
+            ChatWallpaperView(chatID: conversationID).ignoresSafeArea()
             messageScroll(conversation, top: 8)
                 .scrollEdgeEffectStyle(.soft, for: .top)
                 .scrollEdgeEffectStyle(.soft, for: .bottom)
@@ -130,7 +135,7 @@ struct ChatView: View {
 
     private func legacyContent(_ conversation: Conversation) -> some View {
         ZStack {
-            ThemeBackgroundView().ignoresSafeArea()
+            ChatWallpaperView(chatID: conversationID).ignoresSafeArea()
             messageScroll(conversation, top: 84)
         }
         .overlay(alignment: .top) { TopFade() }
@@ -333,6 +338,7 @@ struct ChatView: View {
                             Text(text)
                                 .font(Theme.font(.caption, weight: .medium))
                                 .foregroundStyle(Theme.textSecondary)
+                                .wallpaperChip()
                                 .padding(.vertical, 12)
                                 .accessibilityAddTraits(.isHeader)
                         case .system(let message):
@@ -340,6 +346,7 @@ struct ChatView: View {
                                 .font(Theme.caption)
                                 .foregroundStyle(Theme.textSecondary)
                                 .multilineTextAlignment(.center)
+                                .wallpaperChip()
                                 .padding(.vertical, 6).padding(.horizontal, 24)
                                 .frame(maxWidth: .infinity)
                                 .accessibilityIdentifier("system-line")
@@ -814,6 +821,8 @@ struct MessageBubble: View {
     @Environment(\.pressedLink) private var pressedLink
     /// How far the chat has been dragged left to show every time, 0 to 1 (LIME-278).
     @Environment(\.timeReveal) private var reveal
+    /// A chat's own colour for my bubbles (LIME-277d).
+    @Environment(\.ownBubbleStyle) private var ownStyle
     @ScaledMetric(relativeTo: .body) private var scaledAvatar: CGFloat = 36
     /// Grows with the text, but not so far that it crowds the bubble (LIME-168).
     private var avatarSize: CGFloat { min(scaledAvatar, 48) }
@@ -852,6 +861,7 @@ struct MessageBubble: View {
                     Text(sender.name)
                         .font(Theme.font(.caption, weight: .medium))
                         .foregroundStyle(Theme.text)
+                        .wallpaperChip()
                 }
                 // Top to bottom: the bubble (its reactions are a pill on its inner bottom corner, LIME-278); a footer with the time and status, only
                 // where it matters (the last of a run, a message with a status or an edit), as wide as the bubble; then the replies.
@@ -940,11 +950,11 @@ struct MessageBubble: View {
                 if !message.attachments.isEmpty { AttachmentStack(message: message, isOwn: message.isOwn) }
                 if let preview = message.linkPreview { MessageLinkCard(messageID: message.id, preview: preview, isOwn: message.isOwn) }
                 if message.call == nil, message.emergency == nil, !message.text.isEmpty || message.attachments.isEmpty {
-                    FormattedMessageText(markdown: message.text, ink: message.isOwn ? Theme.ownBubbleInk : Theme.text,
-                                         link: message.isOwn ? Theme.linkOwn : Theme.linkOther, pressed: pressedLink?.absoluteString,
+                    FormattedMessageText(markdown: message.text, ink: message.isOwn ? (ownStyle?.ink ?? Theme.ownBubbleInk) : Theme.text,
+                                         link: message.isOwn ? (ownStyle?.link ?? Theme.linkOwn) : Theme.linkOther, pressed: pressedLink?.absoluteString,
                                          find: findWords.isEmpty ? nil : FindStyle(words: findWords, current: highlighted))
                         .padding(.horizontal, 14).padding(.vertical, 10)
-                        .background(message.isOwn ? Theme.ownBubble : Theme.bubbleOther,
+                        .background(message.isOwn ? (ownStyle?.fill ?? Theme.ownBubble) : Theme.bubbleOther,
                                     in: RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous)
@@ -1025,6 +1035,7 @@ struct MessageBubble: View {
         .font(Theme.caption)
         .foregroundStyle(Theme.textSecondary)
         .lineLimit(1)
+        .wallpaperChip()
     }
 
 

@@ -4,13 +4,16 @@ import UIKit
 /// LIME-277b: the eight backgrounds, drawn (no image files): shapes and patterns from the theme's own colours, crisp at any scale, light and dark. Behind root
 /// screens and pushed pages; cards, rows and bars keep the theme's surface on top. Reduce Transparency draws the plain paper only.
 struct ThemeBackgroundView: View {
+    /// A chat's own choice of one of the eight (LIME-277d); nil is the global one.
+    var override: ThemeBackground? = nil
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
         let store = ThemeStore.shared
-        let kind = store.background
-        let theme = store.resolved(dark: colorScheme == .dark)
+        let kind = override ?? store.background
+        let theme = override == nil ? store.resolved(dark: colorScheme == .dark)
+            : ThemeResolver.resolve(accent: store.accent, background: kind, dark: colorScheme == .dark, increaseContrast: UIAccessibility.isDarkerSystemColorsEnabled)
         let canvas = Color(theme.canvas)
         ZStack {
             canvas
@@ -25,7 +28,7 @@ struct ThemeBackgroundView: View {
         .drawingGroup(opaque: true)
         .accessibilityHidden(true)
         #if DEBUG
-        .overlay(alignment: .topLeading) { Color.clear.frame(width: 1, height: 1).accessibilityElement().accessibilityIdentifier("theme-bg-\(kind.rawValue)") }
+        .overlay(alignment: .topLeading) { Color.clear.frame(width: 1, height: 1).accessibilityElement().accessibilityIdentifier(override == nil ? "theme-bg-\(kind.rawValue)" : "chat-bg-\(kind.rawValue)") }
         #endif
     }
 }

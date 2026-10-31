@@ -120,6 +120,9 @@ enum LinkPreviewSetting {
 
 /// The card itself: a picture, the page's title, and the site.
 struct LinkCardView: View {
+    @Environment(\.ownBubbleStyle) private var ownStyle   // a chat's own colour for my bubbles (LIME-277d)
+    private var ownFill: Color { ownStyle?.fill ?? Theme.ownBubble }
+    private var ownInk: Color { ownStyle?.ink ?? Theme.ownBubbleInk }
     let title: String
     let site: String
     var image: UIImage?
@@ -133,16 +136,16 @@ struct LinkCardView: View {
                     .frame(width: width, height: width / 1.9).clipped()
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(isOwn ? Theme.ownBubbleInk : Theme.text).lineLimit(2)
+                Text(title).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(isOwn ? ownInk : Theme.text).lineLimit(2)
                     .accessibilityIdentifier("link-card-title")
-                Text(site).font(Theme.caption).foregroundStyle(isOwn ? Theme.ownBubbleInk.opacity(0.7) : Theme.textSecondary).lineLimit(1)
+                Text(site).font(Theme.caption).foregroundStyle(isOwn ? ownInk.opacity(0.7) : Theme.textSecondary).lineLimit(1)
                     .accessibilityIdentifier("link-card-site")
             }
             .padding(.horizontal, 12).padding(.vertical, 9)
             .frame(width: width, alignment: .leading)
         }
         .frame(width: width)
-        .background(isOwn ? Theme.ownBubble : Theme.bubbleOther, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(isOwn ? ownFill : Theme.bubbleOther, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(isOwn ? Color.clear : Theme.bubbleEdge, lineWidth: 0.5))
     }

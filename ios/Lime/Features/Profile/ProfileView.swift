@@ -95,6 +95,7 @@ struct ProfileView: View {
     @State private var linksSheet = false
     @State private var backgroundSheet = false
     @State private var themeSheet = false
+    @State private var chatLookSheet = false
     @State private var hideError: String?
     /// The top safe area (status bar and header) the photo reaches up into.
     @State private var topInset: CGFloat = 0
@@ -214,7 +215,8 @@ struct ProfileView: View {
         .sheet(isPresented: $photoSheet) { EditSheet { ProfilePhotoScreen() } }
         .sheet(isPresented: $linksSheet) { EditSheet { LinksScreen() } }
         .sheet(isPresented: $backgroundSheet) { EditSheet { BackgroundScreen() } }
-        .sheet(isPresented: $themeSheet) { EditSheet { AppearanceScreen() } }   // LIME-277f, 277c
+        .sheet(isPresented: $themeSheet) { EditSheet { AppearanceScreen() } }
+        .sheet(isPresented: $chatLookSheet) { if let conversation { ChatAppearanceSheet(chatID: conversation.id) } }   // LIME-277d   // LIME-277f, 277c
         .sheet(isPresented: $labelling) {
             LabelSheet(name: displayName, text: $labelText) { saved in
                 labelling = false
@@ -671,6 +673,8 @@ struct ProfileView: View {
                     .accessibilityIdentifier("profile-label-button")
                 Button { verifying = true } label: { Label("Verify in person", systemImage: "qrcode.viewfinder") }
                     .accessibilityIdentifier("profile-verify")
+                Button { chatLookSheet = true } label: { Label("Chat appearance", systemImage: "paintbrush") }
+                    .accessibilityIdentifier("profile-chat-appearance")
                 Button { showStorage = true } label: { Label("Storage", systemImage: "internaldrive") }
                     .accessibilityIdentifier("profile-storage")
                 Button(role: .destructive) { reporting = store.reportTarget(personID: route.userID, name: displayName) } label: { Label("Report", systemImage: "flag") }

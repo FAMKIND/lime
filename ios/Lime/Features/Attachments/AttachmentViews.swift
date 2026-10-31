@@ -178,6 +178,9 @@ struct ImageTile: View {
 
 /// A file: its icon, name, and kind and size. Tapping it downloads (if needed) and opens it.
 struct FileCard: View {
+    @Environment(\.ownBubbleStyle) private var ownStyle   // a chat's own colour for my bubbles (LIME-277d)
+    private var ownFill: Color { ownStyle?.fill ?? Theme.ownBubble }
+    private var ownInk: Color { ownStyle?.ink ?? Theme.ownBubbleInk }
     @Environment(ConversationStore.self) private var store
     let item: AttachmentItem
     let isOwn: Bool
@@ -189,19 +192,19 @@ struct FileCard: View {
                 Image(systemName: symbol).font(.system(size: 26)).frame(width: 36)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.name.isEmpty ? "File" : item.name).font(Theme.body).lineLimit(1).truncationMode(.middle)
-                    Text(item.removed ? "Media removed" : item.detail).font(Theme.caption).foregroundStyle(isOwn ? Theme.ownBubbleInk.opacity(0.7) : Theme.textSecondary)
+                    Text(item.removed ? "Media removed" : item.detail).font(Theme.caption).foregroundStyle(isOwn ? ownInk.opacity(0.7) : Theme.textSecondary)
                     if !item.downloaded && !item.removed && !isOwn {
-                        AvailabilityText(item: item).font(Theme.caption).foregroundStyle(isOwn ? Theme.ownBubbleInk.opacity(0.7) : Theme.textSecondary)
+                        AvailabilityText(item: item).font(Theme.caption).foregroundStyle(isOwn ? ownInk.opacity(0.7) : Theme.textSecondary)
                     }
                 }
                 Spacer(minLength: 0)
-                if uploading { TransferRing(attachmentID: item.id, active: true, tint: isOwn ? Theme.ownBubbleInk : Theme.text).frame(width: 24, height: 24) }
+                if uploading { TransferRing(attachmentID: item.id, active: true, tint: isOwn ? ownInk : Theme.text).frame(width: 24, height: 24) }
                 else if !item.downloaded && !isOwn { Image(systemName: "arrow.down.circle").font(.system(size: 20)) }
             }
-            .foregroundStyle(isOwn ? Theme.ownBubbleInk : Theme.text)
+            .foregroundStyle(isOwn ? ownInk : Theme.text)
             .padding(.horizontal, 14).padding(.vertical, 10)
             .frame(width: 248, alignment: .leading)
-            .background(isOwn ? Theme.ownBubble : Theme.bubbleOther, in: RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous))
+            .background(isOwn ? ownFill : Theme.bubbleOther, in: RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous).strokeBorder(isOwn ? Color.clear : Theme.bubbleEdge, lineWidth: 0.5))
         .mediaTap(open)
         .accessibilityLabel(["\(item.name), \(item.detail)", store.downloadPhrase(item).map { $0 == AttachmentFormat.size(item.size) ? "tap to download" : $0.replacingOccurrences(of: AttachmentFormat.size(item.size) + ", ", with: "") }].compactMap { $0 }.joined(separator: ", "))

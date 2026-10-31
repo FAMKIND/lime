@@ -44,16 +44,17 @@ enum Theme {
     static var surface: Color { ThemeStore.shared.colour(.surface) }
     static var bubbleOther: Color { ThemeStore.shared.colour(.bubble) }
     static var bubbleEdge: Color { ThemeStore.shared.colour(.bubbleEdge) }
-    static let primary = color(Name.primary)
-    static let primaryInk = color(Name.primaryInk)
+    static var primary: Color { ThemeStore.shared.colour(.own) }
+    static var primaryInk: Color { ThemeStore.shared.colour(.ownInk) }
     static var accent: Color { ThemeStore.shared.colour(.accent) }
     /// A filled heart (LIME-189d): the buttons' Red (docs: `ButtonPalette.red`): #B3261E in light, #FFB4AB in dark; on a black screen always the light one.
     static let heartHex: (light: UInt32, dark: UInt32) = (0xB3261E, 0xFFB4AB)
     static let heart = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: heartHex.dark) : UIColor(hex: heartHex.light) })
     static let heartOnBlack = Color(UIColor(hex: heartHex.dark))
     static var accentInk: Color { ThemeStore.shared.colour(.accentInk) }
-    static let ownBubble = primary
-    static let ownBubbleInk = primaryInk
+    // My bubble and the main button follow the accent (LIME-277d); a chat can have its own colour (`ChatLook`).
+    static var ownBubble: Color { ThemeStore.shared.colour(.own) }
+    static var ownBubbleInk: Color { ThemeStore.shared.colour(.ownInk) }
     static var text: Color { ThemeStore.shared.colour(.text) }
     static var textSecondary: Color { ThemeStore.shared.colour(.secondary) }
     /// The soft grey of an empty field's hint (LIME-188f): one grey for every placeholder, readable (4.5:1) on the canvas in light and dark.
@@ -65,10 +66,10 @@ enum Theme {
     /// A link in someone else's bubble, and in the composer.
     static var linkOther: Color { ThemeStore.shared.colour(.link) }
     /// A link in my own bubble.
-    static let linkOwn = color(Name.linkOwn)
+    static var linkOwn: Color { ThemeStore.shared.colour(.linkOwn) }
     static let pressed = color(Name.pressed)
-    static let chipFill = color(Name.chipFill)
-    static let chipFillMine = color(Name.chipFillMine)
+    static var chipFill: Color { ThemeStore.shared.colour(.chip) }
+    static var chipFillMine: Color { ThemeStore.shared.colour(.chipMine) }
     static let findMatch = color(Name.findMatch)
     static let findCurrent = color(Name.findCurrent)
     static let findInk = color(Name.findInk)

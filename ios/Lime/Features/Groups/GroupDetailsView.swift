@@ -23,6 +23,7 @@ struct GroupDetailsView: View {
     @State private var adding = false
     @State private var editingAvatar = false
     @State private var coverSheet = false
+    @State private var chatLookSheet = false
     @State private var reporting: ReportTarget?
     @State private var topInset: CGFloat = 0
     @State private var windowHeight: CGFloat = 0
@@ -78,6 +79,7 @@ struct GroupDetailsView: View {
             }
         }
         .reportSheet($reporting)
+        .sheet(isPresented: $chatLookSheet) { if let conversation { ChatAppearanceSheet(chatID: conversation.id) } }   // LIME-277d
         .sheet(isPresented: $coverSheet) {
             let id = target.conversationID
             CoverColourSheet(
@@ -205,6 +207,8 @@ struct GroupDetailsView: View {
                     Label(conversation.isPinned ? "Unpin" : "Pin", systemImage: conversation.isPinned ? "pin.slash" : "pin")
                 }
                 .accessibilityIdentifier("group-pin")
+                Button { chatLookSheet = true } label: { Label("Chat appearance", systemImage: "paintbrush") }
+                    .accessibilityIdentifier("group-chat-appearance")
             }
             if let details {
                 if details.canAdd {

@@ -361,6 +361,7 @@ final class ConversationStore {
         if core != nil || accountID != nil { closeStore() }
         accountID = id
         ThemeStore.shared.load(for: id)   // LIME-277a: the accent and background chosen on this phone for this account
+        ChatLooks.shared.load(for: id)   // LIME-277d: and each chat's own look
     }
 
     init(storageLocation: StorageBootstrap.Location? = nil) {

@@ -292,6 +292,9 @@ final class VoicePlayer: NSObject, AVAudioPlayerDelegate {
 
 /// A voice message: play or pause, the waveform with the position, the time, and (while it is the one playing) the speed.
 struct VoiceBubble: View {
+    @Environment(\.ownBubbleStyle) private var ownStyle   // a chat's own colour for my bubbles (LIME-277d)
+    private var ownFill: Color { ownStyle?.fill ?? Theme.ownBubble }
+    private var ownInk: Color { ownStyle?.ink ?? Theme.ownBubbleInk }
     let item: AttachmentItem
     let isOwn: Bool
     var uploading = false
@@ -300,12 +303,12 @@ struct VoiceBubble: View {
     @State private var loading = false
 
     private var isCurrent: Bool { player.isCurrent(item.id) }
-    private var ink: Color { isOwn ? Theme.ownBubbleInk : Theme.text }
+    private var ink: Color { isOwn ? ownInk : Theme.text }
 
     var body: some View {
         HStack(spacing: 10) {
             ZStack {
-                Circle().fill(isOwn ? Theme.ownBubbleInk.opacity(0.16) : Theme.surface).frame(width: 40, height: 40)
+                Circle().fill(isOwn ? ownInk.opacity(0.16) : Theme.surface).frame(width: 40, height: 40)
                 if loading || uploading {
                     TransferRing(attachmentID: item.id, active: true, tint: ink).frame(width: 28, height: 28)
                 } else {
@@ -335,7 +338,7 @@ struct VoiceBubble: View {
             .frame(minWidth: 40, alignment: .trailing)
         }
         .padding(.horizontal, 10).padding(.vertical, 8)
-        .background(isOwn ? Theme.ownBubble : Theme.bubbleOther, in: RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous))
+        .background(isOwn ? ownFill : Theme.bubbleOther, in: RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous).strokeBorder(isOwn ? Color.clear : Theme.bubbleEdge, lineWidth: 0.5))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("voice-bubble-\(item.id)")

@@ -102,3 +102,83 @@ final class ThemeEngine277Tests: XCTestCase {
         for key in ["accent", "background"] { UserDefaults.standard.removeObject(forKey: "lime.theme.a.\(key)"); UserDefaults.standard.removeObject(forKey: "lime.theme.b.\(key)") }
     }
 }
+
+/// LIME-277d: my bubble follows the accent through the guard; a chat's own colours and where they are kept.
+final class ChatLook277dTests: XCTestCase {
+    func testMyBubbleFollowsTheAccentAndEveryPairReadsOnEveryBackground() {
+        for accent in 0..<8 {
+            for background in ThemeBackground.allCases {
+                for dark in [false, true] {
+                    let t = ThemeResolver.resolve(accent: accent, background: background, dark: dark)
+                    XCTAssertGreaterThanOrEqual(ContrastGuard.ratio(t.ownInk, t.own), 4.5, "my text: \(LimeColours.name(accent)), dark \(dark)")
+                    XCTAssertGreaterThanOrEqual(ContrastGuard.ratio(t.linkOwn, t.own), 4.5, "a link in my bubble: \(LimeColours.name(accent)), dark \(dark)")
+                    XCTAssertGreaterThanOrEqual(ContrastGuard.ratio(t.text, t.chip), 4.5, "the reaction pill on \(background.title)")
+                    XCTAssertGreaterThanOrEqual(ContrastGuard.ratio(t.text, t.chipMine), 4.5, "my reaction pill on \(background.title)")
+                }
+            }
+        }
+        // Lime's own look is unchanged.
+        for dark in [false, true] {
+            let t = ThemeResolver.resolve(accent: LimeColours.lime, background: .plain, dark: dark)
+            func same(_ c: UIColor, _ name: String) {
+                var x: (CGFloat, CGFloat, CGFloat) = (0, 0, 0), y: (CGFloat, CGFloat, CGFloat) = (0, 0, 0)
+                c.getRed(&x.0, green: &x.1, blue: &x.2, alpha: nil); Theme.uiColor(name, dark: dark).getRed(&y.0, green: &y.1, blue: &y.2, alpha: nil)
+                XCTAssertEqual(x.0, y.0, accuracy: 0.004, name); XCTAssertEqual(x.1, y.1, accuracy: 0.004); XCTAssertEqual(x.2, y.2, accuracy: 0.004)
+            }
+            same(t.own, Theme.Name.primary); same(t.ownInk, Theme.Name.primaryInk); same(t.linkOwn, Theme.Name.linkOwn)
+            same(t.chip, Theme.Name.chipFill); same(t.chipMine, Theme.Name.chipFillMine)
+        }
+    }
+
+    func testEverySixteenBubbleColoursKeepTheirInkReadable() {
+        for tone in 0..<8 {
+            for deep in [true, false] {
+                let (fill, ink) = ChatLook.bubbleColours(tone: tone, deep: deep)
+                XCTAssertGreaterThanOrEqual(ContrastGuard.ratio(ink, fill), 4.5, "\(LimeColours.name(tone)) \(deep ? "deep" : "pastel")")
+            }
+        }
+        // The deep shade takes light ink, the pastel one dark ink.
+        XCTAssertGreaterThan(ContrastGuard.luminance(ChatLook.bubbleColours(tone: 4, deep: true).ink), 0.5)
+        XCTAssertLessThan(ContrastGuard.luminance(ChatLook.bubbleColours(tone: 4, deep: false).ink), 0.1)
+    }
+
+    func testALooksAreKeptPerChatAndPerAccountResetAndUseForAllWork() {
+        let looks = ChatLooks()
+        let defaults = UserDefaults.standard
+        let account = "looks-test-\(UUID().uuidString)"
+        addTeardownBlock { for s in ["chats", "all"] { defaults.removeObject(forKey: "lime.chatlooks.\(account).\(s)") } }
+        looks.load(for: account)
+        XCTAssertTrue(looks.look(for: "dm:a").isDefault)
+        var look = ChatLook(); look.wallpaper = .preset("dusk"); look.bubbleTone = 2; look.bubbleDeep = true; look.textStep = 4
+        looks.set(look, for: "dm:a")
+        XCTAssertTrue(looks.look(for: "dm:b").isDefault, "another chat is untouched")
+        let again = ChatLooks(); again.load(for: account)
+        XCTAssertEqual(again.look(for: "dm:a"), look, "kept on this phone")
+        let other = ChatLooks(); other.load(for: "someone-else")
+        XCTAssertTrue(other.look(for: "dm:a").isDefault, "another account sees nothing")
+        looks.useForAll("dm:a")
+        XCTAssertEqual(looks.look(for: "dm:zzz"), look, "every chat without its own")
+        looks.reset("dm:a")
+        XCTAssertEqual(looks.look(for: "dm:a"), look, "a reset chat follows the all-chats look again")
+        looks.set(ChatLook(), for: "dm:none")
+        looks.useForAll("dm:none")
+        XCTAssertTrue(looks.look(for: "dm:a").isDefault, "using a plain chat for all clears it")
+    }
+
+    func testAWallpaperPhotoIsKeptLocallyAndGoesWithItsChat() throws {
+        let looks = ChatLooks()
+        let account = "photo-test-\(UUID().uuidString)"
+        addTeardownBlock { try? FileManager.default.removeItem(at: (try! StorageBootstrap.Location.live(for: account)).directory) }
+        looks.load(for: account)
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 2400, height: 1200)).image { c in UIColor.systemTeal.setFill(); c.fill(CGRect(x: 0, y: 0, width: 2400, height: 1200)) }
+        looks.setPhoto(image, for: "dm:sam")
+        let url = try XCTUnwrap(looks.photoURL("dm:sam"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+        XCTAssertTrue(url.path.contains("lime-wallpapers"), "inside a folder Remove everything deletes")
+        XCTAssertEqual(looks.look(for: "dm:sam").wallpaper, .photo)
+        XCTAssertLessThanOrEqual(try XCTUnwrap(looks.photo("dm:sam")).size.width, 1600, "shrunk")
+        looks.remove("dm:sam")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path), "deleted with the chat")
+        XCTAssertTrue(looks.look(for: "dm:sam").isDefault)
+    }
+}
