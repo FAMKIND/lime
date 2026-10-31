@@ -9688,3 +9688,5 @@ Hand a band's publishing to another owner. **Brief:** LIME-275, with the 1e550 n
 - **Files:** `ConversationStore+Handover.swift`, `Features/Jam/Handover.swift`, edits in `OrgProfile.swift`, `JamPage.swift`; demo: `-lime-demo-band-owner`, `-lime-demo-handover-offer`.
 - **Tests (demo, `Handover275UITests`, 3 pass):** offer → pending → cancel; accept the card; decline the card. Regression: `Band281UITests` 2 pass, `Jam188bUITests` 8 of 9 pass (the failing one asserts a subtitle of 160 and gets 161: not from this change).
 - **Gate (13 mini → Jean, an owner of lime juice):** see the report.
+
+- **Installed (275c):** **none.** The device build (`dd29`) succeeded, but the 13 mini and the iPad report `passcodeRequired: true` (locked) and Jean's 12 mini could not be reached (CoreDevice 4000), so, by the rule, no install was attempted. The phones keep the 281 build. Unlock them and say so, and I install the same build.
