@@ -13,6 +13,8 @@ protocol MoveNewEngine: AnyObject, Sendable {
     func progress() -> MoveProgress
     func importFinish() throws -> Data
     func confirmProof() throws -> Data
+    /// The app's own items that came with the account (LIME-272c).
+    func extra() -> Data
     func abort()
 }
 
@@ -23,6 +25,8 @@ protocol MoveOldEngine: AnyObject, Sendable {
     func exportNextChunk() throws -> Data?
     func progress() -> MoveProgress
     func transferConfirm(_ proof: Data) throws
+    /// The app's own items to move with the account (LIME-272c), before the first chunk.
+    func setExtra(_ bytes: Data) throws
     func abort()
 }
 
@@ -38,6 +42,7 @@ final class RealMoveNew: MoveNewEngine, @unchecked Sendable {
     func progress() -> MoveProgress { core.progress() }
     func importFinish() throws -> Data { try core.importFinish() }
     func confirmProof() throws -> Data { try core.confirmProof() }
+    func extra() -> Data { core.extra() }
     func abort() { core.abort() }
 }
 
@@ -50,6 +55,7 @@ final class RealMoveOld: MoveOldEngine, @unchecked Sendable {
     func exportNextChunk() throws -> Data? { try core.exportNextChunk() }
     func progress() -> MoveProgress { core.progress() }
     func transferConfirm(_ proof: Data) throws { try core.transferConfirm(proof: proof) }
+    func setExtra(_ bytes: Data) throws { try core.setExtra(bytes: bytes) }
     func abort() { core.abort() }
 }
 
@@ -116,6 +122,8 @@ final class MoveToNewPhone {
     private let accept: @Sendable () async throws -> any MoveChannel
     /// Puts the store's key in the Keychain (it must be there before the store is opened).
     private let keep: @Sendable (Data) throws -> Void
+    /// Applies the app's settings that came with the account, before the account opens (LIME-272c).
+    private let applyExtra: @Sendable (Data) -> Void
     private var channel: (any MoveChannel)?
     private var task: Task<Void, Never>?
     private var decision: CheckedContinuation<Bool, Never>?
@@ -124,10 +132,11 @@ final class MoveToNewPhone {
     var qr: String { engine.qr }
 
     init(engine: any MoveNewEngine, accept: @escaping @Sendable () async throws -> any MoveChannel,
-         keep: @escaping @Sendable (Data) throws -> Void, stop: @escaping @Sendable () -> Void = {}) {
+         keep: @escaping @Sendable (Data) throws -> Void, applyExtra: @escaping @Sendable (Data) -> Void = { _ in }, stop: @escaping @Sendable () -> Void = {}) {
         self.engine = engine
         self.accept = accept
         self.keep = keep
+        self.applyExtra = applyExtra
         self.stop = stop
     }
 
@@ -172,6 +181,8 @@ final class MoveToNewPhone {
                     phase = .finishing
                     let key = try await Task.detached { try engine.importFinish() }.value
                     try keep(key)
+                    let extra = engine.extra()
+                    if !extra.isEmpty { applyExtra(extra) }
                     try await channel.send(.proof(try engine.confirmProof()))
                     phase = .done
                     channel.close()

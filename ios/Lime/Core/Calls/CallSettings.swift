@@ -45,6 +45,13 @@ final class CallSettings: @unchecked Sendable {
         storedVolume = min(max(stored, Self.volumeRange.lowerBound), Self.volumeRange.upperBound)
     }
 
+    /// Reads the settings again from the defaults (a move to a new phone has just written them: LIME-272c).
+    func reloadFromDefaults() {
+        includeInRecents = Self.bool(defaults.object(forKey: Self.recentsKey)) ?? false
+        lowDataMode = Self.bool(defaults.object(forKey: Self.lowDataKey)) ?? false
+        volume = Self.double(defaults.object(forKey: Self.volumeKey)) ?? 1.0
+    }
+
     /// The phone's defaults, except in a UI-test launch (`-lime-skip-sign-in`, Debug): a fresh throwaway set each time (plus the `-lime.calls.*`
     /// arguments), so one test cannot leak a setting into the next.
     private static func launchDefaults() -> UserDefaults {

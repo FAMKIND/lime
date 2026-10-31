@@ -139,6 +139,9 @@ final class ChatLooks: @unchecked Sendable {
 
     // MARK: The wallpaper photo (in this account's space; `lime-wallpapers` so "Remove everything" deletes it with the rest)
 
+    /// The folder of wallpaper pictures (for a move to a new phone: LIME-272c).
+    var wallpaperFolder: URL? { photoFolder }
+
     private var photoFolder: URL? {
         guard let account, let location = try? StorageBootstrap.Location.live(for: account) else { return nil }
         return location.directory.appendingPathComponent("lime-wallpapers", isDirectory: true)

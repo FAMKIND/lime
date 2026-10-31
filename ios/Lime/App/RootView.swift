@@ -37,7 +37,7 @@ struct RootView: View {
         .onChange(of: lock.isLocked) { _, _ in lockWindow.update(for: lock) }
         .onChange(of: lock.isCovered) { _, _ in lockWindow.update(for: lock) }
         .onChange(of: session.phase) { _, phase in
-            if phase == .signedIn { lockWindow.update(for: lock); lock.askIfWanted() }
+            if phase == .signedIn { lockWindow.update(for: lock); lock.askIfWanted(); Task { await lock.finishMovedLockIfPending() } }
             else { lock.turnOffForSignedOut(); lockWindow.update(for: lock) }
         }
         .alert("Call", isPresented: Binding(get: { store.calls.notice != nil }, set: { if !$0 { store.calls.notice = nil } })) {

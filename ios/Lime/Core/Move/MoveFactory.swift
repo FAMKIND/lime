@@ -23,6 +23,7 @@ enum MoveFactory {
                 try StorageKeychain.store(key, service: location.keychainService)
                 StorageBootstrap.prepareFiles(in: location)
             },
+            applyExtra: { data in MovedSettings.apply(data, account: userID) },
             stop: { listener.stop() })
     }
 
@@ -34,6 +35,8 @@ enum MoveFactory {
         #endif
         guard let core = store.core else { throw MoveChannelError.closed }
         let engine = try TransferOld.accept(store: core, qr: qr)
+        // The app's settings and wallpapers go with the account, inside the same sealed stream (LIME-272c).
+        if let account = session.userID ?? store.myUserID, let extra = MovedSettings.collect(account: account) { try? engine.setExtra(bytes: extra) }
         let browser = MoveBrowser(qr: qr)
         return MoveFromOldPhone(
             engine: RealMoveOld(engine),
@@ -61,6 +64,7 @@ final class FakeMoveNew: MoveNewEngine, @unchecked Sendable {
     func progress() -> MoveProgress { lock.lock(); defer { lock.unlock() }; return MoveProgress(done: received, total: DemoMove.total) }
     func importFinish() throws -> Data { Data(repeating: 7, count: 32) }
     func confirmProof() throws -> Data { Data([9, 9, 9]) }
+    func extra() -> Data { Data() }
     func abort() {}
 }
 
@@ -80,6 +84,7 @@ final class FakeMoveOld: MoveOldEngine, @unchecked Sendable {
     }
     func progress() -> MoveProgress { lock.lock(); defer { lock.unlock() }; return MoveProgress(done: UInt64(sent) * DemoMove.total / UInt64(DemoMove.chunks), total: DemoMove.total) }
     func transferConfirm(_ proof: Data) throws { guard proof == Data([9, 9, 9]) else { throw MoveChannelError.badMessage }; confirmed = true }
+    func setExtra(_ bytes: Data) throws {}
     func abort() {}
 }
 

@@ -183,6 +183,7 @@ struct MoveOfferView: View {
 /// The QR, the code, the progress and the way out, for the new phone.
 struct MoveNewPhoneView: View {
     @Environment(AccountSession.self) private var session
+    @Environment(NotificationCoordinator.self) private var notifications
     let model: MoveToNewPhone
     let onRetry: () -> Void
     let onClose: () -> Void
@@ -201,7 +202,7 @@ struct MoveNewPhoneView: View {
                     ProgressView()
                     Text("Opening lime…").font(Theme.body).foregroundStyle(Theme.textSecondary)
                 }
-                .task { await session.moveArrived() }
+                .task { MovedSettings.reloadLiveSettings(notifications: notifications); await session.moveArrived() }
             case .failed(let failure):
                 MoveFailureStep(failure: failure, retryTitle: "Try again", onRetry: onRetry, onClose: onClose)
             }

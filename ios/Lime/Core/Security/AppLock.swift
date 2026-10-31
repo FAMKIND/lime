@@ -54,8 +54,10 @@ struct FakeLockAuthenticator: LockAuthenticator {
 final class AppLock {
     static let shared = AppLock()
 
-    static let enabledKey = "lime.lock.enabled"
-    static let delayKey = "lime.lock.delay"
+    nonisolated static let enabledKey = "lime.lock.enabled"
+    nonisolated static let delayKey = "lime.lock.delay"
+    /// A move to a new phone brought Lock lime with it (LIME-272c): it is not on until the person has passed Face ID or the passcode once here.
+    nonisolated static let pendingKey = "lime.lock.pending"
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored var authenticator: LockAuthenticator
@@ -126,6 +128,13 @@ final class AppLock {
         leftAt = nil
         // Ask on coming back from away, not every time a cancelled sheet closes: "Unlock" asks again.
         if isLocked && wasAway { askIfWanted() }
+    }
+
+    /// After a move: Lock lime was on on the old phone, so ask once and only then turn it on here (with the same delay it had).
+    func finishMovedLockIfPending() async {
+        guard defaults.bool(forKey: Self.pendingKey) else { return }
+        defaults.removeObject(forKey: Self.pendingKey)
+        _ = await turnOn()
     }
 
     func askIfWanted() {

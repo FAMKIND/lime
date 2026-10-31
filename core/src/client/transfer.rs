@@ -40,6 +40,10 @@ const LABEL: &[u8] = b"lime-move-v1";
 const KIND_MANIFEST: u8 = 0;
 const KIND_DATA: u8 = 1;
 const KIND_FINAL: u8 = 2;
+/// The app's own items (LIME-272c: its settings and chat wallpapers), sent between the manifest and the data, and checked by the same digest.
+const KIND_EXTRA: u8 = 3;
+/// The most the app may add (settings and a few wallpaper pictures).
+const MAX_EXTRA: usize = 32 * 1024 * 1024;
 
 /// How far a move has got, in bytes of the account's data (for a progress bar).
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -66,6 +70,9 @@ struct Manifest {
     store_key: String,
     db_size: u64,
     chunks: u64,
+    /// The size of the app's own items that follow (none for a move from an older build).
+    #[serde(default)]
+    extra_size: u64,
     conversations: u64,
     messages: u64,
     attachments: u64,
@@ -185,6 +192,9 @@ struct OldState {
     hasher: Sha256,
     db_size: u64,
     sent: u64,
+    /// The app's own items to send after the manifest, and how many of their bytes went (LIME-272c).
+    extra: Vec<u8>,
+    extra_sent: usize,
     stage: Stage,
     finished: bool,
 }
@@ -192,6 +202,7 @@ struct OldState {
 #[derive(PartialEq, Clone, Copy)]
 enum Stage {
     Manifest,
+    Extra,
     Data,
     Final,
     Done,
@@ -228,7 +239,7 @@ impl TransferOld {
         Ok(Arc::new(Self {
             store,
             hello,
-            state: Mutex::new(OldState { session, confirmed: false, snapshot: None, counter: 0, hasher: Sha256::new(), db_size: 0, sent: 0, stage: Stage::Manifest, finished: false }),
+            state: Mutex::new(OldState { session, confirmed: false, snapshot: None, counter: 0, hasher: Sha256::new(), db_size: 0, sent: 0, extra: Vec::new(), extra_sent: 0, stage: Stage::Manifest, finished: false }),
         }))
     }
 
@@ -257,11 +268,22 @@ impl TransferOld {
         let key = st.session.data;
         let chunk = match st.stage {
             Stage::Manifest => {
-                let (file, path, manifest) = self.make_snapshot()?;
+                let (file, path, mut manifest) = self.make_snapshot()?;
+                manifest.extra_size = st.extra.len() as u64;
                 st.db_size = manifest.db_size;
                 st.snapshot = Some((file, path));
-                st.stage = if manifest.db_size == 0 { Stage::Final } else { Stage::Data };
+                st.stage = if !st.extra.is_empty() { Stage::Extra } else if manifest.db_size == 0 { Stage::Final } else { Stage::Data };
                 seal_chunk(&key, counter, KIND_MANIFEST, &serde_json::to_vec(&manifest).map_err(|_| StoreError::BadMessage)?)?
+            }
+            Stage::Extra => {
+                let end = (st.extra_sent + CHUNK).min(st.extra.len());
+                let piece = st.extra[st.extra_sent..end].to_vec();
+                st.hasher.update(&piece);
+                st.extra_sent = end;
+                if end >= st.extra.len() {
+                    st.stage = if st.db_size == 0 { Stage::Final } else { Stage::Data };
+                }
+                seal_chunk(&key, counter, KIND_EXTRA, &piece)?
             }
             Stage::Data => {
                 let mut buf = vec![0u8; CHUNK];
@@ -300,7 +322,17 @@ impl TransferOld {
     /// How much of the account has been sent.
     pub fn progress(&self) -> MoveProgress {
         let st = self.state();
-        MoveProgress { done: st.sent, total: st.db_size }
+        MoveProgress { done: st.sent + st.extra_sent as u64, total: st.db_size + st.extra.len() as u64 }
+    }
+
+    /// The app's own items (settings, wallpaper pictures) to move with the account, sealed in the same stream. Before the first chunk only.
+    pub fn set_extra(&self, bytes: Vec<u8>) -> Result<(), StoreError> {
+        let mut st = self.state();
+        if st.stage != Stage::Manifest || st.counter != 0 || bytes.len() > MAX_EXTRA {
+            return Err(StoreError::Rejected);
+        }
+        st.extra = bytes;
+        Ok(())
     }
 
     /// The new phone says it holds everything and the store opens as this account. Only its proof counts; then this phone's copy is removed
@@ -378,6 +410,7 @@ impl TransferOld {
             store_key: base64_encode(self.store.store_key),
             db_size,
             chunks: db_size.div_ceil(CHUNK as u64),
+            extra_size: 0,
             conversations,
             messages,
             attachments,
@@ -414,6 +447,8 @@ struct NewState {
     hasher: Sha256,
     received: u64,
     data_chunks: u64,
+    /// The app's own items so far (LIME-272c).
+    extra: Vec<u8>,
     digest: Option<[u8; 32]>,
     finished: bool,
     failed: bool,
@@ -444,7 +479,7 @@ impl TransferNew {
             user_id,
             dest: dest_path.into(),
             qr,
-            state: Mutex::new(NewState { secret, ours, session: None, confirmed: false, part: None, manifest: None, counter: 0, hasher: Sha256::new(), received: 0, data_chunks: 0, digest: None, finished: false, failed: false }),
+            state: Mutex::new(NewState { secret, ours, session: None, confirmed: false, part: None, manifest: None, counter: 0, hasher: Sha256::new(), received: 0, data_chunks: 0, extra: Vec::new(), digest: None, finished: false, failed: false }),
         }))
     }
 
@@ -491,6 +526,11 @@ impl TransferNew {
         result
     }
 
+    /// The app's own items that came with the account (after `import_finish`): its settings and wallpaper pictures (LIME-272c).
+    pub fn extra(&self) -> Vec<u8> {
+        self.state().extra.clone()
+    }
+
     /// What the manifest says about the account (after its chunk arrived).
     pub fn summary(&self) -> Option<MoveSummary> {
         self.state().manifest.as_ref().map(|m| MoveSummary { conversations: m.conversations, messages: m.messages, attachments: m.attachments, total_bytes: m.db_size })
@@ -498,7 +538,7 @@ impl TransferNew {
 
     pub fn progress(&self) -> MoveProgress {
         let st = self.state();
-        MoveProgress { done: st.received, total: st.manifest.as_ref().map(|m| m.db_size).unwrap_or(0) }
+        MoveProgress { done: st.received + st.extra.len() as u64, total: st.manifest.as_ref().map(|m| m.db_size + m.extra_size).unwrap_or(0) }
     }
 
     /// Checks the whole stream, that the file opens as this account's store with this device's keys, and only then puts it in place.
@@ -552,7 +592,7 @@ impl TransferNew {
         match (st.counter, kind) {
             (0, KIND_MANIFEST) => {
                 let manifest: Manifest = serde_json::from_slice(&payload).map_err(|_| StoreError::BadMessage)?;
-                if manifest.v != VERSION || manifest.user_id != self.user_id || manifest.chunks != manifest.db_size.div_ceil(CHUNK as u64) {
+                if manifest.v != VERSION || manifest.user_id != self.user_id || manifest.chunks != manifest.db_size.div_ceil(CHUNK as u64) || manifest.extra_size as usize > MAX_EXTRA {
                     return Err(StoreError::BadMessage);
                 }
                 if let Some(dir) = self.dest.parent() {
@@ -561,8 +601,19 @@ impl TransferNew {
                 st.part = Some(File::create(self.part_path()).map_err(io_err)?);
                 st.manifest = Some(manifest);
             }
+            (n, KIND_EXTRA) if n > 0 => {
+                let manifest = st.manifest.as_ref().ok_or(StoreError::BadMessage)?;
+                if payload.len() > CHUNK || st.extra.len() as u64 + payload.len() as u64 > manifest.extra_size || st.received > 0 {
+                    return Err(StoreError::BadMessage);
+                }
+                st.hasher.update(&payload);
+                st.extra.extend_from_slice(&payload);
+            }
             (n, KIND_DATA) if n > 0 => {
                 let manifest = st.manifest.as_ref().ok_or(StoreError::BadMessage)?;
+                if st.extra.len() as u64 != manifest.extra_size {
+                    return Err(StoreError::BadMessage);
+                }
                 if payload.len() > CHUNK || st.received + payload.len() as u64 > manifest.db_size || st.data_chunks >= manifest.chunks {
                     return Err(StoreError::BadMessage);
                 }
@@ -574,7 +625,7 @@ impl TransferNew {
             (n, KIND_FINAL) if n > 0 => {
                 let digest: [u8; 32] = payload.try_into().map_err(|_| StoreError::BadMessage)?;
                 let manifest = st.manifest.as_ref().ok_or(StoreError::BadMessage)?;
-                if st.received != manifest.db_size || st.data_chunks != manifest.chunks || st.hasher.clone().finalize().as_slice() != digest {
+                if st.extra.len() as u64 != manifest.extra_size || st.received != manifest.db_size || st.data_chunks != manifest.chunks || st.hasher.clone().finalize().as_slice() != digest {
                     return Err(StoreError::BadMessage);
                 }
                 st.part.as_mut().ok_or(StoreError::BadMessage)?.flush().map_err(io_err)?;

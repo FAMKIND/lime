@@ -160,6 +160,13 @@ final class TextPreferences: @unchecked Sendable {
         typeface = defaults.string(forKey: Self.fontKey).flatMap(LimeTypeface.init(rawValue:)) ?? .system
     }
 
+    /// Reads the three settings again from the defaults (a move to a new phone has just written them: LIME-272c).
+    func reloadFromDefaults() {
+        followsSystem = Self.bool(defaults.object(forKey: Self.followKey)) ?? true
+        step = Self.int(defaults.object(forKey: Self.stepKey)) ?? TextStep.defaultStep
+        typeface = defaults.string(forKey: Self.fontKey).flatMap(LimeTypeface.init(rawValue:)) ?? .system
+    }
+
     private static func bool(_ value: Any?) -> Bool? {
         if let bool = value as? Bool { return bool }
         switch (value as? String)?.lowercased() {

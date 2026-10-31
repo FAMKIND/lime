@@ -92,6 +92,29 @@ final class Move272Tests: XCTestCase {
         XCTAssertEqual(newSide.progress.done, newSide.progress.total)
     }
 
+    func testTheAppsSettingsTravelWithTheAccountAndAreAppliedBeforeItOpens() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("lime-move-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("old"), withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let old = try LimeStore.open(path: root.appendingPathComponent("old/lime.db").path, key: Data(repeating: 5, count: 32))
+        _ = try old.registerDevice(transport: RegisterOnly(), authToken: "tok")
+        let destination = root.appendingPathComponent("new/lime.db").path
+        let newCore = try TransferNew.offer(userId: "teacher-1", destPath: destination)
+        let oldCore = try TransferOld.accept(store: old, qr: newCore.qr())
+        let payload = Data("settings travel".utf8) + Data(repeating: 9, count: 400_000)
+        let oldEngine = RealMoveOld(oldCore)
+        try oldEngine.setExtra(payload)
+        let (newEnd, oldEnd) = LoopbackMoveChannel.pair()
+        let got = Box()
+        let newSide = MoveToNewPhone(engine: RealMoveNew(newCore), accept: { newEnd }, keep: { _ in }, applyExtra: { got.value = $0 })
+        let oldSide = MoveFromOldPhone(engine: oldEngine, connect: { oldEnd }, pause: {}, resume: {}, moved: {})
+        newSide.start(); oldSide.start()
+        try await wait("codes") { if case .compare = newSide.phase, case .compare = oldSide.phase { true } else { false } }
+        oldSide.matches(); newSide.matches()
+        try await wait("done") { newSide.phase == .done && oldSide.phase == .done }
+        XCTAssertEqual(got.value, payload, "the app's items arrive byte for byte and are handed to be applied")
+    }
+
     func testCancellingOnTheNewPhoneStopsTheOldOneAndKeepsItsStore() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("lime-move-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root.appendingPathComponent("old"), withIntermediateDirectories: true)

@@ -8518,3 +8518,54 @@ fn a_profile_colour_travels_like_the_cover_contacts_only_or_public() {
     assert_eq!(carol.store.peer_extra("alice".into(), TONE.into()).unwrap(), None);
 }
 
+#[test]
+fn the_apps_own_items_travel_in_the_same_sealed_stream_and_are_checked_with_it() {
+    let m = ready_to_move_with_extra(Some(b"settings".to_vec().into_iter().chain((0..700_000u32).map(|i| (i % 251) as u8)).collect()));
+    let chunks = all_chunks(&m.old);
+    assert!(chunks.len() > 6, "manifest, extra chunks, data chunks, final: {}", chunks.len());
+    for chunk in &chunks {
+        m.new.import_chunk(chunk.clone()).unwrap();
+    }
+    assert_eq!(m.new.progress().done, m.new.progress().total, "progress counts the extra too");
+    let key = m.new.import_finish().unwrap();
+    let expected: Vec<u8> = b"settings".to_vec().into_iter().chain((0..700_000u32).map(|i| (i % 251) as u8)).collect();
+    assert_eq!(m.new.extra(), expected, "the new phone has the app's items byte for byte");
+    let moved = LimeStore::open(m.dest.to_string_lossy().into_owned(), key).unwrap();
+    assert!(!moved.list_conversations().unwrap().is_empty(), "and the account");
+    m.old.transfer_confirm(m.new.confirm_proof().unwrap()).unwrap();
+}
+
+#[test]
+fn a_changed_or_missing_extra_chunk_fails_the_move_and_a_move_without_extra_still_works() {
+    let m = ready_to_move_with_extra(Some(vec![7; 300_000]));
+    let mut chunks = all_chunks(&m.old);
+    chunks[1][4] ^= 1; // the first extra chunk
+    assert!(chunks.into_iter().try_for_each(|c| m.new.import_chunk(c)).is_err());
+    assert!(!m.dest.exists(), "nothing kept");
+    // An extra chunk dropped: the data refuses to follow.
+    let m = ready_to_move_with_extra(Some(vec![7; 600_000]));
+    let mut chunks = all_chunks(&m.old);
+    chunks.remove(2);
+    assert!(chunks.into_iter().try_for_each(|c| m.new.import_chunk(c)).is_err());
+    // Nothing added: as before.
+    let m = ready_to_move_with_extra(None);
+    for c in all_chunks(&m.old) {
+        m.new.import_chunk(c).unwrap();
+    }
+    m.new.import_finish().unwrap();
+    assert!(m.new.extra().is_empty());
+    // Too much is refused up front, and not after the stream has begun.
+    let m = ready_to_move_with_extra(None);
+    assert!(m.old.set_extra(vec![0; 33 * 1024 * 1024]).is_err());
+    m.old.export_next_chunk().unwrap();
+    assert!(m.old.set_extra(vec![1]).is_err(), "too late once the stream began");
+}
+
+/// `ready_to_move`, with the app's items set on the old phone before the stream begins.
+fn ready_to_move_with_extra(extra: Option<Vec<u8>>) -> Move {
+    let m = ready_to_move();
+    if let Some(extra) = extra {
+        m.old.set_extra(extra).unwrap();
+    }
+    m
+}

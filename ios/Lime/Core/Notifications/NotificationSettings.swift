@@ -182,6 +182,17 @@ final class NotificationSettings {
         muted = stored.mapValues { Date(timeIntervalSince1970: $0) }
     }
 
+    /// Reads everything again from the defaults (a move to a new phone has just written them: LIME-272c).
+    func reloadFromDefaults() {
+        enabled = defaults.object(forKey: Keys.enabled) as? Bool ?? true
+        preview = defaults.string(forKey: Keys.preview).flatMap(NotificationPreview.init) ?? .nameAndMessage
+        sound = defaults.string(forKey: Keys.sound).flatMap(NotificationSound.init) ?? .limeChime
+        callSound = defaults.string(forKey: Keys.callSound).flatMap(CallSound.init) ?? .limeSteelpan
+        explainerDismissed = defaults.bool(forKey: Keys.dismissed)
+        let stored = defaults.dictionary(forKey: Keys.muted) as? [String: Double] ?? [:]
+        muted = stored.mapValues { Date(timeIntervalSince1970: $0) }
+    }
+
     func mute(_ conversationID: String, for duration: MuteDuration, now: Date = Date()) {
         muted[conversationID] = duration.end(from: now)
     }
