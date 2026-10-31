@@ -2,7 +2,36 @@
 
 Record of work landed via the `tend` skill.
 
-# MORNING SUMMARY — the overnight run (2026-10-30)
+# MORNING SUMMARY — the overnight run (2026-10-31)
+
+**Eight briefs, one commit each, in the order you gave. None skipped; no staging, secrets, deploys or account deletions. One server change is written and tested locally and NOT deployed (277e). Installed on all three devices at the end** (13 mini, iPad and Jean's 12 mini all took it on the first try; nothing was retried). PLOT.md went in alone first: `ad7e219`, and again `cf847ff` when 278b arrived mid-run.
+
+| brief | commit | what |
+|---|---|---|
+| 260c | `d0f79cd` | the series page fits the screen (clipped cover), small covers as centred art, no dock, "n of m read" from the listed parts |
+| 278b | `7a13c99` | several reactions fold into one pill on the bubble, growing toward the middle |
+| 277d | `19054a9` | a chat's own look: wallpaper (8 backgrounds, 12 generated presets, your photo), bubble colour (16 shades), text size; **your bubbles now follow the global accent**; the guard covers my bubble, links and the reaction pill |
+| 277e | `e4fce57` | your profile colour reaches your contacts (core slot `tone`; **server migration + `avatar`/`moderation-act` change: NOT deployed**) |
+| 272c | `0ae4ae2` | settings, per-chat looks and wallpapers move with you to a new phone (an extra item in the sealed stream); Lock lime waits for one pass |
+| 276 | `c43622f` | drafts of podcasts and quick posts on your phone (Save draft, listed in Drafts, resumable, deleted when published) |
+| 206 | `3ec4f9a` | animated GIFs send (as the file itself) and play in chats; Save to Photos keeps the GIF |
+| 207 | `7d0a77d` | My GIFs (core: encrypted library + FTS5 search), the GIF button, Settings → My GIFs |
+| 208 | `896f7e2` | `/` and words show matching GIFs above the field |
+| (fixes) | `af1c71c` | three migration tests learned the new tables; the tab-badge test compares resolved colours |
+
+## What needs you (in this order)
+
+1. **277e's server change is yours to deploy:** apply `supabase/migrations/20261031000000_profile_tone.sql`, then deploy `avatar` and `moderation-act` (staging first, then production). Until then "Colour" in Edit Cover says it couldn't be saved on a server without the slot, and nothing else is affected. (Local stack: the new Deno test passes; the whole local run is 118 passed and 1 failed, the known `blobs_test.ts` avatars test.)
+2. **Device checks I could not do** (each brief's Gate is under its section): a real move between two phones with 272b/272c (Local Network prompt, settings arriving, Lock lime asking once); a chat's wallpaper from Photos (the system picker); **GIFs: send from Photos and paste from Safari, Reduce Motion's Play, Save to Photos giving a GIF, Vision finding "Happy Birthday" in a frame, the GIF button and `/`**; reactions with 3–4 emoji on a short bubble; the series page on the 13 mini.
+3. **Decisions I made that you may want to change:** (a) 276 keeps drafts as files with iOS data protection in the account's space, **not in the SQLCipher store** (core-first would be a migration); (b) a GIF is sent byte for byte, so any comment blocks the maker put in it are not stripped (ImageIO can't rewrite a GIF without re-encoding it); (c) Settings → **My GIFs** is a row under Storage (there is no "Chats" screen); (d) my own bubble and the main button now follow the accent app-wide (1e522), lime unchanged; (e) 277d's photo wallpaper is not cropped/framed or blurred (a dim and a chip behind the words outside bubbles do the job); (f) 277e's colour has the same visibility as the background (it follows when you change it).
+4. **Known failing, not from tonight (tests):** `Studio239aUITests.testTheMicMenuListsTheInputsAndRemembersTheChoice` (the AirPods row is not hittable: it fails on the 277f build too); unit `AccountSessionTests.testSigningOutClearsTheTokensTheProfileAndTheLocalStore` and `ChatTests.testEndingASessionKeepsTheChatsAndASecondAccountNeverSeesThem` (written before 268: they expect sign-out to delete the store); `JamFilterTests.testTheSegmentsSplitByKind` (jam's segments gained Drafts and Discover). **I did not update those three stale tests: say if I should.** None of the known-flaky ones (Jam188b/q/m/n, Coedit233d) was hit.
+5. **A finding worth remembering:** adding a `.confirmSheet` inside the composer's `NavigationStack` modifier chain broke `Jam188rUITests` (the article body stopped taking focus); outside it, it does not (276).
+
+## Test state
+
+Core: **421 pass** (new: 277e's slot, 272c's extra stream (3), My GIFs (4); the migration tests were fixed for the new tables). iOS unit: 649 run, the 3 stale tests above fail (and the badge test was fixed). UI suites I ran this run all pass except the mic-menu one: Series (3 classes), Chat278 (4), Chat277d, Theme277/277f, Tone277e, Move272, Drafts276 (3) and the wider jam studio/compose/coedit set (about 60 tests), GIF206/207/208. **I did not rerun the whole UI suite after the last change.**
+
+# (earlier) MORNING SUMMARY — the overnight run (2026-10-30)
 
 **Seven briefs, one commit each, in order; one flag for you (below). No deploys were needed or made** (246a/b, 256, 260a use no server change; 258's staging deploy was done earlier on your go). Installed on all three devices at the end.
 
@@ -9452,3 +9481,5 @@ Type `/` and words to pick a GIF. **Brief:** LIME-208. iOS only (uses 207's sear
 - **Accessibility:** the strip is announced ("6 GIFs for happy birthday", "No GIFs for …"); each GIF is a 44 pt button read as "GIF, <words or recognised text or its message>" with the hint "Sends it"; it shows still frames (Reduce Motion safe and light).
 - **Tests:** UI `GIF208UITests` (3, demo `-lime-demo-my-gifs`: a birthday GIF and a thank-you GIF): `/birth` shows only the birthday GIF; a tap sends it, the strip closes and the field empties; an empty `/` shows both, `/zzzz` shows the no-match line with the words, deleting back to nothing closes the strip; `/hello` sent without picking goes as text.
 - **Gate:** in a chat with Jean, type `/happy birthday`, pick one, Jean gets it.
+
+- **Installed (260c, 278b, 277d, 277e, 272c, 276, 206, 207, 208):** all three, the 13 mini, the iPad and Jean's 12 mini, at the end of the overnight run (one attempt each; all took it).
