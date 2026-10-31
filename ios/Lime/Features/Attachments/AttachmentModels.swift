@@ -102,7 +102,7 @@ enum AttachmentProcessing {
     static let maxPosterBytes = 24_000
     static let maxPerMessage = 10
 
-    enum Problem: Error, Equatable { case tooLarge, unreadable }
+    enum Problem: Error, Equatable { case tooLarge, unreadable, gifTooBig }
 
     /// A photo: at most 2048 px on its long edge, upright, redrawn so EXIF, GPS and camera details are gone, as JPEG;
     /// plus a tiny preview for the message.
@@ -163,6 +163,10 @@ enum AttachmentProcessing {
         if data.isEmpty { throw Problem.unreadable }
         let type = UTType(filenameExtension: url.pathExtension)
         let mime = type?.preferredMIMEType ?? "application/octet-stream"
+        // A GIF is sent as the GIF itself, never redrawn as a JPEG (LIME-206).
+        if GIF.isGIF(data) {
+            do { return try GIF.attachment(data, name: url.lastPathComponent).0 } catch { throw Problem.gifTooBig }
+        }
         // A picture sent as a file is still sent as a picture.
         if type?.conforms(to: .image) == true, let image = UIImage(data: data), let photo = photo(image, name: url.lastPathComponent) { return photo }
         return OutgoingAttachment(bytes: data, name: url.lastPathComponent, mime: mime, width: nil, height: nil, durationMs: nil, thumb: Data(), poster: Data())

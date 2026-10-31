@@ -22,6 +22,7 @@ struct ChatComposer: View {
     @State private var drafts: [DraftAttachment] = []
     @State private var chooser: Chooser?
     @State private var tooLarge = false
+    @State private var gifTooBig = false
     @State private var choosing = false
     @State private var recent = RecentMedia()
     @State private var recorder = VoiceRecorder()
@@ -156,7 +157,7 @@ struct ChatComposer: View {
                 onAdd: { items in
                     choosing = false
                     Task {
-                        let picked = await recent.resolve(items)
+                        let picked = await recent.resolve(items, keepsGIFs: true)
                         await addPicked(images: picked.images, videos: picked.videos)
                     }
                 })
@@ -164,7 +165,7 @@ struct ChatComposer: View {
         .fullScreenCover(item: $chooser) { which in
             switch which {
             case .library:
-                MediaLibraryPicker(limit: max(1, AttachmentProcessing.maxPerMessage - drafts.count),
+                MediaLibraryPicker(limit: max(1, AttachmentProcessing.maxPerMessage - drafts.count), keepsGIFs: true,
                               onPick: { images, videos in chooser = nil; Task { await addPicked(images: images, videos: videos) } },
                               onCancel: { chooser = nil }).ignoresSafeArea()
             case .camera:
@@ -182,12 +183,14 @@ struct ChatComposer: View {
         .alert("That video can't be sent", isPresented: Binding(get: { videoProblem != nil }, set: { if !$0 { videoProblem = nil } })) {
             Button("OK", role: .cancel) {}
         } message: { Text(videoProblem ?? "") }
+        .alert(GIF.tooBigMessage, isPresented: $gifTooBig) { Button("OK", role: .cancel) {} } message: { Text("A GIF can be up to 10 MB and 500 frames.") }
         .alert("That file is too large", isPresented: $tooLarge) { Button("OK", role: .cancel) {} } message: { Text("Files can be up to 50 MB.") }
         .onChange(of: model.plainText) { refreshPreview() }
         .onChange(of: previewsOn) { refreshPreview() }
         .onChange(of: drafts.count) { refreshPreview() }
         #if DEBUG
         .task { if store.demoDrafts { drafts = ChatComposer.demoDrafts }; recorder.simulated = store.isDemo }
+        .onAppear { model.onPasteGIF = { data in addGIF(data: data, name: "Pasted GIF.gif") } }
         #endif
     }
 
@@ -276,7 +279,26 @@ struct ChatComposer: View {
     /// Pictures first, then each video one after the other (a video is compressed, which takes a moment).
     private func addPicked(images: [UIImage], videos: [URL]) async {
         if !images.isEmpty { await addImages(images) }
-        for url in videos { await addVideo(url) }
+        for url in videos {
+            if url.pathExtension.lowercased() == "gif" { await addGIF(url) } else { await addVideo(url) }
+        }
+    }
+
+    /// An animated GIF goes as the GIF itself (LIME-206): the same bytes, the first frame as its preview; a big one is refused, never turned into a still.
+    private func addGIF(_ url: URL) async {
+        defer { try? FileManager.default.removeItem(at: url) }
+        guard drafts.count < AttachmentProcessing.maxPerMessage, let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return }
+        addGIF(data: data)
+    }
+
+    func addGIF(data: Data, name: String = "GIF.gif") {
+        guard drafts.count < AttachmentProcessing.maxPerMessage else { return }
+        do {
+            let made = try GIF.attachment(data, name: name)
+            drafts.append(DraftAttachment(outgoing: made.0, preview: made.1))
+        } catch GIF.Problem.tooBig {
+            gifTooBig = true
+        } catch {}
     }
 
     private func addVideo(_ url: URL) async {
@@ -314,6 +336,8 @@ struct ChatComposer: View {
                     drafts.append(DraftAttachment(outgoing: item, preview: item.mime.hasPrefix("image/") ? UIImage(data: item.bytes).map { PhotoProcessing.crop($0, viewport: 128, scale: 1, offset: .zero) } : nil))
                 } catch AttachmentProcessing.Problem.tooLarge {
                     tooLarge = true
+                } catch AttachmentProcessing.Problem.gifTooBig {
+                    gifTooBig = true
                 } catch {}
             }
         }

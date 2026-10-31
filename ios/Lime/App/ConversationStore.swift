@@ -1317,7 +1317,7 @@ final class ConversationStore {
             demoSheet = "scan"
             let key = screen == "scan-verified" ? Self.demoGraceFingerprint : "0000111122223333FFFF"
             demoScanCode = "https://limemessenger.com/u/grace.h?k=\(key)"
-        case "attachments", "attachments-draft", "attachments-media", "attachments-remote", "attachment-viewer":
+        case "attachments", "attachments-draft", "attachments-media", "attachments-remote", "attachments-gif", "attachment-viewer":
             loadDemoAttachments(draft: screen == "attachments-draft", screen: screen ?? "attachments")
             path.append("dm:att")
         case "note-to-self":

@@ -32,7 +32,7 @@ struct AttachmentStack: View {
     }
 
     private func pictureLabel(_ item: AttachmentItem) -> String {
-        let name = item.name.isEmpty ? "Photo" : item.name
+        let name = GIF.isGIF(mime: item.mime) ? "GIF" : (item.name.isEmpty ? "Photo" : item.name)
         guard let phrase = store.downloadPhrase(item) else { return name }
         return item.removed ? "\(name), \(phrase)" : "\(name), tap to download, \(phrase)"
     }
@@ -122,6 +122,10 @@ struct ImageTile: View {
     var uploading = false
     @Environment(ConversationStore.self) private var store
     @State private var full: UIImage?
+    /// An animated GIF (LIME-206): the file's bytes, played a frame at a time; still with Reduce Motion until the person taps play.
+    @State private var gifData: Data?
+    @State private var gifPlaying = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var failed = false
     /// Not fetched by itself (the settings, or a nearly full phone): a placeholder with its size, to tap.
     @State private var waiting = false
@@ -129,8 +133,12 @@ struct ImageTile: View {
     var body: some View {
         ZStack {
             Theme.surface
-            if let full {
+            if let gifData {
+                GIFView(data: gifData, playing: !reduceMotion || gifPlaying)
+                gifBadge
+            } else if let full {
                 Image(uiImage: full).resizable().scaledToFill()
+                if GIF.isGIF(mime: item.mime) { gifBadge }
             } else if let thumb = UIImage(data: item.thumb) {
                 Image(uiImage: thumb).resizable().scaledToFill().blur(radius: 8).clipped()
             }
@@ -150,6 +158,20 @@ struct ImageTile: View {
         .contentShape(Rectangle())
         .task(id: "\(item.id)-\(item.downloaded)-\(item.removed)") { await load() }
         .accessibilityHidden(true)
+    }
+
+    /// The small "GIF" mark in a corner, and with Reduce Motion a play button (the picture shows its first frame until it is tapped).
+    private var gifBadge: some View {
+        ZStack {
+            VStack { Spacer(); HStack { Text("GIF").font(.system(size: 11, weight: .bold)).foregroundStyle(.white).padding(.horizontal, 6).padding(.vertical, 2).background(.black.opacity(0.55), in: Capsule()).padding(6); Spacer() } }
+                .accessibilityHidden(true)
+            if reduceMotion && !gifPlaying && gifData != nil {
+                Button { gifPlaying = true } label: {
+                    Image(systemName: "play.fill").font(.system(size: 22)).foregroundStyle(.white).frame(width: 52, height: 52).background(.black.opacity(0.5), in: Circle())
+                }
+                .accessibilityLabel("Play GIF").accessibilityIdentifier("gif-play-\(item.id)")
+            }
+        }
     }
 
     private func placeholder(_ symbol: String, _ title: String, detail: String?) -> some View {
@@ -173,6 +195,7 @@ struct ImageTile: View {
         if !item.downloaded && !StorageGuard.shared.mayAutoDownload(item) { waiting = true; return }
         full = await store.image(for: item)
         failed = full == nil
+        if GIF.isGIF(mime: item.mime), full != nil, let data = await store.attachmentData(item), GIF.isGIF(data) { gifData = data }
     }
 }
 
@@ -354,6 +377,11 @@ struct AttachmentViewer: View {
 
     private func save() async {
         guard items.indices.contains(page) else { return }
+        // A GIF stays a GIF in Photos (LIME-206).
+        if GIF.isGIF(mime: items[page].mime), let data = await store.attachmentData(items[page]), GIF.isGIF(data) {
+            if await GIF.saveToPhotos(data) { saved = true; try? await Task.sleep(for: .seconds(2)); saved = false }
+            return
+        }
         let found: UIImage?
         if let load { found = await load(items[page]) } else { found = await store.image(for: items[page]) }
         guard let image = found else { return }
@@ -376,10 +404,21 @@ private struct ZoomablePicture: View {
     @Environment(ConversationStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var image: UIImage?
+    @State private var gif: Data?
+    @State private var gifPlaying = false
 
     var body: some View {
         ZStack {
-            if let image {
+            if let gif {
+                // An animated GIF in the viewer (LIME-206): fitted and playing; with Reduce Motion the first frame and a play button.
+                GIFView(data: gif, playing: !reduceMotion || gifPlaying, fit: true)
+                    .accessibilityLabel("GIF")
+                    .onTapGesture { onSingleTap() }
+                if reduceMotion && !gifPlaying {
+                    Button { gifPlaying = true } label: { Image(systemName: "play.fill").font(.system(size: 26)).foregroundStyle(.white).frame(width: 60, height: 60).background(.black.opacity(0.5), in: Circle()) }
+                        .accessibilityLabel("Play GIF").accessibilityIdentifier("gif-viewer-play")
+                }
+            } else if let image {
                 // Apple's gestures (LIME-211): a scroll view that zooms under the fingers, pans with momentum and bounce, double-taps to a point.
                 ZoomablePhoto(image: image, active: active, onZoom: onZoom, onSingleTap: onSingleTap, onDismissProgress: onDismissProgress, onDismiss: onDismiss, onEdgePush: onEdgePush, reduceMotion: reduceMotion)
             } else if let thumb = UIImage(data: item.thumb) {
@@ -391,6 +430,7 @@ private struct ZoomablePicture: View {
         }
         .task(id: item.id) {
             if let load { image = await load(item) } else { image = await store.image(for: item) }
+            if GIF.isGIF(mime: item.mime), let data = await store.attachmentData(item), GIF.isGIF(data) { gif = data }
         }
     }
 }

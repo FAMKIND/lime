@@ -75,7 +75,7 @@ final class RecentMedia {
     }
 
     /// The chosen items as pictures and video files (the video copied to a temporary file the pipeline then removes).
-    func resolve(_ chosen: [RecentItem]) async -> (images: [UIImage], videos: [URL]) {
+    func resolve(_ chosen: [RecentItem], keepsGIFs: Bool = false) async -> (images: [UIImage], videos: [URL]) {
         var images: [UIImage] = []
         var videos: [URL] = []
         for item in chosen {
@@ -86,6 +86,8 @@ final class RecentMedia {
             }
             if item.isVideo {
                 if let url = await Self.exportVideo(asset) { videos.append(url) }
+            } else if keepsGIFs, asset.playbackStyle == .imageAnimated, let url = await Self.exportOriginalImage(asset, ext: "gif") {
+                videos.append(url)   // an animated GIF travels as its file (LIME-206)
             } else if let image = await Self.fullImage(asset) {
                 images.append(image)
             }
@@ -107,6 +109,19 @@ final class RecentMedia {
             options.version = .current
             PHImageManager.default().requestImage(for: asset, targetSize: PHImageManagerMaximumSize, contentMode: .aspectFit, options: options) { image, _ in
                 continuation.resume(returning: image)
+            }
+        }
+    }
+
+    /// The original bytes of a picture (a GIF) as a temporary file.
+    private static func exportOriginalImage(_ asset: PHAsset, ext: String) async -> URL? {
+        guard let resource = PHAssetResource.assetResources(for: asset).first(where: { $0.type == .photo }) else { return nil }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("lime-pick-\(UUID().uuidString).\(ext)")
+        let options = PHAssetResourceRequestOptions()
+        options.isNetworkAccessAllowed = true
+        return await withCheckedContinuation { continuation in
+            PHAssetResourceManager.default().writeData(for: resource, toFile: url, options: options) { error in
+                continuation.resume(returning: error == nil ? url : nil)
             }
         }
     }
@@ -326,6 +341,8 @@ private struct AddSheetHeightKey: PreferenceKey {
 /// The system picker for photos and videos together, several at once. Lime receives only what is chosen, with no library permission.
 struct MediaLibraryPicker: UIViewControllerRepresentable {
     let limit: Int
+    /// A chat keeps animated GIFs as GIFs (LIME-206): they come back as temporary `.gif` files among the URLs.
+    var keepsGIFs = false
     let onPick: ([UIImage], [URL]) -> Void
     let onCancel: () -> Void
 
@@ -341,12 +358,13 @@ struct MediaLibraryPicker: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ controller: PHPickerViewController, context: Context) {}
-    func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick, onCancel: onCancel) }
+    func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick, onCancel: onCancel, keepsGIFs: keepsGIFs) }
 
     final class Coordinator: NSObject, PHPickerViewControllerDelegate {
         private nonisolated(unsafe) let onPick: ([UIImage], [URL]) -> Void
         private nonisolated(unsafe) let onCancel: () -> Void
-        init(onPick: @escaping ([UIImage], [URL]) -> Void, onCancel: @escaping () -> Void) { self.onPick = onPick; self.onCancel = onCancel }
+        private let keepsGIFs: Bool
+        init(onPick: @escaping ([UIImage], [URL]) -> Void, onCancel: @escaping () -> Void, keepsGIFs: Bool = false) { self.onPick = onPick; self.onCancel = onCancel; self.keepsGIFs = keepsGIFs }
 
         nonisolated func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
             guard !results.isEmpty else { DispatchQueue.main.async { self.onCancel() }; return }
@@ -356,7 +374,16 @@ struct MediaLibraryPicker: UIViewControllerRepresentable {
             let lock = NSLock()
             for (index, result) in results.enumerated() {
                 let provider = result.itemProvider
-                if provider.hasItemConformingToTypeIdentifier(UTType.movie.identifier) {
+                if keepsGIFs, provider.hasItemConformingToTypeIdentifier(UTType.gif.identifier) {
+                    group.enter()
+                    provider.loadFileRepresentation(forTypeIdentifier: UTType.gif.identifier) { url, _ in
+                        if let url {
+                            let copy = FileManager.default.temporaryDirectory.appendingPathComponent("lime-pick-\(UUID().uuidString).gif")
+                            if (try? FileManager.default.copyItem(at: url, to: copy)) != nil { lock.lock(); videos[index] = copy; lock.unlock() }
+                        }
+                        group.leave()
+                    }
+                } else if provider.hasItemConformingToTypeIdentifier(UTType.movie.identifier) {
                     group.enter()
                     provider.loadFileRepresentation(forTypeIdentifier: UTType.movie.identifier) { url, _ in
                         // The picker's own copy is deleted when it returns, so it is copied out.

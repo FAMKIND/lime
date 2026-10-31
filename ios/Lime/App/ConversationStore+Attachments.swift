@@ -173,6 +173,15 @@ extension ConversationStore {
         return AttachmentItem(id: id, mime: "audio/mp4", name: "Voice message.m4a", size: 3_000, durationMs: seconds * 1000, thumb: wave, downloaded: true)
     }
 
+    /// A small animated GIF made on the spot: three coloured frames.
+    func demoGIF() -> AttachmentItem {
+        let id = UUID().uuidString.lowercased()
+        let data = GIFFixtures.make(frames: 3, size: CGSize(width: 160, height: 120), delay: 0.3)
+        demoAttachmentData[id] = data
+        let first = GIF.firstFrame(data) ?? UIImage()
+        return AttachmentItem(id: id, mime: GIF.mime, name: "Friday.gif", size: Int64(data.count), width: 160, height: 120, thumb: AttachmentProcessing.thumbnail(first), downloaded: true)
+    }
+
     func demoVideo() -> AttachmentItem {
         let picture = Self.demoPicture(0.5, size: CGSize(width: 640, height: 360))
         let id = UUID().uuidString.lowercased()
@@ -222,7 +231,10 @@ extension ConversationStore {
         let farPDFID = UUID().uuidString.lowercased()
         demoAttachmentData[farPDFID] = Data("%PDF-1.4 remote".utf8)
         farPDF.attachments = [AttachmentItem(id: farPDFID, mime: "application/pdf", name: "Schedule.pdf", size: 1_250_000, downloaded: false)]
-        let messages = screen == "attachments-remote" ? [remote, gonePDF, removedPhoto, farPDF] : (media ? [voiceOne, voiceTwo, clip, going] : [album, file, mine])
+        // A GIF with a caption, and a plain picture beside it (LIME-206).
+        var gifMessage = Message(id: "g1", senderID: "pat", text: "Happy Friday!", date: now.addingTimeInterval(-300))
+        gifMessage.attachments = [demoGIF()]
+        let messages = screen == "attachments-remote" ? [remote, gonePDF, removedPhoto, farPDF] : screen == "attachments-gif" ? [gifMessage, mine] : (media ? [voiceOne, voiceTwo, clip, going] : [album, file, mine])
         conversations = [Conversation(id: "dm:att", title: pat.name, members: [pat], messages: messages)]
         VoicePlayer.shared.stop()
         VoicePlayer.shared.simulated = true

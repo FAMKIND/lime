@@ -19,6 +19,8 @@ struct ButtonRequest: Identifiable {
 @Observable
 final class RichComposerModel {
     var hasText = false
+    /// A GIF pasted into the field (LIME-206): the chat adds it to the message as the GIF itself. Nil where pasting a picture means nothing.
+    @ObservationIgnored var onPasteGIF: ((Data) -> Void)?
     /// What is written, as plain text (the link card looks for an address in it).
     private(set) var plainText = ""
     var hasSelection = false
@@ -574,7 +576,16 @@ final class ComposerTextView: UITextView {
         }
     }
 
+    private static let gifType = "com.compuserve.gif"
+
+    /// Paste is offered for a GIF too, when the chat can take one.
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        if action == #selector(UIResponderStandardEditActions.paste(_:)), model?.onPasteGIF != nil, UIPasteboard.general.contains(pasteboardTypes: [Self.gifType]) { return true }
+        return super.canPerformAction(action, withSender: sender)
+    }
+
     override func paste(_ sender: Any?) {
+        if let handler = model?.onPasteGIF, let data = UIPasteboard.general.data(forPasteboardType: Self.gifType) { handler(data); return }
         guard let string = UIPasteboard.general.string else { return }
         insertText(string) // plain text only: no one else's styling comes along
     }
