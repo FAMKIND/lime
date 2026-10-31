@@ -141,7 +141,7 @@ struct ScanQRScreen: View {
             }
             Spacer(minLength: 0)
         }
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         .toolbar(.hidden, for: .navigationBar)
         .swipeBackEnabled()
         #if DEBUG

@@ -236,7 +236,7 @@ struct NewMessageSheet: View {
                 }
             }
         }
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         .safeAreaInset(edge: .bottom) { searchBar }
     }
 
@@ -574,7 +574,7 @@ struct FindByScreen: View {
             }
             Spacer(minLength: 0)
         }
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         .toolbar(.hidden, for: .navigationBar)
         .swipeBackEnabled()
         .onAppear { focused = !scanning }
@@ -625,7 +625,7 @@ struct RequestsView: View {
             .padding(.top, 8)
         }
         .refreshable { await store.pullToRefresh() }
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         .navigationTitle("Requests")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)

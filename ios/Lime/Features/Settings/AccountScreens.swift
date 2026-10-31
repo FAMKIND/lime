@@ -528,6 +528,8 @@ struct AcknowledgementsScreen: View {
 
 struct ThemeChoices: View {
     private var store: ThemeStore { ThemeStore.shared }
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Accent").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.textSecondary).accessibilityAddTraits(.isHeader)
@@ -551,10 +553,53 @@ struct ThemeChoices: View {
                     .accessibilityIdentifier("theme-accent-\(tone)")
                 }
             }
+            Text("Background").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.textSecondary).accessibilityAddTraits(.isHeader)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 80), spacing: 12), count: 3), spacing: 12) {
+                ForEach(ThemeBackground.allCases) { kind in
+                    let on = store.background == kind
+                    Button { store.background = kind } label: {
+                        VStack(spacing: 6) {
+                            ThemeTile(kind: kind, dark: colorScheme == .dark)
+                                .frame(height: 96).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(on ? Theme.text : Theme.hairline, lineWidth: on ? 2.5 : 1))
+                            HStack(spacing: 4) {
+                                if on { Image(systemName: "checkmark").font(.system(size: 12, weight: .bold)) }
+                                Text(kind.title).font(Theme.font(.caption, weight: on ? .semibold : .regular))
+                            }
+                            .foregroundStyle(Theme.text)
+                        }
+                        .frame(minHeight: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(kind.title).accessibilityAddTraits(on ? [.isSelected] : [])
+                    .accessibilityIdentifier("theme-background-\(kind.rawValue)")
+                }
+            }
             Button("Reset to lime") { store.reset() }.font(Theme.body).frame(minHeight: 44).accessibilityIdentifier("theme-reset")
-            Text("The accent colours buttons and selections. Text adjusts to stay easy to read. Kept on this iPhone.")
+            Text("The accent colours buttons and selections; the background is the paper under every page. Text adjusts to stay easy to read. Kept on this iPhone.")
                 .font(Theme.caption).foregroundStyle(Theme.textSecondary)
         }
         .padding(.horizontal, 4)
+    }
+}
+
+/// A small sample of one background, drawn with the same code as the real one.
+struct ThemeTile: View {
+    let kind: ThemeBackground
+    let dark: Bool
+
+    var body: some View {
+        let theme = ThemeResolver.resolve(accent: ThemeStore.shared.accent, background: kind, dark: dark)
+        ZStack(alignment: .topLeading) {
+            Color(theme.canvas)
+            ThemeBackgroundSample(kind: kind, theme: theme)
+            VStack(alignment: .leading, spacing: 5) {
+                RoundedRectangle(cornerRadius: 3).fill(Color(theme.text)).frame(width: 46, height: 6)
+                RoundedRectangle(cornerRadius: 6).fill(Color(theme.surface)).frame(height: 26)
+                Capsule().fill(Color(theme.accent)).frame(width: 34, height: 12)
+            }
+            .padding(10)
+        }
+        .accessibilityHidden(true)
     }
 }

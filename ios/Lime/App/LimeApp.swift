@@ -54,7 +54,7 @@ struct LimeApp: App {
                 .environment(store)
                 .environment(session)
                 .environment(notifications)
-                .preferredColorScheme(AppearanceSetting(rawValue: appearance)?.colorScheme)
+                .preferredColorScheme(ThemeStore.shared.background.forcesDark ? .dark : AppearanceSetting(rawValue: appearance)?.colorScheme)
                 .task { await session.resume() }
                 #if DEBUG
                 // LIME-111-fix4: `-lime-callkit-selftest` runs the CallKit self-test at launch (log in the call diagnostics).

@@ -163,7 +163,7 @@ struct CallHistoryView: View {
                 content(groups, topMargin: 76)
             }
         }
-        .background(Theme.canvas.ignoresSafeArea().accessibilityIdentifier("calls-screen"))
+        .background(ThemeBackgroundView().ignoresSafeArea().accessibilityIdentifier("calls-screen"))
         .navigationBarTitleDisplayMode(.inline)
         .rootHeader(searchID: "calls-search-button", overlays: true) { store.callPath.append(CallSearchRoute()) }
         .overlay { FloatingPlus(label: "New call", id: "new-call-button") { showNewCall = true } }

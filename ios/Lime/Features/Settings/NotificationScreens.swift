@@ -210,7 +210,7 @@ struct NotificationExplainerSheet: View {
             .accessibilityIdentifier("explainer-not-now")
         }
         .padding(24)
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         .presentationDetents([.medium])
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("notification-explainer")

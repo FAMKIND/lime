@@ -5,7 +5,7 @@ import SwiftUI
 struct SplashView: View {
     var body: some View {
         ZStack {
-            Theme.canvas.ignoresSafeArea()
+            ThemeBackgroundView().ignoresSafeArea()
             Image("LimeLogo")
                 .resizable().scaledToFit()
                 .frame(width: 112, height: 112)
@@ -53,7 +53,7 @@ struct WelcomeView: View {
             .padding(.horizontal, 24)
             .padding(.bottom, 28)
         }
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
     }
 }
 
@@ -163,7 +163,7 @@ struct ConfirmationSheet: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity)
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         .presentationDetents([.height(320)])
     }
 }

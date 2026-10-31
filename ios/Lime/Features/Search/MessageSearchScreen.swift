@@ -31,7 +31,7 @@ struct MessageSearchScreen: View {
             .scrollDismissesKeyboard(.immediately)
             .accessibilityIdentifier("search-results")
         }
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         .toolbar(.hidden, for: .navigationBar)
         .swipeBackEnabled()
         .inviteFlow(start: $inviting, username: session.profile?.username)

@@ -51,7 +51,7 @@ struct ThreadView: View {
 
     var body: some View {
         ZStack {
-            Theme.canvas.ignoresSafeArea()
+            ThemeBackgroundView().ignoresSafeArea()
             ScrollViewReader { proxy in
                 ScrollView {
                     // An eager stack, not a lazy one (LIME-173): a lazy stack's estimated height collapses after the scroll, so a very tall first message left

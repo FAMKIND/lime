@@ -498,7 +498,7 @@ struct RenameGroupSheet: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         .presentationDetents([.medium])
         .onAppear { focused = true }
     }

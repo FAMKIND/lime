@@ -140,7 +140,7 @@ struct LinkSheet: View {
             Spacer(minLength: 0)
         }
         .padding(20)
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         .presentationDetents([.medium])
         .onAppear { address = request.initialURL; focused = true }
     }

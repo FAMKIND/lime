@@ -67,7 +67,7 @@ struct OnboardingScaffold<Content: View>: View {
             }
             .scrollDismissesKeyboard(.interactively)
         }
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
     }
 }
 

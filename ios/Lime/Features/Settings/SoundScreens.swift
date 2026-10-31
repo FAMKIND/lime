@@ -96,7 +96,7 @@ struct AddSoundSheet: View {
                 }
                 .padding(.horizontal, 20).padding(.bottom, 32)
             }
-            .background(Theme.canvas.ignoresSafeArea())
+            .limeBackground()
             .toolbar(.hidden, for: .navigationBar)
         }
         .presentationBackground(Theme.canvas)

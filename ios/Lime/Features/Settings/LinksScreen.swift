@@ -58,7 +58,7 @@ struct LinksScreen: View {
         }
         .environment(\.editMode, .constant(.active))
         .scrollContentBackground(.hidden)
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         .navigationTitle("Links").navigationBarTitleDisplayMode(.inline)
         .task {
             guard !loaded else { return }

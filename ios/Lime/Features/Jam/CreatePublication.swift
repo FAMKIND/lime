@@ -49,7 +49,7 @@ struct CreatePublicationSheet: View {
             .scrollDismissesKeyboard(.interactively)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         .presentationDetents([.large])
         .interactiveDismissDisabled(making)
         .onAppear { focused = true }

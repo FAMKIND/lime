@@ -168,7 +168,7 @@ struct EmergencySheet: View {
             .padding(20)
         }
         .scrollDismissesKeyboard(.interactively)
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         .accessibilityIdentifier("emergency-sheet")
         .sheet(isPresented: $changing) {
             EmergencyGroupPicker(selected: target) { picked in target = picked; changing = false }

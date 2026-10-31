@@ -77,7 +77,7 @@ struct OrgFieldSheet: View {
             .scrollDismissesKeyboard(.interactively)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         .presentationDetents([.medium, .large])
         .onAppear {
             guard !loaded else { return }
@@ -150,7 +150,7 @@ struct OrgPictureSheet: View {
             .disabled(busy)
             Spacer(minLength: 0)
         }
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         .presentationDetents([.medium])
         .fullScreenCover(item: $pictureStep) { step in
             switch step {

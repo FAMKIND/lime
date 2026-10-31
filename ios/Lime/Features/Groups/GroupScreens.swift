@@ -117,7 +117,7 @@ struct GroupPickerScreen: View {
             }
             .scrollDismissesKeyboard(.interactively)
         }
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         .toolbar(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .bottom) {
             HStack(spacing: 8) {
@@ -216,7 +216,7 @@ struct GroupNameScreen: View {
         }
         .onAppear { if name.isEmpty && !edited { name = defaultName } }
         .onChange(of: members) { _, _ in if !edited { name = defaultName } }
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         .toolbar(.hidden, for: .navigationBar)
         .onAppear { focused = true }
         .swipeBackEnabled()

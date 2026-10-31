@@ -148,7 +148,7 @@ struct StatusSheet: View {
                 }
                 .padding(.horizontal, 16).padding(.bottom, 32)
             }
-            .background(Theme.canvas.ignoresSafeArea())
+            .limeBackground()
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(isPresented: $showHours) { WorkHoursScreen() }
         }

@@ -127,7 +127,7 @@ struct GroupAvatarSheet: View {
             Spacer(minLength: 0)
         }
         .padding(20)
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         .presentationDetents([.large])
         .onAppear {
             emoji = currentEmoji ?? ""

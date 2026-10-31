@@ -105,7 +105,7 @@ struct AboutView: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         .presentationDetents([.large])
         .confirmSheet("Sign out of lime?", isPresented: $confirmingSignOut) {
             Button("Sign out") {

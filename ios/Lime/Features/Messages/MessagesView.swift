@@ -84,7 +84,7 @@ struct MessagesView: View {
     @available(iOS 26, *)
     private var nativeBody: some View {
         ZStack {
-            Theme.canvas.ignoresSafeArea()
+            ThemeBackgroundView().ignoresSafeArea()
             list(top: 8, bottom: 24)
                 .scrollEdgeEffectStyle(.soft, for: .top)
                 .scrollEdgeEffectStyle(.soft, for: .bottom)
@@ -120,7 +120,7 @@ struct MessagesView: View {
 
     private var legacyBody: some View {
         ZStack {
-            Theme.canvas.ignoresSafeArea()
+            ThemeBackgroundView().ignoresSafeArea()
             list(top: 76, bottom: 24)
         }
         .readSideInsets($sideInsets)
@@ -405,7 +405,7 @@ struct OfflineSheet: View {
                 .padding(20)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .background(Theme.canvas.ignoresSafeArea())
+            .limeBackground()
             .navigationTitle(OfflineCopy.sheetTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }

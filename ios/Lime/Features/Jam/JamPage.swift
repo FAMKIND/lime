@@ -19,7 +19,7 @@ struct JamPage: View {
         @Bindable var store = store
         return NavigationStack(path: $store.jamPath) {
             feed
-                .background(Theme.canvas.ignoresSafeArea())
+                .limeBackground()
                 .navigationBarTitleDisplayMode(.inline)
                 // The same header as link and call: the feed scrolls under it (LIME-188v).
                 .rootHeader(searchID: "jam-search-button", overlays: true) { store.jamSearching = true }

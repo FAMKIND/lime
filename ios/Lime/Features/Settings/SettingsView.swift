@@ -63,7 +63,7 @@ struct SettingsView: View {
                 }
         }
         .tint(Theme.text)
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         #if DEBUG
         .task { if !store.demoSettingsRoute.isEmpty { path = Self.route(from: store.demoSettingsRoute) } }
         #endif
@@ -134,7 +134,7 @@ struct SettingsView: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 32)
         }
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         .toolbar(.hidden, for: .navigationBar)
         .accessibilityIdentifier("settings-root")
         .confirmSheet("Sign out of lime?", isPresented: $confirmingSignOut) {
@@ -263,7 +263,7 @@ struct SettingsPage<Content: View>: View {
             VStack(spacing: 16) { content }
                 .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 32)
         }
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         .navigationTitle(showsTitle ? title : "")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)

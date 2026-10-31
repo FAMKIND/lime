@@ -32,7 +32,7 @@ struct FieldEditorSheet: View {
         }
         .padding(.horizontal, 16).padding(.top, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         // Medium first (LIME-217d, as 225 asked); drag up for large.
         .presentationDetents([.medium, .large])
         .onAppear { focused = true }

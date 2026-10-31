@@ -140,7 +140,7 @@ struct MoveOfferView: View {
                 .padding(.horizontal, 24).padding(.top, 28).padding(.bottom, 32)
             }
         }
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
     }
 
@@ -268,7 +268,7 @@ struct MoveOldPhoneScreen: View {
                     .accessibilityIdentifier("move-scan-camera")
                 Text("Point your camera at the code on your new phone.").font(Theme.secondary).foregroundStyle(Theme.textSecondary).padding(16)
             }
-            .background(Theme.canvas.ignoresSafeArea())
+            .limeBackground()
         }
     }
 
@@ -379,7 +379,7 @@ struct MovedAwayNotice: View {
         }
         .padding(28)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         .onAppear { UIAccessibility.post(notification: .announcement, argument: "lime moved to your new phone") }
     }
 }

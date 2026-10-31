@@ -22,6 +22,7 @@ struct RootView: View {
                 SignedInView()
             }
         }
+        .task(id: session.userID) { ThemeStore.shared.livingPhoto = AvatarCache.shared.image(for: session.userID ?? store.myUserID ?? "") }   // LIME-277b: Living's colours
         // Lock lime (LIME-269): a window above everything while lime is away (blurred) or locked.
         .onChange(of: scenePhase) { _, phase in
             guard session.phase == .signedIn else { return }

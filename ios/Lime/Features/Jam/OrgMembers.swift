@@ -155,7 +155,7 @@ struct OrgInviteSheet: View {
                 .padding(20)
             }
         }
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         .presentationDetents([.medium, .large])
         .task { inviteLink = await store.orgInviteLink(jamID); loaded = true }
     }
@@ -281,7 +281,7 @@ struct NewBandGroupSheet: View {
                 .padding(20)
             }
         }
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         .presentationDetents([.large])
         .onAppear { focused = true }
     }
@@ -329,7 +329,7 @@ struct JoinBandSheet: View {
             .padding(24)
             Spacer(minLength: 0)
         }
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         .presentationDetents([.medium])
         .task(id: state) { if state == "asked" { await store.refreshOrgJoinState(invite.jamId) } }
     }

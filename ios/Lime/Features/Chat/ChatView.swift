@@ -95,7 +95,7 @@ struct ChatView: View {
     @available(iOS 26, *)
     private func nativeContent(_ conversation: Conversation) -> some View {
         ZStack {
-            Theme.canvas.ignoresSafeArea()
+            ThemeBackgroundView().ignoresSafeArea()
             messageScroll(conversation, top: 8)
                 .scrollEdgeEffectStyle(.soft, for: .top)
                 .scrollEdgeEffectStyle(.soft, for: .bottom)
@@ -128,7 +128,7 @@ struct ChatView: View {
 
     private func legacyContent(_ conversation: Conversation) -> some View {
         ZStack {
-            Theme.canvas.ignoresSafeArea()
+            ThemeBackgroundView().ignoresSafeArea()
             messageScroll(conversation, top: 84)
         }
         .overlay(alignment: .top) { TopFade() }
@@ -1107,7 +1107,7 @@ struct LabelSheet: View {
             Spacer(minLength: 0)
         }
         .padding(20)
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         .presentationDetents([.medium])
         .onAppear { focused = true }
     }

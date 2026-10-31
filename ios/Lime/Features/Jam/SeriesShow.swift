@@ -66,7 +66,7 @@ struct SeriesPage: View {
             Color.clear.frame(height: 40).listRowBackground(Color.clear).listRowSeparator(.hidden)
         }
         .listStyle(.plain).scrollContentBackground(.hidden).environment(\.defaultMinListRowHeight, 1)
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         .ignoresSafeArea(edges: .top)
         .toolbarBackground(.hidden, for: .navigationBar).toolbarColorScheme(.dark, for: .navigationBar)
         .toolbar { toolbarItems(jam: jam, title: title) }
@@ -404,7 +404,7 @@ struct EditSeriesSheet: View {
                 .padding(20)
             }
         }
-        .background(Theme.canvas.ignoresSafeArea())
+        .limeBackground()
         .presentationDetents([.large])
         .fullScreenCover(isPresented: $picking) { LibraryPicker(onPick: { image in picking = false; cropping = image }, onCancel: { picking = false }).ignoresSafeArea() }
         .fullScreenCover(item: Binding(get: { cropping.map(CropPick.init) }, set: { if $0 == nil { cropping = nil } })) { item in
