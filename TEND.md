@@ -9284,3 +9284,5 @@ A theme button left of Edit. **Brief:** LIME-277f. iOS only: `ProfileView.swift`
 - **Header:** Edit's neighbours are now ‹ … palette · Edit · ⋯ and nothing is squeezed (checked on the group page in the simulator). Editing state is unchanged (‹ · Edit Cover · Done).
 - **Tests:** UI `Theme277fUITests` (4, demo): the palette button is left of Edit and opens the accent pickers on your profile; absent on Sam's profile; opens the cover and colour sheet on a band you own and on a group you run. `Cover257UITests` and `Cover258UITests` still pass; no header ids changed.
 - **Gate:** your profile, a band you own and a group you run: the palette button sits left of Edit; your profile's opens the accents and backgrounds, the band's and group's open Cover and colour.
+
+- **Installed (277f):** all three, the 13 mini, the iPad and Jean's 12 mini.
