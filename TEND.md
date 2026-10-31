@@ -9510,3 +9510,5 @@ A photo wallpaper no longer breaks or freezes the chat. **Brief:** LIME-277k. iO
 ## The three stale tests
 
 No brief ID. `OnboardingTests.AccountSessionTests`: sign-out now asserts the tokens and profile go and the store and its key **stay**, then `signOut(removingData: true)` deletes both (renamed `…AndKeepsTheStoreUnlessAskedToRemoveIt`). `ChatTests`: `testEndingASessionKeepsTheChats`; I **dropped its second-account half** because the test's store is one fixed location, so it cannot model spaces; `AccountSpaces268Tests` already covers "another account gets its own empty space". `JamFilterTests.testTheSegmentsSplitByKind`: the titles now include Drafts and Discover, and neither takes feed items. All pass (with `AccountSpaces268Tests`).
+
+- **Installed (277j, the stale tests):** the 13 mini, the iPad and Jean's 12 mini, one attempt each, from a clean build (277e's deploy changed no app code).
