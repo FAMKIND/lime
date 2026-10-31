@@ -5173,6 +5173,15 @@ fn new_jam(writer: &Party) -> String {
     conversation.strip_prefix("jam:").unwrap().to_owned()
 }
 
+/// A band (LIME-281): a jam after the writer's own space (their first jam, which is their profile and never a band).
+fn new_band(writer: &Party) -> String {
+    if writer.store.list_my_jams().unwrap().is_empty() {
+        writer.store.create_jam(writer.user.clone(), String::new(), vec![]).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    new_jam(writer)
+}
+
 #[test]
 fn a_jam_reaches_subscribers_and_a_late_subscriber_reads_the_whole_archive() {
     let server = FakeServer::new();
@@ -7579,7 +7588,7 @@ fn an_invite_code_joins_a_band_by_the_owners_phone_and_a_wrong_or_turned_off_cod
     let (bob, _) = party(&server, "bob", 2);
     let (carol, _) = party(&server, "carol", 3);
     let (dave, _) = party(&server, "dave", 4);
-    let jam = new_jam(&alice);
+    let jam = new_band(&alice);
     deliver(&alice, &transport);
     // Only the owner makes a code; the members group stays out of the chat list.
     assert!(bob.store.org_invite_code(jam.clone()).is_err());
@@ -7635,7 +7644,7 @@ fn only_owners_add_remove_and_set_roles_and_a_member_leaves() {
     let (bob, _) = party(&server, "bob", 2);
     let (carol, _) = party(&server, "carol", 3);
     let (dave, _) = party(&server, "dave", 4);
-    let jam = new_jam(&alice);
+    let jam = new_band(&alice);
     deliver(&alice, &transport);
     alice.store.add_org_members(jam.clone(), vec!["bob".into(), "carol".into()]).unwrap();
     deliver(&alice, &transport);
@@ -7676,7 +7685,7 @@ fn only_owners_add_remove_and_set_roles_and_a_member_leaves() {
 fn the_hundred_and_first_member_is_refused() {
     let server = FakeServer::new();
     let (alice, _transport) = party(&server, "alice", 1);
-    let jam = new_jam(&alice);
+    let jam = new_band(&alice);
     let people: Vec<String> = (0..99).map(|i| format!("u{i}")).collect();
     alice.store.add_org_members(jam.clone(), people).unwrap();
     assert_eq!(alice.store.org_members(jam.clone()).unwrap().len(), 100);
@@ -7692,7 +7701,7 @@ fn a_join_is_added_by_a_second_owner_while_the_writer_is_offline_and_not_twice_w
     let (bob, _) = party(&server, "bob", 2);
     let (carol, _) = party(&server, "carol", 3);
     let (dave, _) = party(&server, "dave", 4);
-    let jam = new_jam(&alice);
+    let jam = new_band(&alice);
     deliver(&alice, &transport);
     // Bob becomes an owner (an admin of the members group); the code then names him.
     member_joins_org(&alice, &bob, &jam, &transport);
@@ -7756,7 +7765,7 @@ fn an_accepted_co_author_becomes_a_writer_of_a_new_members_group() {
     let (alice, transport) = party(&server, "alice", 1);
     let (bob, _) = party(&server, "bob", 2);
     let (carol, _) = party(&server, "carol", 3);
-    let jam = new_jam(&alice);
+    let jam = new_band(&alice);
     join_jam(&alice, &bob, &jam, &transport);
     assert!(alice.store.my_orgs().unwrap().is_empty(), "no members group before anyone is credited");
     alice
@@ -7782,6 +7791,38 @@ fn an_accepted_co_author_becomes_a_writer_of_a_new_members_group() {
     }
     assert_eq!(alice.store.my_orgs().unwrap().len(), 1);
     assert_eq!(alice.store.org_members(jam.clone()).unwrap().iter().filter(|m| m.user_id == "carol").count(), 1);
+}
+
+/// LIME-281: crediting someone on a post in my own profile space is a credit, never a band with members.
+#[test]
+fn a_credit_on_my_own_space_never_makes_a_band_and_a_band_still_does() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    let own = new_jam(&alice);   // alice's first jam: her profile's own space
+    join_jam(&alice, &bob, &own, &transport);
+    alice
+        .store
+        .publish_jam_post(own.clone(), "article".into(), "Written together".into(), String::new(), "Words".into(), "free".into(), vec![], vec![carol.user.clone(), alice.user.clone()])
+        .unwrap();
+    for _ in 0..3 {
+        catch_up(&alice, &[&bob, &carol], &transport);
+    }
+    carol.store.answer_coauthor_request(jam_post_id(&alice, &own), true).unwrap();
+    for _ in 0..4 {
+        catch_up(&alice, &[&bob, &carol], &transport);
+        sync(&alice, &transport);
+        deliver(&alice, &transport);
+    }
+    assert!(alice.store.my_orgs().unwrap().is_empty(), "no members group for my own space");
+    assert!(carol.store.my_orgs().unwrap().is_empty(), "so the co-author has no band named for the teacher");
+    assert!(alice.store.org_start(own.clone()).is_err(), "and one cannot be started on it");
+    // A second jam is a band, and does get its group.
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    let band = new_jam(&alice);
+    assert!(alice.store.org_start(band.clone()).is_ok());
+    assert_eq!(alice.store.my_orgs().unwrap().iter().map(|o| o.jam_id.clone()).collect::<Vec<_>>(), vec![band]);
 }
 
 fn jam_post_id(writer: &Party, jam: &str) -> String {
@@ -7810,7 +7851,7 @@ fn a_members_only_post_reaches_the_members_and_not_a_subscriber_who_is_not_one()
     let (alice, transport) = party(&server, "alice", 1);
     let (bob, _) = party(&server, "bob", 2);
     let (carol, _) = party(&server, "carol", 3);
-    let jam = new_jam(&alice);
+    let jam = new_band(&alice);
     join_jam(&alice, &carol, &jam, &transport);
     // The tier exists once the band does.
     alice.store.org_invite_code(jam.clone()).unwrap();
@@ -7841,7 +7882,7 @@ fn a_bands_groups_show_to_members_an_open_one_is_joined_by_request_an_invite_onl
     let (bob, _) = party(&server, "bob", 2);
     let (carol, _) = party(&server, "carol", 3);
     let (dave, _) = party(&server, "dave", 4);
-    let jam = new_jam(&alice);
+    let jam = new_band(&alice);
     deliver(&alice, &transport);
     alice.store.add_org_members(jam.clone(), vec!["bob".into(), "carol".into()]).unwrap();
     deliver(&alice, &transport);
@@ -8204,7 +8245,7 @@ fn band_with_a_writer() -> (Arc<FakeServer>, Party, Party, Party, Arc<dyn Transp
     let (alice, transport) = party(&server, "alice", 1);
     let (bob, _) = party(&server, "bob", 2);
     let (carol, _) = party(&server, "carol", 3);
-    let jam = new_jam(&alice);
+    let jam = new_band(&alice);
     deliver(&alice, &transport);
     alice.store.add_org_members(jam.clone(), vec!["bob".into(), "carol".into()]).unwrap();
     deliver(&alice, &transport);

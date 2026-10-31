@@ -49,6 +49,7 @@ private struct OrgActionHost: ViewModifier {
     @Binding var action: OrgAction?
     @Environment(ConversationStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    @State private var endFailure: String?
     var closesPageAfterEnd = false
 
     func body(content: Content) -> some View {
@@ -61,11 +62,18 @@ private struct OrgActionHost: ViewModifier {
             }
             .confirmSheet(endTitle, isPresented: Binding(get: { if case .end = action { true } else { false } }, set: { if !$0, case .end = action { action = nil } })) {
                 Button("Delete", role: .destructive) {
-                    if case .end(let page) = action { Task { await store.endJam(page.jamId); if closesPageAfterEnd { dismiss() } } }
+                    if case .end(let page) = action {
+                        Task {
+                            if let why = await store.endJam(page.jamId) { endFailure = why } else if closesPageAfterEnd { dismiss() }
+                        }
+                    }
                     action = nil
                 }.accessibilityIdentifier("jam-end-confirm")
                 Button("Cancel", role: .cancel) { action = nil }
             } message: { Text("Its page and picture are removed. Subscribers keep posts they already have.") }
+            .alert("Band not deleted", isPresented: Binding(get: { endFailure != nil }, set: { if !$0 { endFailure = nil } })) {
+                Button("OK", role: .cancel) {}.accessibilityIdentifier("jam-end-failed-ok")
+            } message: { Text(endFailure ?? "") }
     }
 
     private var endTitle: String { if case .end(let page) = action { "Delete \(page.title)?" } else { "Delete this band?" } }
@@ -208,7 +216,8 @@ struct OrgProfileView: View {
         }
         return route.page
     }
-    private var isMe: Bool { route.isMe }
+    /// The page is mine only if I am its owner: a band I belong to as a writer or a member, shown on my profile, is not mine to edit, colour or delete (LIME-281).
+    private var isMe: Bool { route.isMe && (store.jamsMine.contains { $0.jamId == route.page.jamId } || route.page.writerId == store.meProvider().id) }
     /// The living default hero's palette (LIME-261): from the band's picture, else its colour.
     private var ambientSpec: AmbientSpec? {
         let picture = AvatarCache.shared.image(for: ConversationStore.jamPictureKey(page.jamId))

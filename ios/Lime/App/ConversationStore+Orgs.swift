@@ -50,9 +50,20 @@ extension ConversationStore {
         if isDemo { return }
         #endif
         guard let core else { return }
-        let list = await Task.detached(priority: .utility) { (try? core.myOrgs()) ?? [] }.value
+        let list = await withoutProfileSpaces(Task.detached(priority: .utility) { (try? core.myOrgs()) ?? [] }.value)
         if list != orgs { orgs = list }
         for org in list { await loadOrgDetails(org.jamId) }
+    }
+
+    /// Leaves out a "band" that is really someone's profile space (LIME-281): an older build made a members group for a teacher's own space when they credited someone,
+    /// and it reached the people credited as a band named for the teacher. The writer's own space is the one their page lists first (`jam`); this asks for it once per band.
+    private func withoutProfileSpaces(_ list: [OrgInfo]) async -> [OrgInfo] {
+        let me = meProvider().id
+        for org in list where org.writerId != me && !checkedForProfileSpace.contains(org.jamId) {
+            checkedForProfileSpace.insert(org.jamId)
+            if let page = await jamPage(of: org.writerId), page.jamId == org.jamId { profileSpaceJams.insert(org.jamId) }
+        }
+        return list.filter { !profileSpaceJams.contains($0.jamId) }
     }
 
     /// The band's people and groups. The band's owner opens its members group the first time.
@@ -62,7 +73,7 @@ extension ConversationStore {
         #endif
         guard let core else { return }
         if jamsMine.contains(where: { $0.jamId == jamID }) { _ = try? await Task.detached { try core.orgStart(jamId: jamID) }.value }
-        let list = await Task.detached(priority: .utility) { (try? core.myOrgs()) ?? [] }.value
+        let list = await withoutProfileSpaces(Task.detached(priority: .utility) { (try? core.myOrgs()) ?? [] }.value)
         if list != orgs { orgs = list }
         await loadOrgDetails(jamID)
     }

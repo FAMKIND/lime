@@ -111,6 +111,11 @@ extension ConversationStore {
         if ProcessInfo.processInfo.arguments.contains("-lime-demo-old-band") { Task { await cleanUpOldBands() } } else { demoSplitBand() }
         // A band with people and groups (LIME-246c), when a test asks.
         if ProcessInfo.processInfo.arguments.contains("-lime-demo-band-people") { demoSeedOrg("demo-band-demo-my-jam", mine: true) }
+        // A band written by someone else that I write for (LIME-281): it shows on my profile, but it is not mine to edit, colour or delete.
+        if ProcessInfo.processInfo.arguments.contains("-lime-demo-writer-band") {
+            orgs = [OrgInfo(jamId: "demo-sam-band", conversationId: "grp:demo-writer", writerId: "sam", name: "Fractions that stick", myRole: "writer", memberCount: 3)]
+            jamSubscriptions = jamSubscriptions.filter { $0.jamId != "demo-sam-band" }
+        }
     }
 
     /// The cleanup's result, at once: a real band with the old space's name, about and tags; the space is the teacher again (subscribers stay with it).

@@ -89,6 +89,9 @@ final class ConversationStore {
     var cleaningBands = false
     /// The bands I am a member of (their private members group), and what I know of each: its people and its groups (LIME-246).
     var orgs: [OrgInfo] = []
+    /// A band's jam that turned out to be its writer's own profile space, which is the teacher and not a band (LIME-281); and the ones already looked at.
+    var profileSpaceJams: Set<String> = []
+    var checkedForProfileSpace: Set<String> = []
     var orgMembersByJam: [String: [OrgMemberInfo]] = [:]
     var orgGroupsByJam: [String: [OrgGroupInfo]] = [:]
     /// My own request to join a band (or one of its groups): asked, joined, full or refused, by jam id or conversation id.

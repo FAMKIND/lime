@@ -170,6 +170,11 @@ pub(crate) fn list(conn: &Connection, mine: bool) -> Result<Vec<JamRow>, StoreEr
     Ok(rows)
 }
 
+/// My own space: the oldest jam I write, made on my first post. It is my profile's posting space, never a band (LIME-259), so it never gets a members group (LIME-281).
+pub(crate) fn own_space(conn: &Connection) -> Result<Option<String>, StoreError> {
+    conn.query_row("SELECT jam_id FROM jams WHERE mine = 1 ORDER BY created ASC, jam_id ASC LIMIT 1", [], |r| r.get(0)).optional().map_err(db_err)
+}
+
 pub(crate) fn subscriber_count(conn: &Connection, jam_id: &str) -> Result<i64, StoreError> {
     conn.query_row("SELECT COUNT(*) FROM jam_subscribers WHERE jam_id = ?1 AND status = 'active'", params![jam_id], |r| r.get(0)).map_err(db_err)
 }

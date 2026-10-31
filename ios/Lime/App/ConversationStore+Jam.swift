@@ -183,15 +183,26 @@ extension ConversationStore {
         return ok
     }
 
-    func endJam(_ jamID: String) async {
+    /// Ends a band. `nil` when it went; otherwise the reason in words (LIME-281: it used to fail without a word when the band was not mine).
+    @discardableResult
+    func endJam(_ jamID: String) async -> String? {
         #if DEBUG
-        if isDemo { jamsMine.removeAll { $0.jamId == jamID }; return }
+        if isDemo {
+            guard jamsMine.contains(where: { $0.jamId == jamID }) else { return Self.endJamNotOwner }
+            jamsMine.removeAll { $0.jamId == jamID }
+            return nil
+        }
         #endif
-        guard let core else { return }
-        _ = try? await Task.detached { try core.endJam(jamId: jamID) }.value
+        guard let core else { return "Couldn\u{2019}t delete it right now." }
+        // Only a band I write can be deleted, whoever's profile it shows on.
+        guard jamsMine.contains(where: { $0.jamId == jamID }) else { return Self.endJamNotOwner }
+        do { try await Task.detached { try core.endJam(jamId: jamID) }.value } catch { return "Couldn\u{2019}t delete it: \(ConnectionProblem.from(error).message)" }
         refreshJams()
         await deliverNow()
+        return nil
     }
+
+    static let endJamNotOwner = "Couldn\u{2019}t delete it: only its owner can."
 
     /// Why a post did not go: said in words the writer can act on, in the compose screen (a banner would sit behind it).
     /// The most one jam file can be (24 MiB), inside the 25 MiB a blob may hold.

@@ -130,7 +130,12 @@ impl LimeStore {
                 .map_err(db_err)?;
             let rows = statement.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
             let mut out = Vec::new();
+            let own_space = jam_store::own_space(conn)?;
             for (conversation, jam_id) in rows {
+                // A members group an older build made for my own profile space is not a band either.
+                if own_space.as_deref() == Some(jam_id.as_str()) {
+                    continue;
+                }
                 let Some(group_id) = groups::group_id_of(&conversation) else { continue };
                 let group = groups::state_of(conn, group_id)?;
                 if !group.is_member(&me) || group.deleted {
@@ -301,6 +306,10 @@ impl LimeStore {
         let me = state.user_id.clone().filter(|_| state.registered).ok_or(StoreError::NotRegistered)?;
         let (title, coauthors) = self.with_conn(|conn| {
             let jam = jam_store::get(conn, jam_id)?.filter(|j| j.mine && !j.ended).ok_or(StoreError::NotFound)?;
+            // My profile's own space is the teacher, not a band: crediting someone on a post there never makes it a band with members (LIME-281).
+            if jam_store::own_space(conn)?.as_deref() == Some(jam_id) {
+                return Err(StoreError::NotFound);
+            }
             let mut statement = conn
                 .prepare("SELECT DISTINCT c.user_id FROM jam_credits c JOIN jam_posts p ON p.post_id = c.post_id WHERE p.jam_id = ?1 AND c.state = 'accepted' ORDER BY c.user_id")
                 .map_err(db_err)?;
