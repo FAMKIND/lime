@@ -105,13 +105,16 @@ struct MessagesView: View {
                 .accessibilityHint("Press and hold for About lime")
             }
             // One glass bubble for search and your avatar (LIME-255).
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                Button { store.path.append(MessagesRoute.search) } label: { ToolIconLabel(symbol: "magnifyingglass") }
-                    .accessibilityLabel("Search")
-                    .accessibilityIdentifier("messages-search-button")
-                Button { store.openMyProfile() } label: { AvatarView(person: session.mePerson, size: 30, showsStatus: true, badgeKeepsColours: true) }
-                    .accessibilityLabel("Settings")
-                    .accessibilityIdentifier("settings-button")
+            ToolbarItem(placement: .topBarTrailing) {
+                HStack(spacing: -6) {   // search and your avatar a few points closer (LIME-277g); each is still a 44 pt target
+                    Button { store.path.append(MessagesRoute.search) } label: { ToolIconLabel(symbol: "magnifyingglass") }
+                        .accessibilityLabel("Search")
+                        .accessibilityIdentifier("messages-search-button")
+                    Button { store.openMyProfile() } label: { AvatarView(person: session.mePerson, size: 30, showsStatus: true, badgeKeepsColours: true).frame(minWidth: 44, minHeight: 44).contentShape(Rectangle()) }
+                        .accessibilityLabel("Settings")
+                        .accessibilityIdentifier("settings-button")
+                }
+                .fixedSize()
             }
         }
     }
@@ -555,7 +558,7 @@ struct TopControls: View {
             .simultaneousGesture(LongPressGesture(minimumDuration: 0.6).onEnded { _ in onAbout() })
             #endif
             Spacer()
-            HStack(spacing: 12) {
+            HStack(spacing: 6) {   // a few points closer (LIME-277g)
                 Button(action: onSearch) {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 20, weight: .regular))

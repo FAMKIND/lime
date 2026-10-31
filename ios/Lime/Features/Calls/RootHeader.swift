@@ -33,13 +33,16 @@ struct RootHeader: ViewModifier {
                             .accessibilityLabel("lime menu")
                         }
                         // Link, call and jam keep one glass bubble for search and your avatar: you are searching all of your information (LIME-255).
-                        ToolbarItemGroup(placement: .topBarTrailing) {
-                            Button(action: search) { ToolIconLabel(symbol: "magnifyingglass") }
-                                .accessibilityLabel("Search")
-                                .accessibilityIdentifier(searchID)
-                            Button { store.openMyProfile() } label: { AvatarView(person: session.mePerson, size: 30, showsStatus: true, badgeKeepsColours: true) }
-                                .accessibilityLabel("Settings")
-                                .accessibilityIdentifier("settings-button")
+                        ToolbarItem(placement: .topBarTrailing) {
+                            HStack(spacing: -6) {   // a few points closer (LIME-277g); each is still a 44 pt target
+                                Button(action: search) { ToolIconLabel(symbol: "magnifyingglass") }
+                                    .accessibilityLabel("Search")
+                                    .accessibilityIdentifier(searchID)
+                                Button { store.openMyProfile() } label: { AvatarView(person: session.mePerson, size: 30, showsStatus: true, badgeKeepsColours: true).frame(minWidth: 44, minHeight: 44).contentShape(Rectangle()) }
+                                    .accessibilityLabel("Settings")
+                                    .accessibilityIdentifier("settings-button")
+                            }
+                            .fixedSize()
                         }
                     }
             } else {

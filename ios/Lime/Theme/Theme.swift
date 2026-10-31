@@ -42,8 +42,8 @@ enum Theme {
     // The tokens the theme drives (LIME-277a): computed from the accent and background chosen, light or dark, and checked by the contrast guard.
     static var canvas: Color { ThemeStore.shared.colour(.canvas) }
     static var surface: Color { ThemeStore.shared.colour(.surface) }
-    static let bubbleOther = color(Name.bubbleOther)
-    static let bubbleEdge = color(Name.bubbleEdge)
+    static var bubbleOther: Color { ThemeStore.shared.colour(.bubble) }
+    static var bubbleEdge: Color { ThemeStore.shared.colour(.bubbleEdge) }
     static let primary = color(Name.primary)
     static let primaryInk = color(Name.primaryInk)
     static var accent: Color { ThemeStore.shared.colour(.accent) }
@@ -58,12 +58,12 @@ enum Theme {
     static var textSecondary: Color { ThemeStore.shared.colour(.secondary) }
     /// The soft grey of an empty field's hint (LIME-188f): one grey for every placeholder, readable (4.5:1) on the canvas in light and dark.
     /// (LIME-188l: softer than the text grey, still 4.5:1 on the canvas in light and dark.)
-    static let placeholder = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0x8C / 255, green: 0x85 / 255, blue: 0x7E / 255, alpha: 1) : UIColor(red: 0x6E / 255, green: 0x66 / 255, blue: 0x5E / 255, alpha: 1) })
+    static var placeholder: Color { ThemeStore.shared.colour(.placeholder) }
     /// The hint of a large field, the article's title (bold, over 14 pt, so WCAG's 3:1 for large text applies): lighter still.
-    static let placeholderLarge = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0x6F / 255, green: 0x69 / 255, blue: 0x62 / 255, alpha: 1) : UIColor(red: 0x8E / 255, green: 0x86 / 255, blue: 0x7E / 255, alpha: 1) })
+    static var placeholderLarge: Color { ThemeStore.shared.colour(.placeholderLarge) }
     static var hairline: Color { ThemeStore.shared.colour(.hairline) }
     /// A link in someone else's bubble, and in the composer.
-    static let linkOther = color(Name.linkOther)
+    static var linkOther: Color { ThemeStore.shared.colour(.link) }
     /// A link in my own bubble.
     static let linkOwn = color(Name.linkOwn)
     static let pressed = color(Name.pressed)

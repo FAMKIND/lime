@@ -74,8 +74,8 @@ struct GroupAvatarEditor: View {
 
     private func pill(_ symbol: String, _ title: String, id: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Label(title, systemImage: symbol).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
-                .padding(.horizontal, 14).frame(minHeight: 40).background(Theme.surface, in: Capsule())
+            PillLabel(symbol: symbol, title: title)
+                .padding(.horizontal, 14).frame(minWidth: 44, minHeight: 44).background(Theme.surface, in: Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(id)

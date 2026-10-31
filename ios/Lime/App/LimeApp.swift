@@ -55,6 +55,11 @@ struct LimeApp: App {
                 .environment(session)
                 .environment(notifications)
                 .preferredColorScheme(ThemeStore.shared.background.forcesDark ? .dark : AppearanceSetting(rawValue: appearance)?.colorScheme)
+                // The window itself too (LIME-277g): sheets, navigation titles, menus, alerts and the keyboard are drawn by the system and follow the window, so on
+                // Chalkboard they read light on dark.
+                .onChange(of: "\(ThemeStore.shared.background.forcesDark)|\(appearance)", initial: true) {
+                    WindowStyle.apply(ThemeStore.shared.background.forcesDark ? .dark : (AppearanceSetting(rawValue: appearance)?.colorScheme == .dark ? .dark : AppearanceSetting(rawValue: appearance)?.colorScheme == .light ? .light : .unspecified))
+                }
                 .task { await session.resume() }
                 #if DEBUG
                 // LIME-111-fix4: `-lime-callkit-selftest` runs the CallKit self-test at launch (log in the call diagnostics).

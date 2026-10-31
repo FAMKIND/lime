@@ -41,6 +41,8 @@ enum ThemeBackground: String, CaseIterable, Identifiable {
     /// The colours under and on the paper, as hex (before the guard), for one mode.
     struct Base {
         var canvas: UInt32, surface: UInt32, text: UInt32, secondary: UInt32, hairline: UInt32
+        /// The other person's bubble and its edge (LIME-277g); nil means lime's own (white in light, slate in dark).
+        var bubble: UInt32? = nil, bubbleEdge: UInt32? = nil
     }
 
     func base(dark: Bool) -> Base {
@@ -55,10 +57,10 @@ enum ThemeBackground: String, CaseIterable, Identifiable {
         case (.lined, true): Base(canvas: 0x151B1B, surface: 0x222A2A, text: 0xF5F3ED, secondary: 0xA09890, hairline: 0x3D4545)
         case (.graph, false): Base(canvas: 0xF7FAF4, surface: 0xEBF0E6, text: 0x131B17, secondary: 0x4A5048, hairline: 0xD3DCCD)
         case (.graph, true): Base(canvas: 0x131C18, surface: 0x202B25, text: 0xF2F5EE, secondary: 0x9CA69C, hairline: 0x3A4740)
-        case (.chalkboard, _): Base(canvas: 0x22392F, surface: 0x2E4A3E, text: 0xF2F0E6, secondary: 0xC4CCBE, hairline: 0x4A6558)
+        case (.chalkboard, _): Base(canvas: 0x22392F, surface: 0x2E4A3E, text: 0xF2F0E6, secondary: 0xC4CCBE, hairline: 0x4A6558, bubble: 0x3A5A4B, bubbleEdge: 0x57796A)
         // Cork, with the cards as pinned cream surfaces; in the dark the cork is deep brown and the cards a lighter brown.
-        case (.bulletin, false): Base(canvas: 0xD9B98F, surface: 0xFBF3E4, text: 0x2B1B0E, secondary: 0x5A4430, hairline: 0xB8955F)
-        case (.bulletin, true): Base(canvas: 0x3B2C20, surface: 0x4A392B, text: 0xF3E9DA, secondary: 0xCDBCA6, hairline: 0x5E4A38)
+        case (.bulletin, false): Base(canvas: 0xD9B98F, surface: 0xFBF3E4, text: 0x2B1B0E, secondary: 0x5A4430, hairline: 0xB8955F, bubble: 0xFFF8EA, bubbleEdge: 0xE3D2B2)
+        case (.bulletin, true): Base(canvas: 0x3B2C20, surface: 0x4A392B, text: 0xF3E9DA, secondary: 0xCDBCA6, hairline: 0x5E4A38, bubble: 0x5A4636, bubbleEdge: 0x6E5844)
         }
     }
 }
@@ -115,6 +117,8 @@ enum ContrastGuard {
 /// A theme worked out for one accent, background and mode.
 struct ResolvedTheme: Equatable {
     var canvas: UIColor, surface: UIColor, text: UIColor, secondary: UIColor, hairline: UIColor, accent: UIColor, accentInk: UIColor
+    /// The other person's bubble (text on it is `text`), its edge, links in it, and the hints of empty fields (LIME-277g).
+    var bubble: UIColor, bubbleEdge: UIColor, link: UIColor, placeholder: UIColor, placeholderLarge: UIColor
 
     /// Every pairing the app draws text in meets WCAG AA (7:1 for the main text with Increase Contrast).
     func passes(increaseContrast: Bool = false) -> Bool {
@@ -122,6 +126,9 @@ struct ResolvedTheme: Equatable {
         return ContrastGuard.ratio(text, canvas) >= main && ContrastGuard.ratio(text, surface) >= main
             && ContrastGuard.ratio(secondary, canvas) >= ContrastGuard.text && ContrastGuard.ratio(secondary, surface) >= ContrastGuard.text
             && ContrastGuard.ratio(accentInk, accent) >= ContrastGuard.text
+            // The bubble pairs: their text, a link inside, mine (fixed colours), and the hints of empty fields.
+            && ContrastGuard.ratio(text, bubble) >= main && ContrastGuard.ratio(link, bubble) >= ContrastGuard.text
+            && ContrastGuard.ratio(placeholder, canvas) >= ContrastGuard.text && ContrastGuard.ratio(placeholderLarge, canvas) >= ContrastGuard.large
     }
 }
 
@@ -136,13 +143,18 @@ enum ThemeResolver {
         if let hit = cache[key] { return hit }
         let base = background.base(dark: darkMode)
         let canvas = UIColor(hex: base.canvas), surface = UIColor(hex: base.surface)
+        let bubble = UIColor(hex: base.bubble ?? (darkMode ? 0x3D4441 : 0xFFFEFE))
         let on = [canvas, surface]
-        let text = ContrastGuard.nudge(UIColor(hex: base.text), against: on, minimum: increaseContrast ? ContrastGuard.enhanced : ContrastGuard.text)
+        let text = ContrastGuard.nudge(UIColor(hex: base.text), against: on + [bubble], minimum: increaseContrast ? ContrastGuard.enhanced : ContrastGuard.text)
         let secondary = ContrastGuard.nudge(UIColor(hex: base.secondary), against: on, minimum: increaseContrast ? ContrastGuard.enhanced : ContrastGuard.text)
         var hairline = UIColor(hex: base.hairline)
         if increaseContrast { hairline = ContrastGuard.nudge(hairline, against: [canvas], minimum: ContrastGuard.large) }
+        let link = ContrastGuard.nudge(UIColor(hex: darkMode ? 0x8ECF73 : 0x1B7A3A), against: [bubble, canvas], minimum: ContrastGuard.text)
+        let placeholder = ContrastGuard.nudge(UIColor(hex: darkMode ? 0x8C857E : 0x6E665E), against: [canvas], minimum: ContrastGuard.text)
+        let placeholderLarge = ContrastGuard.nudge(UIColor(hex: darkMode ? 0x6F6962 : 0x8E867E), against: [canvas], minimum: ContrastGuard.large)
         let accentFill = UIColor(hex: LimeColours.accentHex[((accent % 8) + 8) % 8])
-        let made = ResolvedTheme(canvas: canvas, surface: surface, text: text, secondary: secondary, hairline: hairline, accent: accentFill, accentInk: ContrastGuard.ink(on: accentFill))
+        let made = ResolvedTheme(canvas: canvas, surface: surface, text: text, secondary: secondary, hairline: hairline, accent: accentFill, accentInk: ContrastGuard.ink(on: accentFill),
+                            bubble: bubble, bubbleEdge: UIColor(hex: base.bubbleEdge ?? (darkMode ? 0x3D4441 : 0xDDDDD9)), link: link, placeholder: placeholder, placeholderLarge: placeholderLarge)
         cache[key] = made
         return made
     }
@@ -194,7 +206,7 @@ final class ThemeStore: @unchecked Sendable {
         ThemeResolver.resolve(accent: accent, background: background, dark: dark, increaseContrast: UIAccessibility.isDarkerSystemColorsEnabled)
     }
 
-    enum Role { case canvas, surface, text, secondary, hairline, accent, accentInk }
+    enum Role { case canvas, surface, text, secondary, hairline, accent, accentInk, bubble, bubbleEdge, link, placeholder, placeholderLarge }
 
     /// A colour that follows the choice. Reading `accent` and `background` here makes the view that asked redraw when they change.
     func colour(_ role: Role) -> Color {
@@ -209,7 +221,22 @@ final class ThemeStore: @unchecked Sendable {
             case .hairline: return theme.hairline
             case .accent: return theme.accent
             case .accentInk: return theme.accentInk
+            case .bubble: return theme.bubble
+            case .bubbleEdge: return theme.bubbleEdge
+            case .link: return theme.link
+            case .placeholder: return theme.placeholder
+            case .placeholderLarge: return theme.placeholderLarge
             }
         })
+    }
+}
+
+/// The light or dark of every window, so what the system draws (sheet titles, menus, alerts, the keyboard) agrees with the theme (LIME-277g).
+@MainActor
+enum WindowStyle {
+    static func apply(_ style: UIUserInterfaceStyle) {
+        for scene in UIApplication.shared.connectedScenes {
+            (scene as? UIWindowScene)?.windows.forEach { $0.overrideUserInterfaceStyle = style }
+        }
     }
 }

@@ -42,7 +42,29 @@ final class ThemeEngine277Tests: XCTestCase {
             same(theme.canvas, Theme.Name.canvas); same(theme.surface, Theme.Name.surface); same(theme.text, Theme.Name.text)
             same(theme.secondary, Theme.Name.textSecondary); same(theme.hairline, Theme.Name.hairline)
             same(theme.accent, Theme.Name.accent); same(theme.accentInk, Theme.Name.accentInk)
+            same(theme.bubble, Theme.Name.bubbleOther); same(theme.bubbleEdge, Theme.Name.bubbleEdge); same(theme.link, Theme.Name.linkOther)
         }
+    }
+
+    /// 277g: the pairs the first guard did not cover. Every one passes for every accent, background, mode and Increase Contrast.
+    func testTheBubblePairsLinksAndPlaceholdersPassOnEveryBackground() {
+        let ownInk = UIColor(hex: 0x131B17)
+        for background in ThemeBackground.allCases {
+            for dark in [false, true] {
+                for increase in [false, true] {
+                    let t = ThemeResolver.resolve(accent: 5, background: background, dark: dark, increaseContrast: increase)
+                    let label = "\(background.title), dark \(dark), increase contrast \(increase)"
+                    XCTAssertGreaterThanOrEqual(ContrastGuard.ratio(t.text, t.bubble), increase ? 7 : 4.5, "the other person's text on their bubble: \(label)")
+                    XCTAssertGreaterThanOrEqual(ContrastGuard.ratio(t.link, t.bubble), 4.5, "a link in their bubble: \(label)")
+                    XCTAssertGreaterThanOrEqual(ContrastGuard.ratio(t.text, t.surface), increase ? 7 : 4.5, "a card: \(label)")
+                    XCTAssertGreaterThanOrEqual(ContrastGuard.ratio(t.placeholder, t.canvas), 4.5, "a hint: \(label)")
+                    XCTAssertGreaterThanOrEqual(ContrastGuard.ratio(t.placeholderLarge, t.canvas), 3, "a large hint: \(label)")
+                    XCTAssertGreaterThan(ContrastGuard.ratio(t.bubble, t.canvas), 1.03, "the bubble can be told from the page: \(label)")
+                }
+            }
+        }
+        // My bubble keeps its own pair whatever the background.
+        for (fill, name) in [(0xE4F9BE, "light"), (0x8ECF73, "dark")] { XCTAssertGreaterThanOrEqual(ContrastGuard.ratio(ownInk, UIColor(hex: UInt32(fill))), 4.5, name) }
     }
 
     func testTheGuardMovesFailingTextUntilItPassesAndLeavesGoodTextAlone() {
