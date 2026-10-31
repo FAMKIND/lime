@@ -792,6 +792,10 @@ final class CallManager {
     }
     func flipCamera() { media?.flipCamera() }
 
+    /// The Effects menu (LIME-280): what the camera can do now, and playing a reaction.
+    var effectsSupport: EffectsSupport { CallEffects.support(for: media?.effectsDevice(), cameraOn: cameraOn) }
+    func perform(_ reaction: CallReaction) { CallEffects.perform(reaction, on: media?.effectsDevice()) }
+
     /// How long lime waits for iOS to confirm its call screen before showing its own buttons.
     static let systemConfirmSeconds = 2.0
 

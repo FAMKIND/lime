@@ -283,6 +283,7 @@ struct CallView: View {
             // Landscape is short: the column would not fit, so the same buttons run along the bottom.
             HStack(spacing: 14) {
                 toggle("arrow.triangle.2.circlepath.camera", "Flip camera", on: false, id: "call-flip") { call.flipCamera(); showControls() }
+                CallEffectsButton(size: 56, id: "call-effects", support: { call.effectsSupport }) { call.perform($0); showControls() }
                 toggle(call.cameraOn ? "video.fill" : "video.slash.fill", "Camera", on: !call.cameraOn, id: "call-video") { call.toggleCamera(); showControls() }
                 toggle(call.muted ? "mic.slash.fill" : "mic.fill", "Mute", on: call.muted, id: "call-mute") { call.setMuted(!call.muted); showControls() }
                 toggle("arrow.down.right.and.arrow.up.left", "Minimise", on: false, id: "call-minimize") { call.minimize() }
@@ -296,6 +297,7 @@ struct CallView: View {
             ZStack {
                 VStack(spacing: 14) {
                     Spacer()
+                    CallEffectsButton(size: 56, id: "call-effects", support: { call.effectsSupport }) { call.perform($0); showControls() }
                     toggle(call.cameraOn ? "video.fill" : "video.slash.fill", "Camera", on: !call.cameraOn, id: "call-video") { call.toggleCamera(); showControls() }
                     toggle(call.muted ? "mic.slash.fill" : "mic.fill", "Mute", on: call.muted, id: "call-mute") { call.setMuted(!call.muted); showControls() }
                     toggle("arrow.down.right.and.arrow.up.left", "Minimise", on: false, id: "call-minimize") { call.minimize() }

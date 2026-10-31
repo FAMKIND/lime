@@ -47,6 +47,8 @@ protocol CallMedia: AnyObject {
     func settingsChanged()
     func setVideo(_ on: Bool)
     func flipCamera()
+    /// The camera in use, for the Effects menu (LIME-280); nil where there is none (the test doubles).
+    func effectsDevice() -> AVCaptureDevice?
     func setSpeaker(_ on: Bool)
     /// The system (CallKit) has not activated the audio session: do it here. `false` when nothing needed doing.
     func activateAudioFallback(video: Bool) -> Bool
@@ -56,6 +58,7 @@ protocol CallMedia: AnyObject {
 extension CallMedia {
     /// Nothing to apply (the test doubles).
     func settingsChanged() {}
+    func effectsDevice() -> AVCaptureDevice? { nil }
 }
 
 enum CallMediaError: Error { case notStarted, failed }
@@ -85,6 +88,7 @@ final class WebRTCMedia: NSObject, CallMedia {
     private var audioTrack: RTCAudioTrack?
     private var videoTrack: RTCVideoTrack?
     private var capturer: RTCCameraVideoCapturer?
+    private var captureDevice: AVCaptureDevice?
     /// The other person's voice, to set its playout volume (Settings → Calls → Call volume).
     private var remoteAudio: RTCAudioTrack?
     private var lowData = CallSettings.shared.lowDataMode
@@ -214,7 +218,11 @@ final class WebRTCMedia: NSObject, CallMedia {
         guard let device = RTCCameraVideoCapturer.captureDevices().first(where: { $0.position == position }) ?? RTCCameraVideoCapturer.captureDevices().first else { return }
         // About 720p at 24 fps (Low Data Mode: 360p at 15); WebRTC adapts it down on a weak network.
         let plan = CallVideoPlan.capture(lowData: lowData, group: false)
-        let formats = RTCCameraVideoCapturer.supportedFormats(for: device)
+        // A format the system can draw reactions into is preferred when the camera has one near the size we want (LIME-280).
+        var formats = RTCCameraVideoCapturer.supportedFormats(for: device)
+        let withEffects = formats.filter(\.reactionEffectsSupported)
+        if !withEffects.isEmpty { formats = withEffects }
+        captureDevice = device
         let format = formats.min { abs(Int(CMVideoFormatDescriptionGetDimensions($0.formatDescription).width) - plan.width) < abs(Int(CMVideoFormatDescriptionGetDimensions($1.formatDescription).width) - plan.width) } ?? formats.first
         guard let format else { return }
         let fps = min(plan.fps, Int(format.videoSupportedFrameRateRanges.map(\.maxFrameRate).max() ?? Double(plan.fps)))
@@ -372,6 +380,8 @@ final class WebRTCMedia: NSObject, CallMedia {
     }
 
     func setVideo(_ on: Bool) { videoTrack?.isEnabled = on }
+
+    func effectsDevice() -> AVCaptureDevice? { captureDevice }
 
     func flipCamera() {
         front.toggle()

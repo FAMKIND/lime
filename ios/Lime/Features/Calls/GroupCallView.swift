@@ -251,6 +251,7 @@ struct GroupCallView: View {
         if call.video {
             control(call.cameraOn ? "video.fill" : "video.slash.fill", label: call.cameraOn ? "Turn camera off" : "Turn camera on", on: !call.cameraOn, id: "group-call-camera", size: size) { Task { await call.toggleCamera() } }
             control("arrow.triangle.2.circlepath.camera", label: "Flip camera", on: false, id: "group-call-flip", size: size) { Task { await call.flipCamera() } }
+            CallEffectsButton(size: size, id: "group-call-effects", support: { call.effectsSupport }) { call.perform($0) }
         }
         control("arrow.down.right.and.arrow.up.left", label: "Minimise", on: false, id: "group-call-minimise-control", size: size) { call.minimize() }
         control(call.speakerOn ? "speaker.wave.3.fill" : "speaker.fill", label: call.speakerOn ? "Speaker on" : "Speaker off", on: call.speakerOn, id: "group-call-speaker", size: size) { call.toggleSpeaker() }

@@ -783,6 +783,10 @@ final class GroupCallManager {
 
     func flipCamera() async { await media?.flipCamera() }
 
+    /// The Effects menu (LIME-280): what the camera can do now, and playing a reaction.
+    var effectsSupport: EffectsSupport { CallEffects.support(for: media?.effectsDevice(), cameraOn: cameraOn) }
+    func perform(_ reaction: CallReaction) { CallEffects.perform(reaction, on: media?.effectsDevice()) }
+
     func toggleSpeaker() {
         speakerOn.toggle()
         try? AVAudioSession.sharedInstance().overrideOutputAudioPort(speakerOn ? .speaker : .none)

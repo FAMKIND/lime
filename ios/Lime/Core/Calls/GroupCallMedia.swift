@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import LiveKit
 
@@ -32,6 +33,8 @@ protocol GroupCallMedia: AnyObject {
     func setMicrophone(_ on: Bool) async
     func setCamera(_ on: Bool) async
     func flipCamera() async
+    /// The camera in use, for the Effects menu (LIME-280).
+    func effectsDevice() -> AVCaptureDevice?
     func disconnect() async
     /// The picture of a participant for the tile (the LiveKit video track), or nil: only the SwiftUI tile looks inside.
     func videoTrack(for participant: String) -> AnyObject?
@@ -44,6 +47,7 @@ protocol GroupCallMedia: AnyObject {
 }
 
 extension GroupCallMedia {
+    func effectsDevice() -> AVCaptureDevice? { nil }
     func frameCounts() -> [String: Int] { [:] }
     func trackDetails() -> [String: String] { [:] }
     func sendDetails() -> String { "" }
@@ -190,6 +194,11 @@ final class LiveKitGroupMedia: NSObject, GroupCallMedia, RoomDelegate {
         guard let track = room?.localParticipant.firstCameraPublication?.track as? LocalVideoTrack,
               let capturer = track.capturer as? CameraCapturer else { return }
         _ = try? await capturer.switchCameraPosition()
+    }
+
+    func effectsDevice() -> AVCaptureDevice? {
+        (room?.localParticipant.firstCameraPublication?.track as? LocalVideoTrack)?.capturer is CameraCapturer
+            ? ((room?.localParticipant.firstCameraPublication?.track as? LocalVideoTrack)?.capturer as? CameraCapturer)?.device : nil
     }
 
     func disconnect() async {
