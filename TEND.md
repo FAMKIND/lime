@@ -9359,3 +9359,13 @@ The series page fits the screen and its art stays sharp. **Brief:** LIME-260c. i
 - **Tests:** UI `Series260cUITests` (2): a big cover is full-bleed, nothing cut off at either edge, no dock, "1 of 3 read"; a small cover (`-lime-demo-series-small-cover`) is centred artwork narrower than the screen. `Series260bUITests` and `Series210fUITests` still pass.
 - **Screenshots:** `docs/qa-shots/260c/` (after only: a big cover, a 3-part series; a small cover in dark). I did not capture "before" (that needed the old build).
 - **Gate:** open a series on the 13 mini: nothing cut at the left, title and pill visible, the art sharp, no dock, "1 of 1 read" consistent.
+
+## LIME-278b
+
+Several reactions fold into one pill on the bubble. **Brief:** LIME-278b. iOS only (`ChatView.swift`, demo data).
+
+- **One combined pill** (`reactionChips`): up to **3 distinct emoji overlapped slightly**, then the **total count when more than one person reacted** ("👍❤️😂 4"); my own reaction rings the pill. Tap = the who-reacted sheet (as before); the long-press picker is untouched. Same view in threads and groups (it is the one `MessageBubble`).
+- **Anchored at the inner bottom corner and growing toward the middle:** a 16 pt frame at the bubble's corner, the pill hanging out of it on the side facing the middle (leftward for my bubbles, rightward for theirs), so it never runs past the screen edge or under the avatar. (My first try with alignment guides did not move the pill: it ran off the right edge; the frame trick is the fix, and the new test caught it.)
+- **VoiceOver:** "Reactions: 👍 ❤️ 😂, 4 in total, including yours. Double-tap to see who reacted." (the emoji are read by their own names).
+- **Tests:** UI `Chat278UITests` (+1, 4 in all): a short bubble of mine and a short incoming one, each with four reactions, show **one** pill fully on the screen growing toward the middle, with the right spoken label; tapping it opens who reacted. The 278 reaction test in `LimeUITestsMessageActions` still passes. Demo: `-lime-demo-short-chat` now seeds four reactions on two short bubbles.
+- **Gate (13 mini):** react with 3–4 different emoji to a short message of yours and of someone else's: one pill, on the bubble, fully visible.

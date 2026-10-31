@@ -961,7 +961,12 @@ struct MessageBubble: View {
         }
         // The reactions are a pill on the bubble's inner bottom corner (the side facing the middle), hanging half its height below, so it always touches the bubble.
         .overlay(alignment: message.isOwn ? .bottomLeading : .bottomTrailing) {
-            if hasReactions { reactionChips.offset(x: message.isOwn ? -8 : 8, y: Self.pillOverhang) }   // sticks out toward the middle, as in Messages
+            // Anchored at the bubble's inner bottom corner and growing toward the middle of the screen, so it never runs past the edge or under the avatar.
+            if hasReactions {
+                // A 16 pt frame at the corner: the pill is wider, so it hangs out of it on the side facing the middle.
+                if message.isOwn { reactionChips.frame(width: 16, alignment: .trailing).offset(y: Self.pillOverhang) }
+                else { reactionChips.frame(width: 16, alignment: .leading).offset(y: Self.pillOverhang) }
+            }
         }
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frameBox.frame = $0 }
         .onLongPressGesture(minimumDuration: 0.4) { if selection == nil { lift() } }
@@ -1023,32 +1028,34 @@ struct MessageBubble: View {
     }
 
 
-    /// The reactions under the bubble: a soft grey chip each (mine a little deeper), no outline; the first five, then "+N".
-    /// Tapping them lists who reacted with what.
+    private func reactionsSpoken(kinds: [ReactionChip], total: Int, mine: Bool) -> String {
+        let emoji = kinds.map(\.emoji).joined(separator: " ")
+        let yours = mine ? ", including yours" : ""
+        return "Reactions: \(emoji), \(total) in total\(yours). Double-tap to see who reacted."
+    }
+
+    /// The reactions as one pill on the bubble (LIME-278b): up to three distinct emoji, overlapped a little, and the total count when more than one person
+    /// reacted. My own reaction rings the pill. Tapping it lists who reacted with what.
     private var reactionChips: some View {
-        let shown = Array(message.reactions.prefix(5))
-        let more = message.reactions.count - shown.count
+        let kinds = Array(message.reactions.prefix(3))
+        let total = message.reactions.reduce(0) { $0 + $1.count }
         let mine = message.reactions.contains(where: \.mine)
         return HStack(spacing: 4) {
-            ForEach(shown) { chip in
-                HStack(spacing: 3) {
-                    Text(chip.emoji).font(.system(size: 14))
-                    if chip.count > 1 { Text("\(chip.count)").font(Theme.font(.caption, weight: .semibold)).foregroundStyle(Theme.text) }
+            HStack(spacing: -4) {
+                ForEach(Array(kinds.enumerated()), id: \.element.id) { index, chip in
+                    Text(chip.emoji).font(.system(size: 14)).zIndex(Double(kinds.count - index))
                 }
-                .padding(.horizontal, 8).padding(.vertical, 3)
-                .background(chip.mine ? Theme.chipFillMine : Theme.chipFill, in: Capsule())
             }
-            if more > 0 {
-                Text("+\(more)").font(Theme.font(.caption, weight: .semibold)).foregroundStyle(Theme.textSecondary)
-                    .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(Theme.chipFill, in: Capsule())
-            }
+            if total > 1 { Text("\(total)").font(Theme.font(.caption, weight: .semibold)).foregroundStyle(Theme.text) }
         }
+        .padding(.horizontal, 8).padding(.vertical, 3)
+        .background(mine ? Theme.chipFillMine : Theme.chipFill, in: Capsule())
+        .overlay(Capsule().strokeBorder(mine ? Theme.text.opacity(0.35) : Color.clear, lineWidth: 1))
         .fixedSize()
         .contentShape(Rectangle().inset(by: -10))
         .onTapGesture { if selection == nil { onShowReactions?() } }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Reactions: " + message.reactions.map { "\($0.emoji) \($0.count)" }.joined(separator: ", ") + (mine ? ", including yours" : ""))
+        .accessibilityLabel(reactionsSpoken(kinds: kinds, total: total, mine: mine))
         .accessibilityAddTraits(.isButton)
         .accessibilityIdentifier("reaction-cluster-\(message.id)")
     }

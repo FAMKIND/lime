@@ -25,6 +25,28 @@ final class Chat278UITests: LimeUITestCase {
         XCTAssertTrue(cluster.label.contains("😂"), cluster.label)
     }
 
+    /// LIME-278b: four reactions on a short bubble fold into one pill that stays on the screen, growing toward the middle.
+    func testSeveralReactionsOnAShortBubbleAreOnePillFullyOnTheScreen() {
+        let app = chat()
+        let window = app.windows.firstMatch.frame
+        let mineCluster = any(app, "reaction-cluster-s2")
+        XCTAssertTrue(mineCluster.waitForExistence(timeout: 10))
+        let own = app.descendants(matching: .any).matching(identifier: "own-bubble").element(boundBy: 0)
+        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "reaction-cluster-s2").count, 1, "one pill, not four chips")
+        XCTAssertGreaterThanOrEqual(mineCluster.frame.minX, 0)
+        XCTAssertLessThanOrEqual(mineCluster.frame.maxX, window.maxX, "my pill is fully on the screen")
+        XCTAssertLessThan(mineCluster.frame.minX, own.frame.minX + 20, "and grows toward the middle from the bubble's inner corner")
+        XCTAssertTrue(mineCluster.label.contains("4 in total") && mineCluster.label.contains("including yours"), mineCluster.label)
+        // Someone else's short bubble: the pill grows toward the middle too, never past the right edge.
+        let theirs = any(app, "reaction-cluster-s1")
+        XCTAssertTrue(theirs.exists)
+        XCTAssertLessThanOrEqual(theirs.frame.maxX, window.maxX)
+        XCTAssertTrue(theirs.label.contains("4 in total") && !theirs.label.contains("including yours"), theirs.label)
+        // Tapping it is the who-reacted sheet.
+        mineCluster.tap()
+        XCTAssertTrue(app.staticTexts["You"].waitForExistence(timeout: 5) || app.staticTexts["Sam Park"].waitForExistence(timeout: 5), "who reacted")
+    }
+
     func testOnlyTheLastMessageOfARunShowsItsTime() {
         let app = chat()
         XCTAssertTrue(app.staticTexts["message-time-s2c"].waitForExistence(timeout: 10), "the last of my run shows its time")
