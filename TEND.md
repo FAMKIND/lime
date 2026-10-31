@@ -9315,3 +9315,11 @@ Buttons keep their words whole; every theme pair passes contrast; search and ava
 - **Gate:** New Group in the serif font at a large size: the photo buttons whole on one line; Chalkboard: both bubbles and links readable, sheet titles light; Messages header: search and your avatar a little closer.
 
 - **Installed (277g):** all three, the 13 mini, the iPad and Jean's 12 mini.
+
+## LIME-277h
+
+2 pt back between search and the avatar. **Brief:** LIME-277h. iOS only, three spacing values.
+
+- 277g had put them 6 pt closer; they are now **4 pt closer than before 277g** (2 pt given back): the iOS 26 one-item bubble in `MessagesView.swift` and `RootHeader.swift` (link, call, jam) goes from `-6` to `-4`, and the pre-iOS 26 pill in `MessagesView.swift` from 6 to 8. Nothing else changed; targets are the same.
+- Visual change: no new test (your rule); the 277g header test still passes.
+- **Gate:** on Messages, Calls and jam, search and your avatar are a little further apart than after 277g, still closer than before it.
