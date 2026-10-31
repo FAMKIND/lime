@@ -9286,3 +9286,17 @@ A theme button left of Edit. **Brief:** LIME-277f. iOS only: `ProfileView.swift`
 - **Gate:** your profile, a band you own and a group you run: the palette button sits left of Edit; your profile's opens the accents and backgrounds, the band's and group's open Cover and colour.
 
 - **Installed (277f):** all three, the 13 mini, the iPad and Jean's 12 mini.
+
+## LIME-277c
+
+One Appearance screen with a live preview. **Brief:** LIME-277c (with 1e514/1e519, 1e515, 1e516). iOS only; new `Features/Settings/AppearanceScreen.swift`.
+
+- **The screen:** a live preview at the top (a mini chat and a jam card on the chosen background, in the current theme; decorative to VoiceOver), then one card of rows, each with its name and the current value (and a swatch or thumbnail) on the right and a chevron, as in your Substack/WhatsApp references: **Mode** (System/Light/Dark), **Accent** (value + dot), **Background** (value + tiny thumbnail), **Font**, **Text size**; then **Reset to lime** (lime, Plain, System mode, system font, the iPhone's text size). Changes apply at once.
+- **Picker pages** (each with the preview on top): **Accent**: eight large circles, 4 across, lime first, the chosen one with a dark ring and a check (the check's colour comes from the guard). **Background**: a 3-across grid of tall phone-shaped thumbnails drawn by the same code as the real ones, the chosen one outlined with a check. **Mode**: three rows with a check. **Font** and **Text size** open 168's existing screen on its Font or Size tab (the list, the slider and its preview are unchanged).
+- **Entry points:** Settings → Customize → **Appearance** (that screen now holds Appearance and Mentions only; the old Mode list, the temporary accent/background pickers and the "Text size & font" row moved into the new screen), and **277f's palette button on your profile** now opens this screen as a sheet.
+- **Apple's resources (1e516):** native SwiftUI lists, sheets and glass, SF Symbols, the system's controls; every background is generated in code. No Apple artwork. (Choose from Photos with `PhotosPicker` is a wallpaper feature: it belongs to 277d's per-chat wallpaper, not to the global backgrounds.)
+- **Not taken, as noted:** AI wallpapers, a free colour wheel.
+- **Tests:** UI `Theme277UITests` rewritten (5): the preview and one row per choice with its value; accent and background chosen on their pages and shown in the rows, Reset returns lime/Plain; font and size chosen and Reset restores the system font and the iPhone's size; a launch on Chalkboard draws it on Messages; the profile's colour swatches. `Theme277fUITests` now expects the Appearance screen in the profile sheet. `TextSizeUITests` and the Light/Dark-survives-relaunch test (path updated: Customize → Appearance → Mode) pass.
+- **Screenshots:** `docs/qa-shots/277c/` (11: the main screen light, dark and in Blue/Graph, Pink/Chalkboard and Orange/Bulletin; the Accent, Background (both modes), Mode and Font pages).
+- **One thing to look at:** my own chat bubble in the preview stays lime whatever accent is chosen. Bubble colours are 277d's per-chat setting, so I left it; say if the global accent should tint your bubbles too.
+- **Gate:** your profile → the palette button: the Appearance sheet; change the accent, the background, the font and the size and watch the preview and then the app follow; Reset to lime restores everything. Settings → Customize → Appearance opens the same screen.

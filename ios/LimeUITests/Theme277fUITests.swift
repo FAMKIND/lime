@@ -14,7 +14,8 @@ final class Theme277fUITests: LimeUITestCase {
         XCTAssertLessThan(app.buttons["profile-theme"].frame.maxX, app.buttons["profile-edit"].frame.minX, "immediately left of Edit")
         XCTAssertGreaterThanOrEqual(app.buttons["profile-theme"].frame.height, 44)
         app.buttons["profile-theme"].tap()
-        XCTAssertTrue(app.buttons["theme-accent-3"].waitForExistence(timeout: 5), "the accent pickers in a sheet")
+        XCTAssertTrue(app.buttons["appearance-row-accent"].waitForExistence(timeout: 5), "the Appearance screen in a sheet")
+        XCTAssertTrue(any(app, "appearance-preview").exists || any(app, "appearance-preview-shown").exists, "with its live preview")
         app.buttons["edit-sheet-done"].tap()
         XCTAssertTrue(app.buttons["profile-edit"].waitForExistence(timeout: 5))
     }

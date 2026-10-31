@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Where Settings can go.
 enum SettingsRoute: Hashable {
-    case account, privacy, blocked, keys, devices, notifications, calls, customize, textSize, about, acknowledgements, changePassword, moveToNewPhone, myQR, photo, storage, workHours, emergency, links, background, moderation, deleteAccount
+    case account, privacy, blocked, keys, devices, notifications, calls, customize, appearance, textSize, about, acknowledgements, changePassword, moveToNewPhone, myQR, photo, storage, workHours, emergency, links, background, moderation, deleteAccount
     case chatMedia(String)
 }
 
@@ -44,6 +44,7 @@ struct SettingsView: View {
                     case .notifications: NotificationsScreen()
                     case .calls: CallSettingsScreen()
                     case .customize: CustomizeScreen()
+                    case .appearance: AppearanceScreen()
                     case .textSize: TextSizeScreen()
                     case .about: AboutScreen()
                     case .acknowledgements: AcknowledgementsScreen()
@@ -74,7 +75,7 @@ struct SettingsView: View {
     static func route(from names: [String]) -> [SettingsRoute] {
         let table: [String: SettingsRoute] = [
             "account": .account, "privacy": .privacy, "blocked": .blocked, "keys": .keys, "devices": .devices,
-            "notifications": .notifications, "customize": .customize, "text-size": .textSize, "calls": .calls, "about": .about, "ack": .acknowledgements, "password": .changePassword, "move-old": .moveToNewPhone, "my-qr": .myQR, "photo": .photo, "links": .links, "background": .background, "background-set": .background, "crop": .photo, "storage": .storage, "work-hours": .workHours, "moderation": .moderation, "delete-account": .deleteAccount,
+            "notifications": .notifications, "customize": .customize, "appearance": .appearance, "text-size": .textSize, "calls": .calls, "about": .about, "ack": .acknowledgements, "password": .changePassword, "move-old": .moveToNewPhone, "my-qr": .myQR, "photo": .photo, "links": .links, "background": .background, "background-set": .background, "crop": .photo, "storage": .storage, "work-hours": .workHours, "moderation": .moderation, "delete-account": .deleteAccount,
         ]
         return names.compactMap { table[$0] }
     }

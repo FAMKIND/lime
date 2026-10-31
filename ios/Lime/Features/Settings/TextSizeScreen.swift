@@ -8,7 +8,8 @@ struct TextSizeScreen: View {
         var id: String { rawValue }
     }
 
-    @State private var tab: Tab = .size
+    @State private var tab: Tab
+    init(tab: Tab = .size) { _tab = State(initialValue: tab) }
     @Environment(\.dynamicTypeSize) private var typeSize
     private let preferences = TextPreferences.shared
 

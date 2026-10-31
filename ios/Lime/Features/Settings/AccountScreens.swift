@@ -357,35 +357,14 @@ struct LinkedDevicesScreen: View {
 // MARK: Customize
 
 struct CustomizeScreen: View {
-    @AppStorage(AppearanceSetting.storageKey) private var stored = AppearanceSetting.system.rawValue
     @AppStorage(MentionStyle.storageKey) private var mentionStyle = MentionStyle.fullName.rawValue
 
     var body: some View {
         SettingsPage(title: "Customize") {
             SettingsCard {
-                ForEach(AppearanceSetting.allCases) { option in
-                    Button { stored = option.rawValue } label: {
-                        VStack(spacing: 0) {
-                            HStack(spacing: 14) {
-                                Image(systemName: option.symbol).font(.system(size: 20)).frame(width: 28).foregroundStyle(Theme.text)
-                                Text(option.title).font(Theme.body).foregroundStyle(Theme.text)
-                                Spacer()
-                                if stored == option.rawValue {
-                                    Image(systemName: "checkmark").font(.system(size: 16, weight: .bold)).foregroundStyle(Theme.text)
-                                }
-                            }
-                            .padding(.horizontal, 18).frame(minHeight: 58)
-                            if option != AppearanceSetting.allCases.last { Divider().overlay(Theme.hairline).padding(.leading, 60) }
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("appearance-\(option.rawValue)")
-                    .accessibilityAddTraits(stored == option.rawValue ? [.isSelected] : [])
-                }
+                SettingsRow(symbol: "paintpalette", title: "Appearance", value: ThemeStore.shared.background.title, route: .appearance, id: "settings-appearance", showsDivider: false)
             }
-            SettingsFootnote(text: "Appearance applies to the whole app and is kept on this iPhone.")
-            ThemeChoices()
+            SettingsFootnote(text: "Mode, accent colour, background, font and text size, with a preview. Kept on this iPhone.")
             SettingsCard {
                 ForEach(MentionStyle.allCases) { option in
                     Button { mentionStyle = option.rawValue } label: {
@@ -409,10 +388,6 @@ struct CustomizeScreen: View {
                 }
             }
             SettingsFootnote(text: "How @mentions look on this iPhone. Others choose their own.")
-            SettingsCard {
-                SettingsRow(symbol: "textformat.size", title: "Text size & font", route: .textSize, id: "settings-text-size", showsDivider: false)
-            }
-            SettingsFootnote(text: "Make lime's text bigger or smaller, or change its font, without changing the whole iPhone.")
         }
     }
 }
@@ -524,64 +499,7 @@ struct AcknowledgementsScreen: View {
 }
 
 
-// MARK: Accent and background (LIME-277a, 277b; the single Appearance screen comes in 277c)
-
-struct ThemeChoices: View {
-    private var store: ThemeStore { ThemeStore.shared }
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Accent").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.textSecondary).accessibilityAddTraits(.isHeader)
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 44), spacing: 10), count: 4), spacing: 10) {
-                ForEach(0..<8, id: \.self) { tone in
-                    let on = store.accent == tone
-                    Button { store.accent = tone } label: {
-                        ZStack {
-                            Circle().fill(Color(uiColor: UIColor(hex: LimeColours.accentHex[tone])))
-                            if on {
-                                Image(systemName: "checkmark").font(.system(size: 17, weight: .bold))
-                                    .foregroundStyle(Color(ContrastGuard.ink(on: UIColor(hex: LimeColours.accentHex[tone]))))
-                            }
-                        }
-                        .overlay(Circle().strokeBorder(on ? Theme.text : Color.clear, lineWidth: 2.5).padding(-4))
-                        .frame(width: 44, height: 44).frame(maxWidth: .infinity, minHeight: 52)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(LimeColours.name(tone)).accessibilityAddTraits(on ? [.isSelected] : [])
-                    .accessibilityIdentifier("theme-accent-\(tone)")
-                }
-            }
-            Text("Background").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.textSecondary).accessibilityAddTraits(.isHeader)
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 80), spacing: 12), count: 3), spacing: 12) {
-                ForEach(ThemeBackground.allCases) { kind in
-                    let on = store.background == kind
-                    Button { store.background = kind } label: {
-                        VStack(spacing: 6) {
-                            ThemeTile(kind: kind, dark: colorScheme == .dark)
-                                .frame(height: 96).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(on ? Theme.text : Theme.hairline, lineWidth: on ? 2.5 : 1))
-                            HStack(spacing: 4) {
-                                if on { Image(systemName: "checkmark").font(.system(size: 12, weight: .bold)) }
-                                Text(kind.title).font(Theme.font(.caption, weight: on ? .semibold : .regular))
-                            }
-                            .foregroundStyle(Theme.text)
-                        }
-                        .frame(minHeight: 44).contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(kind.title).accessibilityAddTraits(on ? [.isSelected] : [])
-                    .accessibilityIdentifier("theme-background-\(kind.rawValue)")
-                }
-            }
-            Button("Reset to lime") { store.reset() }.font(Theme.body).frame(minHeight: 44).accessibilityIdentifier("theme-reset")
-            Text("The accent colours buttons and selections; the background is the paper under every page. Text adjusts to stay easy to read. Kept on this iPhone.")
-                .font(Theme.caption).foregroundStyle(Theme.textSecondary)
-        }
-        .padding(.horizontal, 4)
-    }
-}
+// MARK: Background sample (LIME-277b)
 
 /// A small sample of one background, drawn with the same code as the real one.
 struct ThemeTile: View {

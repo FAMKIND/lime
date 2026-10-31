@@ -2052,6 +2052,8 @@ final class LimeUITestsSettings: LimeUITestCase {
         app.launch()
         openSettings(app)
         app.buttons["settings-customize"].tap()
+        app.buttons["settings-appearance"].tap()
+        app.buttons["appearance-row-mode"].tap()
         XCTAssertTrue(app.buttons["appearance-dark"].waitForExistence(timeout: 5))
         app.buttons["appearance-dark"].tap()
         XCTAssertTrue(app.buttons["appearance-dark"].isSelected)
@@ -2061,6 +2063,8 @@ final class LimeUITestsSettings: LimeUITestCase {
         again.launch()
         openSettings(again)
         again.buttons["settings-customize"].tap()
+        again.buttons["settings-appearance"].tap()
+        again.buttons["appearance-row-mode"].tap()
         XCTAssertTrue(again.buttons["appearance-dark"].waitForExistence(timeout: 5))
         XCTAssertTrue(again.buttons["appearance-dark"].isSelected, "Dark is still chosen after a relaunch")
         again.buttons["appearance-system"].tap() // leave the simulator as it was

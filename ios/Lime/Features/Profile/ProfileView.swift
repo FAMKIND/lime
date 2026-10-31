@@ -214,7 +214,7 @@ struct ProfileView: View {
         .sheet(isPresented: $photoSheet) { EditSheet { ProfilePhotoScreen() } }
         .sheet(isPresented: $linksSheet) { EditSheet { LinksScreen() } }
         .sheet(isPresented: $backgroundSheet) { EditSheet { BackgroundScreen() } }
-        .sheet(isPresented: $themeSheet) { EditSheet { CustomizeScreen() } }   // LIME-277f
+        .sheet(isPresented: $themeSheet) { EditSheet { AppearanceScreen() } }   // LIME-277f, 277c
         .sheet(isPresented: $labelling) {
             LabelSheet(name: displayName, text: $labelText) { saved in
                 labelling = false
