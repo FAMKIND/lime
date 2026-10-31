@@ -232,6 +232,8 @@ pub struct LimeStore {
     conn: Mutex<Connection>,
     /// Encrypts the Olm pickles: derived from the store key (HKDF). Never logged.
     pub(crate) pickle_key: [u8; 32],
+    /// The key that opens the database file, kept so a move to a new phone (LIME-272a) can hand it over inside the encrypted transfer. Never logged.
+    pub(crate) store_key: [u8; 32],
     /// Serialises register, send and sync, so two of them never interleave their network calls.
     pub(crate) protocol_lock: Mutex<()>,
     /// Open drafts (LIME-233a): the documents in memory, so a keystroke does not reload one.
@@ -762,6 +764,7 @@ impl LimeStore {
         Ok(Self {
             conn: Mutex::new(conn),
             pickle_key: crate::keys::derive_pickle_key(key),
+            store_key: key.try_into().map_err(|_| StoreError::InvalidKey)?,
             protocol_lock: Mutex::new(()),
             draft_cache: Mutex::new(std::collections::HashMap::new()),
             fresh_session_for: Mutex::new(std::collections::HashSet::new()),

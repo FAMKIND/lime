@@ -48,6 +48,7 @@ pub(crate) mod draft_sync;
 mod draft_publish;
 mod draft_manage;
 mod draft_review;
+pub(crate) mod transfer;
 mod drafts;
 mod repair;
 pub(crate) mod message_ops;

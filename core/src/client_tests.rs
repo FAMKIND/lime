@@ -8262,3 +8262,216 @@ fn a_writers_draft_goes_to_the_owners_for_review_comes_back_with_a_note_and_is_p
     assert_eq!(done.state, "published");
     assert_eq!(bob.store.draft_status(draft).unwrap().published_post, Some(post), "the writer sees which post");
 }
+
+// ---- LIME-272a: moving an account to a new phone ----
+
+use crate::{TransferNew, TransferOld};
+
+/// Alice with a chat, a group, a band and a file bigger than one chunk, then the pairing done and the codes confirmed.
+struct Move {
+    server: Arc<FakeServer>,
+    transport: Arc<dyn Transport>,
+    alice: Party,
+    bob: Party,
+    old: Arc<TransferOld>,
+    new: Arc<TransferNew>,
+    dest: std::path::PathBuf,
+    dir: tempfile::TempDir,
+}
+
+fn ready_to_move() -> Move {
+    let server = FakeServer::new();
+    let (alice, bob, _carol, transport, _group) = team(&server);
+    say(&alice, &bob, &transport, "before the move");
+    sync(&bob, &transport);
+    say(&bob, &alice, &transport, "and back");
+    sync(&alice, &transport);
+    alice.store.create_jam("Fractions that stick".into(), "Short lessons".into(), vec![]).unwrap();
+    let file: Vec<u8> = (0..600_000u32).map(|i| (i.wrapping_mul(2654435761) >> 13) as u8).collect();
+    alice.store.send_attachments("dm:bob".into(), "worksheet".into(), vec![crate::OutgoingAttachment { bytes: file, name: "w.pdf".into(), mime: "application/pdf".into(), width: None, height: None, duration_ms: None, thumb: vec![], poster: vec![] }], None).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let dest = dir.path().join("accounts").join("alice").join("lime.db");
+    let new = TransferNew::offer(alice.user.clone(), dest.to_string_lossy().into_owned()).unwrap();
+    let old = TransferOld::accept(alice.store.clone(), new.qr()).unwrap();
+    new.accept_hello(old.hello()).unwrap();
+    assert_eq!(old.check_code(), new.check_code().unwrap(), "both phones show the same 6 digits");
+    assert_eq!(old.check_code().len(), 6);
+    old.confirm_code();
+    new.confirm_code();
+    Move { server, transport, alice, bob, old, new, dest, dir }
+}
+
+fn all_chunks(old: &TransferOld) -> Vec<Vec<u8>> {
+    std::iter::from_fn(|| old.export_next_chunk().unwrap()).collect()
+}
+
+fn fingerprint(store: &LimeStore) -> (Vec<(String, String)>, Vec<String>, (i64, i64), String) {
+    let chats: Vec<(String, String)> = store.list_conversations().unwrap().into_iter().map(|c| (c.id, c.title)).collect();
+    let mut texts = Vec::new();
+    for (id, _) in &chats {
+        texts.extend(store.list_messages(id.clone()).unwrap().into_iter().map(|m| format!("{id}|{}|{}", m.text, m.local_state)));
+    }
+    let conn = store.lock();
+    let files: (i64, i64) = conn.query_row("SELECT count(*), coalesce(sum(length(bytes)), 0) FROM message_attachments", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+    let account: String = conn.query_row("SELECT device_id || '|' || user_id || '|' || master_secret FROM account", [], |r| r.get(0)).unwrap();
+    (chats, texts, files, account)
+}
+
+#[test]
+fn a_moved_account_arrives_whole_with_the_same_keys_and_carries_on_with_every_contact() {
+    let m = ready_to_move();
+    let before = fingerprint(&m.alice.store);
+    assert!(before.2 .1 >= 600_000, "the file is in the store");
+    let chunks = all_chunks(&m.old);
+    assert!(chunks.len() > 4, "manifest, several data chunks, the final one: {}", chunks.len());
+    assert_eq!(m.old.progress().done, m.old.progress().total);
+    for chunk in &chunks {
+        m.new.import_chunk(chunk.clone()).unwrap();
+        if m.new.summary().is_some() && m.new.progress().done == 0 {
+            let s = m.new.summary().unwrap();
+            assert!(s.conversations >= 2 && s.messages >= 3 && s.attachments == 1 && s.total_bytes > 600_000);
+        }
+    }
+    assert!(!m.dest.exists(), "nothing is put in place before the stream verified");
+    let key = m.new.import_finish().unwrap();
+    assert_eq!(key, vec![1u8; 32], "the key that opens the moved store");
+    let proof = m.new.confirm_proof().unwrap();
+    assert!(m.dest.exists() && !m.dest.with_extension("db.part").exists());
+
+    let moved = LimeStore::open(m.dest.to_string_lossy().into_owned(), key).unwrap();
+    let after = fingerprint(&moved);
+    assert_eq!(after, before, "chats, messages, the group, the band, the file and the keys are identical");
+
+    // The same device registers again and nothing about it changes: no new keys for any contact.
+    let devices_before = m.server.state.lock().unwrap().devices.len();
+    let info = moved.register_device(m.transport.clone(), m.alice.token.clone()).unwrap();
+    assert_eq!(info.device_id, m.alice.device);
+    assert_eq!(m.server.state.lock().unwrap().devices.len(), devices_before, "the server saw the same device, not a new one");
+
+    // The old phone keeps everything until the new phone's proof arrives, and removes it then.
+    assert!(std::path::Path::new(&path_of(&m.alice)).exists());
+    m.old.transfer_confirm(proof).unwrap();
+    assert!(!std::path::Path::new(&path_of(&m.alice)).exists(), "the old phone's store is gone");
+
+    // The moved phone and Bob carry on in the same sessions, with no key-change prompt.
+    moved.send_text_identified(m.transport.clone(), m.alice.token.clone(), "bob".into(), "from the new phone".into()).unwrap();
+    assert_eq!(sync(&m.bob, &m.transport).received >= 1, true);
+    assert!(texts(&m.bob, &m.alice).contains(&"from the new phone".to_string()));
+    assert!(!conversation(&m.bob, &m.alice).unwrap().key_change_pending);
+    say(&m.bob, &m.alice, &m.transport, "welcome to the new phone");
+    moved.sync(m.transport.clone(), m.alice.token.clone()).unwrap();
+    let got: Vec<String> = moved.list_messages("dm:bob".into()).unwrap().into_iter().map(|x| x.text).collect();
+    assert!(got.contains(&"welcome to the new phone".to_string()));
+    drop(m.dir);
+}
+
+fn path_of(p: &Party) -> String {
+    p.store.lock().path().unwrap().to_owned()
+}
+
+#[test]
+fn a_changed_reordered_repeated_or_missing_chunk_keeps_nothing_on_the_new_phone() {
+    let fresh = |m: &Move| TransferNew::offer(m.alice.user.clone(), m.dest.to_string_lossy().into_owned()).unwrap();
+    // Each case is a new pairing against the same old phone.
+    let pair = |m: &Move| {
+        let new = fresh(m);
+        let old = TransferOld::accept(m.alice.store.clone(), new.qr()).unwrap();
+        new.accept_hello(old.hello()).unwrap();
+        old.confirm_code();
+        new.confirm_code();
+        (old, new)
+    };
+    let m = ready_to_move();
+    let part = m.dest.with_file_name("lime.db.part");
+
+    // A changed byte.
+    let (old, new) = pair(&m);
+    let mut chunks = all_chunks(&old);
+    chunks[2][5] ^= 1;
+    assert!(chunks.into_iter().try_for_each(|c| new.import_chunk(c)).is_err());
+    assert!(new.import_finish().is_err());
+    assert!(!m.dest.exists() && !part.exists());
+
+    // Swapped order.
+    let (old, new) = pair(&m);
+    let mut chunks = all_chunks(&old);
+    chunks.swap(1, 2);
+    assert!(chunks.into_iter().try_for_each(|c| new.import_chunk(c)).is_err());
+    assert!(!m.dest.exists() && !part.exists());
+
+    // A chunk sent twice.
+    let (old, new) = pair(&m);
+    let chunks = all_chunks(&old);
+    new.import_chunk(chunks[0].clone()).unwrap();
+    new.import_chunk(chunks[1].clone()).unwrap();
+    assert!(new.import_chunk(chunks[1].clone()).is_err());
+    assert!(!m.dest.exists() && !part.exists());
+
+    // The stream cut short (no final chunk) cannot be finished.
+    let (old, new) = pair(&m);
+    let mut chunks = all_chunks(&old);
+    chunks.pop();
+    for c in chunks {
+        new.import_chunk(c).unwrap();
+    }
+    assert!(new.import_finish().is_err());
+    assert!(!m.dest.exists() && !part.exists());
+
+    // Chunks from another pairing are not accepted.
+    let (old_a, _) = pair(&m);
+    let (_, new_b) = pair(&m);
+    assert!(new_b.import_chunk(old_a.export_next_chunk().unwrap().unwrap()).is_err());
+
+    // Through all of that, the old phone kept everything.
+    assert!(std::path::Path::new(&path_of(&m.alice)).exists());
+    assert!(!m.alice.store.list_conversations().unwrap().is_empty());
+}
+
+#[test]
+fn a_swapped_qr_shows_different_codes_and_nothing_moves_before_the_codes_are_confirmed() {
+    let server = FakeServer::new();
+    let (alice, _transport) = party(&server, "alice", 1);
+    let dir = tempfile::tempdir().unwrap();
+    let dest = dir.path().join("lime.db").to_string_lossy().into_owned();
+    // The real new phone, and someone else's QR that the old phone scans instead.
+    let real = TransferNew::offer("alice".into(), dest.clone()).unwrap();
+    let swapped = TransferNew::offer("alice".into(), dest.clone()).unwrap();
+    let old = TransferOld::accept(alice.store.clone(), swapped.qr()).unwrap();
+    swapped.accept_hello(old.hello()).unwrap();
+    assert_eq!(old.check_code(), swapped.check_code().unwrap());
+    assert!(real.check_code().is_err(), "the real phone never got a hello");
+    // The old phone's hello does not open the real phone's pairing: it lacks the real secret.
+    assert!(real.accept_hello(old.hello()).is_err());
+
+    // Before the person confirms: no export, no import.
+    assert!(old.export_next_chunk().is_err());
+    old.confirm_code();
+    let first = old.export_next_chunk().unwrap().unwrap();
+    assert!(swapped.import_chunk(first).is_err(), "the new phone has not confirmed the code");
+
+    // Two honest pairings never share a code by accident (1 in a million), and a QR for another account is refused.
+    let other = TransferNew::offer("someone-else".into(), dest).unwrap();
+    assert!(TransferOld::accept(alice.store.clone(), other.qr()).is_err());
+    assert!(TransferOld::accept(alice.store.clone(), "not a code".into()).is_err());
+}
+
+#[test]
+fn only_the_new_phones_proof_lets_the_old_phone_remove_its_copy() {
+    let m = ready_to_move();
+    // Not before the whole stream is sent.
+    assert!(m.old.transfer_confirm(vec![0; 32]).is_err());
+    let chunks = all_chunks(&m.old);
+    m.old.export_next_chunk().unwrap();
+    for c in chunks {
+        m.new.import_chunk(c).unwrap();
+    }
+    m.new.import_finish().unwrap();
+    assert!(m.old.transfer_confirm(vec![0; 32]).is_err(), "a made-up proof");
+    assert!(m.old.transfer_confirm(vec![]).is_err());
+    assert!(std::path::Path::new(&path_of(&m.alice)).exists(), "still there");
+    m.old.transfer_confirm(m.new.confirm_proof().unwrap()).unwrap();
+    assert!(!std::path::Path::new(&path_of(&m.alice)).exists());
+    // The temporary copy made for the stream is gone too.
+    assert!(!std::path::Path::new(&format!("{}.move", path_of(&m.alice))).exists());
+    let _ = &m.server;
+}
