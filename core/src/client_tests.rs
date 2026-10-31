@@ -1479,7 +1479,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
              DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP INDEX olm_sessions_by_peer; DROP TABLE received_ciphertexts; DROP TABLE emergency_messages; DROP TABLE emergency_settings; DROP TABLE mesh_outbox; DROP TABLE mesh_packets; DROP TABLE mesh_seen; DROP TABLE mesh_uploaded; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
-             DROP TRIGGER my_gifs_fts_insert; DROP TRIGGER my_gifs_fts_update; DROP TRIGGER my_gifs_fts_delete; DROP TABLE my_gifs_fts; DROP TABLE my_gifs; DROP TABLE draft_files; DROP TABLE draft_outbox; DROP TABLE draft_authors; DROP TABLE draft_chunks; DROP TABLE drafts; DROP TABLE deleted_peers; DROP TABLE session_repairs; DROP TABLE profile_key_requests; DROP TABLE my_extra; DROP TABLE extras; DROP TRIGGER jam_posts_fts_insert; DROP TRIGGER jam_posts_fts_update; DROP TRIGGER jam_posts_fts_delete; DROP TABLE jam_fts; DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_credits; DROP TABLE jam_credit_requests; DROP TABLE jam_credit_wires; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_blob_deletes; DROP TABLE jam_reactions; DROP TABLE jam_my_reactions; DROP TABLE jam_comments; DROP TABLE jam_counts; DROP TABLE jam_counts_out; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; DROP TABLE open_outbox; DROP TABLE jam_follow_off; DROP TABLE contact_jam_checks; DROP TABLE community_joins; DROP TABLE open_fts; DROP TABLE open_seen; ALTER TABLE conversations DROP COLUMN group_tone; ALTER TABLE conversations DROP COLUMN group_cover; ALTER TABLE conversations DROP COLUMN group_org; ALTER TABLE conversations DROP COLUMN group_parent; ALTER TABLE conversations DROP COLUMN group_parent_open; DROP TABLE org_joins; DROP TABLE series_meta; PRAGMA user_version = 9;",
+             DROP TRIGGER my_gifs_fts_insert; DROP TRIGGER my_gifs_fts_update; DROP TRIGGER my_gifs_fts_delete; DROP TABLE my_gifs_fts; DROP TABLE my_gifs; DROP TABLE draft_files; DROP TABLE draft_outbox; DROP TABLE draft_authors; DROP TABLE draft_chunks; DROP TABLE drafts; DROP TABLE deleted_peers; DROP TABLE session_repairs; DROP TABLE profile_key_requests; DROP TABLE my_extra; DROP TABLE extras; DROP TRIGGER jam_posts_fts_insert; DROP TRIGGER jam_posts_fts_update; DROP TRIGGER jam_posts_fts_delete; DROP TABLE jam_fts; DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jam_handovers; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_credits; DROP TABLE jam_credit_requests; DROP TABLE jam_credit_wires; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_blob_deletes; DROP TABLE jam_reactions; DROP TABLE jam_my_reactions; DROP TABLE jam_comments; DROP TABLE jam_counts; DROP TABLE jam_counts_out; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; DROP TABLE open_outbox; DROP TABLE jam_follow_off; DROP TABLE contact_jam_checks; DROP TABLE community_joins; DROP TABLE open_fts; DROP TABLE open_seen; ALTER TABLE conversations DROP COLUMN group_tone; ALTER TABLE conversations DROP COLUMN group_cover; ALTER TABLE conversations DROP COLUMN group_org; ALTER TABLE conversations DROP COLUMN group_parent; ALTER TABLE conversations DROP COLUMN group_parent_open; DROP TABLE org_joins; DROP TABLE series_meta; PRAGMA user_version = 9;",
         )
         .unwrap();
     }
@@ -8609,4 +8609,170 @@ fn ready_to_move_with_extra(extra: Option<Vec<u8>>) -> Move {
         m.old.set_extra(extra).unwrap();
     }
     m
+}
+
+// ---- LIME-275b: handing a band's publishing to another owner ----
+
+/// Everyone sends what is waiting and then receives, a few rounds, so queued ops and their answers have crossed.
+fn settle(parties: &[&Party], transport: &Arc<dyn Transport>) {
+    for _ in 0..4 {
+        for p in parties {
+            deliver(p, transport);
+        }
+        for p in parties {
+            sync(p, transport);
+        }
+    }
+}
+
+/// A band with its writer (alice), two more owners (bob, who is also a member with his own space, and carol who stays a member), and dave following the jam.
+fn band_to_hand_over() -> (Arc<FakeServer>, Party, Party, Party, Party, Arc<dyn Transport>, String) {
+    let (server, alice, bob, carol, transport, jam) = band_with_a_writer();
+    alice.store.set_org_role(jam.clone(), "bob".into(), "owner".into()).unwrap();
+    let (dave, _) = party(&server, "dave", 4);
+    // Bob has a space of his own (his profile), which the server requires of whoever receives a band.
+    bob.store.create_jam(bob.user.clone(), String::new(), vec![]).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    settle(&[&alice, &bob, &carol], &transport);
+    join_jam(&alice, &dave, &jam, &transport);
+    publish(&alice, &jam, "Before the hand-over", "free");
+    publish(&alice, &jam, "Only for subscribers", "subscribers");
+    settle(&[&alice, &bob, &carol, &dave], &transport);
+    (server, alice, bob, carol, dave, transport, jam)
+}
+
+#[test]
+fn a_band_is_handed_to_another_owner_who_publishes_and_a_subscriber_follows_and_it_can_go_back() {
+    let (_server, alice, bob, carol, dave, transport, jam) = band_to_hand_over();
+    assert!(bob.store.jam(jam.clone()).unwrap().is_some_and(|j| !j.mine), "bob follows the band as a member");
+
+    // Only the writer offers; only to an owner of the band; never the own profile space.
+    assert!(bob.store.offer_handover(transport.clone(), bob.token.clone(), jam.clone(), "alice".into()).is_err(), "a non-writer cannot offer");
+    assert!(alice.store.offer_handover(transport.clone(), alice.token.clone(), jam.clone(), "carol".into()).is_err(), "carol is a member, not an owner");
+    assert!(alice.store.offer_handover(transport.clone(), alice.token.clone(), jam.clone(), "alice".into()).is_err(), "not to yourself");
+    let space = alice.store.list_my_jams().unwrap().into_iter().min_by_key(|j| j.created).unwrap().jam_id;
+    assert!(alice.store.offer_handover(transport.clone(), alice.token.clone(), space.clone(), "bob".into()).is_err(), "never the own space");
+
+    alice.store.offer_handover(transport.clone(), alice.token.clone(), jam.clone(), "bob".into()).unwrap();
+    settle(&[&alice, &bob, &carol, &dave], &transport);
+    let offers = bob.store.list_handovers().unwrap();
+    assert_eq!(offers.iter().map(|h| (h.jam_id.clone(), h.peer.clone(), h.outgoing, h.state.clone())).collect::<Vec<_>>(), vec![(jam.clone(), "alice".to_string(), false, "offered".to_string())]);
+    assert!(bob.store.jam(jam.clone()).unwrap().is_some_and(|j| !j.mine), "nothing moved before he said yes");
+    let held: i64 = bob.store.lock().query_row("SELECT COUNT(*) FROM jam_subscribers WHERE jam_id = ?1", rusqlite::params![jam], |r| r.get(0)).unwrap();
+    assert_eq!(held, 0, "no subscriber list reached bob before he said yes");
+
+    // He says yes: the bundle comes, he takes over, and alice lets go.
+    bob.store.accept_handover(jam.clone()).unwrap();
+    settle(&[&alice, &bob, &carol, &dave], &transport);
+    let bobs = bob.store.jam(jam.clone()).unwrap().unwrap();
+    assert!(bobs.mine && bobs.writer == "bob", "bob publishes the band now");
+    let alices = alice.store.jam(jam.clone()).unwrap().unwrap();
+    assert!(!alices.mine && alices.writer == "bob", "alice no longer does");
+    let kept: i64 = alice.store.lock().query_row("SELECT COUNT(*) FROM jam_subscribers WHERE jam_id = ?1", rusqlite::params![jam], |r| r.get(0)).unwrap();
+    assert_eq!(kept, 0, "alice forgot the subscriber list");
+    assert!(alice.store.list_handovers().unwrap().is_empty() && bob.store.list_handovers().unwrap().is_empty());
+    let subscribers: Vec<String> = bob.store.list_jam_subscribers(jam.clone()).unwrap().into_iter().map(|s| s.user_id).collect();
+    assert!(subscribers.contains(&"dave".to_string()) && subscribers.contains(&"alice".to_string()), "{subscribers:?}");
+    assert_eq!(jam_posts_of(&bob, &jam).len(), 2, "the archive's index came with it");
+    assert!(alice.store.publish_jam_post(jam.clone(), "article".into(), "Still me?".into(), String::new(), "x".into(), "free".into(), vec![], vec![]).is_err(), "the old publisher cannot publish");
+    // The band is no longer bob's oldest jam, so it is not his profile space.
+    assert!(bob.store.list_my_jams().unwrap().len() >= 1);
+
+    // The new publisher publishes; the subscriber follows the new writer and reads it, and the old posts stay.
+    publish(&bob, &jam, "From the new publisher", "free");
+    settle(&[&alice, &bob, &carol, &dave], &transport);
+    let followed = dave.store.jam(jam.clone()).unwrap().unwrap();
+    assert_eq!(followed.writer, "bob");
+    let titles = jam_posts_of(&dave, &jam);
+    assert!(titles.contains(&"From the new publisher".to_string()) && titles.contains(&"Before the hand-over".to_string()), "{titles:?}");
+    assert!(jam_posts_of(&alice, &jam).contains(&"From the new publisher".to_string()), "the old publisher reads it as an owner");
+
+    // Roles afterwards: the old publisher, still an owner, sends a draft for review; the new publisher is the one who reviews and publishes.
+    let draft = alice.store.create_draft("An idea".into(), "".into(), "Some words.".into()).unwrap();
+    alice.store.send_draft_for_review(draft.clone(), jam.clone()).unwrap();
+    settle(&[&alice, &bob, &carol, &dave], &transport);
+    assert_eq!(bob.store.drafts_waiting_for_review(jam.clone()).unwrap().len(), 1, "the new publisher reviews it");
+
+    // Hand it back: the same in reverse.
+    bob.store.offer_handover(transport.clone(), bob.token.clone(), jam.clone(), "alice".into()).unwrap();
+    settle(&[&alice, &bob, &carol, &dave], &transport);
+    alice.store.accept_handover(jam.clone()).unwrap();
+    settle(&[&alice, &bob, &carol, &dave], &transport);
+    assert!(alice.store.jam(jam.clone()).unwrap().unwrap().mine);
+    assert!(!bob.store.jam(jam.clone()).unwrap().unwrap().mine);
+    publish(&alice, &jam, "Back again", "free");
+    settle(&[&alice, &bob, &carol, &dave], &transport);
+    assert_eq!(dave.store.jam(jam.clone()).unwrap().unwrap().writer, "alice");
+    assert!(jam_posts_of(&dave, &jam).contains(&"Back again".to_string()));
+}
+
+#[test]
+fn an_offer_can_be_cancelled_or_declined_and_nothing_moves() {
+    let (_server, alice, bob, _carol, dave, transport, jam) = band_to_hand_over();
+    alice.store.offer_handover(transport.clone(), alice.token.clone(), jam.clone(), "bob".into()).unwrap();
+    settle(&[&alice, &bob, &dave], &transport);
+    alice.store.cancel_handover(transport.clone(), alice.token.clone(), jam.clone()).unwrap();
+    settle(&[&alice, &bob, &dave], &transport);
+    assert!(bob.store.list_handovers().unwrap().is_empty() && alice.store.list_handovers().unwrap().is_empty());
+    assert!(bob.store.accept_handover(jam.clone()).is_err(), "nothing to accept");
+
+    alice.store.offer_handover(transport.clone(), alice.token.clone(), jam.clone(), "bob".into()).unwrap();
+    settle(&[&alice, &bob, &dave], &transport);
+    bob.store.decline_handover(transport.clone(), bob.token.clone(), jam.clone()).unwrap();
+    settle(&[&alice, &bob, &dave], &transport);
+    assert!(alice.store.list_handovers().unwrap().is_empty() && bob.store.list_handovers().unwrap().is_empty());
+    assert!(alice.store.jam(jam.clone()).unwrap().unwrap().mine);
+    assert_eq!(dave.store.jam(jam.clone()).unwrap().unwrap().writer, "alice");
+}
+
+#[test]
+fn a_subscriber_ignores_a_handover_from_anyone_but_the_writer_or_the_new_writer_with_the_writers_proof_and_never_a_replay() {
+    let (_server, alice, bob, _carol, dave, transport, jam) = band_to_hand_over();
+    // A forged hand-over from bob (not the writer) with no proof changes nothing.
+    let forged = |from: &Party, to: &str, proof: Option<serde_json::Value>| {
+        let state = from.store.load_or_create_account().unwrap();
+        let mut payload = serde_json::json!({ "jam_id": jam, "new_writer": to });
+        if let Some(proof) = proof {
+            payload["proof"] = proof;
+        }
+        let op = from.store.with_conn(|conn| crate::client::jam::signed_op(conn, &state, "jam.handover", &jam, None, payload, crate::store::now_ms())).unwrap();
+        from.store.with_conn(|conn| crate::client::jam::queue_op(conn, &jam, "dave", &op)).unwrap();
+    };
+    forged(&bob, "bob", None);
+    settle(&[&alice, &bob, &dave], &transport);
+    assert_eq!(dave.store.jam(jam.clone()).unwrap().unwrap().writer, "alice", "not from the writer, no proof");
+
+    // The real hand-over, then the old proof replayed by bob after it went back: refused.
+    alice.store.offer_handover(transport.clone(), alice.token.clone(), jam.clone(), "bob".into()).unwrap();
+    settle(&[&alice, &bob, &dave], &transport);
+    bob.store.accept_handover(jam.clone()).unwrap();
+    settle(&[&alice, &bob, &dave], &transport);
+    assert_eq!(dave.store.jam(jam.clone()).unwrap().unwrap().writer, "bob");
+    let proof: serde_json::Value = bob.store.lock().query_row("SELECT proof FROM jam_handovers WHERE jam_id = ?1", rusqlite::params![jam], |r| r.get::<_, String>(0)).map(|p| serde_json::from_str(&p).unwrap()).unwrap();
+    bob.store.offer_handover(transport.clone(), bob.token.clone(), jam.clone(), "alice".into()).unwrap();
+    settle(&[&alice, &bob, &dave], &transport);
+    alice.store.accept_handover(jam.clone()).unwrap();
+    settle(&[&alice, &bob, &dave], &transport);
+    assert_eq!(dave.store.jam(jam.clone()).unwrap().unwrap().writer, "alice");
+    forged(&bob, "bob", Some(proof));
+    settle(&[&alice, &bob, &dave], &transport);
+    assert_eq!(dave.store.jam(jam.clone()).unwrap().unwrap().writer, "alice", "an old proof is not replayed");
+}
+
+#[test]
+fn a_subscriber_follows_the_new_writer_even_when_the_old_writers_own_announcement_never_arrives() {
+    let (_server, alice, bob, carol, dave, transport, jam) = band_to_hand_over();
+    // The old publisher's own hand-over notice to dave is lost: only the new publisher's, carrying the signed proof, reaches him.
+    alice.store.lock().execute_batch(
+        "CREATE TEMP TRIGGER lose_the_notice AFTER INSERT ON jam_op_outbox WHEN new.recipient = 'dave' AND new.op_json LIKE '%\"jam.handover\"%' BEGIN DELETE FROM jam_op_outbox WHERE id = new.id; END;",
+    ).unwrap();
+    alice.store.offer_handover(transport.clone(), alice.token.clone(), jam.clone(), "bob".into()).unwrap();
+    settle(&[&alice, &bob, &carol, &dave], &transport);
+    bob.store.accept_handover(jam.clone()).unwrap();
+    settle(&[&alice, &bob, &carol, &dave], &transport);
+    assert!(bob.store.jam(jam.clone()).unwrap().unwrap().mine);
+    publish(&bob, &jam, "First post of the new publisher", "free");
+    settle(&[&alice, &bob, &carol, &dave], &transport);
+    assert_eq!(dave.store.jam(jam.clone()).unwrap().unwrap().writer, "bob");
+    assert!(jam_posts_of(&dave, &jam).contains(&"First post of the new publisher".to_string()));
 }

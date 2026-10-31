@@ -42,7 +42,9 @@ impl LimeStore {
         let me = state.user_id.clone().filter(|_| state.registered).ok_or(StoreError::NotRegistered)?;
         let now = now_ms();
         self.with_conn(|conn| {
-            if org_role_of(conn, &jam_id, &me) != Some("writer") {
+            // A writer sends for review; so does an owner who is not the band's publisher (LIME-275: after a hand-over the old publisher keeps editing and reviewing).
+            let publishes = crate::store::jam::get(conn, &jam_id)?.is_some_and(|j| j.mine);
+            if !(org_role_of(conn, &jam_id, &me) == Some("writer") || (org_role_of(conn, &jam_id, &me) == Some("owner") && !publishes)) {
                 return Err(StoreError::Rejected);
             }
             let owners: Vec<String> = org_owner_ids(conn, &jam_id).into_iter().filter(|u| *u != me).take(MAX_AUTHORS - 1).collect();

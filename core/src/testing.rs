@@ -59,6 +59,8 @@ pub(crate) struct ServerState {
     pub jam_blobs: HashMap<String, String>,
     /// jam id to (writer, title, post_count, ended): the public pages
     pub jam_pages: HashMap<String, (String, String, i64, bool)>,
+    /// jam id to (from, to): a band's publishing offered to another teacher (LIME-275)
+    pub handovers: HashMap<String, (String, String)>,
     /// jam id to the order its page was first made in (LIME-254b: the oldest is the writer's own jam)
     pub jam_seq: HashMap<String, usize>,
     /// jam id to the version of its public picture (LIME-194); the bytes are the object `public-avatars/jam-<id>.jpg`
@@ -721,6 +723,31 @@ impl FakeServer {
             "jam-page" => {
                 let jam = text("jam_id");
                 let existing = state.jam_pages.get(&jam).cloned();
+                let action = body.get("action").and_then(Value::as_str).unwrap_or_default().to_owned();
+                if action.starts_with("handover_") {
+                    return match action.as_str() {
+                        "handover_offer" if existing.as_ref().is_some_and(|(owner, _, _, ended)| *owner == user && !*ended) => {
+                            state.handovers.insert(jam, (user, text("new_writer_id")));
+                            respond(200, json!({ "ok": true }))
+                        }
+                        "handover_cancel" if state.handovers.get(&jam).is_some_and(|(from, _)| *from == user) => {
+                            state.handovers.remove(&jam);
+                            respond(200, json!({ "ok": true }))
+                        }
+                        "handover_decline" if state.handovers.get(&jam).is_some_and(|(_, to)| *to == user) => {
+                            state.handovers.remove(&jam);
+                            respond(200, json!({ "ok": true }))
+                        }
+                        "handover_accept" if state.handovers.get(&jam).is_some_and(|(_, to)| *to == user) => {
+                            state.handovers.remove(&jam);
+                            if let Some((_, title, count, ended)) = state.jam_pages.get(&jam).cloned() {
+                                state.jam_pages.insert(jam, (user, title, count, ended));
+                            }
+                            respond(200, json!({ "ok": true }))
+                        }
+                        _ => respond(404, json!({ "error": "not_found" })),
+                    };
+                }
                 if existing.as_ref().is_some_and(|(owner, ..)| *owner != user) {
                     return respond(409, json!({ "error": "id_taken" }));
                 }

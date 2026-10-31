@@ -984,6 +984,20 @@ const MIGRATIONS: &[&str] = &[
      CREATE TRIGGER my_gifs_fts_delete AFTER DELETE ON my_gifs BEGIN
          DELETE FROM my_gifs_fts WHERE id = old.id;
      END;",
+    // LIME-275b: handing a band's publishing to another owner. `jam_handovers` is the one hand-over this phone is part of for a band: `dir` is `out` (I am
+    // handing it over: offered, accepted, sent) or `in` (I am receiving it: offered, accepted, ready, then live, which keeps the old publisher's signed proof so
+    // the new publisher's first keys can carry it). `jams.handover_hlc` is the clock of the newest hand-over a subscriber accepted, so an old proof is never replayed.
+    "ALTER TABLE jams ADD COLUMN handover_hlc TEXT NOT NULL DEFAULT '';
+     CREATE TABLE jam_handovers (
+         jam_id     TEXT PRIMARY KEY NOT NULL,
+         dir        TEXT NOT NULL,
+         peer       TEXT NOT NULL,
+         state      TEXT NOT NULL,
+         proof      TEXT,
+         need_subs  INTEGER,
+         need_posts INTEGER,
+         at         INTEGER NOT NULL
+     );",
 ];
 
 /// The schema version this build writes.

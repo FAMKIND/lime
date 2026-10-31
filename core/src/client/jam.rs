@@ -1359,7 +1359,7 @@ impl LimeStore {
 
     /// The current outbound session for a tier, replaced first when it is time (a removal marked it, 100 posts, 7 days), and its key given to
     /// everyone who may read that tier. A new subscriber does not cause a replacement: they are handed the older keys with their welcome.
-    fn ensure_jam_session(&self, conn: &Connection, state: &AccountState, jam_id: &str, tier: &str, now: i64) -> Result<jam_store::Outbound, StoreError> {
+    pub(super) fn ensure_jam_session(&self, conn: &Connection, state: &AccountState, jam_id: &str, tier: &str, now: i64) -> Result<jam_store::Outbound, StoreError> {
         let existing = jam_store::load_outbound(conn, &self.pickle_key, jam_id, tier)?;
         if let Some(current) = existing.filter(|o| !o.rotate && o.posts < jam_store::ROTATE_AFTER_POSTS && now - o.created_at < jam_store::ROTATE_AFTER_MS) {
             return Ok(current);
@@ -1367,7 +1367,12 @@ impl LimeStore {
         let outbound = jam_store::Outbound { session: GroupSession::new(MegolmConfig::version_1()), created_at: now, posts: 0, rotate: false };
         jam_store::save_outbound(conn, &self.pickle_key, jam_id, tier, &outbound)?;
         let entry = json!({ "session_id": outbound.session.session_id(), "tier": tier, "key": outbound.session.session_key().to_base64() });
-        let op = signed_op(conn, state, "jam.session", jam_id, None, json!({ "jam_id": jam_id, "sessions": [entry] }), now)?;
+        let mut payload = json!({ "jam_id": jam_id, "sessions": [entry] });
+        // The first keys of a band handed over to me carry the old publisher's signed hand-over, so a subscriber who has not seen it yet still follows me.
+        if let Some(proof) = Self::live_handover_proof(conn, jam_id)? {
+            payload["proof"] = proof;
+        }
+        let op = signed_op(conn, state, "jam.session", jam_id, None, payload, now)?;
         for user in jam_store::audience(conn, jam_id, tier)? {
             queue_op(conn, jam_id, &user, &op)?;
         }
@@ -1456,6 +1461,7 @@ impl LimeStore {
             return Ok(());
         }
         let jam = jam_store::get(conn, jam_id)?;
+        let jam = self.adopt_handover_proof(conn, jam, sender, op)?;
         match op.op_type.as_str() {
             "jam.subscribe" => {
                 let Some(jam) = jam.filter(|j| j.mine && j.writer == me) else { return Ok(()) };
@@ -1664,6 +1670,10 @@ impl LimeStore {
                 }
                 Ok(())
             }
+            // Handing a band's publishing to another owner (LIME-275b).
+            "jam.handover" | "jam.handover.offer" | "jam.handover.accept" | "jam.handover.decline" | "jam.handover.cancel" | "jam.handover.bundle" | "jam.handover.done" => {
+                self.apply_handover_op(conn, state, me, sender, op, jam, now)
+            }
             // Everything else is the writer's, to a subscriber or someone who asked to be one.
             other => {
                 let Some(jam) = jam.filter(|j| !j.mine && j.writer == sender) else { return Ok(()) };
@@ -1707,7 +1717,7 @@ impl LimeStore {
     }
 
     /// The jam's title, about, topics and tiers from the writer, if newer than what is held (`force`: a welcome always sets them).
-    fn apply_jam_state(&self, conn: &Connection, jam: &jam_store::JamRow, value: &Value, hlc: &str, force: bool) -> Result<(), StoreError> {
+    pub(super) fn apply_jam_state(&self, conn: &Connection, jam: &jam_store::JamRow, value: &Value, hlc: &str, force: bool) -> Result<(), StoreError> {
         if !force && hlc <= jam.state_hlc.as_str() {
             return Ok(());
         }
@@ -1949,7 +1959,7 @@ impl LimeStore {
     }
 
     /// The archive's index from the writer: each post's title and where its content is. Entries are checked for shape; the content is fetched later.
-    fn store_jam_index(&self, conn: &Connection, jam_id: &str, writer: &str, payload: &Value) -> Result<(), StoreError> {
+    pub(super) fn store_jam_index(&self, conn: &Connection, jam_id: &str, writer: &str, payload: &Value) -> Result<(), StoreError> {
         let Some(posts) = payload.get("posts").and_then(Value::as_array) else { return Ok(()) };
         for entry in posts.iter().take(INDEX_PER_OP) {
             let text = |k: &str| entry.get(k).and_then(Value::as_str);
@@ -2136,6 +2146,7 @@ impl LimeStore {
         self.queue_credit_requests(state);
         self.process_community_joins();
         self.process_orgs();
+        self.process_handovers(transport, token, state, me);
         self.deliver_jam_ops(transport, token, state, me);
         self.upload_jam_posts(transport, token);
         self.deliver_open(transport, token);
