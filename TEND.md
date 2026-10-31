@@ -9331,3 +9331,4 @@ Buttons keep their words whole; every theme pair passes contrast; search and ava
 Another 2 pt between search and the avatar, at the user's word ("2 pt further"). Same three spacing values: `-4` → `-2` in the iOS 26 bubble (`MessagesView.swift`, `RootHeader.swift`), 8 → 10 in the pre-iOS 26 pill. They now sit **2 pt closer than before 277g** (277g: 6, 277h: 4, now 2). Visual change: no new test; the 277g header test still passes.
 
 - **Gate:** the two icons a little further apart again on Messages, Calls and jam.
+- **Installed (277h again):** all three, the 13 mini, the iPad and Jean's 12 mini.
