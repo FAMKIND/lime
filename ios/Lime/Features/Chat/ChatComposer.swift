@@ -53,6 +53,13 @@ struct ChatComposer: View {
                 }
                 .padding(.horizontal, 6).padding(.top, 8).accessibilityIdentifier("video-preparing")
             }
+            // "/" and words: my GIFs that match, above the field (LIME-208). Chats only.
+            if onSendAttachments != nil, model.plainText.hasPrefix("/") {
+                GIFSlashStrip(query: String(model.plainText.dropFirst()).trimmingCharacters(in: .whitespacesAndNewlines)) { item in
+                    model.clear()
+                    onSendAttachments?([item], "")
+                }
+            }
             if !drafts.isEmpty { DraftStrip(drafts: drafts) { draft in drafts.removeAll { $0.id == draft.id } } }
             if let previewDraft { previewCard(previewDraft) }
             if recorder.isRecording {

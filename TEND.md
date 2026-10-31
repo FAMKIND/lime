@@ -9443,3 +9443,12 @@ My GIFs: save, add, and a GIF button. **Brief:** LIME-207. Core + iOS.
 - **Settings → My GIFs** (a row under Storage, not "Chats": there is no Chats screen): the count, the space used and Remove all (asks first).
 - **Tests:** core (4): found by my words, by the message text, by text in the pictures, as a prefix and only when every word matches; the same GIF twice is one that comes to the front; remove also clears the index; only GIFs ≤ 12 MB are kept and the 500 cap is refused (but the same GIF again is fine); it survives a reopen. UI `GIF207UITests` (2, demo): save a GIF from the long-press menu, find it by "fri" in the GIF button's search, no match says so, one tap sends it; Settings shows 0 and Remove all waits. **Not tested here:** Vision reading real frames, adding from Photos/Files, Add words, Remove all with GIFs in it.
 - **Gate:** save Jean's GIF, add one from Photos, type "birthday" in the GIF button's search, find a GIF whose picture says "Happy Birthday", send it.
+
+## LIME-208
+
+Type `/` and words to pick a GIF. **Brief:** LIME-208. iOS only (uses 207's search).
+
+- When a chat message **starts with `/`**, a strip of up to **12 of my GIFs** that match the words after it appears **above the composer**, updating as you type; an empty `/` shows my recent ones. **A tap sends the GIF and clears the `/words`**; deleting the `/` closes the strip; **Send without picking sends the text exactly as typed** (a message that starts with "/" still works). No match: one line "No GIFs for ‘happy birthday’. Save GIFs from chats or add them in the GIF button." Chats only (the strip is in the chat composer; jam's editor has none).
+- **Accessibility:** the strip is announced ("6 GIFs for happy birthday", "No GIFs for …"); each GIF is a 44 pt button read as "GIF, <words or recognised text or its message>" with the hint "Sends it"; it shows still frames (Reduce Motion safe and light).
+- **Tests:** UI `GIF208UITests` (3, demo `-lime-demo-my-gifs`: a birthday GIF and a thank-you GIF): `/birth` shows only the birthday GIF; a tap sends it, the strip closes and the field empties; an empty `/` shows both, `/zzzz` shows the no-match line with the words, deleting back to nothing closes the strip; `/hello` sent without picking goes as text.
+- **Gate:** in a chat with Jean, type `/happy birthday`, pick one, Jean gets it.

@@ -290,3 +290,69 @@ struct MyGIFsSettingsScreen: View {
         } message: { Text("They are deleted from this iPhone. GIFs already sent stay in their chats.") }
     }
 }
+
+
+// MARK: Type "/" and words (LIME-208)
+
+/// When a message starts with "/", up to 12 of my GIFs that match the words after it, in a strip above the field, updating as you type; an empty "/" shows the
+/// recent ones. A tap sends one and the "/words" are cleared. Send without picking sends the text as typed.
+struct GIFSlashStrip: View {
+    let query: String
+    let onPick: (OutgoingAttachment) -> Void
+    @Environment(ConversationStore.self) private var store
+    @State private var gifs: [MyGif] = []
+    @State private var loaded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if gifs.isEmpty && loaded {
+                Text(query.isEmpty ? "No saved GIFs yet. Save GIFs from chats or add them in the GIF button." : "No GIFs for \u{2018}\(query)\u{2019}. Save GIFs from chats or add them in the GIF button.")
+                    .font(Theme.secondary).foregroundStyle(Theme.textSecondary).fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("gif-slash-empty")
+            } else if !gifs.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(gifs, id: \.id) { gif in
+                            Button { Task { await pick(gif) } } label: {
+                                SlashThumb(id: gif.id).frame(width: 72, height: 72).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            }
+                            .buttonStyle(.plain).frame(minWidth: 44, minHeight: 44)
+                            .accessibilityLabel([gif.words, gif.frameText, gif.messageText].first { !$0.isEmpty }.map { "GIF, \($0)" } ?? "GIF").accessibilityHint("Sends it")
+                            .accessibilityIdentifier("gif-slash-\(gif.id)")
+                        }
+                    }
+                }
+                .accessibilityIdentifier("gif-slash-strip")
+            }
+        }
+        .padding(.horizontal, 6).padding(.top, 8)
+        .task(id: "\(query)|\(store.myGIFRevision)") {
+            let found = await store.myGIFs(matching: query)
+            gifs = Array(found.prefix(12))
+            loaded = true
+            let said = gifs.isEmpty ? "No GIFs for \(query)" : "\(gifs.count) \(gifs.count == 1 ? "GIF" : "GIFs")\(query.isEmpty ? "" : " for \(query)")"
+            UIAccessibility.post(notification: .announcement, argument: said)
+        }
+    }
+
+    private func pick(_ gif: MyGif) async {
+        guard let data = await store.myGIFData(gif.id), let made = try? GIF.attachment(data, name: "GIF.gif") else { return }
+        await store.touchMyGIF(gif.id)
+        onPick(made.0)
+    }
+}
+
+/// A still frame in the strip (stills follow Reduce Motion and keep the strip light).
+private struct SlashThumb: View {
+    let id: String
+    @Environment(ConversationStore.self) private var store
+    @State private var image: UIImage?
+    var body: some View {
+        ZStack {
+            Theme.surface
+            if let image { Image(uiImage: image).resizable().scaledToFill() }
+        }
+        .task(id: id) { if let data = await store.myGIFData(id) { image = GIF.firstFrame(data) } }
+        .accessibilityHidden(true)
+    }
+}

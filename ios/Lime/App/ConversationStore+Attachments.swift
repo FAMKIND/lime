@@ -233,6 +233,13 @@ extension ConversationStore {
         let farPDFID = UUID().uuidString.lowercased()
         demoAttachmentData[farPDFID] = Data("%PDF-1.4 remote".utf8)
         farPDF.attachments = [AttachmentItem(id: farPDFID, mime: "application/pdf", name: "Schedule.pdf", size: 1_250_000, downloaded: false)]
+        // `-lime-demo-my-gifs`: two saved GIFs to find with "/" and in the GIF button (LIME-207, 208).
+        if ProcessInfo.processInfo.arguments.contains("-lime-demo-my-gifs") {
+            for (words, hue) in [("birthday cake", 0), ("thank you", 1)] {
+                let data = GIFFixtures.make(frames: 2, size: CGSize(width: 120, height: 90), delay: 0.4 + Double(hue))
+                demoMyGIFs.append((MyGif(id: "demo-gif-\(hue)", words: words, messageText: "", frameText: "", width: 120, height: 90, size: UInt64(data.count), addedAt: 0, lastUsed: Int64(1000 - hue)), data))
+            }
+        }
         // A GIF with a caption, and a plain picture beside it (LIME-206).
         var gifMessage = Message(id: "g1", senderID: "pat", text: "Happy Friday!", date: now.addingTimeInterval(-300))
         gifMessage.attachments = [demoGIF()]
