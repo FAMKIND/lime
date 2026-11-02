@@ -34,7 +34,7 @@ Urgent safety concern? Contact local emergency services first, then **abuse@lime
 
 ## How to appeal
 
-If your content was removed or your account suspended and you think it was a mistake, write to **abuse@limemessenger.com** with your username. A different person will look again.
+If your content was removed or your account suspended and you think it was a mistake, write to **abuse@limemessenger.com** with your username. We will look again.
 
 ---
 
@@ -45,5 +45,5 @@ If your content was removed or your account suspended and you think it was a mis
 
 ## Questions for the lawyer
 
-1. Is "a different person will look again" an appeal promise we can keep with two founders as moderators?
+1. Is "we will look again" enough of an appeal process for App Store guideline 1.2?
 2. Are the words "reported to the authorities" accurate until the NCMEC process is settled?

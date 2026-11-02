@@ -64,6 +64,12 @@ struct ReportSheet: View {
                     .onChange(of: note) { _, now in if now.count > 500 { note = String(now.prefix(500)) } }
                     .accessibilityIdentifier("report-note")
 
+                // LIME-282b: what happens to a report, in lime's own words.
+                Link("How we moderate", destination: URL(string: TermsAcceptance.guidelinesURL)!)
+                    .font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).underline()
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("report-how-we-moderate")
+
                 if let group = target.group { groupInclude(group) } else {
                 VStack(alignment: .leading, spacing: 8) {
                     Toggle("Include this \(target.noun)", isOn: $include).tint(Theme.accent).font(Theme.body).accessibilityIdentifier("report-include")

@@ -424,14 +424,23 @@ struct AboutScreen: View {
             }
             SettingsCard {
                 SettingsRow(symbol: "doc.text", title: "Acknowledgements", route: .acknowledgements, id: "about-acknowledgements")
-                Link(destination: URL(string: "https://limemessenger.com/terms")!) {
+                Link(destination: URL(string: TermsAcceptance.termsURL)!) {
                     SettingsRowLabel(symbol: "checkmark.shield", title: "Terms of Service")
                 }
                 .accessibilityIdentifier("about-terms")
-                Link(destination: URL(string: "https://limemessenger.com/privacy")!) {
-                    SettingsRowLabel(symbol: "lock", title: "Privacy Policy", showsDivider: false)
+                Link(destination: URL(string: TermsAcceptance.privacyURL)!) {
+                    SettingsRowLabel(symbol: "lock", title: "Privacy Policy")
                 }
                 .accessibilityIdentifier("about-privacy")
+                // LIME-282b
+                Link(destination: URL(string: TermsAcceptance.guidelinesURL)!) {
+                    SettingsRowLabel(symbol: "person.2", title: "Community guidelines")
+                }
+                .accessibilityIdentifier("about-guidelines")
+                Link(destination: URL(string: TermsAcceptance.safetyURL)!) {
+                    SettingsRowLabel(symbol: "lifepreserver", title: "Safety and reporting abuse", showsDivider: false)
+                }
+                .accessibilityIdentifier("about-safety")
             }
             #if DEBUG
             SettingsCard {

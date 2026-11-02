@@ -9720,3 +9720,15 @@ Sign-up asks once, before the password: **"lime is for teachers, 18 or older."**
 - **After a version change:** `SignedInView` shows a one-time "The terms changed" sheet ("I agree") **only to a phone that has a record of an older version.** Phones with no record (accounts made before this build) are not asked: deliberate, so today's testers aren't interrupted; bump `TermsAcceptance.currentVersion` when the terms change.
 - **Tests:** `Terms283UITests` (2 pass: the screen shows, links present, Continue disabled until ticked, then the password; signing in does not show it). The two existing sign-up tests now tick the box (`agreeToTerms(in:)`).
 - **Limits:** the welcome screen's own "By continuing, you agree to…" line is kept (now pointing at limemessenger.com; 282b). The links open live pages, which exist once 282b deploys.
+
+## LIME-282b
+The compliance pack, part 2: **published** (your go, typed), the app linked, nothing installed.
+- **Mailboxes (checked before deploying):** an SMTP probe to Migadu's MX (`RCPT TO` only, nothing sent): `privacy@`, `security@`, `abuse@` and `legal@limemessenger.com` all answered "I'll make sure … gets this"; a made-up address was refused (550), so the check discriminates. None bounced.
+- **Appeal softened:** the guidelines now say "We will look again." (no promise of a different person); the lawyer question matches. Legal line stays a placeholder; legal@ kept.
+- **Deployed (`infra/invite/deploy.sh` to `lime-turn-1`'s `/srv/invite`):** `/privacy`, `/terms`, `/guidelines`, `/safety`, `/security` (each 200 after Caddy's 308 to the trailing slash), `/.well-known/security.txt` (200, text/plain, the right Contact/Expires/Policy), `/lime-logo.png`, and `/u/shem` still 200. The deploy replaced `/srv/invite` wholesale (the script does that); the `noindex` tag was dropped from the generator now the pages are live. Each page still says "Draft, pending legal review".
+- **The invite page and the holding page** show lime's logo (`invite-site/lime-logo.png`, the app's own icon) instead of the lemon.
+- **The app's links:** the welcome screen's Terms and Privacy (done in 283); Settings → About: Terms, Privacy, and new rows **Community guidelines** and **Safety and reporting abuse**; the Report sheet has **How we moderate** → `/guidelines`. All use `TermsAcceptance.*URL`. **Deviation:** the brief says "Settings → Help → /safety"; the app has no Help section, so I put it in About.
+- **Release checklist:** ticked the Terms/Privacy pages, the mailboxes, the 18+ step and publish.
+- **Verification:** device build `dd29` succeeded; the 283 tests and the two sign-up tests pass. No new UI test (links are visual; you check).
+- **Installed:** **none.** The 13 mini, the iPad and Jean's 12 mini were all unreachable (CoreDevice 4000) when I tried; one attempt each, no retries. Say when they're connected and unlocked.
+- **Gate (yours):** open each page in Safari on limemessenger.com; in the app, About's four links and Report → "How we moderate"; a fresh sign-up shows the 18+ screen before the password.
