@@ -156,6 +156,14 @@ class LimeUITestCase: XCTestCase {
         XCTAssertTrue(app.otherElements["settings-root"].waitForExistence(timeout: 5) || app.buttons["settings-profile"].waitForExistence(timeout: 5))
     }
 
+    /// LIME-283: the sign-up's terms screen: tick the box, Continue.
+    func agreeToTerms(in app: XCUIApplication) {
+        let box = app.descendants(matching: .any).matching(identifier: "terms-agree").firstMatch
+        XCTAssertTrue(box.waitForExistence(timeout: 10))
+        box.tap()
+        app.buttons["terms-continue"].tap()
+    }
+
     func typeSecure(_ text: String, _ id: String, _ app: XCUIApplication) {
         let field = app.secureTextFields[id]
         field.tap()
@@ -2441,6 +2449,7 @@ final class LimeUITestsGroupsAndSignIn: LimeUITestCase {
         app.buttons["confirm-yes"].tap()
         type("123456", into: "code-field", in: app)
         app.buttons["next-button"].tap()
+        agreeToTerms(in: app)
         type("a long enough password", into: "password-field", in: app, secure: true)
         let eye = app.buttons["password-field-eye"]
         XCTAssertEqual(eye.label, "Show password")
@@ -2476,6 +2485,7 @@ final class LimeUITestsGroupsAndSignIn: LimeUITestCase {
         // The code (the stand-in's is 123456), then a password, then the name.
         type("123456", into: "code-field", in: app)
         app.buttons["next-button"].tap()
+        agreeToTerms(in: app)
         type("a long enough password", into: "password-field", in: app, secure: true)
         type("a long enough password", into: "confirm-password-field", in: app, secure: true)
         app.buttons["next-button"].tap()

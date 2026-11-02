@@ -68,6 +68,7 @@ private struct SignedInView: View {
     @Environment(NotificationCoordinator.self) private var notifications
     @Environment(\.scenePhase) private var scenePhase
     @State private var explaining = false
+    @State private var reagreeing = TermsAcceptance.needsReagreement()
 
     var body: some View {
         @Bindable var store = store
@@ -91,6 +92,7 @@ private struct SignedInView: View {
             if index < sections.count, sections[index] == store.section { store.select(sections[index]) }
         })
         .sheet(isPresented: $explaining) { NotificationExplainerSheet() }
+        .sheet(isPresented: $reagreeing) { TermsUpdatedSheet { TermsAcceptance.record(); reagreeing = false } }
         .onAppear {
             // Minimising a group call opens that group's chat (unless it is already open), so the person can type while talking.
             let store = store, notifications = notifications

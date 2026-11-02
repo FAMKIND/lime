@@ -41,9 +41,9 @@ struct WelcomeView: View {
             Spacer(minLength: 24)
             VStack(spacing: 16) {
                 (Text("By continuing, you agree to lime's ")
-                    + Text("[Terms](https://famkind.com)").underline()
+                    + Text("[Terms](\(TermsAcceptance.termsURL))").underline()
                     + Text(" and ")
-                    + Text("[Privacy Policy](https://famkind.com)").underline() + Text("."))
+                    + Text("[Privacy Policy](\(TermsAcceptance.privacyURL))").underline() + Text("."))
                     .font(Theme.caption)
                     .foregroundStyle(Theme.textSecondary)
                     .multilineTextAlignment(.center)
@@ -71,6 +71,8 @@ struct OnboardingFlow: View {
                 IdentifierScreen(model: model)
             case .code:
                 CodeScreen(model: model)
+            case .terms:
+                TermsScreen(model: model)
             case .password:
                 PasswordScreen(model: model)
             case .profile:
@@ -332,5 +334,89 @@ struct ProfileScreen: View {
             }
         }
         .onAppear { focused = true }
+    }
+}
+
+
+// MARK: Terms (LIME-283)
+
+/// Sign-up only, before "Create a password": lime is for teachers 18 or older, and one checkbox says so.
+struct TermsScreen: View {
+    @Bindable var model: OnboardingModel
+    @State private var agreed = false
+    @State private var opened: URL?
+
+    var body: some View {
+        OnboardingScaffold(title: "lime is for teachers, 18 or older.", showsNext: false, canNext: agreed,
+                           onBack: { model.back() }) {
+            Button { agreed.toggle() } label: {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: agreed ? "checkmark.square.fill" : "square")
+                        .font(.system(size: 26))
+                        .foregroundStyle(Theme.text)
+                        .accessibilityHidden(true)
+                    Text("I'm a teacher, 18 or older, and I agree to the Terms and Privacy")
+                        .font(Theme.body)
+                        .foregroundStyle(Theme.text)
+                        .multilineTextAlignment(.leading)
+                    Spacer(minLength: 0)
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("I'm a teacher, 18 or older, and I agree to the Terms and Privacy")
+            .accessibilityValue(agreed ? "checked" : "not checked")
+            .accessibilityAddTraits(.isToggle)
+            .accessibilityIdentifier("terms-agree")
+
+            HStack(spacing: 20) {
+                ForEach([("Terms", TermsAcceptance.termsURL, "terms-link"), ("Privacy", TermsAcceptance.privacyURL, "privacy-link"),
+                         ("Guidelines", TermsAcceptance.guidelinesURL, "guidelines-link")], id: \.2) { title, url, id in
+                    Button(title) { opened = URL(string: url) }
+                        .font(Theme.font(.subheadline, weight: .semibold))
+                        .underline()
+                        .foregroundStyle(Theme.text)
+                        .frame(minHeight: 44)
+                        .accessibilityIdentifier(id)
+                }
+            }
+
+            PrimaryButton(title: "Continue", identifier: "terms-continue") { model.agreeToTerms() }
+                .disabled(!agreed)
+                .opacity(agreed ? 1 : 0.4)
+                .accessibilityHint(agreed ? "" : "Check the box first")
+        }
+        .sheet(item: $opened) { url in SafariSheet(url: url).ignoresSafeArea() }
+    }
+}
+
+extension URL: @retroactive Identifiable { public var id: String { absoluteString } }
+
+/// LIME-283: shown once, after the terms changed, to someone who agreed to an earlier version.
+struct TermsUpdatedSheet: View {
+    let onAgree: () -> Void
+    @State private var opened: URL?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("The terms changed")
+                .font(Theme.font(.title2, weight: .bold))
+                .accessibilityAddTraits(.isHeader)
+            Text("Please read the Terms and Privacy, then agree to keep using lime.")
+                .font(Theme.body).foregroundStyle(Theme.textSecondary)
+            HStack(spacing: 20) {
+                Button("Terms") { opened = URL(string: TermsAcceptance.termsURL) }.accessibilityIdentifier("terms-updated-terms")
+                Button("Privacy") { opened = URL(string: TermsAcceptance.privacyURL) }
+            }
+            .font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).underline().frame(minHeight: 44)
+            Spacer()
+            PrimaryButton(title: "I agree", identifier: "terms-updated-agree", action: onAgree)
+        }
+        .padding(24)
+        .interactiveDismissDisabled()
+        .presentationDetents([.medium])
+        .sheet(item: $opened) { url in SafariSheet(url: url).ignoresSafeArea() }
     }
 }

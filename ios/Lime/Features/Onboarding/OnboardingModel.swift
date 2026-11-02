@@ -20,7 +20,7 @@ enum IdentifierKind: Equatable {
 @MainActor
 @Observable
 final class OnboardingModel {
-    enum Step: Hashable { case welcome, identifier, code, password, profile }
+    enum Step: Hashable { case welcome, identifier, code, terms, password, profile }
     enum Intent { case signUp, signIn, reset }
 
     /// The confirmation sheet's content: "Is this correct?"
@@ -127,6 +127,12 @@ final class OnboardingModel {
 
     func start() { step = .identifier }
 
+    /// "Continue" on the terms screen (sign-up only, LIME-283): remember on this phone what was agreed, then the password.
+    func agreeToTerms() {
+        TermsAcceptance.record()
+        step = .password
+    }
+
     func back() {
         errorMessage = nil
         confirmation = nil
@@ -138,6 +144,9 @@ final class OnboardingModel {
             // Back from the code screen of a sign-in returns to the password; of the others, to the start.
             step = intent == .signIn ? .password : .identifier
             if intent == .reset { intent = .signIn }
+        case .terms:
+            tokens = nil
+            step = .identifier
         case .password:
             password = ""
             confirmPassword = ""
@@ -216,7 +225,7 @@ final class OnboardingModel {
                 self.tokens = try await self.auth.verifySignUpCode(email: email, code: entered)
                 self.password = ""
                 self.confirmPassword = ""
-                self.step = .password
+                self.step = .terms
             }
         case .signIn:
             guard let tokens else { return }

@@ -9712,3 +9712,11 @@ The compliance pack, part 1: **drafts only. Nothing deployed, no app or server c
   - **Appeals:** the guidelines promise "a different person will look again"; with two founders as moderators that may not be possible (a lawyer question).
   - **Diagnostics:** I answered "no crash data" in the App Store worksheet; TestFlight's own crash reports come from Apple.
 - **Not done on purpose:** no deploy, no app links changed (282b), no GIF/orphaned-blob fix (listed as lawyer questions).
+
+## LIME-283
+Sign-up asks once, before the password: **"lime is for teachers, 18 or older."**
+- **The screen (`TermsScreen`, a new onboarding step `.terms` between the verified code and "Create a password"; sign-up only):** one checkbox row, "I'm a teacher, 18 or older, and I agree to the Terms and Privacy" (a toggle with a full label and a checked/not-checked value; 44 pt), links to Terms, Privacy and Guidelines (open in Safari View Controller on limemessenger.com), and **Continue**, disabled and dimmed until the box is ticked (hint "Check the box first"). Back returns to the start. Signing in never shows it.
+- **Stored on this phone only (`TermsAcceptance`, UserDefaults): the version `terms-2026-11` and the date.** Nothing is sent: no new server metadata.
+- **After a version change:** `SignedInView` shows a one-time "The terms changed" sheet ("I agree") **only to a phone that has a record of an older version.** Phones with no record (accounts made before this build) are not asked: deliberate, so today's testers aren't interrupted; bump `TermsAcceptance.currentVersion` when the terms change.
+- **Tests:** `Terms283UITests` (2 pass: the screen shows, links present, Continue disabled until ticked, then the password; signing in does not show it). The two existing sign-up tests now tick the box (`agreeToTerms(in:)`).
+- **Limits:** the welcome screen's own "By continuing, you agree to…" line is kept (now pointing at limemessenger.com; 282b). The links open live pages, which exist once 282b deploys.
