@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Security · lime</title>
+<style>
+  :root { --bg: #fbfaf5; --text: #1d2a14; --muted: #5d6b50; --line: #dfe3d3; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #11160d; --text: #f1f5e8; --muted: #a8b59a; --line: #2c3523; } }
+  body { margin: 0; padding: 24px 16px 64px; background: var(--bg); color: var(--text); font: 17px/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 680px; margin: 0 auto; } h1 { font-size: 30px; margin: 8px 0 12px; } h2 { font-size: 21px; margin: 32px 0 8px; }
+  p, li { color: var(--text); } .draft { color: var(--muted); font-size: 14px; } a { color: inherit; }
+  .t { overflow-x: auto; } table { border-collapse: collapse; width: 100%; font-size: 15px; } th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  nav { font-size: 15px; color: var(--muted); } nav a { margin-right: 14px; }
+</style>
+</head>
+<body>
+<main>
+<nav><a href="/">lime</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/guidelines">Guidelines</a><a href="/safety">Safety</a><a href="/security">Security</a></nav>
+<h1>Security</h1>
+<p class="draft">Draft, pending legal review.</p>
+<p><strong>Found a security problem in lime? Email <a href="mailto:security@limemessenger.com">security@limemessenger.com</a>. We'll answer and we'll never take legal action against good-faith research.</strong></p>
+<p><em>Last updated: 1 November 2026 (draft).</em></p>
+<h2>How to report</h2>
+<p>Email <strong>security@limemessenger.com</strong>. Tell us what you found, how to reproduce it, and what you think the impact is. Please don't include other people's personal data.</p>
+<p>We will reply within 3 working days, keep you updated, and credit you if you wish.</p>
+<h2>In scope</h2>
+<ul>
+<li>The lime app (iOS), its encryption, and its handling of keys.</li>
+<li>lime's server functions and storage.</li>
+<li>limemessenger.com.</li>
+</ul>
+<h2>Out of scope</h2>
+<ul>
+<li>Denial-of-service and volume testing.</li>
+<li>Social engineering of lime's people or users.</li>
+<li>Physical attacks.</li>
+<li>Issues in other companies' services (Supabase, Resend, Hetzner), unless lime configures them badly.</li>
+</ul>
+<h2>Good-faith research</h2>
+<p>If you act in good faith, stay inside this scope, don't read or change other people's data beyond what's needed to show the problem, and give us a reasonable time to fix it before you publish, we will not take legal action against you.</p>
+<h2>Reporting machine-readably</h2>
+<p>See <a href="/.well-known/security.txt">/.well-known/security.txt</a>.</p>
+</main>
+</body>
+</html>

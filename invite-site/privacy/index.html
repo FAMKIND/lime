@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Privacy · lime</title>
+<style>
+  :root { --bg: #fbfaf5; --text: #1d2a14; --muted: #5d6b50; --line: #dfe3d3; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #11160d; --text: #f1f5e8; --muted: #a8b59a; --line: #2c3523; } }
+  body { margin: 0; padding: 24px 16px 64px; background: var(--bg); color: var(--text); font: 17px/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 680px; margin: 0 auto; } h1 { font-size: 30px; margin: 8px 0 12px; } h2 { font-size: 21px; margin: 32px 0 8px; }
+  p, li { color: var(--text); } .draft { color: var(--muted); font-size: 14px; } a { color: inherit; }
+  .t { overflow-x: auto; } table { border-collapse: collapse; width: 100%; font-size: 15px; } th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  nav { font-size: 15px; color: var(--muted); } nav a { margin-right: 14px; }
+</style>
+</head>
+<body>
+<main>
+<nav><a href="/">lime</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/guidelines">Guidelines</a><a href="/safety">Safety</a><a href="/security">Security</a></nav>
+<h1>Privacy</h1>
+<p class="draft">Draft, pending legal review.</p>
+<p><strong>lime keeps your messages private. We can't read them. We don't show ads, track you or sell anything.</strong></p>
+<p><em>Last updated: 1 November 2026 (draft).</em></p>
+<h2>The short version</h2>
+<ul>
+<li>Your messages, calls, files and group chats are end-to-end encrypted. Only the people in them can read them.</li>
+<li>lime's servers hold the minimum needed to deliver them: your sign-in email, your devices' public keys, and sealed mail waiting for a phone to pick it up.</li>
+<li>lime is for teachers, 18 or older. It is free, always. Donations and grants pay for it.</li>
+</ul>
+<h2>What lime stores, and who can see it</h2>
+<div class="t"><table><thead><tr><th>What</th><th>Who can read it</th></tr></thead><tbody><tr><td>Messages, photos, files, voice messages, calls, reactions, group chats</td><td>Only the people in the chat. Not lime. Not our providers.</td></tr><tr><td>Members-only band and jam posts</td><td>Only the subscribers and members you allow. They are encrypted too.</td></tr><tr><td>Your sign-in email address</td><td>lime's servers and our email provider (below).</td></tr><tr><td>Your devices' public keys and your username</td><td>lime's servers. These are what let phones find each other.</td></tr><tr><td>Profile items you set to "Everyone on lime" (photo, background, links)</td><td>Any signed-in lime user. With "Only my contacts", the server holds only encrypted bytes it cannot read.</td></tr><tr><td>A band's public page and open posts</td><td>Anyone you or your band make them visible to.</td></tr><tr><td>Sealed mail waiting for a phone</td><td>Nobody on the server. It is deleted when the phone collects it, or after 30 days.</td></tr><tr><td>Reports you send</td><td>lime's moderators see exactly what you chose to include (see <em>Reports</em>).</td></tr><tr><td>Network addresses (IP addresses)</td><td>Our servers see them while you are connected, as every internet service does. We keep no access logs on the call and invite servers.</td></tr></tbody></table></div>
+<p>lime has no ads, no analytics, no tracking and no data sales. Nothing about you is used to profile you.</p>
+<h2>What each side learns</h2>
+<ul>
+<li><strong>When you send a message:</strong> the server learns that a sealed envelope went to a device, and when. It does not learn what is in it, or who is in the group.</li>
+<li><strong>When you call:</strong> the call is end-to-end encrypted. The relay server sees network addresses and timing, not the call.</li>
+<li><strong>When you look at a link preview:</strong> your phone visits the site, not the person you are chatting with. You can turn previews off in Settings, Privacy.</li>
+<li><strong>When you publish a public post or page:</strong> anyone who can open it can read it, and lime's servers store it.</li>
+<li><strong>When you report something:</strong> your phone seals the report to lime's moderation key. Moderators read what you chose to include. The person you reported is never told who reported.</li>
+</ul>
+<h2>Who helps us run lime</h2>
+<p>These companies process data for us. None may use it for their own purposes.</p>
+<div class="t"><table><thead><tr><th>Provider</th><th>What for</th><th>What it sees</th></tr></thead><tbody><tr><td>Supabase</td><td>Our database and file storage</td><td>Everything in the table above that "lime's servers" can see, plus sealed bytes it cannot open.</td></tr><tr><td>Resend</td><td>Sign-in codes and account emails</td><td>Your email address and the email it sends (a code).</td></tr><tr><td>Hetzner</td><td>The servers for calls and the invite page</td><td>Network addresses while a call is connected. No access logs are kept.</td></tr><tr><td>Apple</td><td>Notifications, later</td><td>A device token and a content-free ping. No message content.</td></tr></tbody></table></div>
+<h2>Nearby phones (the mesh)</h2>
+<p>When there is no internet, lime can pass sealed messages phone to phone by Bluetooth. A phone that helps carry a message cannot read it, and it forgets it after 48 hours. Bluetooth announces only that "a phone running lime is nearby". It never includes your name or account. lime does not use your location. You can turn this off in Settings, Privacy.</p>
+<h2>Teachers and students</h2>
+<p>lime is for teachers. Students must not have accounts. Before you post a photo, video or recording publicly, lime asks you to confirm that no student can be identified in it. Please never share students' personal details in public posts.</p>
+<h2>How long we keep things</h2>
+<ul>
+<li><strong>Sealed mail:</strong> until the phone collects it, or 30 days.</li>
+<li><strong>Files you send:</strong> about an hour after the last recipient fetched it, or 30 days at most.</li>
+<li><strong>Reports:</strong> 180 days after a moderator has handled them, then deleted. If the law requires us to keep something, for example a report to the National Center for Missing &amp; Exploited Children, we keep only what it requires.</li>
+<li><strong>Delete for everyone</strong> is best effort. If someone already saw or saved a message, lime cannot take it back.</li>
+<li><strong>Messages on your phone</strong> stay there until you delete them. Deleting a chat for yourself does not delete the other person's copy.</li>
+</ul>
+<h2>Deleting your account</h2>
+<p>In the app: Settings, Account, Delete Account. We ask for your password and an emailed code, so nobody else can do it for you.</p>
+<p>We delete right away: your profile, your public pages and posts, the files we hold for you, your devices and keys, mail waiting for you, your reports, and your sign-in account. Your email address is not kept, and you can sign up again straight away.</p>
+<p>We keep: a one-way code that records an account was deleted; your username for 30 days so nobody can impersonate you; and reports other people made about you, for up to 180 days.</p>
+<p>Your messages sit on other people's phones, so we cannot delete them there. Your app sends your contacts, group members and subscribers one private note, and their apps quietly remove your picture, details and pages. A phone that never reconnects keeps what it has.</p>
+<h2>Your rights</h2>
+<p>You can ask us what we hold about you, ask us to correct or delete it, or ask for a copy. Email <strong>privacy@limemessenger.com</strong>. Because lime holds so little, the answer is usually short.</p>
+<h2>Children</h2>
+<p>lime is for adults. If you believe a child has an account, write to <strong>abuse@limemessenger.com</strong>.</p>
+<h2>Changes and contact</h2>
+<p>If we change this page we will say so in the app before the change applies. Questions: <strong>privacy@limemessenger.com</strong>.</p>
+<p>lime is made by Lime Messenger LLC. [legal line: to be confirmed once the companies exist]</p>
+</main>
+</body>
+</html>
