@@ -9732,3 +9732,12 @@ The compliance pack, part 2: **published** (your go, typed), the app linked, not
 - **Verification:** device build `dd29` succeeded; the 283 tests and the two sign-up tests pass. No new UI test (links are visual; you check).
 - **Installed:** **none.** The 13 mini, the iPad and Jean's 12 mini were all unreachable (CoreDevice 4000) when I tried; one attempt each, no retries. Say when they're connected and unlocked.
 - **Gate (yours):** open each page in Safari on limemessenger.com; in the app, About's four links and Report → "How we moderate"; a fresh sign-up shows the 18+ screen before the password.
+
+## LIME-284z
+The limemessenger.com holding page uses the real logo, bigger. **Re-deployed** (your go in the prompt; `infra/invite/deploy.sh`).
+- **Assets:** your `lime-Logo.svg` (lockup), `lime-Logomark.svg`, `lime-Logotype.svg` copied from Downloads to `design/brand/` and `invite-site/brand/`.
+- **Holding page:** the lockup, centred, 180 px tall on phones and 260 px from 700 px wide, `alt="lime"`; the `<h1>lime</h1>` is now visually hidden (screen readers keep it); the line below is unchanged. Favicon is the logomark SVG, apple-touch-icon the existing PNG.
+- **Invite page (`/u/…`):** the logomark SVG replaces the PNG; **legal pages' header:** a small logomark linking home (the generator `tools/build-legal-pages.py`, pages rebuilt); both carry the favicon.
+- **One call of mine:** the lockup's wordmark is dark (rgb 19,27,23), so in dark mode it would vanish on the dark page; in dark mode it sits on a light rounded tile. If you'd rather have a white-wordmark version for dark, say so.
+- **Checked live:** `/`, `/brand/lime-Logo.svg`, `/brand/lime-Logomark.svg` (image/svg+xml), `/privacy`, `/u/shem`, security.txt all 200. I haven't looked at it in a browser: that's your gate.
+- **Not touched:** the app, the PNG `lime-logo.png` (still used for apple-touch-icon).

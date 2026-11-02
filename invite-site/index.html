@@ -3,19 +3,26 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="/brand/lime-Logomark.svg">
+<link rel="apple-touch-icon" href="/lime-logo.png">
 <title>lime, a private messenger for teachers</title>
 <style>
   :root { --bg: #fbfaf5; --text: #1d2a14; --muted: #5d6b50; }
   @media (prefers-color-scheme: dark) { :root { --bg: #11160d; --text: #f1f5e8; --muted: #a8b59a; } }
   body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; background: var(--bg); color: var(--text); text-align: center;
          font: 17px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif; }
-  main { max-width: 440px; } h1 { font-size: 28px; margin: 0 0 10px; } p { color: var(--muted); }
+  main { max-width: 440px; } p { color: var(--muted); }
+  .logo { display: block; height: 180px; width: auto; margin: 0 auto 28px; }
+  @media (min-width: 700px) { .logo { height: 260px; } }
+  /* the wordmark is dark: on the dark page it sits on a light tile */
+  @media (prefers-color-scheme: dark) { .logo { background: #fbfaf5; border-radius: 28px; padding: 20px; box-sizing: content-box; } }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 </style>
 </head>
 <body>
 <main>
-  <img src="/lime-logo.png" width="64" height="64" alt="" style="border-radius:18px">
-  <h1>lime</h1>
+  <h1 class="sr">lime</h1>
+  <img class="logo" src="/brand/lime-Logo.svg" alt="lime">
   <p>A private messenger made for teachers. End-to-end encrypted. The iPhone app is coming soon.</p>
   <!-- LIME-178: the legal line, hidden until both companies exist. Remove the comment markers to show it.
   <p><small>lime is made by Lime Messenger LLC, owned by Lime Messenger Inc, a nonprofit.</small></p>

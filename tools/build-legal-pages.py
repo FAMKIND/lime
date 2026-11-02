@@ -52,6 +52,8 @@ PAGE = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="/brand/lime-Logomark.svg">
+<link rel="apple-touch-icon" href="/lime-logo.png">
 <title>{title} · lime</title>
 <style>
   :root {{ --bg: #fbfaf5; --text: #1d2a14; --muted: #5d6b50; --line: #dfe3d3; }}
@@ -65,7 +67,7 @@ PAGE = """<!doctype html>
 </head>
 <body>
 <main>
-<nav><a href="/">lime</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/guidelines">Guidelines</a><a href="/safety">Safety</a><a href="/security">Security</a></nav>
+<nav><a href="/" aria-label="lime"><img src="/brand/lime-Logomark.svg" width="32" height="32" alt="" style="vertical-align:middle;border-radius:8px"></a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/guidelines">Guidelines</a><a href="/safety">Safety</a><a href="/security">Security</a></nav>
 <h1>{title}</h1>
 {body}
 </main>
