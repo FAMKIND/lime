@@ -7,15 +7,14 @@
 <title>lime: a private space for teachers</title>
 <meta name="description" content="Message, call and share your work with teachers you trust. Encrypted. Always free.">
 <link rel="icon" type="image/svg+xml" href="brand/lime-Logomark.svg">
-<link rel="preload" href="fonts/Lexend-Regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <header class="nav">
   <div class="wrap">
-    <a class="brand" href="/" aria-label="lime, home"><img src="brand/lime-Logomark.svg" width="36" height="36" alt="">lime</a>
-    <a class="link" href="#why">Features</a>
+    <a class="brand" href="/" aria-label="lime, home"><img src="brand/lime-Logomark.svg" width="34" height="34" alt="">lime</a>
+    <a class="link" href="#features">Features</a>
     <a class="link" href="#private">Privacy</a>
     <a class="link" href="#jam">jam</a>
     <a class="link" href="https://limemessenger.org">About</a>
@@ -26,139 +25,143 @@
 
 <section class="hero" aria-labelledby="h-hero">
   <div class="wrap">
-    <div class="copy">
-      <h1 id="h-hero">A private space for teachers.</h1>
-      <p class="lede">Message, call and share your work with teachers you trust. Encrypted. Always free.</p>
-      <form class="waitlist" onsubmit="event.preventDefault();this.querySelector('output').textContent='The waitlist opens soon. Nothing was sent.';">
-      <label class="sr" for="email-hero">Email address</label>
-      <input id="email-hero" type="email" name="email" autocomplete="email" placeholder="you@school.org" required>
-      <button class="btn main" type="submit">Join the waitlist</button>
-      <output class="fine" role="status" aria-live="polite" style="flex-basis:100%"></output>
-    </form>
-      <p class="fine">One email when lime is ready. Nothing else, and never shared.</p>
-    </div>
-    <div class="phones">
-      <div class="phone"><img src="img/chat.webp" width="520" height="1131" alt="A lime chat on a colourful wallpaper, with a link and a file" decoding="async"></div>
-      <div class="phone"><img src="img/jam-following.webp" width="520" height="1131" alt="A teacher's post in jam: a ten-second video on fraction walls" decoding="async"></div>
-    </div>
-  </div>
-</section>
-
-<section id="why" aria-labelledby="h-why">
-  <div class="wrap">
-    <p class="eyebrow">Why lime?</p>
-    <h2 id="h-why">Everything teachers need. Nothing they don't.</h2>
-    <ul class="tiles" style="list-style:none;padding:0">
-    <li class="tile"><img src="stickers/quiet-please.gif" width="88" height="88" alt="" loading="lazy" decoding="async"><h3>Private</h3><p>Only you and the people you message can read it.</p></li>
-    <li class="tile"><img src="stickers/welcome.gif" width="88" height="88" alt="" loading="lazy" decoding="async"><h3>Teachers only</h3><p>Made for teachers. Students don't have accounts.</p></li>
-    <li class="tile"><img src="stickers/happy-birthday.gif" width="88" height="88" alt="" loading="lazy" decoding="async"><h3>Always free</h3><p>No ads, no fees. Funded by donations and grants.</p></li>
-    <li class="tile"><img src="stickers/snow-day.gif" width="88" height="88" alt="" loading="lazy" decoding="async"><h3>Works without service</h3><p>Nearby phones can pass messages on when there's no signal.</p></li>
-    <li class="tile"><img src="stickers/field-trip.gif" width="88" height="88" alt="" loading="lazy" decoding="async"><h3>Bands and groups</h3><p>Grade teams, schools, co-ops and unions in one place.</p></li>
-    <li class="tile"><img src="stickers/proud-of-you.gif" width="88" height="88" alt="" loading="lazy" decoding="async"><h3>Share your work</h3><p>Posts, articles and podcasts for the teachers who follow you.</p></li>
-    <li class="tile"><img src="stickers/bell-rang.gif" width="88" height="88" alt="" loading="lazy" decoding="async"><h3>Calls</h3><p>Voice and video, one to one or with the whole team.</p></li>
-    <li class="tile"><img src="stickers/brain-break.gif" width="88" height="88" alt="" loading="lazy" decoding="async"><h3>Safe for students</h3><p>No student can be identified in what you post publicly.</p></li>
-    <li class="tile"><img src="stickers/summer.gif" width="88" height="88" alt="" loading="lazy" decoding="async"><h3>Make it yours</h3><p>Colours, backgrounds, stickers and wallpapers.</p></li>
-    </ul>
-  </div>
-</section>
-
-<section class="band" id="private" aria-labelledby="h-private">
-  <div class="wrap">
-    <p class="eyebrow">Private by design</p>
-    <h2 id="h-private">Only you and the people you message can read it.</h2>
-    <p class="lede">What we can't see:</p>
-    <ul class="cants">
-      <li>Your messages<span>They're locked on your phone. We only carry sealed mail.</span></li>
-      <li>Your calls and files<span>Encrypted from one phone to the other.</span></li>
-      <li>Who is in your groups<span>That stays between the members.</span></li>
-    </ul>
-  </div>
-</section>
-
-<section aria-labelledby="h-chat" style="padding-bottom:0">
-  <div class="wrap">
-    <div class="row">
-      <div class="phones"><div class="phone"><img src="img/call-bubbles.webp" width="520" height="1131" alt="A chat with a missed call, a video call and a file" loading="lazy" decoding="async"></div><div class="phone"><img src="img/thread-open.webp" width="520" height="1131" alt="A thread of replies in a chat" loading="lazy" decoding="async"></div></div>
-      <div>
-        <p class="eyebrow">Chats, calls and groups</p>
-        <h2 id="h-chat">Talk to your whole school. Or just one teacher.</h2>
-        <ul>
-          <li>Chats with threads, replies and reactions</li>
-          <li>Voice and video calls, up to the whole team</li>
-          <li>Groups for grade teams, departments and clubs</li>
-        </ul>
+    <div class="herocard">
+      <div class="mesh" aria-hidden="true"></div>
+      <div class="inner">
+        <div class="copy">
+          <h1 id="h-hero">A private space for teachers.</h1>
+          <p class="lede">Message, call and share your work with teachers you trust. Encrypted. Always free.</p>
+          <form class="waitlist" onsubmit="event.preventDefault();this.querySelector('output').textContent='The waitlist opens soon. Nothing was sent.';">
+          <label class="sr" for="email-hero">Email address</label>
+          <input id="email-hero" type="email" name="email" autocomplete="email" placeholder="you@school.org" required>
+          <button class="btn main" type="submit">Join the waitlist</button>
+          <output class="fine" role="status" aria-live="polite"></output>
+        </form>
+          <p class="fine">One email when lime is ready. Nothing else, and never shared.</p>
+        </div>
+        <div class="phone"><img src="img/chat.webp" width="540" height="1174" alt="A lime chat between two teachers, with a link and a file" decoding="async"></div>
       </div>
     </div>
   </div>
 </section>
 
-<section class="soft" aria-labelledby="h-offline">
+<section id="features" aria-labelledby="h-hl" style="padding-top:48px">
   <div class="wrap">
-    <div class="row" style="padding:0">
-      <div>
-        <p class="eyebrow">No signal? No problem.</p>
-        <h2 id="h-offline">Talk even without service.</h2>
-        <p class="lede">Nearby phones can pass sealed messages along by Bluetooth, so a message can still get through on a field trip or in a school with poor coverage.</p>
-        <p class="fine">Carriers can't read what they pass on. It's a switch you control.</p>
-        <div class="stk"><img src="stickers/snow-day.gif" width="72" height="72" alt="" loading="lazy"></div>
+    <div class="head"><h2 id="h-hl">Get the highlights.</h2></div>
+    <div class="carousel" role="region" aria-roledescription="carousel" aria-label="lime highlights">
+      <ul class="track">
+<li class="hl c1" role="group" aria-label="1 of 6"><p>Private by design. Only you and the people you message can read it.</p><div class="art"><img class="shot" src="img/chat.webp" width="540" height="900" alt="A lime chat with a link and a file" loading="lazy" decoding="async"></div></li>
+<li class="hl c2" role="group" aria-label="2 of 6"><p>Teachers only. Students don't have accounts.</p><div class="art"><img class="stk" src="stickers/welcome.webp" width="190" height="190" alt="" loading="lazy"></div></li>
+<li class="hl c3" role="group" aria-label="3 of 6"><p>Always free. No ads, no fees. Funded by donations and grants.</p><div class="art"><img class="stk" src="stickers/happy-birthday.webp" width="190" height="190" alt="" loading="lazy"></div></li>
+<li class="hl c4" role="group" aria-label="4 of 6"><p>Works without service. Nearby phones pass messages on.</p><div class="art"><img class="stk" src="stickers/snow-day.webp" width="190" height="190" alt="" loading="lazy"></div></li>
+<li class="hl c5" role="group" aria-label="5 of 6"><p>jam. Share posts, articles and podcasts with the teachers who follow you.</p><div class="art"><img class="shot" src="img/jam-discover.webp" width="540" height="900" alt="jam: a feed of articles" loading="lazy" decoding="async"></div></li>
+<li class="hl c6" role="group" aria-label="6 of 6"><p>Make it yours. Colours, backgrounds, stickers and wallpapers.</p><div class="art"><img class="shot" src="img/t-chalk.webp" width="540" height="900" alt="A chat on a chalkboard background" loading="lazy" decoding="async"></div></li>
+      </ul>
+      <div class="ctrl"><button type="button" data-prev aria-label="Previous">‹</button><div class="dots" aria-hidden="true"></div><button type="button" data-next aria-label="Next">›</button></div>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="h-chat">
+  <div class="wrap">
+    <p class="eyebrow">Chats and calls</p>
+    <h2 id="h-chat">Connect your way.</h2>
+    <div class="acc" style="margin-top:40px">
+      <div class="items">
+<details id="c1" name="chats" open><summary>Chats with threads and reactions</summary><div>Reply in a thread, react with an emoji, and keep a busy chat easy to follow.</div></details>
+<details id="c2" name="chats"><summary>Voice and video calls</summary><div>Call one teacher or the whole team. Calls are end-to-end encrypted too.</div></details>
+<details id="c3" name="chats"><summary>Groups for grade teams</summary><div>One place for a grade team, a department or a club.</div></details>
+<details id="c4" name="chats"><summary>Stickers and GIFs</summary><div>lime's own sticker pack, and a GIF library that lives on your phone.</div></details>
       </div>
-      <div class="callout"><p style="font-weight:600;font-size:22px;margin:0">No internet. No bars. Your message still has a way home.</p></div>
+      <div class="stage">
+        <div class="phone" data-for="c1"><img src="img/thread.webp" width="540" height="1174" alt="A thread of replies in a chat" loading="lazy" decoding="async"></div>
+        <div class="phone" data-for="c2"><img src="img/call-video.webp" width="540" height="1174" alt="A video call" loading="lazy" decoding="async"></div>
+        <div class="phone" data-for="c3"><img src="img/group.webp" width="540" height="1174" alt="A group chat for a grade 4 team" loading="lazy" decoding="async"></div>
+        <div class="stickers" data-for="c4" style="display:none" aria-label="lime's sticker pack"><img src="stickers/welcome.webp" width="80" height="80" alt="" loading="lazy"><img src="stickers/happy-birthday.webp" width="80" height="80" alt="" loading="lazy"><img src="stickers/snow-day.webp" width="80" height="80" alt="" loading="lazy"><img src="stickers/proud-of-you.webp" width="80" height="80" alt="" loading="lazy"><img src="stickers/summer.webp" width="80" height="80" alt="" loading="lazy"><img src="stickers/bell-rang.webp" width="80" height="80" alt="" loading="lazy"><img src="stickers/congrats.webp" width="80" height="80" alt="" loading="lazy"><img src="stickers/great-job.webp" width="80" height="80" alt="" loading="lazy"><img src="stickers/happy-birthday.webp" width="80" height="80" alt="" loading="lazy"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="h-private" id="private" style="padding-top:0">
+  <div class="wrap">
+    <div class="ink">
+      <p class="eyebrow" style="color:#b9c4bc">Private by design</p>
+      <h2 id="h-private">Only you and the people you message can read it.</h2>
+      <p class="lede">What we can't see:</p>
+      <ul class="cants">
+        <li>Your messages<span>They're locked on your phone. We only carry sealed mail.</span></li>
+        <li>Your calls and files<span>Encrypted from one phone to the other.</span></li>
+        <li>Who is in your groups<span>That stays between the members.</span></li>
+      </ul>
     </div>
   </div>
 </section>
 
 <section id="jam" aria-labelledby="h-jam">
   <div class="wrap">
-    <div class="row flip" style="padding:0">
-      <div class="phones"><div class="phone"><img src="img/jam-mine.webp" width="520" height="1131" alt="A teacher's own page in jam, with a first post" loading="lazy" decoding="async"></div></div>
-      <div>
-        <p class="eyebrow">jam</p>
-        <h2 id="h-jam">Teachers. Readers. Nothing in between.</h2>
-        <p class="lede">Share posts, articles, podcasts and series with the teachers who follow you.</p>
-        <ul>
-          <li>Free to read and free to publish. lime takes 0% of what you earn</li>
-          <li>Members-only posts are encrypted too</li>
-          <li>Your page, your readers, your words</li>
-        </ul>
+    <p class="eyebrow">jam</p>
+    <h2 id="h-jam">Teachers. Readers. Nothing in between.</h2>
+    <div class="acc flip" style="margin-top:40px">
+      <div class="items">
+<details id="j1" name="jam" open><summary>Posts and articles</summary><div>Write something short or something long, with pictures, and share it.</div></details>
+<details id="j2" name="jam"><summary>Podcasts and series</summary><div>Record an episode or group posts into a series.</div></details>
+<details id="j3" name="jam"><summary>Members-only</summary><div>Share with your subscribers. Members-only posts are encrypted too.</div></details>
+<details id="j4" name="jam"><summary>0% cut</summary><div>Free to read and free to publish. lime takes 0% of what you earn.</div></details>
+      </div>
+      <div class="stage">
+        <div class="phone" data-for="j1"><img src="img/jam-discover.webp" width="540" height="1174" alt="jam: a feed of articles" loading="lazy" decoding="async"></div>
+        <div class="phone" data-for="j2"><img src="img/jam-podcast.webp" width="540" height="1174" alt="A podcast post in jam" loading="lazy" decoding="async"></div>
+        <div class="phone" data-for="j3"><img src="img/jam-community.webp" width="540" height="1174" alt="A teacher's page with a community to join" loading="lazy" decoding="async"></div>
+        <div class="phone" data-for="j4"><img src="img/jam-asjam.webp" width="540" height="1174" alt="A jam post with a cover" loading="lazy" decoding="async"></div>
       </div>
     </div>
   </div>
 </section>
 
-<section class="soft" aria-labelledby="h-bands">
+<section aria-label="Bands and working without service" style="padding-top:0">
   <div class="wrap">
-    <p class="eyebrow">Bands</p>
-    <h2 id="h-bands">A home for your school, co-op or union.</h2>
-    <p class="lede">A band is a team that publishes together: owners, writers and members, with drafts, reviews and a community chat.</p>
-    <p class="fine">Hand a band to another owner whenever a team changes.</p>
+    <div class="two">
+      <div class="big pale">
+        <p class="eyebrow">Bands</p>
+        <h3>A home for your school, co-op or union.</h3>
+        <p>Publish together, with drafts, reviews and a community chat. Hand a band to another owner whenever a team changes.</p>
+        <div class="art"><div class="phone"><img src="img/band.webp" width="540" height="1174" alt="A band's page in lime" loading="lazy" decoding="async"></div></div>
+      </div>
+      <div class="big">
+        <p class="eyebrow">No signal? No problem.</p>
+        <h3>Talk even without service.</h3>
+        <p>Nearby phones can pass sealed messages along by Bluetooth. They can't read what they carry, and it's a switch you control.</p>
+        <div class="art"><img class="stk" src="stickers/snow-day.webp" width="170" height="170" alt="" loading="lazy"></div>
+      </div>
+    </div>
   </div>
 </section>
 
 <section aria-labelledby="h-yours">
   <div class="wrap">
-    <div class="callout">
-      <p class="eyebrow">Make lime yours</p>
-      <h2 id="h-yours">Your space. Your look.</h2>
-      <p class="lede">Eight colours, eight backgrounds, stickers and a wallpaper for every chat.</p>
-      <div class="swatches" role="img" aria-label="Eight colour choices"><i style="background:#09a950"></i><i style="background:#ffb4c2"></i><i style="background:#ffc9a3"></i><i style="background:#ffd966"></i><i style="background:#92d4ff"></i><i style="background:#a9a9ff"></i><i style="background:#d9b8ff"></i><i style="background:#8ee6e6"></i></div>
+    <div class="head"><h2 id="h-yours">Make lime yours.</h2></div>
+    <p class="lede" style="margin-top:-6px;margin-bottom:24px">Eight colours, a background for every mood, stickers and a wallpaper for each chat.</p>
+    <div class="carousel" role="region" aria-roledescription="carousel" aria-label="Looks for lime">
+      <ul class="track">
+<li class="look" role="group" aria-label="1 of 5"><div class="phone"><img src="img/chat.webp" width="540" height="1174" alt="A chat in lime's default look" loading="lazy" decoding="async"></div><span>Plain, lime</span></li>
+<li class="look" role="group" aria-label="2 of 5"><div class="phone"><img src="img/t-paper.webp" width="540" height="1174" alt="A chat on paper" loading="lazy" decoding="async"></div><span>Paper</span></li>
+<li class="look" role="group" aria-label="3 of 5"><div class="phone"><img src="img/t-chalk.webp" width="540" height="1174" alt="A chat on a chalkboard" loading="lazy" decoding="async"></div><span>Chalkboard</span></li>
+<li class="look" role="group" aria-label="4 of 5"><div class="phone"><img src="img/t-bulletin.webp" width="540" height="1174" alt="A chat on a bulletin board" loading="lazy" decoding="async"></div><span>Bulletin board</span></li>
+<li class="look" role="group" aria-label="5 of 5"><div class="phone"><img src="img/t-living.webp" width="540" height="1174" alt="jam on a living background" loading="lazy" decoding="async"></div><span>Living</span></li>
+      </ul>
+      <div class="ctrl"><button type="button" data-prev aria-label="Previous">‹</button><div class="dots" aria-hidden="true"></div><button type="button" data-next aria-label="Next">›</button></div>
     </div>
   </div>
 </section>
 
-<section class="band" aria-labelledby="h-noads">
-  <div class="wrap">
-    <h2 id="h-noads">No ads. No tracking. Nothing to sell.</h2>
-    <p class="lede">lime is funded by donations and grants, never by you or your data. This page doesn't track you either.</p>
-  </div>
-</section>
-
-<section aria-labelledby="h-diff">
+<section aria-labelledby="h-diff" style="padding-top:24px">
   <div class="wrap">
     <p class="eyebrow">How lime is different</p>
     <h2 id="h-diff">Built the other way round.</h2>
     <div class="tablewrap">
       <table>
-        <thead><tr><th scope="col"></th><th scope="col">lime</th><th scope="col">Typical social apps</th></tr></thead>
+        <thead><tr><th scope="col"><span class="sr">What</span></th><th scope="col">lime</th><th scope="col">Typical social apps</th></tr></thead>
         <tbody>
           <tr><th scope="row">Ads</th><td class="us">None</td><td>Often</td></tr>
           <tr><th scope="row">Who can read your messages</th><td class="us">Only you and who you message</td><td>Sometimes the company</td></tr>
@@ -167,40 +170,54 @@
         </tbody>
       </table>
     </div>
+    <div class="noads">
+      <h2>No ads. No tracking. Nothing to sell.</h2>
+      <p class="lede">lime is funded by donations and grants, never by you or your data. This page doesn't track you either.</p>
+    </div>
   </div>
 </section>
 
-<section class="soft" aria-labelledby="h-owned">
+<section aria-labelledby="h-faq" style="padding-top:24px">
   <div class="wrap">
-    <p class="eyebrow">Who makes lime</p>
-    <h2 id="h-owned">Built by teachers, owned by a nonprofit.</h2>
-    <p class="lede">lime's mission is education for all, and connecting all teachers.</p>
-    <a class="btn plain" href="https://limemessenger.org">Read our story</a>
+    <h2 id="h-faq" class="center">Need more help?</h2>
+    <div class="faq">
+<details><summary>Is lime free?</summary><div>Yes, always. No ads and no fees. lime is funded by donations and grants.</div></details>
+<details><summary>Can lime read my messages?</summary><div>No. Messages, calls and files are end-to-end encrypted, so only the people in the chat can read them. <a href="/privacy">Read the privacy policy</a>.</div></details>
+<details><summary>Who can join?</summary><div>Teachers, 18 or older. Students don't have accounts.</div></details>
+<details><summary>Does it work without internet?</summary><div>Nearby phones can pass sealed messages along by Bluetooth when there's no connection. They can't read what they carry, and it's a switch you control.</div></details>
+<details><summary>How does lime keep students safe?</summary><div>Only teachers can use lime. Before you post publicly, lime asks you to check that no student can be identified. Anyone can report something, and moderators act on reports. See the <a href="/guidelines">community guidelines</a> and <a href="/safety">safety page</a>.</div></details>
+<details><summary>Is lime open source?</summary><div>Yes, under the MIT licence. We'll link the code here when the repository is public.</div></details>
+<details><summary>Who's behind lime?</summary><div>Teachers, and a nonprofit. <a href="https://limemessenger.org">Read our story</a>.</div></details>
+    </div>
   </div>
 </section>
 
-<section class="closing" id="waitlist" aria-labelledby="h-close">
+<section id="waitlist" aria-labelledby="h-close" style="padding-bottom:0">
   <div class="wrap">
-    <h2 id="h-close">Be there when lime opens.</h2>
-    <p class="lede" style="margin:0 auto 6px">Join the waitlist and we'll email you once.</p>
-    <form class="waitlist" onsubmit="event.preventDefault();this.querySelector('output').textContent='The waitlist opens soon. Nothing was sent.';">
-      <label class="sr" for="email-close">Email address</label>
-      <input id="email-close" type="email" name="email" autocomplete="email" placeholder="you@school.org" required>
-      <button class="btn main" type="submit">Join the waitlist</button>
-      <output class="fine" role="status" aria-live="polite" style="flex-basis:100%"></output>
-    </form>
-    <p class="fine">We keep your email only to tell you when lime is ready. Leave any time with one click.</p>
+    <div class="closing">
+      <h2 id="h-close">Be there when lime opens.</h2>
+      <p class="lede" style="margin:0 auto">Join the waitlist and we'll email you once.</p>
+      <form class="waitlist" onsubmit="event.preventDefault();this.querySelector('output').textContent='The waitlist opens soon. Nothing was sent.';">
+          <label class="sr" for="email-close">Email address</label>
+          <input id="email-close" type="email" name="email" autocomplete="email" placeholder="you@school.org" required>
+          <button class="btn main" type="submit">Join the waitlist</button>
+          <output class="fine" role="status" aria-live="polite"></output>
+        </form>
+      <p class="fine" style="margin:0 auto">We keep your email only to tell you when lime is ready. Leave any time with one click.</p>
+    </div>
   </div>
 </section>
 
 </main>
 <footer>
   <div class="wrap">
+    <div class="logo"><img src="brand/lime-Logomark.svg" width="40" height="40" alt="">lime</div>
     <ul class="pledges">
       <li>Always free</li>
       <li>No ads, ever</li>
       <li>We can't read your messages</li>
       <li>Teacher-owned</li>
+      <li>Open source (MIT)</li>
       <li>Your data is never sold</li>
     </ul>
     <nav aria-label="Footer">
@@ -210,5 +227,21 @@
     <p class="legal">lime is made by Lime Messenger LLC. [legal line: to be confirmed]</p>
   </div>
 </footer>
+<script>
+document.documentElement.classList.add("js");
+document.querySelectorAll(".carousel").forEach(function (c) {
+  var t = c.querySelector(".track"), items = t.children, prev = c.querySelector("[data-prev]"), next = c.querySelector("[data-next]"), dots = c.querySelector(".dots");
+  for (var i = 0; i < items.length; i++) dots.appendChild(document.createElement("i"));
+  function step() { return (items[0].getBoundingClientRect().width + 16); }
+  function update() {
+    var idx = Math.round(t.scrollLeft / step());
+    Array.prototype.forEach.call(dots.children, function (d, i) { d.classList.toggle("on", i === idx); });
+    prev.disabled = t.scrollLeft < 4; next.disabled = t.scrollLeft + t.clientWidth >= t.scrollWidth - 4;
+  }
+  prev.addEventListener("click", function () { t.scrollBy({ left: -step(), behavior: "smooth" }); });
+  next.addEventListener("click", function () { t.scrollBy({ left: step(), behavior: "smooth" }); });
+  t.addEventListener("scroll", update, { passive: true }); window.addEventListener("resize", update); update();
+});
+</script>
 </body>
 </html>
