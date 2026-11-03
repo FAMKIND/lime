@@ -18,6 +18,7 @@ with sync_playwright() as p:
             over = pg.evaluate("document.documentElement.scrollWidth - window.innerWidth")
             print(name, scheme, "horizontal overflow px:", over)
             pg.screenshot(path=f"{out}/{name}-{scheme}.png", full_page=True)
+            pg.wait_for_timeout(1500); pg.screenshot(path=f"{out}/{name}-{scheme}-top.png")   # the first screen, video playing
             if name == "desktop" and scheme == "light":
                 print("first-load bytes (excluding lazy images):")
             ctx.close()

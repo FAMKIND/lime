@@ -44,8 +44,8 @@ header.nav { position: sticky; top: 0; z-index: 10; background: color-mix(in srg
 
 /* the one green thing */
 .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 52px; padding: 0 28px; border-radius: 999px; font: 600 17px var(--sans); text-decoration: none; border: 2px solid transparent; cursor: pointer; }
-.btn.main { background: var(--green); color: var(--ink); }
-.btn.main:hover { background: #0cc05b; }
+.btn.main { background: #a3e18a; color: var(--ink); box-shadow: inset 0 0 0 1px rgba(19,27,23,.14); }
+.btn.main:hover { background: #93d878; }
 .btn.plain { border-color: currentColor; background: transparent; color: var(--text); }
 .nav .btn { min-height: 38px; padding: 0 18px; font-size: 14px; }
 
@@ -55,19 +55,31 @@ header.nav { position: sticky; top: 0; z-index: 10; background: color-mix(in srg
 .waitlist output { flex-basis: 100%; }
 .center .waitlist { margin-left: auto; margin-right: auto; justify-content: center; }
 
-/* hero: paper card, a faint glow */
-.hero { padding: 16px 0 24px; }
-.herocard { position: relative; isolation: isolate; overflow: hidden; border-radius: 36px; background: var(--surface); min-height: 640px; display: grid; align-items: center; }
-.herocard .mesh { position: absolute; inset: -25%; z-index: -1; filter: blur(50px);
-  background: radial-gradient(34% 34% at 82% 28%, rgba(9,169,80,.20), transparent 70%), radial-gradient(40% 40% at 55% 95%, rgba(163,225,138,.22), transparent 70%), radial-gradient(40% 40% at 10% 10%, rgba(255,255,255,.7), transparent 70%);
-  animation: drift 30s ease-in-out infinite alternate; }
-@keyframes drift { from { transform: translate3d(-2%, -1%, 0) scale(1); } to { transform: translate3d(3%, 2%, 0) scale(1.05); } }
-@media (prefers-color-scheme: dark) { .herocard .mesh { background: radial-gradient(34% 34% at 82% 28%, rgba(9,169,80,.28), transparent 70%), radial-gradient(40% 40% at 55% 95%, rgba(20,80,40,.5), transparent 70%); } }
-.herocard .inner { display: grid; gap: 20px; padding: 56px 28px 0; align-items: center; }
-@media (min-width: 900px) { .herocard .inner { grid-template-columns: 1.15fr 1fr; padding: 0 64px; } }
-.herocard .copy { padding-bottom: 20px; }
-.herocard .phone { margin: 0 auto -60px; }
-@media (min-width: 900px) { .herocard .phone { margin: 70px auto -90px; } }
+/* hero (LIME-284a4): the logo, the headline, a video of lime in teachers' hands, the waitlist over its lower edge */
+.hero { padding: 28px 0 8px; }
+.hero .lockup { width: 60px; height: auto; margin: 0 auto 18px; display: block; }
+.hero h1 { margin-bottom: 18px; }
+.hero .lede { margin: 0 auto; }
+.herovideo { position: relative; margin-top: 4px; width: 100%; height: min(125vw, 86vh); }
+@media (min-width: 700px) { .herovideo { height: clamp(420px, min(56.25vw, 56vh), 760px); } }
+.herovideo video { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 38%;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14%, #000 66%, transparent 98%); mask-image: linear-gradient(to bottom, transparent 0, #000 14%, #000 66%, transparent 98%); }
+@media (prefers-color-scheme: dark) { .herovideo video { filter: brightness(.62) contrast(1.05); } }
+.waitlist.pill { position: absolute; left: 50%; bottom: 5%; transform: translateX(-50%); width: min(560px, calc(100% - 32px)); max-width: none; margin: 0; flex-wrap: nowrap; gap: 6px; padding: 6px; border-radius: 999px;
+  background: color-mix(in srgb, var(--card) 88%, transparent); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); box-shadow: 0 10px 40px rgba(19,27,23,.16), inset 0 0 0 1px rgba(19,27,23,.06); }
+.waitlist.pill input[type=email] { flex: 1 1 auto; min-width: 0; min-height: 48px; border: 0; background: transparent; padding: 0 16px 0 20px; font-size: 16px; }
+.waitlist.pill input[type=email]:focus-visible { outline-offset: 0; }
+.waitlist.pill .btn { min-height: 48px; padding: 0 22px; font-size: 16px; white-space: nowrap; flex: none; }
+.waitlist.pill output { position: absolute; top: calc(100% + 10px); left: 0; right: 0; text-align: center; background: color-mix(in srgb, var(--bg) 80%, transparent); border-radius: 12px; }
+.waitlist.pill output:empty { display: none; }
+.herofine { margin: 6px auto 0; }
+.vplay { position: absolute; right: max(16px, calc((100vw - var(--col)) / 2 + 20px)); top: 14px; width: 44px; height: 44px; border-radius: 50%; border: 0; display: grid; place-items: center; cursor: pointer; color: var(--text);
+  background: color-mix(in srgb, var(--card) 80%, transparent); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); box-shadow: inset 0 0 0 1px rgba(19,27,23,.08); }
+.vplay[hidden] { display: none; }
+.vplay svg { fill: currentColor; }
+.vplay .i-pause, .pause .i-play { display: none; }
+.vplay.playing .i-pause, .pause.is-paused .i-play { display: inline; }
+.vplay.playing .i-play, .pause.is-paused .i-pause { display: none; }
 
 /* phones */
 .phone { width: min(70vw, 270px); border-radius: 40px; background: var(--ink); padding: 7px; box-shadow: 0 24px 50px rgba(19,27,23,.18); flex: none; }
@@ -89,14 +101,14 @@ header.nav { position: sticky; top: 0; z-index: 10; background: color-mix(in srg
 .dots i { width: 8px; height: 8px; border-radius: 50%; background: #c9c6bb; display: block; transition: background .2s; }
 .dots i.on { background: var(--text); }
 
-/* highlight cards: greys and ink; the stickers are the pop */
-.hl { width: min(78vw, 330px); height: 520px; border-radius: 30px; background: var(--surface); color: var(--text); position: relative; overflow: hidden; display: flex; flex-direction: column; }
-.hl p { font-size: 22px; line-height: 1.2; font-weight: 600; letter-spacing: -0.02em; margin: 0; padding: 28px 26px 0; }
-.hl .art { padding: 0 26px; display: flex; justify-content: center; align-items: flex-end; flex: 1; }
-.hl .art img.shot { width: 78%; border-radius: 26px 26px 0 0; display: block; object-fit: cover; object-position: top; aspect-ratio: 1206 / 2000; box-shadow: 0 -4px 30px rgba(19,27,23,.12); }
-.hl .art img.stk { width: 190px; height: 190px; border-radius: 40px; margin-bottom: 70px; }
-.hl.dark { background: var(--ink2); color: #f3f1ea; }
-.hl.white { background: var(--card); box-shadow: inset 0 0 0 1px var(--line); }
+/* highlight cards (LIME-284a4): a photo, one line on top */
+.hl { width: min(86vw, 600px); height: min(120vw, 560px); border-radius: 32px; background: var(--ink2); color: #fff; position: relative; overflow: hidden; isolation: isolate; }
+.hl picture, .hl img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; z-index: -2; }
+.hl::before { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(to bottom, rgba(19,27,23,.78) 0, rgba(19,27,23,.52) 34%, rgba(19,27,23,0) 64%); }
+.hl p { font-size: clamp(22px, 3vw, 30px); line-height: 1.18; font-weight: 400; letter-spacing: -0.02em; margin: 0; padding: 30px 30px 0; max-width: 17em; text-shadow: 0 1px 12px rgba(0,0,0,.25); }
+.hl p strong { font-weight: 600; }
+.ctrl .pause { background: var(--text); color: var(--bg); }
+.ctrl .pause svg { fill: currentColor; }
 .head { margin-bottom: 28px; }
 .head h2 { margin: 0; }
 
@@ -179,3 +191,6 @@ footer nav a:hover { text-decoration: underline; }
 footer .legal { color: #9aa29c; font-size: 14px; margin-top: 18px; }
 
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { animation: none !important; transition: none !important; } }
+
+/* the wordmark is ink: on the dark page the lockup sits on a paper tile */
+@media (prefers-color-scheme: dark) { .hero .lockup { background: #f9f8f4; border-radius: 20px; padding: 10px 14px; width: 88px; box-sizing: border-box; } }
