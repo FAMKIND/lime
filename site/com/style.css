@@ -270,8 +270,7 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 .pp .i-play { display: none; }
 .pp.paused .i-pause { display: none; }
 .pp.paused .i-play { display: inline; }
-.pp.gone, .top.solid .pp { opacity: 0; pointer-events: none; }
-.hero > .pp { position: absolute; right: var(--edge); bottom: 3vh; z-index: 6; }
-@media (max-width: 640px) { .top .rt .pp { display: none; } }
+.pp.gone { opacity: 0; pointer-events: none; }
+.hero > .pp { position: absolute; right: var(--edge); bottom: clamp(12px, 2.2vh, 24px); z-index: 6; }   /* the hero's lower right, under the headline's last line, at the header's right padding */
 @media (prefers-reduced-motion: reduce) { .pp .arc { display: none; } }
 @media (max-width: 640px) { .top .rt { display: none; } }

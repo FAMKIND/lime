@@ -18,7 +18,6 @@
   <nav class="l" aria-label="Main"><a href="#top">Home</a><a href="#link">Features</a></nav>
   <a class="lockup" href="#top" aria-label="lime, home"><img class="mk" src="brand/lime-Logomark.svg" width="40" height="40" alt=""><img class="wm" src="brand/lime-Logotype.svg" width="44" height="17" alt=""></a>
   <div class="rt">
-  <button class="pp" type="button" aria-label="Pause the stories"><svg viewBox="0 0 44 44" aria-hidden="true"><circle class="trk" cx="22" cy="22" r="20.5"/><circle class="arc" cx="22" cy="22" r="20.5" pathLength="100"/><path class="i-pause" d="M17 14h3.4v16H17zM23.6 14H27v16h-3.4z"/><path class="i-play" d="M18 13.5v17l13-8.5z"/></svg></button>
   <form class="sub" data-subscribe>
     <label class="sr" for="e-top">Email address</label>
     <input id="e-top" type="email" name="email" autocomplete="email" placeholder="Your email" required>
@@ -79,6 +78,7 @@
     <a class="chip" href="#about" data-placeholder tabindex="-1"><b class="ini" aria-hidden="true">AR</b><span><strong>Mr Alvarez</strong><span>Connects rural teachers across New Mexico <i aria-hidden="true">→</i></span></span></a>
   </div>
   <button class="pn" type="button" data-dir="-1">Previous story</button><button class="pn" type="button" data-dir="1">Next story</button>
+  <button class="pp" type="button" aria-label="Pause the stories"><svg viewBox="0 0 44 44" aria-hidden="true"><circle class="trk" cx="22" cy="22" r="20.5"/><circle class="arc" cx="22" cy="22" r="20.5" pathLength="100"/><path class="i-pause" d="M17 14h3.4v16H17zM23.6 14H27v16h-3.4z"/><path class="i-play" d="M18 13.5v17l13-8.5z"/></svg></button>
   <a class="cue" href="#about" aria-label="Scroll down"><svg viewBox="0 0 48 64" aria-hidden="true"><path d="M24 0v62M2 40l22 22 22-22" fill="none" stroke="currentColor" vector-effect="non-scaling-stroke"/></svg></a>
 </section>
 
@@ -403,10 +403,6 @@ document.querySelectorAll("[data-subscribe]").forEach(function (f) {
   function pplabel() { pp.setAttribute("aria-label", paused ? "Play the stories" : "Pause the stories"); pp.classList.toggle("paused", paused); }
   pp.addEventListener("click", function () { paused = !paused; pplabel(); sync(); });
   pplabel();
-  /* the button lives in the header on a desktop and in the hero's lower right corner on a phone; it is only there while the hero is on screen */
-  var phone = window.matchMedia("(max-width: 640px)"), rt = document.querySelector(".top .rt");
-  function place() { if (phone.matches) hero.appendChild(pp); else rt.insertBefore(pp, rt.firstChild); }
-  (phone.addEventListener ? phone.addEventListener("change", place) : phone.addListener(place)); place();
   window.addEventListener("load", function () { setTimeout(function () { if (N > 1) prep(1); sync(); arm(); }, 200); });
   window.__hero = { go: go, show: function (n) { if (n !== cur) { swap(n); slides.forEach(function (s, i) { s.classList.add("cut"); s.classList.toggle("on", i === n); }); cur = n; run(n); setTimeout(function () { slides.forEach(function (s) { s.classList.remove("cut"); }); }, 50); } }, stop: function () { paused = true; sync(); } };
 })();
