@@ -22,7 +22,26 @@
     <button class="btn" type="submit">Subscribe</button>
     <output class="note" role="status" aria-live="polite"></output>
   </form>
+  <div class="mob">
+    <button class="btn" type="button" data-open="sheet">Subscribe</button>
+    <button class="burger" type="button" data-open="menu" aria-label="Menu" aria-haspopup="dialog"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M3 7h18M3 12h18M3 17h18" fill="none" stroke-width="1.6"/></svg></button>
+  </div>
 </header>
+
+<div class="overlay" id="menu" role="dialog" aria-modal="true" aria-label="Menu" hidden>
+  <div class="bar"><img src="brand/lime-Logomark.svg" width="40" height="40" alt=""><button class="x" type="button" data-close aria-label="Close the menu">×</button></div>
+  <nav aria-label="Menu"><a href="#top">Home</a><a href="#link">Features</a><a href="#jam">jam</a><a href="/privacy/">Privacy</a><button type="button" data-open="sheet">Subscribe</button></nav>
+</div>
+<div class="overlay" id="sheet" role="dialog" aria-modal="true" aria-labelledby="h-sheet" hidden>
+  <div class="bar"><img src="brand/lime-Logomark.svg" width="40" height="40" alt=""><button class="x" type="button" data-close aria-label="Close">×</button></div>
+  <h2 id="h-sheet">Where teachers connect.</h2>
+  <form class="sub stack" data-subscribe>
+    <label class="sr" for="e-sheet">Email address</label>
+    <input id="e-sheet" type="email" name="email" autocomplete="email" placeholder="Email address" required>
+    <button class="btn" type="submit">Subscribe</button>
+    <output class="note" role="status" aria-live="polite"></output>
+  </form>
+</div>
 
 <main id="main">
 
@@ -77,7 +96,7 @@
 <section class="feature warm" id="link" aria-labelledby="h-link">
   <div class="wrap split" data-stagger>
     <div class="txt">
-      <h2 id="h-link" data-reveal>link up with friends you trust</h2>
+      <h2 id="h-link" data-reveal>link up with<br>friends you<br>trust</h2>
       <p data-reveal>lime connects you directly to your teaching community, with no ads, no fees and funded by your donations.</p>
       <p data-reveal>Link with friends through direct, group messaging, voice and video calling in real-time.</p>
       <form class="sub" data-subscribe data-reveal>
@@ -93,7 +112,7 @@
 
 <section class="feature warm jam" id="jam" aria-labelledby="h-jam">
   <div class="wrap" data-stagger>
-    <h2 id="h-jam" data-reveal>jam on something you truly care about</h2>
+    <h2 id="h-jam" data-reveal>jam on something you<br>truly care about</h2>
     <div class="split rev">
       <div class="phonewrap" data-reveal data-drift="0.04"><div class="phone"><div class="pv"><video muted loop playsinline preload="none" poster="media/phone-jam.webp" data-src="media/phone-jam" aria-label="jam: a feed of articles, a podcast and a note scrolls by" width="600" height="1304"></video><button class="vp" type="button" hidden aria-label="Play the recording"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path class="i-play" d="M8 5v14l11-7z"/><path class="i-pause" d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg></button></div></div></div>
       <div class="txt">
@@ -259,6 +278,29 @@ document.querySelectorAll("[data-subscribe]").forEach(function (f) {
       seen = es[0].isIntersecting;
       if (seen && !user) { load(); v.play().catch(function () {}); } else if (!seen) v.pause();
     }, { threshold: 0.35 }).observe(box);
+  });
+})();
+
+/* The phone menu and the subscribe sheet: full-screen dialogs; focus stays inside while open; Esc or × closes; a menu link closes it and scrolls to its section. */
+(function () {
+  var opener = null;
+  function focusables(box) { return [].slice.call(box.querySelectorAll("a[href], button, input")).filter(function (e) { return !e.disabled && e.offsetParent !== null; }); }
+  function close(box) { box.hidden = true; document.body.style.overflow = ""; if (opener) opener.focus(); }
+  function open(box, from) {
+    document.querySelectorAll(".overlay").forEach(function (o) { o.hidden = true; });
+    opener = from; box.hidden = false; document.body.style.overflow = "hidden";
+    var f = box.querySelector("input") || focusables(box)[1] || focusables(box)[0]; f.focus();
+  }
+  document.querySelectorAll("[data-open]").forEach(function (b) { b.addEventListener("click", function () { open(document.getElementById(b.dataset.open), b.closest(".overlay") ? opener : b); }); });
+  document.querySelectorAll(".overlay").forEach(function (box) {
+    box.querySelector("[data-close]").addEventListener("click", function () { close(box); });
+    box.querySelectorAll("nav a").forEach(function (a) { a.addEventListener("click", function () { close(box); }); });
+    box.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") { close(box); return; }
+      if (e.key !== "Tab") return;
+      var f = focusables(box), first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); } else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    });
   });
 })();
 </script>
