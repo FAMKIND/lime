@@ -9911,3 +9911,10 @@ The play/pause ring moves to the hero's bottom-right corner (`site/com/`, **not 
 - **The resting portal** (lower right, above the chip, about y = 600 on desktop) is far from the ring; on phones the ring is below the headline and the portal above the chip, no touching (`phone-top.png`).
 - **Icon vs state, checked:** at load ❚❚ (playing), after hover ❚❚ (hover pauses the clock and the ring, not the stories' video, so I keep ❚❚: it shows your choice, not the hover), after a click ▶ and "Play the stories", after another click ❚❚ again. **The ▶ you saw while it seemed to play is, I believe, "Reduce motion" being on in your system:** the page then starts paused (poster, no autoplay) and shows ▶ (`desktop-reduced-motion.png`); pressing it starts the stories. Say if you would rather have reduced motion start playing slowly.
 - **Not done:** no deploy, nothing installed; Chromium only.
+
+## LIME-284e11
+The ↓ scrolls to the intro and nudges now and then (`site/com/`, **not deployed**). Stop for your look.
+- **Look at:** `docs/qa-shots/284e11/after-click-desktop.png`, `after-tap-phone.png`, `nudge-mid-fall.png`.
+- **Click:** the ↓ goes to the intro block (the line and the collage: `id="intro"`, `tabindex="-1"`; smooth, instant with reduced motion) and focus moves there. Measured at 1440×900: the collage's tall photo's top lands 96 px below the viewport's top (just under the header's height), the line at 275 px; on a phone the line lands at 88 px and the photos below it.
+- **Nudge:** every 9 s (the first at 8 s), while the hero is on screen and nobody has scrolled, the ↓ does the headline's fall once: it drops out downward (ease-in, 70 % of its height, a 5° tilt) and falls back in from above with the same overshoot easing as the letters, 1.5 s in all, then rests. Checked: it ran at 8.6 s and rested; after one scroll it never ran again (waited 11 s at the top); with reduced motion it never runs and the click jumps instead. Independent of the slides and of the play/pause.
+- **Not done:** no deploy, nothing installed; Chromium only. The chip's link still goes to `#about` (the band's top, the giant word).

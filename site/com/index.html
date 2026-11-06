@@ -79,12 +79,12 @@
   </div>
   <button class="pn" type="button" data-dir="-1">Previous story</button><button class="pn" type="button" data-dir="1">Next story</button>
   <button class="pp" type="button" aria-label="Pause the stories"><svg viewBox="0 0 44 44" aria-hidden="true"><circle class="trk" cx="22" cy="22" r="20.5"/><circle class="arc" cx="22" cy="22" r="20.5" pathLength="100"/><path class="i-pause" d="M17 14h3.4v16H17zM23.6 14H27v16h-3.4z"/><path class="i-play" d="M18 13.5v17l13-8.5z"/></svg></button>
-  <a class="cue" href="#about" aria-label="Scroll down"><svg viewBox="0 0 48 64" aria-hidden="true"><path d="M24 0v62M2 40l22 22 22-22" fill="none" stroke="currentColor" vector-effect="non-scaling-stroke"/></svg></a>
+  <a class="cue" href="#intro" aria-label="Scroll down"><svg viewBox="0 0 48 64" aria-hidden="true"><path d="M24 0v62M2 40l22 22 22-22" fill="none" stroke="currentColor" vector-effect="non-scaling-stroke"/></svg></a>
 </section>
 
 <section class="band" id="about" aria-labelledby="h-about">
   <div class="giant" role="img" aria-label="lime"></div>
-  <div class="wrap about">
+  <div class="wrap about" id="intro" tabindex="-1">
     <p id="h-about" class="blurb" data-reveal>lime is a free mobile app for teachers to message, call, and share their craft.</p>
     <div class="collage" data-stagger>
       <figure class="c1" data-reveal data-drift="0.06"><picture><source srcset="media/collage-1.avif" type="image/avif"><img src="media/collage-1.webp" width="720" height="720" alt="A teacher laughing against a brick wall" loading="lazy" decoding="async"></picture></figure>
@@ -474,6 +474,18 @@ document.querySelectorAll("[data-subscribe]").forEach(function (f) {
       if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); } else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
     });
   });
+})();
+
+/* The hero's ↓ nudges now and then: every 9 s, while the hero is on screen and nobody has scrolled yet, it does the headline's fall (out downward, back in from above) once.
+   It stops for good at the first scroll; off with reduced motion. Its click goes to the intro (#intro) and focus moves there (tabindex -1). */
+(function () {
+  var cue = document.querySelector(".cue"), hero = document.querySelector(".hero"), seen = true, done = false, t = null;
+  if (!cue || reduce) return;
+  function fall() { if (done || !seen || window.scrollY > 10) return; cue.classList.remove("nudge"); void cue.offsetWidth; cue.classList.add("nudge"); }
+  cue.addEventListener("animationend", function () { cue.classList.remove("nudge"); });
+  window.addEventListener("scroll", function () { if (window.scrollY > 10) { done = true; clearInterval(t); } }, { passive: true });
+  if ("IntersectionObserver" in window) new IntersectionObserver(function (es) { seen = es[0].isIntersecting; }).observe(hero);
+  setTimeout(function () { fall(); t = setInterval(fall, 9000); }, 8000);
 })();
 </script>
 </body>

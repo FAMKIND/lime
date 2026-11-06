@@ -274,3 +274,16 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 .hero > .pp { position: absolute; right: var(--edge); bottom: clamp(12px, 2.2vh, 24px); z-index: 6; }   /* the hero's lower right, under the headline's last line, at the header's right padding */
 @media (prefers-reduced-motion: reduce) { .pp .arc { display: none; } }
 @media (max-width: 640px) { .top .rt { display: none; } }
+
+/* LIME-284e11: the ↓ goes to the intro (the line and the collage), just under the header, and nudges now and then */
+#intro { scroll-margin-top: calc(100px - 8.7 * var(--u)); outline: none; }
+@media (max-width: 700px) { #intro { scroll-margin-top: 88px; } }
+.cue svg { transform-origin: 50% 50%; }
+.cue.nudge svg { animation: cuefall 1.5s both; }
+@keyframes cuefall {
+  0% { transform: none; opacity: 1; animation-timing-function: cubic-bezier(.55,0,.9,.55); }
+  36% { transform: translateY(70%) rotate(5deg); opacity: 0; }
+  37% { transform: translateY(-85%) rotate(-6deg); opacity: 0; animation-timing-function: cubic-bezier(.2,1.3,.35,1); }
+  100% { transform: none; opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) { .cue.nudge svg { animation: none; } }
