@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Get lime</title>
+<link rel="icon" type="image/svg+xml" href="../brand/lime-Logomark.svg">
+<style>
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; text-align: center; font: 400 20px/1.4 "Figtree", -apple-system, BlinkMacSystemFont, system-ui, sans-serif; background: #f9f8f4; color: #131b17; padding: 24px; }
+  img { width: 72px; height: 72px; margin: 0 auto 20px; display: block; }
+  h1 { font-weight: 300; font-size: 40px; letter-spacing: -0.02em; margin: 0 0 12px; }
+  a { display: inline-flex; align-items: center; min-height: 48px; padding: 0 24px; margin: 6px; border-radius: 999px; background: #a3e18a; color: #131b17; text-decoration: none; font-weight: 500; }
+  a[hidden] { display: none; }
+  p { color: #4d524c; margin: 0 0 18px; }
+</style>
+</head>
+<body>
+<main>
+  <img src="../brand/lime-Logomark.svg" alt="">
+  <h1>Get lime</h1>
+  <p id="msg">lime isn't in the stores yet. We'll email you when it is.</p>
+  <a id="ios" hidden href="#">Download on the App Store</a><a id="and" hidden href="#">Get it on Google Play</a><a id="home" href="/">limemessenger.com</a>
+</main>
+<script>
+/* The smart link behind the QR code: one address for both stores. Put the same two links as the home page's LIME_LAUNCH here. Nothing is sent or stored. */
+var LINKS = { appStore: "", googlePlay: "" };
+var ua = navigator.userAgent, ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1), android = /Android/.test(ua);
+var to = ios ? LINKS.appStore : android ? LINKS.googlePlay : "";
+if (to) { document.getElementById("msg").textContent = "Opening the store…"; location.replace(to); }
+else if (LINKS.appStore || LINKS.googlePlay) {
+  document.getElementById("msg").textContent = "Choose your store.";
+  [["ios", LINKS.appStore], ["and", LINKS.googlePlay]].forEach(function (p) { var a = document.getElementById(p[0]); if (p[1]) { a.href = p[1]; a.hidden = false; } });
+}
+</script>
+</body>
+</html>

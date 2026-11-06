@@ -232,3 +232,29 @@ footer .lockup .wm { width: 64px; }
 .vp .i-pause { display: none; }
 .vp.playing .i-pause { display: inline; }
 .vp.playing .i-play { display: none; }
+
+/* LIME-284e7: the fine print, and the download card (only on the launched page) */
+.fine { margin: 14px 0 0; font-size: 14px; line-height: 1.4; color: var(--muted); max-width: 26em; }
+.card .fine { margin: 14px auto 0; }
+.overlay .fine { margin-top: 14px; }
+a.btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+.top .dl-cta { justify-self: end; }
+.dl { position: fixed; right: 20px; bottom: 20px; z-index: 40; display: grid; grid-template-columns: auto 1fr auto; gap: 4px 14px; align-items: center; width: 330px; padding: 16px 44px 16px 16px; border-radius: 28px; background: var(--paper); color: var(--ink); box-shadow: 0 18px 50px rgba(19,27,23,.22), 0 0 0 1px rgba(19,27,23,.08); opacity: 0; transform: translateY(24px); pointer-events: none; transition: opacity .35s ease, transform .45s cubic-bezier(.2,.8,.2,1); }
+.dl.show { opacity: 1; transform: none; pointer-events: auto; }
+.dl[hidden] { display: none; }
+.dl .tx { display: flex; flex-direction: column; line-height: 1.25; }
+.dl .tx strong { font-size: 20px; font-weight: 600; }
+.dl .tx span { font-size: 14px; color: var(--muted); }
+.dl .qr { grid-column: 1 / -1; justify-self: center; width: 168px; height: 168px; margin-top: 6px; background: #fff; border-radius: 16px; padding: 4px; }
+.dl .qr svg { display: block; width: 100%; height: 100%; }
+.dl .get { display: none; }
+.dl .x { position: absolute; top: 8px; right: 8px; width: 44px; height: 44px; border: 0; border-radius: 50%; background: transparent; color: inherit; font: 300 26px/1 var(--sans); cursor: pointer; }
+.dl .x:hover { background: rgba(19,27,23,.06); }
+@media (max-width: 640px), (hover: none) and (pointer: coarse) {
+  .dl { left: 12px; right: 12px; bottom: 12px; width: auto; grid-template-columns: auto 1fr auto; padding: 10px 52px 10px 12px; border-radius: 22px; }
+  .dl .qr, .dl .qrnote { display: none; }
+  .dl .get { display: inline-flex; min-height: 44px; padding: 0 20px; }
+  .dl .x { top: 50%; margin-top: -22px; }
+}
+@media (prefers-reduced-motion: reduce) { .dl { transition: none; } }
+@media (max-width: 640px) { .top > .dl-cta { display: none; } }
