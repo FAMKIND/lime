@@ -9869,3 +9869,11 @@ The lime bloom (`site/com/`, **not deployed**). Stop for your look.
 - **Size:** the hero script is about 10.5 KB unminified (3.8 KB gzipped with the comments, 3.2 KB without); the brief's "≤ ~4 KB" holds only gzipped. The next video starts decoding as soon as the hero is visible (it has to be live for the portal), so two videos decode at once on the first screen; say if that is too heavy on phones and I will show the poster in the portal there until the click.
 - **Left as is:** the portal sits under the scrim (so it is slightly darkened); the old slide's video is paused 300 ms after the switch; `preload` of the next video is "start decoding at once" rather than "metadata, then auto 2 s before".
 - **Not done:** no deploy, nothing installed.
+
+## LIME-284e8
+The bloom's portal is a clear lime with a white arrow (`site/com/index.html`, **not deployed**). Stop for your look.
+- **Look at:** `docs/qa-shots/284e8/portal-on-the-three-videos.png` (the portal on each of the three videos, pointing right and left) and `portal-context.png`.
+- **The portal is a window only:** no green fill, no outline, no rind: the next slide's video shows through the eight wedges and the centre circle (as cut-outs); the gaps between them show the current video, so the lime reads by its shapes. The bloom no longer fades a green body in either (that code and the body path, 3 KB, are gone). The arrow is white with no disc and a soft shadow (`0 1px 3px rgba(0,0,0,.45)`), 2.4 px.
+- **Hairline:** I tried none first: the shapes read on all three videos (a flower of see-through petals), a little faint where the two videos are alike (the dark hair slide against its neighbour). It is one switch (`HAIR`, off) if you want a 1 px white 35 % line round each shape.
+- **The bubble tail:** the logomark's tail is only a small bump on the rind (it is part of the green body, not of the wedges), so with the rind gone there is no tail cut-out; say if you want a tail drawn back in.
+- **Not done:** no deploy, nothing installed.
