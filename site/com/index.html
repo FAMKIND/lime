@@ -3,270 +3,214 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light dark">
+<meta name="color-scheme" content="light">
 <title>lime: where teachers connect</title>
-<meta name="description" content="Message, call and share your work with teachers you trust. Encrypted. Always free.">
+<meta name="description" content="A free mobile app for teachers to message, call and share their craft. Encrypted. No ads.">
 <link rel="icon" type="image/svg+xml" href="brand/lime-Logomark.svg">
 <link rel="stylesheet" href="style.css">
+<script>document.documentElement.classList.add("js");</script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<header class="nav">
-  <div class="wrap">
-    <a class="brand" href="/" aria-label="lime, home"><img src="brand/lime-Logomark.svg" width="32" height="32" alt="">lime</a>
-    <a class="link" href="#features">Features</a>
-    <a class="link" href="#private">Privacy</a>
-    <a class="link" href="#jam">jam</a>
-    <a class="link" href="https://limemessenger.org">About</a>
-    <a class="btn main" href="#waitlist">Get lime</a>
-  </div>
+
+<header class="top" id="top">
+  <nav class="l" aria-label="Main"><a href="#top">Home</a><a href="#link">Features</a></nav>
+  <a class="lockup" href="#top" aria-label="lime, home"><img class="mk" src="brand/lime-Logomark.svg" width="40" height="40" alt=""><img class="wm" src="brand/lime-Logotype.svg" width="44" height="17" alt=""></a>
+  <form class="sub" data-subscribe>
+    <label class="sr" for="e-top">Email address</label>
+    <input id="e-top" type="email" name="email" autocomplete="email" placeholder="Email address" required>
+    <button class="btn" type="submit">Subscribe</button>
+    <output class="note" role="status" aria-live="polite"></output>
+  </form>
 </header>
+
 <main id="main">
 
-<section class="hero" aria-labelledby="h-hero">
-  <div class="wrap center">
-    <img class="lockup" src="brand/lime-Logo.svg" width="96" height="116" alt="lime">
-    <h1 id="h-hero">Where teachers connect.</h1>
-    <p class="lede">A private, always-free place to message, call and share with teachers you trust.</p>
+<section class="hero" aria-label="Where Teachers link.">
+  <div class="slides" data-rotate>
+    <div class="slide on" data-wide="media/hero-wide" data-tall="media/hero-tall" data-poster-wide="media/hero-wide.webp" data-poster-tall="media/hero-tall.webp" data-credit="Ron Lach, Pexels 8275083">
+      <picture><source media="(max-aspect-ratio: 1/1)" srcset="media/hero-tall.webp"><img class="poster" src="media/hero-wide.webp" width="1920" height="1080" alt="" fetchpriority="high"></picture>
+      <video muted loop playsinline preload="none" aria-hidden="true" tabindex="-1"></video>
+    </div>
   </div>
-  <div class="herovideo">
-    <video id="herovid" muted loop playsinline preload="metadata" poster="media/hero-poster.webp" width="1920" height="1080" aria-label="Two hands holding a phone and scrolling through lime's jam feed" data-src="media/hero"></video>
-    <button class="vplay" type="button" id="herobtn" aria-label="Play the video" hidden><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path class="i-play" d="M8 5v14l11-7z"/><path class="i-pause" d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg></button>
-    <form class="waitlist pill" onsubmit="event.preventDefault();this.querySelector('output').textContent='The waitlist opens soon. Nothing was sent.';">
-      <label class="sr" for="email-hero">Email address</label>
-      <input id="email-hero" type="email" name="email" autocomplete="email" placeholder="you@school.org" required>
-      <button class="btn main" type="submit">Join the waitlist</button>
-      <output class="fine" role="status" aria-live="polite"></output>
-    </form>
-  </div>
-  <p class="fine center herofine">One email when lime is ready. Nothing else, and never shared.</p>
+  <div class="scrim" aria-hidden="true"></div>
+  <h1><span class="l1">Where</span><span class="l2">Teachers link.</span></h1>
+  <a class="cue" href="#about" aria-label="Scroll down"><svg viewBox="0 0 24 24" width="40" height="40" aria-hidden="true"><path d="M12 3v17m0 0-7-7m7 7 7-7" fill="none" stroke="currentColor" stroke-width="1.4"/></svg></a>
+  <a class="chip" href="#about" data-placeholder><img src="media/avatar.webp" width="60" height="60" alt=""><span><strong>Mrs Flowers</strong><span>Is connecting Black Science Teachers in NYC <i aria-hidden="true">→</i></span><em class="badge">Placeholder</em></span></a>
+  <button class="vplay" type="button" hidden aria-label="Pause the video"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path class="i-play" d="M8 5v14l11-7z"/><path class="i-pause" d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg></button>
 </section>
 
-<section id="features" aria-labelledby="h-hl" style="padding-top:72px">
-  <div class="wrap head"><p class="eyebrow">What's inside</p><h2 id="h-hl">Get the highlights.</h2></div>
-  <div class="carousel" data-auto role="region" aria-roledescription="carousel" aria-label="lime highlights">
-    <ul class="track">
-<li class="hl" role="group" aria-label="1 of 6"><picture><source srcset="media/cards/private.avif" type="image/avif"><img src="media/cards/private.webp" alt="Two teachers sharing an open book on their laps" loading="lazy" decoding="async"></picture><p><strong>Private by design.</strong> Only you and the people you message can read it.</p></li>
-<li class="hl" role="group" aria-label="2 of 6"><picture><source srcset="media/cards/teachers.avif" type="image/avif"><img src="media/cards/teachers.webp" alt="Two coffee cups and hands on a café table" loading="lazy" decoding="async"></picture><p><strong>Teachers only.</strong> Students don't have accounts.</p></li>
-<li class="hl" role="group" aria-label="3 of 6"><picture><source srcset="media/cards/free.avif" type="image/avif"><img src="media/cards/free.webp" alt="Green plant leaves" loading="lazy" decoding="async"></picture><p><strong>Always free.</strong> No ads, no fees. Funded by donations and grants.</p></li>
-<li class="hl" role="group" aria-label="4 of 6"><picture><source srcset="media/cards/offline.avif" type="image/avif"><img src="media/cards/offline.webp" alt="Glowing bulbs hanging from ropes" loading="lazy" decoding="async"></picture><p><strong>Works without service.</strong> Nearby phones pass messages on.</p></li>
-<li class="hl" role="group" aria-label="5 of 6"><picture><source srcset="media/cards/jam.avif" type="image/avif"><img src="media/cards/jam.webp" alt="A hand holding a printed page" loading="lazy" decoding="async"></picture><p><strong>jam.</strong> Share posts, articles and podcasts with the teachers who follow you.</p></li>
-<li class="hl" role="group" aria-label="6 of 6"><picture><source srcset="media/cards/yours.avif" type="image/avif"><img src="media/cards/yours.webp" alt="A shelf with plants and stacked logs" loading="lazy" decoding="async"></picture><p><strong>Make it yours.</strong> Colours, backgrounds, stickers and wallpapers.</p></li>
-    </ul>
-    <div class="ctrl"><button type="button" data-prev aria-label="Previous">‹</button><div class="dots" aria-hidden="true"></div><button type="button" data-next aria-label="Next">›</button><button type="button" class="pause" data-pause aria-label="Pause the slideshow"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path class="i-play" d="M8 5v14l11-7z"/><path class="i-pause" d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg></button></div>
-  </div>
-</section>
-
-<section aria-labelledby="h-chat">
-  <div class="wrap">
-    <p class="eyebrow">Chats and calls</p>
-    <h2 id="h-chat">Connect your way.</h2>
-    <div class="acc" style="margin-top:40px">
-      <div class="items">
-<details id="c1" name="chats" open><summary>Chats with threads and reactions</summary><div>Reply in a thread, react with an emoji, and keep a busy chat easy to follow.</div></details>
-<details id="c2" name="chats"><summary>Voice and video calls</summary><div>Call one teacher or the whole team. Calls are end-to-end encrypted too.</div></details>
-<details id="c3" name="chats"><summary>Groups for grade teams</summary><div>One place for a grade team, a department or a club.</div></details>
-<details id="c4" name="chats"><summary>Stickers and GIFs</summary><div>lime's own sticker pack, and a GIF library that lives on your phone.</div></details>
-      </div>
-      <div class="stage">
-        <div class="phone" data-for="c1"><picture><source srcset="img/thread.avif" type="image/avif"><img src="img/thread.webp" width="480" height="1044" alt="A thread of replies in a chat" loading="lazy" decoding="async"></picture></div>
-        <div class="phone" data-for="c2"><picture><source srcset="img/call-video.avif" type="image/avif"><img src="img/call-video.webp" width="480" height="1044" alt="A video call" loading="lazy" decoding="async"></picture></div>
-        <div class="phone" data-for="c3"><picture><source srcset="img/group.avif" type="image/avif"><img src="img/group.webp" width="480" height="1044" alt="A group chat for a grade 4 team" loading="lazy" decoding="async"></picture></div>
-        <div class="stickers" data-for="c4" style="display:none" aria-label="lime's sticker pack"><img src="stickers/welcome.webp" width="80" height="80" alt="" loading="lazy"><img src="stickers/happy-birthday.webp" width="80" height="80" alt="" loading="lazy"><img src="stickers/snow-day.webp" width="80" height="80" alt="" loading="lazy"><img src="stickers/proud-of-you.webp" width="80" height="80" alt="" loading="lazy"><img src="stickers/summer.webp" width="80" height="80" alt="" loading="lazy"><img src="stickers/bell-rang.webp" width="80" height="80" alt="" loading="lazy"><img src="stickers/congrats.webp" width="80" height="80" alt="" loading="lazy"><img src="stickers/great-job.webp" width="80" height="80" alt="" loading="lazy"><img src="stickers/happy-birthday.webp" width="80" height="80" alt="" loading="lazy"></div>
-      </div>
+<section class="band" id="about" aria-labelledby="h-about">
+  <div class="giant" role="img" aria-label="lime"></div>
+  <div class="wrap about">
+    <p id="h-about" class="blurb" data-reveal>lime is a free mobile app for teachers to message, call, and share their craft.</p>
+    <div class="collage" data-stagger>
+      <figure class="c1" data-reveal data-drift="0.06"><picture><source srcset="media/collage-1.avif" type="image/avif"><img src="media/collage-1.webp" width="720" height="720" alt="A teacher laughing against a brick wall" loading="lazy" decoding="async"></picture></figure>
+      <figure class="c2" data-reveal data-drift="-0.05"><picture><source srcset="media/collage-2.avif" type="image/avif"><img src="media/collage-2.webp" width="780" height="1240" alt="Three colleagues fist-bumping, seen from below" loading="lazy" decoding="async"></picture></figure>
+      <figure class="c3" data-reveal data-drift="0.09"><picture><source srcset="media/collage-3.avif" type="image/avif"><img src="media/collage-3.webp" width="760" height="960" alt="A teacher laughing at her phone" loading="lazy" decoding="async"></picture></figure>
     </div>
   </div>
 </section>
 
-<section class="ink" id="private" aria-labelledby="h-private">
-  <div class="wrap">
-    <p class="eyebrow">Private by design</p>
-    <h2 id="h-private">Only you and the people you message can read it.</h2>
-    <p class="lede">What we can't see:</p>
-    <ul class="cants">
-      <li>Your messages<span>They're locked on your phone. We only carry sealed mail.</span></li>
-      <li>Your calls and files<span>Encrypted from one phone to the other.</span></li>
-      <li>Who is in your groups<span>That stays between the members.</span></li>
-    </ul>
-    <div class="phone big"><picture><source srcset="img/chat.avif" type="image/avif"><img src="img/chat.webp" width="480" height="1044" alt="A private chat between two teachers" loading="lazy" decoding="async"></picture></div>
-  </div>
+<section class="quote" aria-label="A teacher's words" data-placeholder>
+  <picture><source srcset="media/quote.avif" type="image/avif"><img src="media/quote.webp" width="1800" height="1000" alt="" loading="lazy" decoding="async"></picture>
+  <div class="scrim" aria-hidden="true"></div>
+  <blockquote data-reveal><p>"lime is a space for me to connect with Teachers who share a similar journey."</p></blockquote>
+  <em class="badge">Placeholder quote and photo: replace with a real teacher, with consent, before publishing</em>
 </section>
 
-<section class="grey" id="jam" aria-labelledby="h-jam">
-  <div class="wrap">
-    <p class="eyebrow">jam</p>
-    <h2 id="h-jam">Teachers. Readers. Nothing in between.</h2>
-    <div class="acc flip" style="margin-top:40px">
-      <div class="items">
-<details id="j1" name="jam" open><summary>Posts and articles</summary><div>Write something short or something long, with pictures, and share it.</div></details>
-<details id="j2" name="jam"><summary>Podcasts and series</summary><div>Record an episode or group posts into a series.</div></details>
-<details id="j3" name="jam"><summary>Members-only</summary><div>Share with your subscribers. Members-only posts are encrypted too.</div></details>
-<details id="j4" name="jam"><summary>0% cut</summary><div>Free to read and free to publish. lime takes 0% of what you earn.</div></details>
-      </div>
-      <div class="stage">
-        <div class="phone" data-for="j1"><picture><source srcset="img/jam-discover.avif" type="image/avif"><img src="img/jam-discover.webp" width="480" height="1044" alt="jam: a feed of articles" loading="lazy" decoding="async"></picture></div>
-        <div class="phone" data-for="j2"><picture><source srcset="img/jam-podcast.avif" type="image/avif"><img src="img/jam-podcast.webp" width="480" height="1044" alt="A podcast post in jam" loading="lazy" decoding="async"></picture></div>
-        <div class="phone" data-for="j3"><picture><source srcset="img/jam-community.avif" type="image/avif"><img src="img/jam-community.webp" width="480" height="1044" alt="A teacher's page with a community to join" loading="lazy" decoding="async"></picture></div>
-        <div class="phone" data-for="j4"><picture><source srcset="img/jam-asjam.avif" type="image/avif"><img src="img/jam-asjam.webp" width="480" height="1044" alt="A jam post with a cover" loading="lazy" decoding="async"></picture></div>
-      </div>
+<section class="feature warm" id="link" aria-labelledby="h-link">
+  <div class="wrap split" data-stagger>
+    <div class="txt">
+      <h2 id="h-link" data-reveal>link up with friends you trust</h2>
+      <p data-reveal>lime connects you directly to your teaching community, with no ads, no fees and funded by your donations.</p>
+      <p data-reveal>Link with friends through direct, group messaging, voice and video calling in real-time.</p>
+      <form class="sub" data-subscribe data-reveal>
+        <label class="sr" for="e-link">Email address</label>
+        <input id="e-link" type="email" name="email" autocomplete="email" placeholder="Email address" required>
+        <button class="btn" type="submit">Subscribe</button>
+        <output class="note" role="status" aria-live="polite"></output>
+      </form>
     </div>
+    <div class="phonewrap" data-reveal data-drift="0.04"><div class="phone"><picture><source srcset="img/chat.avif" type="image/avif"><img src="img/chat.webp" width="480" height="1044" alt="A lime chat between two teachers, with a link and a file" loading="lazy" decoding="async"></picture></div></div>
   </div>
 </section>
 
-<section aria-label="Bands and working without service">
-  <div class="wrap">
-    <div class="two">
-      <div class="big">
-        <p class="eyebrow">Bands</p>
-        <h3>A home for your school, co-op or union.</h3>
-        <p>Publish together, with drafts, reviews and a community chat. Hand a band to another owner whenever a team changes.</p>
-        <div class="art"><div class="phone"><picture><source srcset="img/org-sam.avif" type="image/avif"><img src="img/org-sam.webp" width="480" height="1044" alt="A band's page: Fractions that stick, with its owners and subscribers" loading="lazy" decoding="async"></picture></div></div>
-      </div>
-      <div class="big">
-        <p class="eyebrow">No signal? No problem.</p>
-        <h3>Talk even without service.</h3>
-        <p>Nearby phones can pass sealed messages along by Bluetooth. They can't read what they carry, and it's a switch you control.</p>
-        <div class="art"><div class="relay"><img src="img/relay.svg" width="520" height="360" alt="Three phones with no signal. A sealed message passes from the first to the second to the third." loading="lazy"></div></div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section class="grey" aria-labelledby="h-yours">
-  <div class="wrap head"><p class="eyebrow">Make it yours</p><h2 id="h-yours">Your space. Your look.</h2><p class="lede" style="margin-top:12px">Eight colours, a background for every mood, stickers and a wallpaper for each chat.</p></div>
-  <div class="carousel" role="region" aria-roledescription="carousel" aria-label="Looks for lime">
-    <ul class="track">
-<li class="look" role="group" aria-label="1 of 5"><div class="phone"><picture><source srcset="img/chat.avif" type="image/avif"><img src="img/chat.webp" width="480" height="1044" alt="A chat in lime's default look" loading="lazy" decoding="async"></picture></div><span>Lime · Plain</span></li>
-<li class="look" role="group" aria-label="2 of 5"><div class="phone"><picture><source srcset="img/t-paper.avif" type="image/avif"><img src="img/t-paper.webp" width="480" height="1044" alt="A chat on paper with pink bubbles" loading="lazy" decoding="async"></picture></div><span>Pink · Paper</span></li>
-<li class="look" role="group" aria-label="3 of 5"><div class="phone"><picture><source srcset="img/t-chalk.avif" type="image/avif"><img src="img/t-chalk.webp" width="480" height="1044" alt="A chat on a chalkboard" loading="lazy" decoding="async"></picture></div><span>Olive · Chalkboard</span></li>
-<li class="look" role="group" aria-label="4 of 5"><div class="phone"><picture><source srcset="img/t-bulletin.avif" type="image/avif"><img src="img/t-bulletin.webp" width="480" height="1044" alt="A chat on a bulletin board" loading="lazy" decoding="async"></picture></div><span>Blue · Bulletin board</span></li>
-<li class="look" role="group" aria-label="5 of 5"><div class="phone"><picture><source srcset="img/t-living.avif" type="image/avif"><img src="img/t-living.webp" width="480" height="1044" alt="jam on a living lavender background" loading="lazy" decoding="async"></picture></div><span>Lavender · Living</span></li>
-    </ul>
-    <div class="ctrl"><button type="button" data-prev aria-label="Previous">‹</button><div class="dots" aria-hidden="true"></div><button type="button" data-next aria-label="Next">›</button></div>
-  </div>
-</section>
-
-<section aria-labelledby="h-diff">
-  <div class="wrap">
-    <p class="eyebrow">How lime is different</p>
-    <h2 id="h-diff">No ads. No tracking. Nothing to sell.</h2>
-    <p class="lede">lime is funded by donations and grants, never by you or your data. This page doesn't track you either.</p>
-    <div class="tablewrap">
-      <table>
-        <thead><tr><th scope="col"><span class="sr">What</span></th><th scope="col">lime</th><th scope="col">Typical social apps</th></tr></thead>
-        <tbody>
-          <tr><th scope="row">Ads</th><td class="us">None</td><td>Often</td></tr>
-          <tr><th scope="row">Who can read your messages</th><td class="us">Only you and who you message</td><td>Sometimes the company</td></tr>
-          <tr><th scope="row">Cost</th><td class="us">Free, always</td><td>Free for your data, or paid</td></tr>
-          <tr><th scope="row">Cut of what you earn on jam</th><td class="us">0%</td><td>A share, often</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-</section>
-
-<section class="grey" aria-labelledby="h-faq">
-  <div class="wrap">
-    <h2 id="h-faq" class="center">Need more help?</h2>
-    <div class="faq">
-<details><summary>Is lime free?</summary><div>Yes, always. No ads and no fees. lime is funded by donations and grants.</div></details>
-<details><summary>Can lime read my messages?</summary><div>No. Messages, calls and files are end-to-end encrypted, so only the people in the chat can read them. <a href="/privacy">Read the privacy policy</a>.</div></details>
-<details><summary>Who can join?</summary><div>Teachers, 18 or older. Students don't have accounts.</div></details>
-<details><summary>Does it work without internet?</summary><div>Nearby phones can pass sealed messages along by Bluetooth when there's no connection. They can't read what they carry, and it's a switch you control.</div></details>
-<details><summary>How does lime keep students safe?</summary><div>Only teachers can use lime. Before you post publicly, lime asks you to check that no student can be identified. Anyone can report something, and moderators act on reports. See the <a href="/guidelines">community guidelines</a> and <a href="/safety">safety page</a>.</div></details>
-<details><summary>Is lime open source?</summary><div>Yes, under the MIT licence. We'll link the code here when the repository is public.</div></details>
-<details><summary>Who's behind lime?</summary><div>Teachers, and a nonprofit. <a href="https://limemessenger.org">Read our story</a>.</div></details>
-    </div>
-  </div>
-</section>
-
-<section class="closing" id="waitlist" aria-labelledby="h-close">
-  <div class="wrap">
-    <h2 id="h-close">Be there when lime opens.</h2>
-    <p class="lede" style="margin:0 auto">Join the waitlist and we'll email you once.</p>
-    <form class="waitlist" onsubmit="event.preventDefault();this.querySelector('output').textContent='The waitlist opens soon. Nothing was sent.';">
-          <label class="sr" for="email-close">Email address</label>
-          <input id="email-close" type="email" name="email" autocomplete="email" placeholder="you@school.org" required>
-          <button class="btn main" type="submit">Join the waitlist</button>
-          <output class="fine" role="status" aria-live="polite"></output>
+<section class="feature warm jam" id="jam" aria-labelledby="h-jam">
+  <div class="wrap" data-stagger>
+    <h2 id="h-jam" data-reveal>jam on something you truly care about</h2>
+    <div class="split rev">
+      <div class="phonewrap" data-reveal data-drift="0.04"><div class="phone"><picture><source srcset="img/jam-discover.avif" type="image/avif"><img src="img/jam-discover.webp" width="480" height="1044" alt="jam: a feed of articles and posts" loading="lazy" decoding="async"></picture></div></div>
+      <div class="txt">
+        <p data-reveal>Jam on posts, articles, podcasts or band together to collectively share your expertise.</p>
+        <p data-reveal>Record an episode or group posts into a series. Share with your subscribers. Members-only posts are encrypted too.</p>
+        <form class="sub" data-subscribe data-reveal>
+          <label class="sr" for="e-jam">Email address</label>
+          <input id="e-jam" type="email" name="email" autocomplete="email" placeholder="Email address" required>
+          <button class="btn" type="submit">Subscribe</button>
+          <output class="note" role="status" aria-live="polite"></output>
         </form>
-    <p class="fine" style="margin:0 auto">We keep your email only to tell you when lime is ready. Leave any time with one click.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="join" id="subscribe" aria-labelledby="h-join">
+  <picture><source srcset="media/group.avif" type="image/avif"><img src="media/group.webp" width="2000" height="1125" alt="A group of friends walking along a beach" loading="lazy" decoding="async"></picture>
+  <div class="scrim" aria-hidden="true"></div>
+  <div class="card" data-reveal>
+    <img src="brand/lime-Logomark.svg" width="64" height="64" alt="">
+    <h2 id="h-join">Where teachers connect.</h2>
+    <form class="sub stack" data-subscribe>
+      <label class="sr" for="e-join">Email address</label>
+      <input id="e-join" type="email" name="email" autocomplete="email" placeholder="Email address" required>
+      <button class="btn" type="submit">Subscribe</button>
+      <output class="note" role="status" aria-live="polite"></output>
+    </form>
+    <!-- Store badges stay hidden until there is an app to download: set the links in the script at the end of the page. -->
+    <div class="stores" hidden><a data-store="appStore" href="#">Download on the App Store</a><a data-store="googlePlay" href="#">Get it on Google Play</a></div>
   </div>
 </section>
 
 </main>
+
 <footer>
   <div class="wrap">
-    <div class="logo"><img src="brand/lime-Logomark.svg" width="40" height="40" alt="">lime</div>
+    <div class="fl"><a class="lockup" href="#top" aria-label="lime, home"><img class="mk" src="brand/lime-Logomark.svg" width="48" height="48" alt=""><img class="wm" src="brand/lime-Logotype.svg" width="56" height="22" alt=""></a></div>
     <ul class="pledges">
-      <li>Always free</li>
-      <li>No ads, ever</li>
-      <li>We can't read your messages</li>
-      <li>Teacher-owned</li>
-      <li>Open source (MIT)</li>
-      <li>Your data is never sold</li>
+      <li>No ads, no fees</li><li>Messages only you and your people can read</li><li>Teachers only: students don't have accounts</li><li>Open source (MIT)</li><li>Works without service</li><li>Your data is never sold</li>
     </ul>
-    <nav aria-label="Footer">
-      <a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/guidelines">Guidelines</a><a href="/safety">Safety</a><a href="/security">Security</a>
-      <a href="mailto:support@limemessenger.com">support@limemessenger.com</a><a href="https://limemessenger.org">limemessenger.org</a>
-    </nav>
+    <div class="cols">
+      <nav aria-label="Site"><h3>lime</h3><a href="#top">Home</a><a href="#link">Features</a><a href="/privacy/">Privacy</a><a href="#jam">jam</a></nav>
+      <nav aria-label="Legal"><h3>Legal</h3><a href="/privacy/">Privacy</a><a href="/terms/">Terms</a><a href="/guidelines/">Guidelines</a><a href="/safety/">Safety</a><a href="/security/">Security</a></nav>
+      <div><h3>Contact</h3><a href="mailto:hello@limemessenger.com">hello@limemessenger.com</a><a href="mailto:support@limemessenger.com">support@limemessenger.com</a></div>
+      <div><h3>More</h3><a href="https://limemessenger.org">limemessenger.org</a></div>
+    </div>
     <p class="legal">lime is made by Lime Messenger LLC. [legal line: to be confirmed]</p>
   </div>
 </footer>
+
 <script>
-document.documentElement.classList.add("js");
 var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-/* the hero video: the poster shows first; the video loads after, plays unless motion is reduced, and can be paused */
+/* The page is "subscribe now, download later": put the real links here and the store badges appear. */
+window.LIME_STORE = { appStore: "", googlePlay: "" };
 (function () {
-  var v = document.getElementById("herovid"), btn = document.getElementById("herobtn");
-  if (!v) return;
-  var size = window.innerWidth <= 800 ? "720" : "1080", base = v.getAttribute("data-src") + "-" + size;
-  [["-av1.mp4", 'video/mp4; codecs="av01.0.05M.08"'], [".mp4", 'video/mp4; codecs="avc1.640028"']].forEach(function (s) {
-    var e = document.createElement("source"); e.src = base + s[0]; e.type = s[1]; v.appendChild(e);
-  });
-  var userPaused = reduce, visible = true;
-  function label() { var p = v.paused; btn.setAttribute("aria-label", p ? "Play the video" : "Pause the video"); btn.classList.toggle("playing", !p); }
-  btn.hidden = false;
-  btn.addEventListener("click", function () { userPaused = !v.paused; if (v.paused) v.play().catch(function () {}); else v.pause(); label(); });
-  v.addEventListener("play", label); v.addEventListener("pause", label);
-  if ("IntersectionObserver" in window) new IntersectionObserver(function (es) {
-    visible = es[0].isIntersecting;
-    if (visible && !userPaused) v.play().catch(function () {}); else if (!visible) v.pause();
-  }).observe(v);
-  v.load();
-  if (!reduce) v.play().catch(function () {});
-  label();
+  var any = false;
+  document.querySelectorAll("[data-store]").forEach(function (a) { var u = window.LIME_STORE[a.dataset.store]; if (u) { a.href = u; any = true; } else a.hidden = true; });
+  if (any) document.querySelector(".stores").hidden = false;
 })();
 
-document.querySelectorAll(".carousel").forEach(function (c) {
-  var t = c.querySelector(".track"), items = t.children, prev = c.querySelector("[data-prev]"), next = c.querySelector("[data-next]"), dots = c.querySelector(".dots"), pause = c.querySelector("[data-pause]");
-  for (var i = 0; i < items.length; i++) dots.appendChild(document.createElement("i"));
-  function step() { return items[0].getBoundingClientRect().width + 16; }
-  function update() {
-    var idx = Math.round(t.scrollLeft / step());
-    Array.prototype.forEach.call(dots.children, function (d, i) { d.classList.toggle("on", i === idx); });
-    prev.disabled = t.scrollLeft < 4; next.disabled = t.scrollLeft + t.clientWidth >= t.scrollWidth - 4;
-  }
-  prev.addEventListener("click", function () { t.scrollBy({ left: -step(), behavior: "smooth" }); });
-  next.addEventListener("click", function () { t.scrollBy({ left: step(), behavior: "smooth" }); });
-  t.addEventListener("scroll", update, { passive: true }); window.addEventListener("resize", update); update();
-
-  /* "Get the highlights" moves on gently; it stops for hover, focus, touch, off-screen, the pause button and reduced motion */
-  if (!c.hasAttribute("data-auto") || !pause) return;
-  var off = reduce, hold = false, seen = true, timer = null;
-  function sync() { pause.classList.toggle("is-paused", off); pause.setAttribute("aria-label", off ? "Play the slideshow" : "Pause the slideshow"); }
-  function tick() {
-    if (off || hold || !seen) return;
-    if (t.scrollLeft + t.clientWidth >= t.scrollWidth - 4) t.scrollTo({ left: 0, behavior: "smooth" }); else t.scrollBy({ left: step(), behavior: "smooth" });
-  }
-  timer = setInterval(tick, 5000);
-  pause.addEventListener("click", function () { off = !off; sync(); });
-  ["mouseenter", "focusin", "touchstart"].forEach(function (e) { c.addEventListener(e, function () { hold = true; }, { passive: true }); });
-  ["mouseleave", "focusout"].forEach(function (e) { c.addEventListener(e, function () { hold = false; }); });
-  if ("IntersectionObserver" in window) new IntersectionObserver(function (es) { seen = es[0].isIntersecting; }).observe(c);
-  sync();
+/* The waitlist is wired in 284c; until then every form says so and sends nothing. */
+document.querySelectorAll("[data-subscribe]").forEach(function (f) {
+  f.addEventListener("submit", function (e) { e.preventDefault(); f.querySelector("output").textContent = "The waitlist opens soon. Nothing was sent."; });
 });
+
+/* The header: visible on load, tucks away scrolling down, returns scrolling up; never while something in it has focus. */
+(function () {
+  var h = document.getElementById("top"), last = window.scrollY, hero = document.querySelector(".hero"), ticking = false;
+  function show(on) { h.classList.toggle("away", !on); }
+  function onScroll() {
+    var y = window.scrollY, dy = y - last;
+    h.classList.toggle("solid", y > hero.offsetHeight - 80);
+    if (y < 40 || dy < -4 || h.contains(document.activeElement)) show(true);
+    else if (dy > 4) show(false);
+    last = y; ticking = false;
+  }
+  window.addEventListener("scroll", function () { if (!ticking) { ticking = true; requestAnimationFrame(onScroll); } }, { passive: true });
+  h.addEventListener("focusin", function () { show(true); });
+  onScroll();
+})();
+
+/* The hero: the poster shows first; the video(s) load after the first paint. One source loops; two or three crossfade every 9 s. */
+(function () {
+  var box = document.querySelector("[data-rotate]"), slides = Array.prototype.slice.call(box.children), btn = document.querySelector(".vplay");
+  var portrait = window.matchMedia("(max-aspect-ratio: 1/1)").matches, paused = reduce, cur = 0, timer = null, visible = true;
+  function prep(s) {
+    var v = s.querySelector("video"); if (v.dataset.ready) return v; v.dataset.ready = 1;
+    var base = portrait ? s.dataset.tall : s.dataset.wide;
+    [["-av1.mp4", 'video/mp4; codecs="av01.0.05M.08"'], [".mp4", 'video/mp4; codecs="avc1.640028"']].forEach(function (t) { var e = document.createElement("source"); e.src = base + t[0]; e.type = t[1]; v.appendChild(e); });
+    v.load(); return v;
+  }
+  function play() { if (paused || !visible) return; var v = prep(slides[cur]); v.play().then(function () { v.classList.add("go"); }).catch(function () {}); }
+  function stop() { slides.forEach(function (s) { s.querySelector("video").pause(); }); }
+  function label() { btn.setAttribute("aria-label", paused ? "Play the video" : "Pause the video"); btn.classList.toggle("playing", !paused); }
+  function go(n) {
+    slides[cur].classList.remove("on"); cur = n; slides[cur].classList.add("on");
+    if (!paused) { var v = prep(slides[cur]); v.currentTime = 0; v.play().then(function () { v.classList.add("go"); }).catch(function () {}); }
+  }
+  function arm() { clearInterval(timer); if (slides.length > 1) timer = setInterval(function () { if (!paused && visible) go((cur + 1) % slides.length); }, 9000); }
+  btn.hidden = false; label();
+  btn.addEventListener("click", function () { paused = !paused; label(); if (paused) stop(); else play(); });
+  if ("IntersectionObserver" in window) new IntersectionObserver(function (es) { visible = es[0].isIntersecting; if (visible) play(); else stop(); }).observe(box);
+  window.addEventListener("load", function () { setTimeout(function () { play(); arm(); }, 200); });
+})();
+
+/* Scroll motion: headings, paragraphs and images fade and rise in, and fade out once scrolled past; the collage drifts at different speeds. Off with reduced motion. */
+(function () {
+  if (reduce || !("IntersectionObserver" in window)) { document.documentElement.classList.add("still"); return; }
+  document.querySelectorAll("[data-stagger]").forEach(function (g) {
+    g.querySelectorAll("[data-reveal]").forEach(function (el, i) { el.style.setProperty("--d", (i * 90) + "ms"); });
+  });
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (e) {
+      if (e.isIntersecting) e.target.classList.add("in");
+      else if (e.boundingClientRect.top < 0) e.target.classList.remove("in");   /* scrolled past: fades out; still below the fold: stays hidden */
+    });
+  }, { threshold: 0.12, rootMargin: "0px 0px -6% 0px" });
+  document.querySelectorAll("[data-reveal]").forEach(function (el) { io.observe(el); });
+  var drift = Array.prototype.slice.call(document.querySelectorAll("[data-drift]")), pending = false;
+  function move() {
+    var vh = window.innerHeight;
+    drift.forEach(function (el) {
+      var r = el.getBoundingClientRect(); if (r.bottom < -200 || r.top > vh + 200) return;
+      el.style.setProperty("--dy", (((r.top + r.height / 2) - vh / 2) * parseFloat(el.dataset.drift)).toFixed(1) + "px");
+    });
+    pending = false;
+  }
+  window.addEventListener("scroll", function () { if (!pending) { pending = true; requestAnimationFrame(move); } }, { passive: true });
+  window.addEventListener("resize", move); move();
+})();
 </script>
 </body>
 </html>

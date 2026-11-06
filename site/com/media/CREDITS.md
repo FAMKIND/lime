@@ -1,12 +1,14 @@
-# Media credits (LIME-284a4)
+# Media credits (LIME-284e)
 
-All files are self-hosted; the page embeds nothing from Pexels. Pexels licence: free to use, attribution not required; we keep this list anyway. No file implies that the people shown endorse lime.
+Self-hosted; the page embeds nothing from Pexels. Pexels licence: free to use, attribution not required; kept anyway. Originals are in `design/media/`. No photo implies that the people shown endorse lime.
 
-| File | Source | Notes |
-| --- | --- | --- |
-| `hero-*.mp4`, `hero-poster.webp` | Pexels video 8165956, https://www.pexels.com/video/8165956/ (`8165956-uhd_4096_2160_25fps.mp4`) | Two hands holding a phone. lime's UI is composited onto the white screen and the backdrop is re-tinted by `tools/hero-video/`. Author: [to add from the Pexels page]. |
-| `cards/private.*`, `cards/jam.*`, `cards/free.*` | Pexels video 8513426, https://www.pexels.com/video/8513426/ | Stills cropped to a book, a hand and plants; no faces. Author: [to add]. |
-| `cards/teachers.*` | Pexels video 6137851, https://www.pexels.com/video/6137851/ | Still cropped to two cups and hands. Author: [to add]. |
-| `cards/offline.*`, `cards/yours.*` | Pexels video 10159663, https://www.pexels.com/video/10159663/ | Stills cropped to hanging bulbs and a shelf; no faces. Author: [to add]. |
+| Use | File | Pexels author (from the file name) | Source |
+| --- | --- | --- | --- |
+| Hero video (desktop crop `hero-wide*`, phone crop `hero-tall*`), poster, chip avatar | `8275083-uhd_2160_4096_25fps.mp4`, `pexels-ron-lach-8274723.jpg` (avatar) | ron-lach | https://www.pexels.com/video/8275083/ , https://www.pexels.com/photo/8274723/ |
+| Collage: man in orange | `pexels-kema-7055896.jpg` | kema | https://www.pexels.com/photo/7055896/ |
+| Collage: fist-bump | `pexels-cottonbro-7130220.jpg` | cottonbro | https://www.pexels.com/photo/7130220/ |
+| Collage: two women laughing | `pexels-antonius-ferret-5253859.jpg` | antonius-ferret | https://www.pexels.com/photo/5253859/ |
+| Quote portrait (**placeholder**) | `pexels-divinetechygirl-1181519.jpg` | divinetechygirl | https://www.pexels.com/photo/1181519/ |
+| Group on the beach | `pexels-kindelmedia-7148445.jpg` | kindelmedia | https://www.pexels.com/photo/7148445/ |
 
-The card photos are stand-ins cut from the three clips already on hand; swap them for chosen Pexels photos (hands, over-the-shoulder, out of focus; no children) and update this list.
+The mock's quote portrait (a woman with long dark hair against grey siding) was not among the downloaded files, so the quote uses divinetechygirl-1181519 as a stand-in. `pexels-ron-lach-8274732.jpg` and `pexels-silverkblack-36729918.jpg` were downloaded but are not used yet (a second and third hero video are planned).
