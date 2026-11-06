@@ -9927,3 +9927,34 @@ Play/pause after "Notify me"; the slides advance on their own (`site/com/`, **no
 - **Checked with the mouse resting over the hero the whole time, 25 s, in Chromium, Firefox and WebKit (Playwright's):** slide 1 → 2 → 3 → 1 on their own in all three, a change about every 7 s (the 6 s timer plus the ~1 s bloom): Chromium at 7.0, 14.0 and 20.8 s; Firefox at 7.2, 14.2, 21.5; WebKit at 7.2, 14.5, 21.5. Pausing held for 15 s without a change. Safari proper is not tested.
 - **If you still see no change:** please tell me the browser, and whether "Reduce motion" is on in macOS (the page then starts paused with ▶; the ring tells you at a glance).
 - **Not done:** no deploy, nothing installed.
+
+## LIME-284e13
+The hero stays smooth over time (`site/com/index.html`, `style.css`, six new small videos; `tools/perf/hero-soak.py`; **not deployed**). Stop for your look.
+
+**Phase 1, measured first** (`tools/perf/hero-soak.py`: Playwright's Chromium at 1440×900, devicePixelRatio 2, the mouse moving a little every 5 s, a sample about every 5 s for 10 minutes; headless Chromium draws in software, so read the trend more than the absolute numbers; raw samples: `docs/qa-shots/284e13/before.json` and `after.json`). **It reproduced your lag exactly:**
+
+| minute | fps before | main-thread CPU before | long tasks per sample before | fps after | CPU after | long tasks per sample after |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 56.5 | 51 % | 3.3 | 58.3 | 15 % | 0.8 |
+| 2 | 50.2 | 93 % | 3.2 | 55.3 | 21 % | 5.2 |
+| 3 | 34.4 | 99 % | 3.4 | 54.5 | 22 % | 3.1 |
+| 4 | 24.8 | 99 % | 4.5 | 53.5 | 22 % | 3.4 |
+| 5 | 19.6 | 100 % | 7.3 | 52.9 | 23 % | 3.5 |
+| 6 | 16.8 | 100 % | 80 | 51.9 | 24 % | 3.7 |
+| 7 | 14.9 | 100 % | 83 | 50.9 | 25 % | 4.2 |
+| 8 | 13.5 | 100 % | 77 | 51.5 | 24 % | 4.2 |
+| 9 | 12.3 | 100 % | 68 | 52.1 | 23 % | 5.0 |
+| 10 | 11.2 | 99 % | 64 | 51.4 | 24 % | 4.8 |
+
+- **What grew before:** the main thread's load (51 % → 100 %, script 44 % → 98 %) and with it long tasks (3 → 80 a sample) and the frame rate (56 → 11 fps). **What did not:** the JS heap (1.2 MB, flat), DOM nodes (1530, flat) and event listeners (41, flat): so it was not a leak; it was the per-frame work saturating the main thread (a full-hero canvas of 2880×1800 px redrawn every frame with a 1080p video frame and a `shadowBlur`, plus two `getBoundingClientRect` reads a frame), which the browser also throttles when it gets hot. Videos playing: 2 (the visible slide and the portal's target, both full size), decoding about 50 frames a second.
+- **After:** the frame rate falls a little in the first six minutes (58 → 52 fps) and then stays level (51–52 fps for minutes 6–10); the main thread sits at 21–25 % (was 100 %); the heap 1.2–1.6 MB, nodes 1682–1723 (a flat band; 166 more than before, which are the small video, the portal canvas and the arrow sprites' bookkeeping, not growth), listeners 41, flat. Full-screen canvas: 0×0 when idle. Videos playing: 2.2 on average (the visible slide and one 640 px copy); decoded 30 frames a second (was 50).
+- **The remaining slow drift (58 → 52 fps in six minutes) I did not chase:** it stops, and the main thread is at a quarter of its capacity, but I could not tell software-rendering warm-up from something of ours; a real Mac or iPhone is the test: please look after 10 minutes and tell me.
+
+**The change** (the look is the same; the portal's picture is softer, see below):
+1. **The portal is a small canvas** (the lime, 156–229 px square, moved with a CSS transform) that draws only the patch of the next slide under it; the **full-screen canvas exists only for the ~1 s of a bloom** (1.25× at most) and is released (0×0) after.
+2. **Drawn only when needed:** at full rate while the portal moves, **15 fps while it rests**, once and then **stopped when paused and still**, and not at all when the hero is off screen, the tab hidden or reduced motion is on.
+3. **A small video for the portal:** the portal reads the next slide from a **640 px copy** (`hero*-wide-px.mp4`, `-tall-px.mp4`: six files of 140–240 KB, H.264) played in one tiny decoder; **only the visible slide decodes at full size**, the others are prepared and paused. At a click the full-size next video starts from the frame the portal was showing. (The portal is therefore softer than before: it is cut from a 640 px picture, then shown at up to 229 px, 2× on a retina screen. Look at `portal.png`; if you want it sharper, the copies can be 960 px.)
+4. **No layout reads in the loop:** the sizes and the resting spot are measured on resize (`ResizeObserver`); the arrow is drawn once into two small sprites (right, left): no `shadowBlur` per frame.
+5. **Timers:** one 100 ms clock, `swap.t` cleared on every change; listeners flat at 41. **6. The header's `backdrop-filter`** is only on the paper bar after the hero, never over the video, so I left it.
+- **Still working** (re-tested after the change): slides 1 → 2 → 3 → 1 on their own with the mouse resting, about every 7 s, in Chromium (7.2, 14.0, 20.8 s), Firefox (7.2, 14.2, 21.2) and WebKit (7.2, 14.2, 21.5); a phone tap = next, swipe left = next, swipe right = previous; the portal, the bloom (`mid-bloom.png`), pause, reduced motion (no portal canvas), no console errors.
+- **Not done:** no deploy, nothing installed; Safari proper and a real iPhone are not tested; I did not measure Firefox or WebKit for 10 minutes.

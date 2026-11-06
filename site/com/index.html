@@ -66,7 +66,8 @@
       <video muted loop playsinline preload="none" aria-hidden="true" tabindex="-1"></video>
     </div>
   </div>
-  <canvas class="bloom" aria-hidden="true"></canvas>
+  <canvas class="bloom" width="0" height="0" aria-hidden="true"></canvas>
+  <canvas class="lime-portal" aria-hidden="true"></canvas>
   <div class="scrim" aria-hidden="true"></div>
   <div class="heads" aria-hidden="true">
       <div class="hd k on"><span class="ln"><span class="in">Where</span></span><span class="ln r"><span class="in">teachers link.</span></span></div>
@@ -253,24 +254,27 @@ document.querySelectorAll("[data-subscribe]").forEach(function (f) {
   onScroll();
 })();
 
-/* The hero, a rotator with the "lime bloom". Three slides (video, headline, credit chip). A lime-shaped portal (the logomark: eight wedges around a centre, in a bubble)
-   follows the pointer and shows the next slide's video through it, with a thin arrow: right half of the screen = next, left half = previous; a click goes there. When time is up
-   (8 s) or on a click the wedges swing out and grow one after another and the centre circle fills the screen with the next video, while the old headline's letters fall and the
-   new ones fall into place. With no pointer (phones, idle) the portal rests at the lower right: tap = next, swipe = next / previous; ‹ › buttons appear on keyboard focus.
-   Reduced motion: no portal, no bloom, no falling letters, a short crossfade. It stops for hover on the page text, focus and when off-screen. */
+/* The hero, a rotator with the "lime bloom". Three slides (video, headline, credit chip). A lime-shaped portal (the logomark: eight wedges around a centre)
+   follows the pointer and shows the next slide through it, with a thin arrow: right half of the screen = next, left half = previous; a click goes there. When time is up
+   (6 s) or on a click the wedges swing out and grow one after another and the centre circle fills the screen with the next video, while the old headline's letters fall and
+   the new ones fall into place. With no pointer (phones, idle) the portal rests at the lower right: tap = next, swipe = next / previous; ‹ › buttons appear on keyboard focus.
+   Reduced motion: no portal, no bloom, no falling letters, a short crossfade.
+   Kept light (LIME-284e13): the portal is a small canvas (just the lime) that moves with a CSS transform and draws only the patch of the next slide under it, taken from a
+   small 640 px copy of that slide (one tiny decoder), at full rate only while it moves and about 15 frames a second while it rests; nothing runs when the hero is off screen,
+   the tab is hidden or the stories are paused. The full-screen canvas exists only for the ~1 s of a bloom, at 1.25x at most, and is released after. Only the visible slide
+   decodes at full size. Sizes and the resting spot are measured on resize, never in the draw loop. */
 (function () {
-  var hero = document.querySelector(".hero"), cv = hero.querySelector(".bloom"), cx = cv.getContext("2d");
+  var hero = document.querySelector(".hero"), bv = hero.querySelector(".bloom"), bx = bv.getContext("2d"), pv = hero.querySelector(".lime-portal"), px = pv.getContext("2d");
   var slides = [].slice.call(hero.querySelectorAll(".slide")), heads = [].slice.call(hero.querySelectorAll(".hd")), chips = [].slice.call(hero.querySelectorAll(".chip"));
-  var N = slides.length, SECONDS = 6000, BLOOM = 950, HAIR = false;   /* HAIR: a 1 px white 35 % outline round each shape, for busy footage */
+  var N = slides.length, SECONDS = 6000, BLOOM = 950, HAIR = false, RESTFPS = 15;   /* HAIR: a 1 px white 35 % outline round each shape, for busy footage */
   var portrait = window.matchMedia("(max-aspect-ratio: 1/1)").matches, fine = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
   var D = JSON.parse(document.getElementById("bloom-paths").textContent), CTR = new Path2D(D.c), WEDGE = D.w.map(function (w) { return new Path2D(w[0]); });
   var SIL = new Path2D(); WEDGE.forEach(function (w) { SIL.addPath(w); }); SIL.addPath(CTR);
   var C0 = 122.7;   /* the logomark's centre, in its own 245 px space */
-  var cur = 0, side = 1, bloom = null, paused = reduce, hold = false, visible = true, timer = null, raf = 0, W = 0, H = 0, dpr = 1;
+  var cur = 0, side = 1, bloom = null, paused = reduce, hold = false, visible = true, raf = 0, W = 0, H = 0, dpr = 1, PS = 0, RS = 0, RESTPOS = { x: 0, y: 0 }, lastDraw = 0, proxyFor = -1;
   var ptr = { x: 0, y: 0, on: false, t: 0 }, pos = { x: 0, y: 0 };
 
   /* the headline, letter by letter */
-  var k = 0;
   heads.forEach(function (h) {
     var i = 0;
     [].slice.call(h.querySelectorAll(".in")).forEach(function (el) {
@@ -279,9 +283,12 @@ document.querySelectorAll("[data-subscribe]").forEach(function (f) {
     });
   });
 
+  /* the videos: the visible slide at full size; the next one's small copy (px) for the portal; the other full-size ones sit prepared and paused */
+  var small = document.createElement("video"); small.muted = true; small.loop = true; small.playsInline = true; small.preload = "auto"; small.setAttribute("aria-hidden", "true"); small.tabIndex = -1;
+  small.style.cssText = "position:absolute;width:2px;height:2px;opacity:0;pointer-events:none"; hero.appendChild(small);
   function vid(i) { return slides[i].querySelector("video"); }
   function prep(i) {
-    var v = vid(i); if (v.dataset.ready) return v; v.dataset.ready = 1;
+    var v = vid(i); if (v.dataset.ready) return v; v.dataset.ready = 1; v.preload = "auto";
     var base = portrait ? slides[i].dataset.tall : slides[i].dataset.wide;
     [["-av1.mp4", 'video/mp4; codecs="av01.0.05M.08"'], [".mp4", 'video/mp4; codecs="avc1.640028"']].forEach(function (t) { var e = document.createElement("source"); e.src = base + t[0]; e.type = t[1]; v.appendChild(e); });
     v.load(); return v;
@@ -289,47 +296,86 @@ document.querySelectorAll("[data-subscribe]").forEach(function (f) {
   function run(i) { var v = prep(i); v.play().then(function () { v.classList.add("go"); }).catch(function () {}); }
   function target() { return (cur + side + N) % N; }
   function active() { return !paused && !hold && visible && !document.hidden; }
+  function running() { return !paused && visible && !document.hidden; }
+  function setSmall(i) {
+    if (proxyFor === i) return; proxyFor = i;
+    small.src = (portrait ? slides[i].dataset.tall : slides[i].dataset.wide) + "-px.mp4"; small.load();
+    if (running() && !reduce) small.play().catch(function () {});
+  }
   function sync() {
-    if (!paused && visible && !document.hidden) { run(cur); if (N > 1 && !reduce) run(target()); } else slides.forEach(function (s, i) { vid(i).pause(); });
+    if (running()) { run(cur); if (N > 1 && !reduce) { setSmall(target()); small.play().catch(function () {}); } }
+    else { slides.forEach(function (s, i) { vid(i).pause(); }); small.pause(); }
     loop();
   }
 
-  /* what the canvas draws: the target slide's video (or its poster before it plays), as if it filled the hero */
-  function cover(i) {
-    var v = vid(i), img = slides[i].querySelector(".poster"), src = v.readyState >= 2 && v.videoWidth ? v : img, sw = src.videoWidth || src.naturalWidth, sh = src.videoHeight || src.naturalHeight;
-    if (!sw) return;
-    var sc = Math.max(W / sw, H / sh), vw = W / sc, vh = H / sc;
-    cx.drawImage(src, (sw - vw) * 0.5, (sh - vh) * 0.3, vw, vh, 0, 0, W, H);
+  /* sizes, measured on resize only */
+  function size() { return Math.max(150, Math.min(220, W * 0.15)); }
+  function measure() {
+    W = hero.clientWidth; H = hero.clientHeight; dpr = Math.min(2, window.devicePixelRatio || 1);
+    RS = size(); PS = Math.ceil(RS * 1.04);
+    pv.width = PS * dpr; pv.height = PS * dpr; pv.style.width = PS + "px"; pv.style.height = PS + "px";
+    var c = hero.querySelector(".chips").getBoundingClientRect(), h = hero.getBoundingClientRect();
+    RESTPOS = { x: W - Math.min(56, W * 0.04) - 56, y: Math.max(130, c.top - h.top - 78) };
+    if (!pos.x) { pos.x = RESTPOS.x; pos.y = RESTPOS.y; }
+    arrowSprite(); lastDraw = 0; loop();
+  }
+  function rest() { return RESTPOS; }
+
+  /* the arrow: white, no disc, a soft shadow; drawn once into two small sprites (right and left), then only copied */
+  var sprites = {};
+  function arrowSprite() {
+    var u = RS / 245, S = Math.ceil(30 * u + 12);
+    [1, -1].forEach(function (d) {
+      var c = document.createElement("canvas"); c.width = S * dpr; c.height = S * dpr; var g = c.getContext("2d"); g.scale(dpr, dpr);
+      g.shadowColor = "rgba(0,0,0,.5)"; g.shadowBlur = 3; g.shadowOffsetY = 1; g.beginPath(); g.lineWidth = Math.max(1.5, 2.1 * u); g.strokeStyle = "#fff"; g.lineCap = "round"; g.lineJoin = "round";
+      var cx0 = S / 2, cy0 = S / 2; g.moveTo(cx0 - 3.4 * u * d, cy0 - 6.2 * u); g.lineTo(cx0 + 3.8 * u * d, cy0); g.lineTo(cx0 - 3.4 * u * d, cy0 + 6.2 * u); g.stroke();
+      sprites[d] = { c: c, s: S };
+    });
+  }
+
+  /* what is drawn: a source (the small copy, or the slide's poster before it plays) as if it filled the hero; the portal takes only the patch under it */
+  function portalSource(i) {
+    if (small.readyState >= 2 && small.videoWidth && proxyFor === i) return small;
+    return slides[i].querySelector(".poster");
+  }
+  function patch(ctx, src, x, y, w, h, dw, dh) {   /* the hero-space rectangle (x, y, w, h) of `src` shown as if it filled the hero (cover, 50% 30%), drawn into (0, 0, dw, dh) */
+    var sw = src.videoWidth || src.naturalWidth, sh = src.videoHeight || src.naturalHeight; if (!sw) return;
+    var sc = Math.max(W / sw, H / sh), ox = (sw - W / sc) * 0.5, oy = (sh - H / sc) * 0.3;
+    ctx.drawImage(src, ox + x / sc, oy + y / sc, w / sc, h / sc, 0, 0, dw, dh);
   }
   function ease(t) { t = Math.max(0, Math.min(1, t)); return 1 - Math.pow(1 - t, 3); }
-  function rest() { var r = hero.querySelector(".chips").getBoundingClientRect(), h = hero.getBoundingClientRect(); return { x: W - Math.min(56, W * 0.04) - 56, y: Math.max(130, r.top - h.top - 78) }; }
-  function size() { return Math.max(150, Math.min(220, W * 0.15)); }
 
   function frame(t) {
     raf = 0;
-    var w = hero.clientWidth, h = hero.clientHeight; dpr = Math.min(2, window.devicePixelRatio || 1);
-    if (w !== W || h !== H) { W = w; H = h; cv.width = W * dpr; cv.height = H * dpr; }
-    cx.setTransform(dpr, 0, 0, dpr, 0, 0); cx.clearRect(0, 0, W, H);
-    var aim = ptr.on && fine && t - ptr.t < 4000 ? ptr : rest();
-    pos.x += (aim.x - pos.x) * 0.16; pos.y += (aim.y - pos.y) * 0.16;
-    if (bloom) drawBloom(t); else if (!reduce && N > 1 && visible) drawPortal();
-    if ((bloom || (!reduce && N > 1 && visible))) raf = requestAnimationFrame(frame);
+    if (reduce || N < 2 || !visible || document.hidden) return;                  /* nothing runs when the hero is off screen or the tab is hidden */
+    var aim = ptr.on && fine && t - ptr.t < 4000 ? ptr : RESTPOS, dx = aim.x - pos.x, dy = aim.y - pos.y, moving = Math.abs(dx) + Math.abs(dy) > 0.4;
+    if (bloom) { drawBloom(t); raf = requestAnimationFrame(frame); return; }
+    if (moving) { pos.x += dx * 0.16; pos.y += dy * 0.16; }
+    else if (paused) { drawPortal(); return; }                                   /* paused and still: one draw, then the loop stops (it restarts on any event) */
+    else if (t - lastDraw < 1000 / RESTFPS) { raf = requestAnimationFrame(frame); return; }
+    lastDraw = t; drawPortal(); raf = requestAnimationFrame(frame);
   }
-  function loop() { if (!raf && !reduce && N > 1 && visible) raf = requestAnimationFrame(frame); }
+  function loop() { if (!raf && !reduce && N > 1 && visible && !document.hidden) raf = requestAnimationFrame(frame); }
 
   function drawPortal() {
-    var s = size() / 245, x = pos.x, y = pos.y, to = target();
+    var s = RS / 245, to = target(), src = portalSource(to);
+    pv.style.transform = "translate(" + (pos.x - PS / 2).toFixed(1) + "px," + (pos.y - PS / 2).toFixed(1) + "px)";
+    px.setTransform(dpr, 0, 0, dpr, 0, 0); px.clearRect(0, 0, PS, PS);
     /* a window only: the next slide shows through the lime's shapes (eight wedges and the centre); the gaps between them show the current slide */
-    cx.save(); cx.translate(x - C0 * s, y - C0 * s); cx.scale(s, s); cx.clip(SIL); cx.setTransform(dpr, 0, 0, dpr, 0, 0); cover(to); cx.restore();
-    if (HAIR) { cx.save(); cx.translate(x - C0 * s, y - C0 * s); cx.scale(s, s); cx.lineWidth = 1 / s; cx.strokeStyle = "rgba(255,255,255,.35)"; cx.stroke(SIL); cx.restore(); }
-    /* the arrow sits inside the centre circle (about 15 units of the logomark's 245): white, no disc, a soft shadow to hold on bright footage */
-    var u = size() / 245;
-    cx.save(); cx.shadowColor = "rgba(0,0,0,.5)"; cx.shadowBlur = 3; cx.shadowOffsetY = 1;
-    cx.beginPath(); cx.lineWidth = Math.max(1.5, 2.1 * u); cx.strokeStyle = "#fff"; cx.lineCap = "round"; cx.lineJoin = "round";
-    cx.moveTo(x - 3.4 * u * side, y - 6.2 * u); cx.lineTo(x + 3.8 * u * side, y); cx.lineTo(x - 3.4 * u * side, y + 6.2 * u); cx.stroke(); cx.restore();
+    px.save(); px.translate(PS / 2 - C0 * s, PS / 2 - C0 * s); px.scale(s, s); px.clip(SIL); px.setTransform(dpr, 0, 0, dpr, 0, 0);
+    patch(px, src, pos.x - PS / 2, pos.y - PS / 2, PS, PS, PS, PS); px.restore();
+    if (HAIR) { px.save(); px.translate(PS / 2 - C0 * s, PS / 2 - C0 * s); px.scale(s, s); px.lineWidth = 1 / s; px.strokeStyle = "rgba(255,255,255,.35)"; px.stroke(SIL); px.restore(); }
+    var sp = sprites[side]; px.drawImage(sp.c, PS / 2 - sp.s / 2, PS / 2 - sp.s / 2, sp.s, sp.s);
+  }
+
+  /* the bloom: a full-screen canvas for about a second, then released */
+  function bloomStart(n, from) {
+    var k = Math.min(dpr, 1.25); bv.width = Math.round(W * k); bv.height = Math.round(H * k); bv.style.display = "block"; bloom = { t0: performance.now(), x: from.x, y: from.y, to: n, k: k };
+    pv.style.visibility = "hidden";
   }
   function drawBloom(t) {
-    var e = (t - bloom.t0) / BLOOM, s0 = size() / 245, diag = Math.hypot(W, H), S = diag / 245 * 0.55, x = bloom.x, y = bloom.y;
+    var e = (t - bloom.t0) / BLOOM, s0 = RS / 245, diag = Math.hypot(W, H), S = diag / 245 * 0.55, x = bloom.x, y = bloom.y, k = bloom.k;
+    bx.setTransform(k, 0, 0, k, 0, 0); bx.clearRect(0, 0, W, H);
     var all = new Path2D();
     WEDGE.forEach(function (w, i) {
       var p = ease((e * BLOOM - i * 45) / 520), sc = s0 + (S - s0) * p * p, a = D.w[i][1], m = new DOMMatrix();
@@ -338,15 +384,16 @@ document.querySelectorAll("[data-subscribe]").forEach(function (f) {
     });
     var r0 = s0 * 17, rc = r0 + (diag - r0) * ease((e - 0.38) / 0.62);
     var c = new Path2D(); c.arc(x, y, rc, 0, 6.2832); all.addPath(c);
-    cx.save(); cx.clip(all); cover(bloom.to); cx.restore();
+    var fv = vid(bloom.to), src = fv.readyState >= 2 && fv.videoWidth ? fv : portalSource(bloom.to);
+    bx.save(); bx.clip(all); patch(bx, src, 0, 0, W, H, W, H); bx.restore();
     if (e >= 1) finish();
   }
   function finish() {
     var b = bloom, old = cur; bloom = null; cur = b.to;
     slides.forEach(function (s, i) { s.classList.add("cut"); s.classList.toggle("on", i === cur); });
-    requestAnimationFrame(function () { slides.forEach(function (s) { s.classList.remove("cut"); }); });
+    requestAnimationFrame(function () { slides.forEach(function (s) { s.classList.remove("cut"); }); bv.width = 0; bv.height = 0; bv.style.display = "none"; pv.style.visibility = ""; });   /* the full-screen canvas is released */
     setTimeout(function () { if (cur !== old) vid(old).pause(); }, 300);
-    side = 1; sync();
+    side = 1; proxyFor = -1; sync();
   }
 
   function swap(n) {
@@ -357,17 +404,17 @@ document.querySelectorAll("[data-subscribe]").forEach(function (f) {
   }
   function go(n) {
     if (bloom || n === cur || N < 2) return;
-    swap(n); prep(n);
+    swap(n); var fv = prep(n);
     if (reduce) { slides.forEach(function (s, i) { s.classList.toggle("on", i === n); }); cur = n; if (active()) run(n); setTimeout(function () { vid(cur === n ? (n + 1) % N : n).pause(); }, 400); arm(); return; }
+    try { if (small.readyState >= 1 && proxyFor === n) fv.currentTime = small.currentTime; } catch (e) {}   /* the bloom opens on the frame the portal was showing */
     run(n);
-    var from = ptr.on && fine ? ptr : rest(); pos.x = from.x; pos.y = from.y;
-    bloom = { t0: performance.now(), x: from.x, y: from.y, to: n };
-    loop(); arm();
+    var from = ptr.on && fine ? ptr : RESTPOS; pos.x = from.x; pos.y = from.y;
+    bloomStart(n, { x: from.x, y: from.y }); loop(); arm();
   }
-  var elapsed = 0, ring = document.querySelector(".pp"), pp = ring;
+  var elapsed = 0, pp = document.querySelector(".pp");
   function arm() { elapsed = 0; progress(); }
   function progress() { if (pp) pp.style.setProperty("--p", reduce ? 0 : Math.min(1, elapsed / SECONDS)); }
-  setInterval(function () {
+  setInterval(function () {                                                        /* the one timer: it counts only while the stories run */
     if (N < 2 || bloom || !active()) return;
     elapsed += 100; progress();
     if (elapsed >= SECONDS) { elapsed = 0; side = 1; go((cur + 1) % N); }
@@ -378,7 +425,7 @@ document.querySelectorAll("[data-subscribe]").forEach(function (f) {
   function overUI(el) { return el.closest && el.closest("a, button, input, form, .overlay"); }
   hero.addEventListener("mousemove", function (e) {
     var p = local(e); ptr.x = p.x; ptr.y = p.y; ptr.t = performance.now();
-    ptr.on = !overUI(e.target); side = p.x > W / 2 ? 1 : -1;
+    ptr.on = !overUI(e.target); var ns = p.x > W / 2 ? 1 : -1; if (ns !== side) { side = ns; if (running() && !reduce) setSmall(target()); }
     hero.classList.toggle("portal", ptr.on && fine && !reduce && N > 1);
     if (!raf) loop();
   });
@@ -387,7 +434,7 @@ document.querySelectorAll("[data-subscribe]").forEach(function (f) {
   hero.addEventListener("click", function (e) {
     if (overUI(e.target)) return;
     var p = local(e), d = fine ? (p.x > W / 2 ? 1 : -1) : 1;
-    if (!fine) { var r = rest(); if (Math.hypot(p.x - r.x, p.y - r.y) > 70) return; }
+    if (!fine) { var r = RESTPOS; if (Math.hypot(p.x - r.x, p.y - r.y) > 70) return; }
     side = d; go((cur + d + N) % N);
   });
   var tx = 0, ty = 0;
@@ -406,7 +453,8 @@ document.querySelectorAll("[data-subscribe]").forEach(function (f) {
   var phone = window.matchMedia("(max-width: 640px)"), rt = document.querySelector(".top .rt");
   function place() { if (phone.matches) hero.appendChild(pp); else rt.appendChild(pp); }   /* the header is too compact on a phone */
   if (phone.addEventListener) phone.addEventListener("change", place); else phone.addListener(place); place();
-  window.addEventListener("load", function () { setTimeout(function () { if (N > 1) prep(1); sync(); arm(); }, 200); });
+  if ("ResizeObserver" in window) new ResizeObserver(function () { measure(); }).observe(hero); else window.addEventListener("resize", measure);
+  window.addEventListener("load", function () { setTimeout(function () { measure(); if (N > 1) { prep(1); prep(N - 1); } sync(); arm(); }, 200); });
   window.__hero = { go: go, show: function (n) { if (n !== cur) { swap(n); slides.forEach(function (s, i) { s.classList.add("cut"); s.classList.toggle("on", i === n); }); cur = n; run(n); setTimeout(function () { slides.forEach(function (s) { s.classList.remove("cut"); }); }, 50); } }, stop: function () { paused = true; sync(); } };
 })();
 
