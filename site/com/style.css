@@ -116,7 +116,6 @@ p { margin: 0 0 1.1em; }
   .hd { opacity: 0; transition: opacity .3s; } .hd.on { opacity: 1; }
   .slide { transition: opacity .3s; }
 }
-}
 
 /* the pale-lime band, measured from the mock at 1440 (u = 1/100 of the page width, capped at 1440): 136 above the giant word (551 tall, full width),
    then a 1184 tall collage area: the tall photo 125 below the word at x 657 (409 wide), the small one at x 292 / y 674 (299 square), the right one
