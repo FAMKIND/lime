@@ -49,12 +49,11 @@
       <div class="hd"><span class="ln"><span class="in">Where</span></span><span class="ln r"><span class="in">teachers connect.</span></span></div>
   </div>
   <div class="chips">
-    <a class="chip on" href="#about" data-placeholder tabindex="0"><img src="media/avatar.webp" width="60" height="60" alt=""><span><strong>Mrs Flowers</strong><span>Is connecting Black Science Teachers in NYC <i aria-hidden="true">→</i></span><em class="badge">Placeholder</em></span></a>
-    <a class="chip" href="#about" data-placeholder tabindex="-1"><b class="ini" aria-hidden="true">MC</b><span><strong>Ms Chen</strong><span>Jams about hands-on maths in Seattle <i aria-hidden="true">→</i></span><em class="badge">Placeholder</em></span></a>
-    <a class="chip" href="#about" data-placeholder tabindex="-1"><b class="ini" aria-hidden="true">AR</b><span><strong>Mr Alvarez</strong><span>Connects rural teachers across New Mexico <i aria-hidden="true">→</i></span><em class="badge">Placeholder</em></span></a>
+    <a class="chip on" href="#about" data-placeholder tabindex="0"><img src="media/avatar.webp" width="60" height="60" alt=""><span><strong>Mrs Flowers</strong><span>Is connecting Black Science Teachers in NYC <i aria-hidden="true">→</i></span></span></a>
+    <a class="chip" href="#about" data-placeholder tabindex="-1"><b class="ini" aria-hidden="true">MC</b><span><strong>Ms Chen</strong><span>Jams about hands-on maths in Seattle <i aria-hidden="true">→</i></span></span></a>
+    <a class="chip" href="#about" data-placeholder tabindex="-1"><b class="ini" aria-hidden="true">AR</b><span><strong>Mr Alvarez</strong><span>Connects rural teachers across New Mexico <i aria-hidden="true">→</i></span></span></a>
   </div>
-  <a class="cue" href="#about" aria-label="Scroll down"><svg viewBox="0 0 48 64" width="56" height="75" aria-hidden="true"><path d="M24 2v58m0 0L3 39m21 21 21-21" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></a>
-  <button class="vplay" type="button" hidden aria-label="Pause the slideshow"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path class="i-play" d="M8 5v14l11-7z"/><path class="i-pause" d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg></button>
+  <a class="cue" href="#about" aria-label="Scroll down"><svg viewBox="0 0 48 64" aria-hidden="true"><path d="M24 0v62M2 40l22 22 22-22" fill="none" stroke="currentColor" vector-effect="non-scaling-stroke"/></svg></a>
 </section>
 
 <section class="band" id="about" aria-labelledby="h-about">
@@ -73,7 +72,6 @@
   <picture><source srcset="media/quote.avif" type="image/avif"><img src="media/quote.webp" width="1800" height="1000" alt="" loading="lazy" decoding="async"></picture>
   <div class="scrim" aria-hidden="true"></div>
   <blockquote data-reveal><p>"lime is a space for me to connect with Teachers who share a similar journey."</p></blockquote>
-  <em class="badge">Placeholder quote and photo: replace with a real teacher, with consent, before publishing</em>
 </section>
 
 <section class="feature warm" id="link" aria-labelledby="h-link">
@@ -143,7 +141,7 @@
       <div><h3>Contact</h3><a href="mailto:hello@limemessenger.com">hello@limemessenger.com</a><a href="mailto:support@limemessenger.com">support@limemessenger.com</a></div>
       <div><h3>More</h3><a href="https://limemessenger.org">limemessenger.org</a></div>
     </div>
-    <p class="legal">lime is made by Lime Messenger LLC. [legal line: to be confirmed]</p>
+    <p class="legal">lime is made by Lime Messenger LLC, powered by the Lime Messenger Foundation.</p>
   </div>
 </footer>
 
@@ -181,9 +179,9 @@ document.querySelectorAll("[data-subscribe]").forEach(function (f) {
 
 /* The hero, a rotator: three slides (video, headline, credit chip). The poster shows first; a slide's video loads only when it is the next one.
    Every 8 s the picture crossfades while the headline's lines slide up out of their masks and the next slide's slide up in, line by line.
-   It stops for the pause button, hover, focus and when off-screen; with reduced motion it starts paused on the first poster. */
+   It stops for hover, focus and when off-screen; with reduced motion it starts paused on the first poster. */
 (function () {
-  var hero = document.querySelector(".hero"), slides = [].slice.call(hero.querySelectorAll(".slide")), heads = [].slice.call(hero.querySelectorAll(".hd")), chips = [].slice.call(hero.querySelectorAll(".chip")), btn = hero.querySelector(".vplay");
+  var hero = document.querySelector(".hero"), slides = [].slice.call(hero.querySelectorAll(".slide")), heads = [].slice.call(hero.querySelectorAll(".hd")), chips = [].slice.call(hero.querySelectorAll(".chip"));
   var portrait = window.matchMedia("(max-aspect-ratio: 1/1)").matches, paused = reduce, hold = false, visible = true, cur = 0, timer = null, SECONDS = 8000;
   function video(i) { return slides[i].querySelector("video"); }
   function prep(i) {
@@ -199,23 +197,23 @@ document.querySelectorAll("[data-subscribe]").forEach(function (f) {
     slides.forEach(function (s, i) { s.classList.toggle("on", i === n); });
     heads.forEach(function (h, i) { h.classList.toggle("on", i === n); h.classList.toggle("out", i === old && i !== n); });
     chips.forEach(function (c, i) { c.classList.toggle("on", i === n); c.classList.toggle("out", i === old && i !== n); c.tabIndex = i === n ? 0 : -1; });
+    clearTimeout(show.t);   /* the leaving words are hidden for good once they are out of sight: no fragment stays behind */
+    show.t = setTimeout(function () { heads.concat(chips).forEach(function (e) { e.classList.remove("out"); }); }, 1300);
     if (active()) { var v = video(n); v.currentTime = 0; run(n); }
     setTimeout(function () { if (cur !== old) video(old).pause(); }, 1400);
     if (slides.length > 1) prep((n + 1) % slides.length);   /* the next one loads now */
   }
   function tick() { if (active() && slides.length > 1) show((cur + 1) % slides.length); }
   function arm() { clearInterval(timer); timer = setInterval(tick, SECONDS); }
-  function label() { btn.setAttribute("aria-label", paused ? "Play the slideshow" : "Pause the slideshow"); btn.classList.toggle("playing", !paused); }
   function sync() { if (active()) run(cur); else video(cur).pause(); }
-  btn.hidden = false; label();
-  btn.addEventListener("click", function () { paused = !paused; label(); sync(); if (!paused) arm(); });
+  /* no play/pause button for now (it returns later); hover, focus, off-screen and reduced motion still stop it */
   hero.addEventListener("mouseenter", function () { hold = true; sync(); });
   hero.addEventListener("mouseleave", function () { hold = false; sync(); arm(); });
   hero.addEventListener("focusin", function () { hold = true; sync(); });
   hero.addEventListener("focusout", function () { hold = false; sync(); arm(); });
   if ("IntersectionObserver" in window) new IntersectionObserver(function (es) { visible = es[0].isIntersecting; sync(); if (visible) arm(); }).observe(hero);
   window.addEventListener("load", function () { setTimeout(function () { if (slides.length > 1) prep(1); sync(); arm(); }, 200); });
-  window.__hero = { show: show };   /* for the screenshots */
+  window.__hero = { show: show, stop: function () { paused = true; sync(); } };   /* for the screenshots */
 })();
 
 /* Scroll motion: headings, paragraphs and images fade and rise in, and fade out once scrolled past; the collage drifts at different speeds. Off with reduced motion. */

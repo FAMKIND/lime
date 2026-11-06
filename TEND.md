@@ -9819,3 +9819,16 @@ The .com hero as a rotator, the whole "lime", polish (`site/com/`, **not deploye
 - **5 Polish:** the demo author is now "Maya Ortiz" (a DEBUG-only override in the `jam-marketing` demo screen) and **both recordings are re-made**; the link recording now ends with a ❤️ reaction on Sam's message; the pledge reads "Made for people who teach. Students don't have accounts."; on phones the headline is smaller so "teachers connect." stays on one line.
 - **Left over:** the profile avatar at the top right of the jam recording still says "TT" (from the demo profile); the chip names and lines are made up; slides 2's video is a stand-in until you send picks (`CREDITS.md` lists both Pexels video ids; their authors are not in the file names).
 - **Not done:** no deploy, nothing installed.
+
+## LIME-284e4
+Your notes on 284e3 (`site/com/`, **not deployed**). Stop for your look.
+- **Look at:** `docs/qa-shots/284e4/` (`desktop-` / `phone-slide1…3`, `-header-solid` (the header after scrolling up), `-full`, and `scroll.webm`: the three slides rotating, then scrolling down and back up), or `cd site/com && python3 -m http.server 8284`.
+- **1 ↓:** its stroke is the headline's stem: I measured the light weight's stem at 0.0675 em and the arrow's stroke is `--h1 × 0.0675` (non-scaling), at the headline's left edge. (Measured with the system font on this Mac; another platform's font has a slightly different stem.)
+- **2 Badges:** gone from the chips and the quote. `data-placeholder` stays on the three hero chips and on the quote section (my choice: your note names the chips; the quote is still a stand-in until a real teacher gives theirs, so 284c can block on it too; say if you want it off the quote).
+- **3 Play/pause button:** removed (markup, CSS and script). Hover, focus, off-screen and reduced motion (poster only, no word motion) still stop the motion.
+- **4 The stray fragment, found:** the leaving headline kept its `out` class (and its exit pose, one mask-height above) until the next change, so the bottom tip of the "j" of "jam." stayed visible at the top edge of its mask, under the chip. Now: the exit goes further (−160%), the `out` state is cleared 1.3 s later, and a headline or chip that is neither `on` nor `out` is `visibility: hidden`. Checked by capturing 14 frames of the 1→2 transition around the chip: no fragment at any frame. (I did not step every transition frame by frame in all six directions; the three forward ones and the wrap to slide 1 run in `scroll.webm`.)
+- **5 Giant "lime":** now 100 vw wide, edge to edge, all four letters whole (the "e" touches the right edge).
+- **6 Header:** after scrolling up it is the logomark only, over a 62 % paper tint with a 28 px blur + saturate and a hairline; the full lockup shows only at the top over the hero.
+- **7 Quote photo:** `~/Downloads/image.png` copied to `design/media/quote-portrait.png`, cropped around the face as in the mock; no name, no badge. The Pexels `divinetechygirl` stand-in is out of the page, **`CREDITS.md` not yet updated for the new photo (its source and author are not in the file; tell me where it is from)**.
+- **8 Footer:** "lime is made by Lime Messenger LLC, powered by the Lime Messenger Foundation."
+- **Not done:** no deploy, nothing installed.
