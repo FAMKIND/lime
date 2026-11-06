@@ -24,6 +24,7 @@
     <button class="btn" type="submit" data-cta aria-label="Notify me when lime is ready">Notify me</button>
     <output class="note" role="status" aria-live="polite"></output>
   </form>
+  <button class="pp" type="button" aria-label="Pause the stories"><svg viewBox="0 0 44 44" aria-hidden="true"><circle class="trk" cx="22" cy="22" r="20.5"/><circle class="arc" cx="22" cy="22" r="20.5" pathLength="100"/><path class="i-pause" d="M17 14h3.4v16H17zM23.6 14H27v16h-3.4z"/><path class="i-play" d="M18 13.5v17l13-8.5z"/></svg></button>
   </div>
   <div class="mob">
     <button class="btn" type="button" data-cta data-open="sheet" aria-label="Notify me when lime is ready">Notify me</button>
@@ -78,7 +79,6 @@
     <a class="chip" href="#about" data-placeholder tabindex="-1"><b class="ini" aria-hidden="true">AR</b><span><strong>Mr Alvarez</strong><span>Connects rural teachers across New Mexico <i aria-hidden="true">→</i></span></span></a>
   </div>
   <button class="pn" type="button" data-dir="-1">Previous story</button><button class="pn" type="button" data-dir="1">Next story</button>
-  <button class="pp" type="button" aria-label="Pause the stories"><svg viewBox="0 0 44 44" aria-hidden="true"><circle class="trk" cx="22" cy="22" r="20.5"/><circle class="arc" cx="22" cy="22" r="20.5" pathLength="100"/><path class="i-pause" d="M17 14h3.4v16H17zM23.6 14H27v16h-3.4z"/><path class="i-play" d="M18 13.5v17l13-8.5z"/></svg></button>
   <a class="cue" href="#intro" aria-label="Scroll down"><svg viewBox="0 0 48 64" aria-hidden="true"><path d="M24 0v62M2 40l22 22 22-22" fill="none" stroke="currentColor" vector-effect="non-scaling-stroke"/></svg></a>
 </section>
 
@@ -288,9 +288,9 @@ document.querySelectorAll("[data-subscribe]").forEach(function (f) {
   }
   function run(i) { var v = prep(i); v.play().then(function () { v.classList.add("go"); }).catch(function () {}); }
   function target() { return (cur + side + N) % N; }
-  function active() { return !paused && !hold && visible; }
+  function active() { return !paused && !hold && visible && !document.hidden; }
   function sync() {
-    if (!paused && visible) { run(cur); if (N > 1 && !reduce) run(target()); } else slides.forEach(function (s, i) { vid(i).pause(); });
+    if (!paused && visible && !document.hidden) { run(cur); if (N > 1 && !reduce) run(target()); } else slides.forEach(function (s, i) { vid(i).pause(); });
     loop();
   }
 
@@ -382,8 +382,8 @@ document.querySelectorAll("[data-subscribe]").forEach(function (f) {
     hero.classList.toggle("portal", ptr.on && fine && !reduce && N > 1);
     if (!raf) loop();
   });
-  hero.addEventListener("mouseleave", function () { ptr.on = false; hero.classList.remove("portal"); hold = false; sync(); arm(); });
-  hero.addEventListener("mouseenter", function () { hold = true; sync(); });
+  hero.addEventListener("mouseleave", function () { ptr.on = false; hero.classList.remove("portal"); });   /* hovering never pauses the stories */
+  document.addEventListener("visibilitychange", function () { sync(); });
   hero.addEventListener("click", function (e) {
     if (overUI(e.target)) return;
     var p = local(e), d = fine ? (p.x > W / 2 ? 1 : -1) : 1;
@@ -397,12 +397,15 @@ document.querySelectorAll("[data-subscribe]").forEach(function (f) {
     if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.4) { var d = dx < 0 ? 1 : -1; side = d; go((cur + d + N) % N); }
   }, { passive: true });
   [].forEach.call(hero.querySelectorAll(".pn"), function (b) { b.addEventListener("click", function () { var d = +b.dataset.dir; side = d; go((cur + d + N) % N); }); });
-  hero.addEventListener("focusin", function () { hold = true; sync(); });
-  hero.addEventListener("focusout", function () { hold = false; sync(); arm(); });
+  hero.addEventListener("focusin", function (e) { if (e.target.matches && e.target.matches(":focus-visible")) { hold = true; sync(); } });   /* keyboard focus inside the hero pauses */
+  hero.addEventListener("focusout", function () { if (hold) { hold = false; sync(); } });
   if ("IntersectionObserver" in window) new IntersectionObserver(function (es) { visible = es[0].isIntersecting; pp.classList.toggle("gone", !visible); sync(); }).observe(hero);
   function pplabel() { pp.setAttribute("aria-label", paused ? "Play the stories" : "Pause the stories"); pp.classList.toggle("paused", paused); }
   pp.addEventListener("click", function () { paused = !paused; pplabel(); sync(); });
   pplabel();
+  var phone = window.matchMedia("(max-width: 640px)"), rt = document.querySelector(".top .rt");
+  function place() { if (phone.matches) hero.appendChild(pp); else rt.appendChild(pp); }   /* the header is too compact on a phone */
+  if (phone.addEventListener) phone.addEventListener("change", place); else phone.addListener(place); place();
   window.addEventListener("load", function () { setTimeout(function () { if (N > 1) prep(1); sync(); arm(); }, 200); });
   window.__hero = { go: go, show: function (n) { if (n !== cur) { swap(n); slides.forEach(function (s, i) { s.classList.add("cut"); s.classList.toggle("on", i === n); }); cur = n; run(n); setTimeout(function () { slides.forEach(function (s) { s.classList.remove("cut"); }); }, 50); } }, stop: function () { paused = true; sync(); } };
 })();

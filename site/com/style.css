@@ -263,15 +263,15 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 .top .rt .sub { justify-self: auto; }
 .pp { position: relative; flex: none; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: #fff; cursor: pointer; transition: opacity .3s ease; --p: 0; }
 .pp svg { display: block; width: 44px; height: 44px; overflow: visible; }
-.pp circle { fill: none; stroke-width: 2; }
-.pp .trk { stroke: rgba(255,255,255,.4); }
+.pp circle { fill: none; stroke-width: 2.6; }
+.pp .trk { stroke: rgba(255,255,255,.35); }
 .pp .arc { stroke: #fff; stroke-dasharray: 100; stroke-dashoffset: calc(100 - var(--p) * 100); transform: rotate(-90deg); transform-origin: 50% 50%; transition: stroke-dashoffset .1s linear; }
 .pp path { fill: #fff; }
 .pp .i-play { display: none; }
 .pp.paused .i-pause { display: none; }
 .pp.paused .i-play { display: inline; }
-.pp.gone { opacity: 0; pointer-events: none; }
-.hero > .pp { position: absolute; right: var(--edge); bottom: clamp(12px, 2.2vh, 24px); z-index: 6; }   /* the hero's lower right, under the headline's last line, at the header's right padding */
+.pp.gone, .top.solid .pp { opacity: 0; pointer-events: none; }
+.hero > .pp { position: absolute; right: var(--edge); bottom: clamp(12px, 2.2vh, 24px); z-index: 6; }   /* phones only: the header has no room */   /* the hero's lower right, under the headline's last line, at the header's right padding */
 @media (prefers-reduced-motion: reduce) { .pp .arc { display: none; } }
 @media (max-width: 640px) { .top .rt { display: none; } }
 
