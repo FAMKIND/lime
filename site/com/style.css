@@ -258,3 +258,21 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 }
 @media (prefers-reduced-motion: reduce) { .dl { transition: none; } }
 @media (max-width: 640px) { .top > .dl-cta { display: none; } }
+
+/* LIME-284e9: the play/pause button with the slide timer as its ring (header on a desktop, the hero's lower right on a phone; only while the hero is on screen) */
+.top .rt { justify-self: end; display: flex; align-items: center; gap: 12px; }
+.top .rt .sub { justify-self: auto; }
+.pp { position: relative; flex: none; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: #fff; cursor: pointer; transition: opacity .3s ease; --p: 0; }
+.pp svg { display: block; width: 44px; height: 44px; overflow: visible; }
+.pp circle { fill: none; stroke-width: 2; }
+.pp .trk { stroke: rgba(255,255,255,.4); }
+.pp .arc { stroke: #fff; stroke-dasharray: 100; stroke-dashoffset: calc(100 - var(--p) * 100); transform: rotate(-90deg); transform-origin: 50% 50%; transition: stroke-dashoffset .1s linear; }
+.pp path { fill: #fff; }
+.pp .i-play { display: none; }
+.pp.paused .i-pause { display: none; }
+.pp.paused .i-play { display: inline; }
+.pp.gone, .top.solid .pp { opacity: 0; pointer-events: none; }
+.hero > .pp { position: absolute; right: var(--edge); bottom: 3vh; z-index: 6; }
+@media (max-width: 640px) { .top .rt .pp { display: none; } }
+@media (prefers-reduced-motion: reduce) { .pp .arc { display: none; } }
+@media (max-width: 640px) { .top .rt { display: none; } }
