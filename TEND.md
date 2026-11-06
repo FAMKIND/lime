@@ -9845,3 +9845,11 @@ Matching the mock (`site/com/`, **not deployed**). Stop for your look.
 - **Also changed:** the giant "lime" colour is the mock's #caefa9 (paler than 284e3's #a3e18a; one line to change back); the hero is `min(73.3 u, 100 svh)` tall (the mock's hero is taller than a 900 px window, so at 1440×900 it is 900); the phone-size headline and chip no longer overlap; I also found and fixed **broken CSS I introduced in 284e4** (a regex left two half-lines, which dropped the phone collage rules).
 - **Not matched on purpose:** the mock's hero line spacing (1.03) vs the tighter .9 you asked for in 284e3; the typeface (system font; the mock looks like Figtree); the mock's footer is blank, so no comparison.
 - **Not done:** no deploy, nothing installed; I did not re-record `scroll.webm` this round.
+
+### LIME-284e5, part 2 (the hero headline and Figtree, added to the brief after part 1)
+- **Figtree, self-hosted:** the variable font (OFL, from the google/fonts repository) subset to Latin and woff2 (20 KB), `site/com/fonts/figtree-var.woff2` + `OFL.txt`, `font-display: swap`, preloaded; it replaces the system font for the headline, nav and body (system fonts remain the fallback). With it the mock's measurements hold in the real typeface: headings 112 px with −0.02 em tracking ("link up with" = 534 px as in the mock), paragraphs 31.7 px / 1.21.
+- **Hero headline:** bigger: font size 10.3 vw (≈ 148 px at 1440; "Where" spans 30 % of the width, as in the mock; was 10.6 vw in the system font, which is narrower); **the two lines interlock**: on slides 1 and 2 the second line starts where "Where" ends (2.8 em in), with tight leading (line height 0.88); the mask padding was widened so Figtree's descenders are not clipped. **Slide 3's "teachers connect." (7.95 em) cannot start there and still fit** (it would be 110 % of the width), so it stays flush right (starting under "Where"). Phones: the same rule at 10.3 vw (≥ 36 px).
+- **Nav and lockup:** the nav text 19 px (was 17) and the lockup larger (mark 48 px, wordmark 54 px).
+- **↓:** at the left edge on the second line's band (checked on all three slides at 1440).
+- **Look at:** `compare-hero.png` (mock left, page right), `desktop-slide1…3.png`, `phone-slide1…3.png`, and the part-1 comparisons (re-made with Figtree).
+- **Not done:** no deploy, nothing installed.

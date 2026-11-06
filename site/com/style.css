@@ -1,15 +1,16 @@
 /* limemessenger.com (LIME-284e), built from the user's mock. Light theme; no external resources. */
+@font-face { font-family: "Figtree"; src: url(fonts/figtree-var.woff2) format("woff2"); font-weight: 300 900; font-style: normal; font-display: swap; }
 :root {
   --ink: #131b17; --lime: #a3e18a; --pale: #e4f9be; --warm: #f0eee6; --paper: #f9f8f4; --deep: #0d2a1b;
   --muted: #4d524c;
-  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
-  --h1: clamp(40px, 10.6vw, 152px);
+  --sans: "Figtree", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+  --h1: clamp(36px, 10.3vw, 200px);
   --edge: clamp(20px, 4vw, 56px);
   --u: min(1vw, 14.4px);
 }
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
-body { margin: 0; background: var(--paper); color: var(--ink); font: 400 20px/1.4 var(--sans); -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 400 20px/1.4 var(--sans); font-optical-sizing: auto; -webkit-font-smoothing: antialiased; overflow-x: hidden; }
 img, video { max-width: 100%; display: block; }
 a { color: inherit; }
 :focus-visible { outline: 3px solid currentColor; outline-offset: 3px; border-radius: 8px; }
@@ -17,7 +18,7 @@ a { color: inherit; }
 .skip { position: absolute; left: 12px; top: -80px; z-index: 40; background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 10px; }
 .skip:focus { top: 12px; }
 .wrap { max-width: 1240px; margin: 0 auto; padding: 0 var(--edge); }
-h1, h2, h3 { margin: 0; font-weight: 300; letter-spacing: -0.035em; line-height: 1.02; }
+h1, h2, h3 { margin: 0; font-weight: 300; letter-spacing: -0.02em; line-height: 1.02; }
 p { margin: 0 0 1.1em; }
 
 /* forms: an outlined email pill and the pale-lime button */
@@ -38,14 +39,14 @@ p { margin: 0 0 1.1em; }
 .top.solid { background: color-mix(in srgb, var(--paper) 90%, transparent); color: var(--ink); -webkit-backdrop-filter: blur(30px) saturate(1.8); backdrop-filter: blur(30px) saturate(1.8); box-shadow: 0 1px 0 rgba(19,27,23,.16); }
 .top.solid .lockup .wm { display: none; }
 .top .l { display: flex; gap: 8vw; }
-.top .l a { text-decoration: none; font-size: 17px; padding: 10px 0; min-height: 44px; display: inline-flex; align-items: center; }
+.top .l a { text-decoration: none; font-size: 19px; padding: 10px 0; min-height: 44px; display: inline-flex; align-items: center; }
 .top .l a:hover { text-decoration: underline; }
 .top .sub { justify-self: end; flex-wrap: nowrap; }
 .top .sub input { flex: 0 1 240px; }
 .top .note { position: absolute; top: calc(100% + 8px); right: 0; width: max-content; max-width: 80vw; background: var(--paper); color: var(--ink); padding: 6px 12px; border-radius: 12px; }
 .lockup { display: flex; flex-direction: column; align-items: center; gap: 4px; text-decoration: none; }
-.lockup .mk { width: 40px; height: 40px; }
-.lockup .wm { width: 44px; height: auto; filter: brightness(0) invert(1); transition: filter .25s; }
+.lockup .mk { width: 48px; height: 48px; }
+.lockup .wm { width: 54px; height: auto; filter: brightness(0) invert(1); transition: filter .25s; }
 .top.solid .lockup .wm { filter: none; }
 .top .mob { display: none; justify-self: end; gap: 10px; align-items: center; }
 .burger { width: 44px; height: 44px; border-radius: 50%; border: 1px solid currentColor; background: transparent; color: inherit; display: grid; place-items: center; cursor: pointer; }
@@ -55,7 +56,7 @@ p { margin: 0 0 1.1em; }
   .top .l, .top .sub { display: none; }
   .top .mob { display: flex; }
   .top .lockup .wm { display: none; }
-  .top .lockup .mk { width: 40px; height: 40px; }
+  .top .lockup .mk { width: 48px; height: 48px; }
 }
 /* the phone menu and the subscribe sheet */
 .overlay { position: fixed; inset: 0; z-index: 50; background: var(--paper); color: var(--ink); display: flex; flex-direction: column; padding: 14px var(--edge) 40px; overflow-y: auto; }
@@ -77,17 +78,18 @@ p { margin: 0 0 1.1em; }
 .slide video { opacity: 0; transition: opacity .8s ease; }
 .slide video.go { opacity: 1; }
 .scrim { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(to bottom, rgba(10,14,12,.42) 0, rgba(10,14,12,.08) 28%, rgba(10,14,12,.14) 50%, rgba(10,14,12,.66) 100%); }
-.heads { position: absolute; left: var(--edge); right: var(--edge); bottom: 9vh; height: calc(var(--h1) * 1.84); font-size: var(--h1); font-weight: 300; letter-spacing: -0.035em; line-height: .9; text-shadow: 0 2px 30px rgba(0,0,0,.25); }
+.heads { position: absolute; left: var(--edge); right: var(--edge); bottom: 9vh; height: calc(var(--h1) * 1.76); font-size: var(--h1); font-weight: 300; letter-spacing: -0.02em; line-height: .88; text-shadow: 0 2px 30px rgba(0,0,0,.25); }
 .hd { position: absolute; inset: 0; display: flex; flex-direction: column; visibility: hidden; }
 .hd.on, .hd.out { visibility: visible; }
-.ln { display: block; overflow: hidden; padding: .06em .05em .12em; margin: -.06em -.05em -.12em; }
-.ln.r { align-self: flex-end; margin-top: -.02em; }
-.ln .in { display: block; white-space: nowrap; transform: translateY(115%); }
+.ln { display: block; overflow: hidden; padding: .12em .05em .2em; margin: -.12em -.05em -.2em; }
+.ln.r { align-self: flex-end; }
+.hd.k .ln.r { align-self: flex-start; margin-left: 2.8em; }   /* the second line starts where "Where" ends (the mock); the longest line, "teachers connect.", does not fit that way and stays flush right */
+.ln .in { display: block; white-space: nowrap; transform: translateY(135%); }
 .hd.on .in { transform: none; transition: transform 1.05s cubic-bezier(.2,.75,.15,1); }
 .hd.on .ln.r .in { transition-delay: .14s; }
-.hd.out .in { transform: translateY(-160%); transition: transform .8s cubic-bezier(.6,0,.8,.4); }
+.hd.out .in { transform: translateY(-190%); transition: transform .8s cubic-bezier(.6,0,.8,.4); }
 .hd.out .ln.r .in { transition-delay: .08s; }
-.chips { position: absolute; right: var(--edge); bottom: calc(9vh + var(--h1) * 0.96); width: min(340px, 70vw); height: 90px; }
+.chips { position: absolute; right: var(--edge); bottom: calc(9vh + var(--h1) * 0.95); width: min(340px, 70vw); height: 90px; }
 .chip { position: absolute; right: 0; top: 0; display: flex; gap: 16px; align-items: center; text-decoration: none; color: #fff; font-size: 17px; line-height: 1.3; opacity: 0; transform: translateY(18px); transition: opacity .5s ease, transform .6s ease; visibility: hidden; }
 .chip.on { opacity: 1; transform: none; visibility: visible; transition-delay: .5s; }
 .chip.out { visibility: visible; opacity: 0; transition-delay: 0s; transform: translateY(-14px); }
@@ -96,7 +98,7 @@ p { margin: 0 0 1.1em; }
 .chip .ini { display: grid; place-items: center; background: var(--lime); color: var(--ink); font: 600 20px var(--sans); }
 .chip strong { display: block; font-weight: 600; }
 .chip .chip i { font-style: normal; }
-.cue { position: absolute; left: var(--edge); bottom: calc(9vh + var(--h1) * .17); color: #fff; display: block; z-index: 2; }
+.cue { position: absolute; left: var(--edge); bottom: calc(9vh + var(--h1) * .08); color: #fff; display: block; z-index: 2; }
 .cue svg { display: block; height: calc(var(--h1) * .52); width: auto; aspect-ratio: 48 / 64; overflow: visible; }
 .cue svg path { stroke-width: calc(var(--h1) * .0675); stroke-linecap: butt; stroke-linejoin: miter; }
 @media (max-aspect-ratio: 1/1) { .heads { bottom: 15vh; } .chips { bottom: calc(15vh + var(--h1) * 2.2); } .cue { bottom: 3.5vh; } .cue svg { height: calc(var(--h1) * 1.1); } }
@@ -140,10 +142,10 @@ p { margin: 0 0 1.1em; }
    jam: the heading right-aligned (2 lines), the phone starts 80 into the heading's lower line, the text's top 95 below the phone's top; 214 under the phone. */
 .feature { padding: 0; }
 .feature.warm { background: var(--warm); }
-.feature h2 { font-size: clamp(40px, 7.64 * var(--u), 110px); line-height: 1.2; letter-spacing: -0.035em; max-width: none; }
-.txt { font-size: clamp(18px, 2.08 * var(--u), 30px); line-height: 1.285; max-width: 15em; }
-.txt p { margin: 0 0 1.285em; }
-.txt .sub { margin-top: 1.285em; max-width: 440px; }
+.feature h2 { font-size: clamp(40px, 7.8 * var(--u), 112px); line-height: 1.18; letter-spacing: -0.02em; max-width: none; }
+.txt { font-size: clamp(18px, 2.2 * var(--u), 32px); line-height: 1.21; max-width: 15em; }
+.txt p { margin: 0 0 1.21em; }
+.txt .sub { margin-top: 1.21em; max-width: 440px; }
 .phonewrap { translate: 0 var(--dy, 0); }
 .phone { --ph: clamp(520px, 61.6 * var(--u), 887px); height: var(--ph); width: calc((var(--ph) - 16px) * 0.4601 + 16px); border-radius: 46px; background: #1b201d; padding: 8px; box-shadow: 0 30px 70px rgba(19,27,23,.2), 0 4px 14px rgba(19,27,23,.1); }
 .phone .pv, .phone picture { display: block; height: 100%; }
