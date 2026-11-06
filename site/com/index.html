@@ -72,7 +72,7 @@
         <output class="note" role="status" aria-live="polite"></output>
       </form>
     </div>
-    <div class="phonewrap" data-reveal data-drift="0.04"><div class="phone"><picture><source srcset="img/chat.avif" type="image/avif"><img src="img/chat.webp" width="480" height="1044" alt="A lime chat between two teachers, with a link and a file" loading="lazy" decoding="async"></picture></div></div>
+    <div class="phonewrap" data-reveal data-drift="0.04"><div class="phone"><div class="pv"><video muted loop playsinline preload="none" poster="media/phone-chat.webp" data-src="media/phone-chat" aria-label="A lime chat: a teacher types a reply and sends it" width="600" height="1304"></video><button class="vp" type="button" hidden aria-label="Play the recording"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path class="i-play" d="M8 5v14l11-7z"/><path class="i-pause" d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg></button></div></div></div>
   </div>
 </section>
 
@@ -80,7 +80,7 @@
   <div class="wrap" data-stagger>
     <h2 id="h-jam" data-reveal>jam on something you truly care about</h2>
     <div class="split rev">
-      <div class="phonewrap" data-reveal data-drift="0.04"><div class="phone"><picture><source srcset="img/jam-discover.avif" type="image/avif"><img src="img/jam-discover.webp" width="480" height="1044" alt="jam: a feed of articles and posts" loading="lazy" decoding="async"></picture></div></div>
+      <div class="phonewrap" data-reveal data-drift="0.04"><div class="phone"><div class="pv"><video muted loop playsinline preload="none" poster="media/phone-jam.webp" data-src="media/phone-jam" aria-label="jam: a feed of articles, a podcast and a note scrolls by" width="600" height="1304"></video><button class="vp" type="button" hidden aria-label="Play the recording"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path class="i-play" d="M8 5v14l11-7z"/><path class="i-pause" d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg></button></div></div></div>
       <div class="txt">
         <p data-reveal>Jam on posts, articles, podcasts or band together to collectively share your expertise.</p>
         <p data-reveal>Record an episode or group posts into a series. Share with your subscribers. Members-only posts are encrypted too.</p>
@@ -210,6 +210,26 @@ document.querySelectorAll("[data-subscribe]").forEach(function (f) {
   }
   window.addEventListener("scroll", function () { if (!pending) { pending = true; requestAnimationFrame(move); } }, { passive: true });
   window.addEventListener("resize", move); move();
+})();
+
+/* The phone recordings: poster first; they play only while on screen, never with reduced motion unless asked, and each has a pause button. */
+(function () {
+  document.querySelectorAll(".pv").forEach(function (box) {
+    var v = box.querySelector("video"), btn = box.querySelector(".vp"), user = reduce, seen = false, ready = false;
+    function load() {
+      if (ready) return; ready = true;
+      [["-av1.mp4", 'video/mp4; codecs="av01.0.05M.08"'], [".mp4", 'video/mp4; codecs="avc1.640028"']].forEach(function (t) { var e = document.createElement("source"); e.src = v.dataset.src + t[0]; e.type = t[1]; v.appendChild(e); });
+      v.load();
+    }
+    function label() { var p = v.paused; btn.setAttribute("aria-label", p ? "Play the recording" : "Pause the recording"); btn.classList.toggle("playing", !p); }
+    btn.hidden = false; label();
+    btn.addEventListener("click", function () { if (v.paused) { user = false; load(); v.play().catch(function () {}); } else { user = true; v.pause(); } label(); });
+    v.addEventListener("play", label); v.addEventListener("pause", label);
+    if ("IntersectionObserver" in window) new IntersectionObserver(function (es) {
+      seen = es[0].isIntersecting;
+      if (seen && !user) { load(); v.play().catch(function () {}); } else if (!seen) v.pause();
+    }, { threshold: 0.35 }).observe(box);
+  });
 })();
 </script>
 </body>

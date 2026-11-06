@@ -35,7 +35,7 @@ extension ConversationStore {
         let id = UUID().uuidString.lowercased()
         let info = items.map { item -> JamAttachmentInfo in
             let fileID = UUID().uuidString.lowercased()
-            if item.mime == "text/vtt" { Self.demoJamBlobs[fileID] = item.bytes }
+            if item.mime == "text/vtt" || item.name == JamCover.name { Self.demoJamBlobs[fileID] = item.bytes }
             let kind = item.mime.hasPrefix("image/") ? "image" : item.mime.hasPrefix("video/") ? "video" : item.mime.hasPrefix("audio/") ? "audio" : "file"
             return JamAttachmentInfo(attachmentId: fileID, name: item.name, mime: item.mime, kind: kind, size: UInt64(item.bytes.count), width: item.width, height: item.height,
                                      durationMs: item.durationMs, thumb: item.thumb, poster: item.poster, available: true)
@@ -86,6 +86,36 @@ extension ConversationStore {
                                                                    durationMs: nil, thumb: Data(), poster: Data(), available: true)]
         demoJamAttachments["demo-post-1"] = [JamAttachmentInfo(attachmentId: "demo-photo-1", name: "pizza.jpg", mime: "image/jpeg", kind: "image", size: 40_000, width: 600, height: 400,
                                                                durationMs: nil, thumb: Data(), poster: Data(), available: true)]
+    }
+
+    /// A drawn cover (demo only): a soft gradient with a few shapes, in lime's palette.
+    func demoCoverJPEG(top: UIColor, bottom: UIColor, shapes: [(UIColor, CGRect, CGFloat)]) -> Data {
+        let size = CGSize(width: 1200, height: 800)
+        return UIGraphicsImageRenderer(size: size).jpegData(withCompressionQuality: 0.85) { c in
+            let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: [top.cgColor, bottom.cgColor] as CFArray, locations: [0, 1])!
+            c.cgContext.drawLinearGradient(g, start: .zero, end: CGPoint(x: size.width * 0.4, y: size.height), options: [])
+            for (colour, rect, radius) in shapes { colour.setFill(); UIBezierPath(roundedRect: rect, cornerRadius: radius).fill() }
+        }
+    }
+
+    /// The posts the website's phone recording scrolls through: an article with a cover, a podcast, a quick note, another article (LIME-284e2).
+    func demoMarketingJam() {
+        jamPosts["demo-my-jam"] = []
+        func cover(_ top: UIColor, _ bottom: UIColor, _ shapes: [(UIColor, CGRect, CGFloat)]) -> OutgoingAttachment {
+            let bytes = demoCoverJPEG(top: top, bottom: bottom, shapes: shapes)
+            return OutgoingAttachment(bytes: bytes, name: JamCover.name, mime: "image/jpeg", width: 1200, height: 800, durationMs: nil, thumb: Data(), poster: Data())
+        }
+        let lime = UIColor(red: 0.64, green: 0.88, blue: 0.54, alpha: 1), pale = UIColor(red: 0.89, green: 0.98, blue: 0.75, alpha: 1)
+        let warm = UIColor(red: 0.94, green: 0.93, blue: 0.90, alpha: 1), ink = UIColor(red: 0.07, green: 0.11, blue: 0.09, alpha: 1)
+        let coral = UIColor(red: 0.96, green: 0.55, blue: 0.40, alpha: 1), sky = UIColor(red: 0.55, green: 0.76, blue: 0.93, alpha: 1), sun = UIColor(red: 0.99, green: 0.84, blue: 0.40, alpha: 1)
+        let fold = cover(pale, lime, [(.white.withAlphaComponent(0.9), CGRect(x: 180, y: 150, width: 420, height: 520), 36), (sun, CGRect(x: 520, y: 220, width: 420, height: 420), 36), (coral, CGRect(x: 360, y: 330, width: 300, height: 300), 150)])
+        let songs = cover(sky, warm, [(sun, CGRect(x: 640, y: 90, width: 360, height: 360), 180), (ink.withAlphaComponent(0.88), CGRect(x: 160, y: 430, width: 880, height: 40), 20), (ink.withAlphaComponent(0.88), CGRect(x: 160, y: 520, width: 880, height: 40), 20), (ink.withAlphaComponent(0.88), CGRect(x: 160, y: 610, width: 880, height: 40), 20)])
+        let circles = cover(coral, sun, [(.white.withAlphaComponent(0.85), CGRect(x: 120, y: 260, width: 360, height: 360), 180), (lime, CGRect(x: 420, y: 160, width: 360, height: 360), 180), (sky, CGRect(x: 720, y: 280, width: 360, height: 360), 180)])
+        let audio = OutgoingAttachment(bytes: Data("demo audio".utf8), name: "Recording.m4a", mime: "audio/mp4", width: nil, height: nil, durationMs: 1_080_000, thumb: Data(), poster: Data())
+        demoPublish("demo-my-jam", kind: "article", title: "What folded paper taught my fourth graders", subtitle: "Fractions you can hold", markdown: "We folded, we cut, we compared. By the end of the week **every pair** could explain why two quarters make a half.\n\n- fold it\n- cut it\n- compare the pieces", items: [fold])
+        demoPublish("demo-my-jam", kind: "record", title: "Sunday planning, with Sam", subtitle: "Week 4, in 18 minutes", markdown: "How we plan a week of reading circles.", items: [audio, songs])
+        demoPublish("demo-my-jam", kind: "quick", title: "", subtitle: "", markdown: "An exit ticket that takes a minute: ask one question at the door, *which pieces are equal?*", items: [])
+        demoPublish("demo-my-jam", kind: "article", title: "Setting up reading circles", subtitle: "A first week", markdown: "Three small groups, one book each, ten minutes to start.\n\nThe rule that helped most: **everyone reads aloud once**.", items: [circles])
     }
 
     /// A jam of my own with one post and two subscribers (to remove one).

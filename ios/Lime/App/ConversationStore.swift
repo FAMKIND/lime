@@ -1246,13 +1246,13 @@ final class ConversationStore {
             ])]
             path.append("dm:fmt")
         case "notif-banner": demoNotification = "banner"
-        case "jam", "jam-following", "jam-mine", "jam-mine-profile", "jam-mine-asjam", "jam-mine-podcast", "jam-request", "jam-discover", "jam-series", "jam-community":
+        case "jam", "jam-following", "jam-mine", "jam-mine-profile", "jam-mine-asjam", "jam-mine-podcast", "jam-request", "jam-discover", "jam-series", "jam-community", "jam-marketing":
             // The jam tab, with nothing yet, with a jam I follow (Sam's, two posts), or with a jam of my own (one post, two subscribers).
             section = .jam
             if ProcessInfo.processInfo.arguments.contains("-lime-demo-open") { openPostsEnabled = true }   // the server takes open posts (LIME-210c)
             UserDefaults.standard.removeObject(forKey: JamRead.key)   // every demo run starts with everything unread
             if screen == "jam-following", let page = demoJamPages["sam"] { demoSubscribe(page) }
-            if screen == "jam-mine" || screen == "jam-mine-profile" || screen == "jam-mine-asjam" || screen == "jam-mine-podcast" { demoMineWithPost() }
+            if screen == "jam-mine" || screen == "jam-mine-profile" || screen == "jam-mine-asjam" || screen == "jam-mine-podcast" || screen == "jam-marketing" { demoMineWithPost() }
             if ProcessInfo.processInfo.arguments.contains("-lime-demo-jam-picture") {   // my demo jam already has a picture (LIME-194)
                 let tile = UIGraphicsImageRenderer(size: CGSize(width: 64, height: 64)).jpegData(withCompressionQuality: 0.8) { c in
                     UIColor.systemOrange.setFill(); c.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
@@ -1272,6 +1272,7 @@ final class ConversationStore {
                 let cover = OutgoingAttachment(bytes: Data("demo cover".utf8), name: "cover.jpg", mime: "image/jpeg", width: 600, height: 600, durationMs: nil, thumb: Data(), poster: Data())
                 demoPublish("demo-my-jam", kind: "record", title: "Songs for the circle", subtitle: "Korean children's songs", markdown: "## Explore the different types of songs.\n\nThree songs we sing.", items: [audio, cover])
             }
+            if screen == "jam-marketing" { demoMarketingJam() }   // LIME-284e2: a feed with real-looking covers, for the website recordings
             if screen == "jam-request" { demoRequest() }
             if ProcessInfo.processInfo.arguments.contains("-lime-demo-handover-offer") { demoSeedHandoverOffer() }
             if screen == "jam-discover" { demoDiscover() }
