@@ -9808,3 +9808,14 @@ The phone recordings and the demo covers (`site/com/`, **not deployed**; `ios/` 
 - **Removed:** the old static screens in `site/com/img/` (no longer used).
 - **Still open (all from 284e1):** the quote portrait stand-in, the unchecked `hello@`/`support@` mailboxes, the placeholders marked on the page, the waitlist forms (284c), the store badges hidden.
 - **Not done:** no deploy, nothing installed.
+
+## LIME-284e3
+The .com hero as a rotator, the whole "lime", polish (`site/com/`, **not deployed**; the demo name is DEBUG-only). Stop for your look.
+- **Look at:** `docs/qa-shots/284e3/` (`desktop-` / `phone-slide1…3`, `-full`, and `scroll.webm`: 26 s of the three slides rotating, then the page scrolling), or `cd site/com && python3 -m http.server 8284`.
+- **1 Alignment:** the header and the hero text now share the same padding variable; measured at 1440: "Where" and "Home" both start at x=56, and "…jam." and Subscribe both end at x=1384. The two lines are closer (line height .9).
+- **2 Rotator:** three slides, each with its own video, headline and credit chip: **1 "Where teachers link."** (your portrait clip) · **2 "Where teachers jam."** (`7617178`, a woman at her desk: a stand-in) · **3 "Where teachers connect."** (lime composited onto the white phone of `8165956`, re-made with the new jam recording). Every 8 s the picture crossfades while each headline line slides up out of its mask and the next slides up in, the second line 0.14 s later; the chip fades up after. A slide's video loads only when it is the next one. It pauses with the button, on hover and focus, and when off-screen; with reduced motion it starts paused on slide 1's poster with no word motion. Screen readers hear one headline, "Where teachers link, jam and connect."; the slides, headlines and chips' motion are `aria-hidden` (only the visible chip is focusable). Slide 2 and 3's tall (phone) crops are separate files. **All three chips are Placeholders** (initials, no photo, on slides 2 and 3).
+- **3 The whole "lime":** the wordmark is now scaled to the content width in light lime #a3e18a; all four letters show at every width (checked at 1440 and 390).
+- **4 The ↓** is larger and thin, at the headline's left edge, under "Where"; it scrolls to the band.
+- **5 Polish:** the demo author is now "Maya Ortiz" (a DEBUG-only override in the `jam-marketing` demo screen) and **both recordings are re-made**; the link recording now ends with a ❤️ reaction on Sam's message; the pledge reads "Made for people who teach. Students don't have accounts."; on phones the headline is smaller so "teachers connect." stays on one line.
+- **Left over:** the profile avatar at the top right of the jam recording still says "TT" (from the demo profile); the chip names and lines are made up; slides 2's video is a stand-in until you send picks (`CREDITS.md` lists both Pexels video ids; their authors are not in the file names).
+- **Not done:** no deploy, nothing installed.

@@ -30,6 +30,15 @@ final class PhoneRecordings: XCTestCase {
         field.typeText("Friday works for me. See you there!")
         sleep(1)
         app.buttons["send-button"].tap()
-        sleep(4)
+        sleep(3)
+        // A reaction: long-press Sam's message and pick one from the emoji bar (best effort; the recording is made either way).
+        let sam = app.staticTexts["Are you coming to the staff meeting?"]
+        if sam.exists {
+            sam.press(forDuration: 0.9)
+            sleep(2)
+            let heart = app.buttons["react-❤️"]
+            if heart.waitForExistence(timeout: 3) { heart.tap() }
+            sleep(3)
+        }
     }
 }

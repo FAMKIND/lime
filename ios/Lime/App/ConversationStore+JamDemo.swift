@@ -100,6 +100,9 @@ extension ConversationStore {
 
     /// The posts the website's phone recording scrolls through: an article with a cover, a podcast, a quick note, another article (LIME-284e2).
     func demoMarketingJam() {
+        // A teacher's name instead of "Test Teacher", on the profile and the posts (the demo only).
+        let maya = Person(id: meProvider().id, name: "Maya Ortiz", tone: 3)
+        meProvider = { maya }
         jamPosts["demo-my-jam"] = []
         func cover(_ top: UIColor, _ bottom: UIColor, _ shapes: [(UIColor, CGRect, CGFloat)]) -> OutgoingAttachment {
             let bytes = demoCoverJPEG(top: top, bottom: bottom, shapes: shapes)

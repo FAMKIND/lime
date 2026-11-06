@@ -8,7 +8,7 @@ cp ../tools/hero-video/PhoneRecordings.swift LimeUITests/PhoneRecordings.swift
 xcodegen generate >/dev/null
 xcodebuild build-for-testing -project Lime.xcodeproj -scheme Lime -destination "id=$D" -derivedDataPath $TMPDIR/dd28 | tail -1
 xcrun simctl status_bar $D override --time 9:41 --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3
-for t in Jam Chat; do
+for t in ${=2:-Jam Chat}; do
   xcrun simctl io $D recordVideo --codec h264 --force $OUT/$t.mov >/dev/null 2>&1 &
   sleep 2
   xcodebuild test-without-building -project Lime.xcodeproj -scheme Lime -destination "id=$D" -derivedDataPath $TMPDIR/dd28 -only-testing:LimeUITests/PhoneRecordings/test$t | grep -E "passed|failed" | head -2
