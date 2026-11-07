@@ -106,8 +106,8 @@ p { margin: 0 0 1.1em; }
 .chip img, .chip .ini { width: 60px; height: 60px; border-radius: 50%; flex: none; }
 .chip img { object-fit: cover; }
 .chip .bpic { position: relative; display: block; width: 60px; height: 60px; flex: none; }   /* a band, as the app shows it: a cover (the rounded square) with a person's round avatar over its bottom-right corner */
-.chip .bpic .cov { width: 60px; height: 60px; border-radius: 23%; object-fit: cover; }
-.chip .bpic .av { position: absolute; right: -8px; bottom: -8px; width: 28px; height: 28px; border-radius: 50%; object-fit: cover; box-shadow: 0 0 0 2px #131b17; }
+.chip .bpic .cov { width: 60px; height: 60px; border-radius: 23%; object-fit: cover; -webkit-mask-image: radial-gradient(circle at 54px 54px, transparent 16.5px, #000 17px); mask-image: radial-gradient(circle at 54px 54px, transparent 16.5px, #000 17px); }   /* a transparent round notch in the cover's bottom-right corner, 3 px wider than the avatar, so the video shows through a thin even gap around it */
+.chip .bpic .av { position: absolute; right: -8px; bottom: -8px; width: 28px; height: 28px; border-radius: 50%; object-fit: cover; }   /* its centre is (54, 54) on the 60 px cover: the notch's centre */
 .chip .ini { display: grid; place-items: center; background: var(--lime); color: var(--ink); font: 600 20px var(--sans); }
 .chip strong { display: block; font-weight: 600; }
 .chip .chip i { font-style: normal; }
