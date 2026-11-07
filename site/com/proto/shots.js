@@ -19,15 +19,18 @@
     root.appendChild(A); root.appendChild(B); root.appendChild(ov); root.appendChild(box); root.appendChild(live);
     var all = [], byId = {}; def.workflows.forEach(function (w, wi) { w.states.forEach(function (s, si) { s.w = wi; s.i = si; all.push(s); byId[s.id] = s; }); w.total = w.states.reduce(function (a, s) { return a + s.ms; }, 0); });
     var cur = null, front = A, back = B, timer = null, paused = true, visible = false, idle = null, manual = false, activeW = -1, items = [];
-    if (list) {
+    if (list) {   /* five small dots under the phone, one per workflow: the playing one stretches and fills (a thin progress line); a click jumps to it */
+      var nm = h("span", "sp-name"); nm.setAttribute("aria-hidden", "true");
       def.workflows.forEach(function (w, wi) {
-        var li = h("li"), b = h("button", "", "<b>" + w.title + "</b><span>" + w.line + "</span><i class='bar'></i>"); b.type = "button";
+        var b = h("button", "", "<i class='bar'></i>"); b.type = "button"; b.setAttribute("aria-label", w.title + ": " + w.line);
         b.addEventListener("click", function () { manual = false; go(w.states[0].id); paused = false; if (visible) schedule(); });
-        li.appendChild(b); list.appendChild(li); items.push(b);
+        list.appendChild(b); items.push(b);
       });
+      list.appendChild(nm); list._nm = nm;
     }
     function mark(s) {
       if (s.w === activeW) return; activeW = s.w;
+      if (list && list._nm) list._nm.textContent = def.workflows[s.w].title;
       items.forEach(function (b, i) { var on = i === s.w; b.classList.toggle("on", on); if (on) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current"); var bar = b.querySelector(".bar"); bar.style.animation = "none"; if (on) { void bar.offsetWidth; bar.style.animation = "wffill " + def.workflows[s.w].total + "ms linear forwards"; bar.style.animationPlayState = paused ? "paused" : "running"; } });
     }
     function preload(s) { if (!s) return; var n = all[(all.indexOf(s) + 1) % all.length], i = new Image(); i.src = URL + n.img + ".webp"; }
@@ -66,6 +69,6 @@
     go(all[0].id); setPaused(true);
     if (list) list.hidden = false;
   }
-  window.LimeShots = { mount: function (root) { var key = root.dataset.flow; load(function () { new Flow(root, flows[key], document.querySelector('.wf[data-for="' + key + '"]')); }); } };
+  window.LimeShots = { mount: function (root) { var key = root.dataset.flow; load(function () { new Flow(root, flows[key], document.querySelector('[data-dots-for="' + key + '"]')); }); } };
   document.querySelectorAll("[data-flow]").forEach(function (r) { window.LimeShots.mount(r); });
 })();

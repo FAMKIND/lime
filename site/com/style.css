@@ -325,3 +325,13 @@ footer .caps a { color: #eaf3e6; text-decoration: none; font-size: 13px; font-we
 
 /* LIME-286b: the offline mesh and its captions; the demo phones' captions */
 .phonewrap .lpnote { margin-top: 12px; }
+
+/* LIME-286s: a tight text lockup: the heading, one short paragraph in body size, the form */
+.feature .txt p { font-size: clamp(17px, 1.45 * var(--u), 21px); line-height: 1.5; max-width: 24em; margin-bottom: 0; }
+#link .txt h2 { margin-bottom: calc(2.4 * var(--u)); }
+#link .txt p, #link .txt .sub, #link .txt .fine { max-width: 24em; }
+.jam .txt { padding-top: calc(4 * var(--u)); } .jam .txt p, .jam .txt .sub, .jam .txt .fine { max-width: 24em; }
+.feature .txt .sub { margin-top: 1.5em; max-width: 440px; }
+@media (max-width: 800px) { .feature .txt p { font-size: 18px; } }
+.feature .txt .sub, #link .txt .sub, .jam .txt .sub { max-width: 440px; }
+.feature .txt .fine, #link .txt .fine, .jam .txt .fine { font-size: 14px; line-height: 1.4; max-width: 440px; margin-top: 12px; }
