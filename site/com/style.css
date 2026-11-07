@@ -281,13 +281,13 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 .overlay .menuform .fine { max-width: none; }
 
 /* LIME-284e15: value columns, built into lime, and the footer */
-.values { background: var(--paper); padding: calc(10 * var(--u)) 0 calc(11 * var(--u)); }
+.values { background: var(--paper); padding: calc(9 * var(--u)) 0 calc(10 * var(--u)); }
 .values .wrap { max-width: 1440px; padding: 0 calc(7.8 * var(--u)); }
 .values h2 { font-size: clamp(30px, 3.6 * var(--u), 56px); line-height: 1.16; letter-spacing: -0.02em; max-width: 24em; margin-bottom: calc(7 * var(--u)); }
 .cols4 { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 36px calc(2.4 * var(--u)); }
 .cols4 .ic { display: block; color: var(--ink); }
-.cols4 .ic svg { display: block; width: 64px; height: 64px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
-.cols4 hr { border: 0; border-top: 1px solid rgba(19,27,23,.22); margin: 22px 0 18px; }
+.cols4 .ic svg { display: block; width: 84px; height: 84px; fill: none; stroke: currentColor; stroke-width: 3.4; stroke-linecap: round; stroke-linejoin: round; }
+.cols4 hr { border: 0; border-top: 1px solid rgba(19,27,23,.22); margin: 24px 0 20px; }
 .cols4 h3 { font-size: clamp(20px, 1.7 * var(--u), 26px); font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; margin-bottom: 8px; }
 .cols4 p { margin: 0; font-size: clamp(17px, 1.35 * var(--u), 20px); line-height: 1.4; color: var(--muted); max-width: 17em; }
 @media (max-width: 1000px) { .cols4 { grid-template-columns: repeat(2, 1fr); } }
