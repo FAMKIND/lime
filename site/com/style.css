@@ -293,7 +293,7 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 @media (max-width: 1000px) { .cols4 { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 560px) { .cols4 { grid-template-columns: 1fr; } .values .wrap { padding: 0 var(--edge); } .values { padding: 64px 0; } }
 
-.built { background: var(--paper); padding: 0 0 calc(12 * var(--u)); }
+.built { background: var(--paper); padding: calc(10.5 * var(--u)) 0 calc(12 * var(--u)); }
 .built .wrap { max-width: 1440px; padding: 0 calc(7.8 * var(--u)); }
 .bhead { text-align: center; max-width: 30em; margin: 0 auto calc(8 * var(--u)); }
 .bhead h2 { font-size: clamp(34px, 5.2 * var(--u), 76px); line-height: 1.05; margin-bottom: 18px; }
@@ -339,3 +339,10 @@ footer .caps a { color: #eaf3e6; text-decoration: none; font-size: 13px; font-we
 
 .phonewrap .lpnote { max-width: 330px; }
 .phone .lpwrap { height: 100%; aspect-ratio: auto; }
+
+/* LIME-286b: the offline mesh and its captions; the demo phones' captions */
+.shot.relay { flex-direction: column; align-items: center; gap: 18px; }
+.shot.relay svg { width: min(100%, 520px); height: auto; display: block; }
+.meshcap { margin: 0; display: flex; flex-direction: column; gap: 4px; text-align: center; font-size: 16px; color: var(--muted); max-width: 520px; }
+.meshcap span:first-child { color: var(--ink); font-weight: 500; }
+.phonewrap .lpnote { margin-top: 12px; }

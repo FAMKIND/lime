@@ -145,7 +145,7 @@
   <div class="wrap" data-stagger>
     <h2 id="h-jam" data-reveal>jam on something you<br>truly care about</h2>
     <div class="split rev">
-      <div class="phonewrap" data-reveal data-drift="0.04"><div class="phone"><div class="pv"><video muted loop playsinline preload="none" poster="media/phone-jam.webp" data-src="media/phone-jam" aria-label="jam: a feed of articles, a podcast and a note scrolls by" width="600" height="1304"></video><button class="vp" type="button" hidden aria-label="Play the recording"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path class="i-play" d="M8 5v14l11-7z"/><path class="i-pause" d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg></button></div></div></div>
+      <div class="phonewrap" data-reveal data-drift="0.04"><div class="phone"><div class="lpwrap" data-demo="jam" role="region" aria-label="lime demo: jam"></div></div><p class="lpnote">A demo of jam: try it. Everything stays on this page.</p></div>
       <div class="txt">
         <p data-reveal>Jam on posts, articles, podcasts or band together to collectively share your expertise.</p>
         <p data-reveal>Record an episode or group posts into a series. Share with your subscribers. Members-only posts are encrypted too.</p>
@@ -164,10 +164,51 @@
 <section class="built" id="built" aria-labelledby="h-built">
   <div class="wrap">
     <div class="bhead" data-reveal><h2 id="h-built">Everything a teaching community needs, built in.</h2><p>No add-ons, no plug-ins: the tools are part of lime, and they're free.</p></div>
-    <div class="brow" data-stagger><div class="shot" data-reveal><div class="phone sm"><picture><source srcset="media/built-calls.avif" type="image/avif"><img src="media/built-calls.webp" width="600" height="1304" alt="A lime video call between two teachers" loading="lazy" decoding="async"></picture></div></div><div class="btx"><h3 data-reveal>Calls</h3><p data-reveal>Voice and video, one to one or with the whole grade team. Sealed end to end, like every message.</p></div></div>
-    <div class="brow rev" data-stagger><div class="shot" data-reveal><div class="phone sm"><picture><source srcset="media/built-bands.avif" type="image/avif"><img src="media/built-bands.webp" width="600" height="1304" alt="A band page: Fractions that stick, with its owners and subscribers" loading="lazy" decoding="async"></picture></div></div><div class="btx"><h3 data-reveal>Bands</h3><p data-reveal>A school team, a co-op or a union publishing together, with members and groups of their own.</p></div></div>
-    <div class="brow" data-stagger><div class="shot" data-reveal><div class="phone sm"><picture><source srcset="media/built-series.avif" type="image/avif"><img src="media/built-series.webp" width="600" height="1304" alt="jam: an article, a podcast episode and a note" loading="lazy" decoding="async"></picture></div></div><div class="btx"><h3 data-reveal>Series and podcasts</h3><p data-reveal>Record an episode, group posts into a series, and share it with the teachers who follow you.</p></div></div>
-    <div class="brow rev" data-stagger><div class="shot relay" data-reveal><img src="media/built-offline.svg" width="520" height="360" alt="Three phones with no signal pass a sealed envelope along, by Bluetooth" loading="lazy"></div><div class="btx"><h3 data-reveal>Offline messages</h3><p data-reveal>When there's no signal, phones nearby pass sealed messages on by Bluetooth, in both directions.</p></div></div>
+    <div class="brow" data-stagger><div class="shot" data-reveal><div class="phone sm"><div class="lpwrap" data-demo="calls" role="img" aria-label="A group video call with four people: three cameras and one with the camera off, the speaking tile outlined"></div></div></div><div class="btx"><h3 data-reveal>Calls</h3><p data-reveal>Voice and video, one to one or with the whole grade team. Sealed end to end, like every message.</p></div></div>
+    <div class="brow rev" data-stagger><div class="shot" data-reveal><div class="phone sm"><div class="lpwrap" data-demo="band" role="img" aria-label="A band page, Science Corner: a cover photo, its members and subscribers, and its posts with covers"></div></div></div><div class="btx"><h3 data-reveal>Bands</h3><p data-reveal>A school team, a co-op or a union publishing together, with members and groups of their own.</p></div></div>
+    <div class="brow" data-stagger><div class="shot" data-reveal><div class="phone sm"><div class="lpwrap" data-demo="feed" role="img" aria-label="jam: an article with its series line, a podcast episode with a play button, and a quick post"></div></div></div><div class="btx"><h3 data-reveal>Series and podcasts</h3><p data-reveal>Record an episode, group posts into a series, and share it with the teachers who follow you.</p></div></div>
+    <div class="brow rev" data-stagger><div class="shot relay" data-reveal><svg id="mesh" viewBox="0 0 520 380" role="img" aria-labelledby="mesh-t mesh-d" focusable="false">
+  <title id="mesh-t">Messages pass from phone to phone when there is no signal</title>
+  <desc id="mesh-d">A phone at the left sends a sealed message. With no signal, it hops from one nearby phone to the next until it reaches the person it is for, who is marked as delivered. Copies spread through other nearby phones, and one reaches a phone that has a signal and is passed on to the internet. Then the reply travels back the same way.</desc>
+  <rect width="520" height="380" rx="36" fill="#f0eee6"/>
+  <ellipse cx="205" cy="205" rx="200" ry="160" fill="none" stroke="#131b17" stroke-opacity=".28" stroke-width="2" stroke-dasharray="3 9" stroke-linecap="round"/>
+  <g font-family="Figtree, system-ui, sans-serif" font-size="13" fill="#4d524c"><text x="205" y="62" text-anchor="middle">no signal</text><text x="468" y="46" text-anchor="middle">signal</text></g>
+  <g stroke="#131b17" stroke-opacity=".42" stroke-width="2" stroke-linecap="round" stroke-dasharray="1 9" fill="none">
+    <path d="M70 205 150 125M70 205 160 285M150 125 250 195M160 285 250 195M250 195 330 115M250 195 340 295M330 115 452 92M340 295 430 235M150 125 160 285"><animate attributeName="stroke-dashoffset" values="0;-20" dur="2.4s" repeatCount="indefinite"/></path>
+  </g>
+  <g id="mesh-nodes" fill="#fff" stroke="#131b17" stroke-width="2.2">
+    <g transform="translate(70 205)"><rect x="-17" y="-30" width="34" height="60" rx="9" fill="#a3e18a"/><circle r="7" fill="#131b17" stroke="none"/></g>
+    <g transform="translate(150 125)"><rect x="-13" y="-23" width="26" height="46" rx="7"/></g>
+    <g transform="translate(160 285)"><rect x="-13" y="-23" width="26" height="46" rx="7"/></g>
+    <g transform="translate(250 195)"><rect x="-13" y="-23" width="26" height="46" rx="7"/></g>
+    <g transform="translate(330 115)"><rect x="-13" y="-23" width="26" height="46" rx="7"/></g>
+    <g transform="translate(340 295)"><rect x="-13" y="-23" width="26" height="46" rx="7"/></g>
+    <g transform="translate(430 235)"><rect x="-17" y="-30" width="34" height="60" rx="9" fill="#e4f9be"/><circle r="7" fill="#131b17" stroke="none"/></g>
+    <g transform="translate(452 92)"><rect x="-13" y="-23" width="26" height="46" rx="7"/></g>
+  </g>
+  <g fill="none" stroke="#131b17" stroke-width="2.2" stroke-linecap="round" opacity=".7"><path d="M92 170a22 22 0 0 1 16 14M96 158a34 34 0 0 1 26 22"/><path d="M458 26a8 8 0 0 1 12 0M452 19a17 17 0 0 1 24 0"/></g>
+  <g id="mesh-ok" opacity="0" font-family="Figtree, system-ui, sans-serif" font-size="14" font-weight="600"><g transform="translate(430 280)"><rect x="-52" y="-13" width="104" height="26" rx="13" fill="#131b17"/><text y="5" text-anchor="middle" fill="#fff">✓ Delivered</text></g>
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;.52;.55;.78;.8;1" dur="14s" repeatCount="indefinite"/></g>
+  <g id="mesh-net" opacity="0" font-family="Figtree, system-ui, sans-serif" font-size="12" font-weight="600"><g transform="translate(452 138)"><rect x="-58" y="-12" width="116" height="24" rx="12" fill="#a3e18a"/><text y="4.5" text-anchor="middle" fill="#131b17">passed on online</text></g>
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;.43;.46;.66;.69;1" dur="14s" repeatCount="indefinite"/></g>
+  <g id="mesh-back" opacity="0" font-family="Figtree, system-ui, sans-serif" font-size="14" font-weight="600"><g transform="translate(70 252)"><rect x="-56" y="-13" width="112" height="26" rx="13" fill="#131b17"/><text y="5" text-anchor="middle" fill="#fff">Reply received</text></g>
+    <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;.95;.96;.995;1" dur="14s" repeatCount="indefinite"/></g>
+  <!-- the sealed message: a lime bubble with a small lock -->
+  <defs><g id="env"><path d="M0-12c6.600 0 12 4.7 12 10.500S6.600 9 0 9c-1.7 0-3.300-.3-4.7-.9L-10 12l1.8-5.200C-10.8 5.200-12-.4-12-1.500-12-7.300-6.600-12 0-12z" fill="#a3e18a" stroke="#131b17" stroke-width="2"/><rect x="-4" y="-3" width="8" height="6" rx="1.500" fill="#131b17"/><path d="M-2.500-3v-1.8a2.500 2.500 0 0 1 5 0V-3" fill="none" stroke="#131b17" stroke-width="1.400"/></g></defs>
+  <g id="mesh-a" opacity="0"><use href="#env"/>
+    <animateTransform attributeName="transform" type="translate" calcMode="linear" values="70 205;70 205;150 125;250 195;340 295;430 235;430 235;430 235" keyTimes="0;.035;.143;.286;.429;.536;.57;1" dur="14s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;.01;.55;.58;1" dur="14s" repeatCount="indefinite"/></g>
+  <g id="mesh-b" opacity="0"><use href="#env" transform="scale(.8)"/>
+    <animateTransform attributeName="transform" type="translate" calcMode="linear" values="70 205;70 205;160 285;250 195;250 195" keyTimes="0;.035;.14;.28;1" dur="14s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0;.55;.55;0;0" keyTimes="0;.01;.27;.3;1" dur="14s" repeatCount="indefinite"/></g>
+  <g id="mesh-c" opacity="0"><use href="#env" transform="scale(.8)"/>
+    <animateTransform attributeName="transform" type="translate" calcMode="linear" values="250 195;250 195;330 115;452 92;452 92" keyTimes="0;.285;.36;.43;1" dur="14s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0;0;.6;.6;0;0" keyTimes="0;.285;.3;.43;.45;1" dur="14s" repeatCount="indefinite"/></g>
+  <g id="mesh-d2" opacity="0"><use href="#env"/>
+    <animateTransform attributeName="transform" type="translate" calcMode="linear" values="430 235;430 235;340 295;250 195;150 125;70 205;70 205" keyTimes="0;.607;.714;.8;.886;.957;1" dur="14s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;.6;.61;.955;.97;1" dur="14s" repeatCount="indefinite"/></g>
+</svg>
+<p class="meshcap"><span>No signal? Nearby phones pass your message along.</span><span>Sealed the whole way: carriers can’t read it.</span><span>Works both ways.</span></p></div><div class="btx"><h3 data-reveal>Offline messages</h3><p data-reveal>When there's no signal, phones nearby pass sealed messages on by Bluetooth, in both directions.</p></div></div>
     <div class="brow" data-stagger><div class="shot" data-reveal><div class="phone sm"><picture><source srcset="media/built-yours.avif" type="image/avif"><img src="media/built-yours.webp" width="600" height="1304" alt="A chat on a chalkboard background" loading="lazy" decoding="async"></picture></div></div><div class="btx"><h3 data-reveal>Make it yours</h3><p data-reveal>Eight colours, eight backgrounds, stickers and wallpapers: a chat that feels like your room.</p></div></div>
     <div class="brow rev" data-stagger><div class="shot" data-reveal><div class="phone sm"><picture><source srcset="media/built-safety.avif" type="image/avif"><img src="media/built-safety.webp" width="600" height="1304" alt="The report sheet: what's wrong, a note, include the message, also block" loading="lazy" decoding="async"></picture></div></div><div class="btx"><h3 data-reveal>Safety</h3><p data-reveal>Report a message, block a person, and check that no student can be identified before you post publicly.</p></div></div>
   </div>
@@ -495,6 +536,9 @@ document.querySelectorAll("[data-subscribe]").forEach(function (f) {
   window.addEventListener("load", function () { setTimeout(function () { measure(); if (N > 1) { prep(1); prep(N - 1); } sync(); arm(); }, 200); });
   window.__hero = { go: go, show: function (n) { if (n !== cur) { swap(n); slides.forEach(function (s, i) { s.classList.add("cut"); s.classList.toggle("on", i === n); }); cur = n; run(n); setTimeout(function () { slides.forEach(function (s) { s.classList.remove("cut"); }); }, 50); } }, stop: function () { paused = true; sync(); } };
 })();
+
+/* The offline diagram loops slowly; with reduced motion it is a still frame of the message in flight. */
+(function () { var m = document.getElementById("mesh"); if (m && m.pauseAnimations && reduce) { m.pauseAnimations(); try { m.setCurrentTime(4.6); } catch (e) {} } })();
 
 /* Scroll motion: headings, paragraphs and images fade and rise in, and fade out once scrolled past; the collage drifts at different speeds. Off with reduced motion. */
 (function () {
