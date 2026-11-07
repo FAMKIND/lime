@@ -27,7 +27,7 @@ Deno.test("join: the same reply twice, one row, nothing but the asked-for fields
   assertEquals(ja, jb);
   const rows = await rowOf(email);
   assertEquals(rows.length, 1);
-  assertEquals(Object.keys(rows[0]).sort(), ["confirmed_at", "created_at", "email", "list", "teaches", "token"]);
+  assertEquals(Object.keys(rows[0]).sort(), ["confirmed_at", "created_at", "email", "list", "sent_at", "teaches", "token"]);
   assertEquals(rows[0].confirmed_at, null);
   assert(isToken(rows[0].token));
   await admin.from("waitlist").delete().eq("email", email);

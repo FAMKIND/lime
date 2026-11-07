@@ -5,6 +5,7 @@
 import { HttpError } from "./http.ts";
 import { toHex } from "./bytes.ts";
 import { routingKeysFromEnv } from "./mesh.ts";
+import { confirmEmail } from "./waitlistMail.ts";
 
 export const LISTS = ["launch", "android"] as const;
 export type List = typeof LISTS[number];
@@ -75,14 +76,8 @@ export function newToken(): string {
 
 export const isToken = (value: unknown): value is string => typeof value === "string" && /^[0-9a-f]{48}$/.test(value);
 
-/** The confirm email: short, and it says how to ignore it. */
-export function confirmNotice(confirmUrl: string, list: List): { subject: string; text: string; html: string } {
-  const what = list === "android" ? "when lime is on Android" : "when lime is ready";
-  const text = `Tap to confirm, and we'll email you once, ${what}.\n\n${confirmUrl}\n\nDidn't ask for this? Ignore it and we'll delete your address in 7 days.`;
-  const html = `<p>Tap to confirm, and we'll email you once, ${what}.</p><p><a href="${confirmUrl}" style="display:inline-block;padding:12px 22px;border-radius:999px;background:#a3e18a;color:#131b17;text-decoration:none;font-weight:600">Confirm my email</a></p>` +
-    `<p style="color:#555">Didn't ask for this? Ignore it and we'll delete your address in 7 days.</p>`;
-  return { subject: "Confirm your email for lime", text, html };
-}
+/** The confirm email: short, and it says how to ignore it (the words live in `waitlistMail.ts`, with the iOS data-detector reset). */
+export const confirmNotice = confirmEmail;
 
 /**
  * Wraps a waitlist handler: answers the browser's preflight, adds the CORS headers, and turns any error into JSON for a script or a redirect to the "try again" page for a

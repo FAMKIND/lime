@@ -471,3 +471,9 @@ verify_jwt = false
 verify_jwt = false
 [functions.waitlist-unsubscribe]
 verify_jwt = false
+
+# LIME-287a: waitlist-android is a link in an email (the token is the proof); waitlist-send checks the service key itself and is never opened to anyone else.
+[functions.waitlist-android]
+verify_jwt = false
+[functions.waitlist-send]
+verify_jwt = false
