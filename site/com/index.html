@@ -34,7 +34,16 @@
 
 <div class="overlay" id="menu" role="dialog" aria-modal="true" aria-label="Menu" hidden>
   <div class="bar"><img src="brand/lime-Logomark.svg" width="40" height="40" alt=""><button class="x" type="button" data-close aria-label="Close the menu">×</button></div>
-  <nav aria-label="Menu"><a href="#top">Home</a><a href="#link">Features</a><a href="#jam">jam</a><a href="/privacy/">Privacy</a><button type="button" data-cta data-open="sheet">Notify me</button></nav>
+  <nav aria-label="Menu"><a href="#top">Home</a><a href="#link">Features</a><a href="/privacy/">Privacy</a></nav>
+  <div class="menuform">
+    <form class="sub stack" data-subscribe>
+      <label class="sr" for="e-menu">Email address</label>
+      <input id="e-menu" type="email" name="email" autocomplete="email" placeholder="Your email" required>
+      <button class="btn" type="submit" data-cta aria-label="Notify me when lime is ready">Notify me</button>
+      <output class="note" role="status" aria-live="polite"></output>
+    </form>
+    <p class="fine" data-fine>We'll email you once, when lime is ready. Nothing else.</p>
+  </div>
 </div>
 <div class="overlay" id="sheet" role="dialog" aria-modal="true" aria-labelledby="h-sheet" hidden>
   <div class="bar"><img src="brand/lime-Logomark.svg" width="40" height="40" alt=""><button class="x" type="button" data-close aria-label="Close">×</button></div>
@@ -113,7 +122,7 @@
         <button class="btn" type="submit" data-cta aria-label="Notify me when lime is ready">Notify me</button>
         <output class="note" role="status" aria-live="polite"></output>
       </form>
-<p class="fine" data-fine>We'll email you once, when lime is ready. Nothing else.</p>
+<p class="fine" data-fine data-reveal>We'll email you once, when lime is ready. Nothing else.</p>
     </div>
     <div class="phonewrap" data-reveal data-drift="0.04"><div class="phone"><div class="pv"><video muted loop playsinline preload="none" poster="media/phone-chat.webp" data-src="media/phone-chat" aria-label="A lime chat: a teacher types a reply and sends it" width="600" height="1304"></video><button class="vp" type="button" hidden aria-label="Play the recording"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path class="i-play" d="M8 5v14l11-7z"/><path class="i-pause" d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg></button></div></div></div>
   </div>
@@ -133,7 +142,7 @@
           <button class="btn" type="submit" data-cta aria-label="Notify me when lime is ready">Notify me</button>
           <output class="note" role="status" aria-live="polite"></output>
         </form>
-<p class="fine" data-fine>We'll email you once, when lime is ready. Nothing else.</p>
+<p class="fine" data-fine data-reveal>We'll email you once, when lime is ready. Nothing else.</p>
       </div>
     </div>
   </div>
@@ -235,7 +244,7 @@ var MSG_OK = "You're on the list. We'll email you when lime is ready.";   /* sho
 
 /* The waitlist is wired in 284c; until then every form says so and sends nothing. */
 document.querySelectorAll("[data-subscribe]").forEach(function (f) {
-  f.addEventListener("submit", function (e) { e.preventDefault(); f.querySelector("output").textContent = "The waitlist opens soon. Nothing was sent."; });
+  f.addEventListener("submit", function (e) { e.preventDefault(); f.querySelector("output").textContent = "The waitlist opens soon. Nothing was sent."; f.dispatchEvent(new CustomEvent("lime-notified", { bubbles: true })); });
 });
 
 /* The header: visible on load, tucks away scrolling down, returns scrolling up; never while something in it has focus. */
@@ -512,11 +521,12 @@ document.querySelectorAll("[data-subscribe]").forEach(function (f) {
   function open(box, from) {
     document.querySelectorAll(".overlay").forEach(function (o) { o.hidden = true; });
     opener = from; box.hidden = false; document.body.style.overflow = "hidden";
-    var f = box.querySelector("input") || focusables(box)[1] || focusables(box)[0]; f.focus();
+    var f = box.id === "sheet" ? box.querySelector("input") : (box.querySelector("nav a") || focusables(box)[0]); f.focus();
   }
   document.querySelectorAll("[data-open]").forEach(function (b) { b.addEventListener("click", function () { open(document.getElementById(b.dataset.open), b.closest(".overlay") ? opener : b); }); });
   document.querySelectorAll(".overlay").forEach(function (box) {
     box.querySelector("[data-close]").addEventListener("click", function () { close(box); });
+    box.addEventListener("lime-notified", function () { setTimeout(function () { if (!box.hidden) close(box); }, 2200); });   /* the menu closes only after the message has shown */
     box.querySelectorAll("nav a").forEach(function (a) { a.addEventListener("click", function () { close(box); }); });
     box.addEventListener("keydown", function (e) {
       if (e.key === "Escape") { close(box); return; }

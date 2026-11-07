@@ -234,7 +234,7 @@ footer .lockup .wm { width: 64px; }
 .vp.playing .i-play { display: none; }
 
 /* LIME-284e7: the fine print, and the download card (only on the launched page) */
-.fine { margin: 14px 0 0; font-size: 14px; line-height: 1.4; color: var(--muted); max-width: 26em; }
+.fine { margin: 12px 0 0; font-size: 14px; line-height: 1.4; color: var(--muted); max-width: 26em; }
 .card .fine { margin: 14px auto 0; }
 .overlay .fine { margin-top: 14px; }
 a.btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
@@ -288,3 +288,10 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
   100% { transform: none; opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) { .cue.nudge svg { animation: none; } }
+
+/* LIME-284e14: the fine print on one line under the forms (12 px under the field); the email form at the bottom of the phone menu */
+.txt .fine, #link .txt .fine, .jam .txt .fine { max-width: 440px; margin: 12px 0 0; white-space: nowrap; }
+@media (max-width: 800px) { .txt .fine, #link .txt .fine, .jam .txt .fine { white-space: normal; } }
+.overlay .menuform { margin-top: auto; padding-top: 40px; }
+.overlay .menuform .sub { max-width: none; }
+.overlay .menuform .fine { max-width: none; }
