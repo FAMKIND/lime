@@ -30,3 +30,7 @@ supabase/functions/.env*
 # ... except the LOCAL stack's mesh TEST key (public on purpose; LIME-153): the one file the local Edge runtime reads for it. Never put a real secret in it.
 !supabase/functions/.env
 ios/Lime/Config/BackendConfig.generated.swift
+
+# LIME-289: the preview login is kept on the server only, but never let a copy into git
+infra/invite/preview-auth*
+infra/invite/*.hash

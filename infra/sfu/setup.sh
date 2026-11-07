@@ -124,6 +124,11 @@ ufw --force enable >/dev/null
 
 # --- Caddy: HTTPS for the SFU, and the ACME challenge path for coturn's certificate (port 80)
 install -d -m 755 "$ACME_ROOT" "$INVITE_ROOT"
+PREVIEW_AUTH=/etc/caddy/preview-auth.caddy   # the preview's login (LIME-289): written by set-preview-password.sh, kept (not rewritten) here; read by the caddy user
+if [ -n "$INVITE_HOST" ] && [ ! -f "$PREVIEW_AUTH" ]; then
+  printf 'respond @preview "The preview is not set up yet." 503\n' > "$PREVIEW_AUTH"
+fi
+[ -f "$PREVIEW_AUTH" ] && { chgrp caddy "$PREVIEW_AUTH"; chmod 640 "$PREVIEW_AUTH"; }
 INVITE_BLOCK=""
 if [ -n "$INVITE_HOST" ]; then
   INVITE_BLOCK="
@@ -141,6 +146,11 @@ $INVITE_HOST {
 	}
 	rewrite /u/* /u/index.html
 	rewrite /b/* /u/index.html
+	# LIME-289: the full site under /preview/ is for the team only: a login (one user, \"team\"), and never indexed. The login lives in $PREVIEW_AUTH
+	# (written by infra/invite/set-preview-password.sh; only the bcrypt hash is stored). Until that file says otherwise it answers 503: closed, never open.
+	@preview path /preview /preview/*
+	header @preview X-Robots-Tag \"noindex, nofollow\"
+	import $PREVIEW_AUTH
 	file_server
 }
 "
@@ -165,6 +175,7 @@ http://$TURN_DOMAIN${TURN_ALT_DOMAIN:+, http://$TURN_ALT_DOMAIN} {
 }
 $INVITE_BLOCK
 CADDY
+caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null   # a bad Caddyfile stops here, before the restart, so the running sites stay up
 systemctl enable caddy >/dev/null 2>&1
 systemctl restart caddy
 

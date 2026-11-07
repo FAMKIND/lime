@@ -335,3 +335,6 @@ footer .caps a { color: #eaf3e6; text-decoration: none; font-size: 13px; font-we
 #link .txt h2 { margin-bottom: calc(2.4 * var(--u)); }
 .jam .txt { padding-top: calc(4 * var(--u)); }
 @media (max-width: 800px) { .feature .txt p { font-size: 18px; } .feature .txt .fine { white-space: normal; } }
+
+/* LIME-289: infra/invite/deploy.sh puts this tag in the copy under /preview/ only (never in the public site) */
+.ptag { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); padding: 3px 14px 4px; border-radius: 0 0 12px 12px; background: var(--ink); color: #fff; font-size: 13px; font-weight: 500; letter-spacing: .04em; white-space: nowrap; }

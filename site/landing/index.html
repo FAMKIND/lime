@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- Third-party licences (the font): /LICENSES.txt -->
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>lime: where teachers connect</title>
+<meta name="description" content="A free mobile app for teachers to message, call and share their craft. Encrypted. No ads.">
+<link rel="icon" type="image/svg+xml" href="brand/lime-Logomark.svg">
+<link rel="preload" href="fonts/figtree-var.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="landing.css">
+<script>document.documentElement.classList.add("js");</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="bg" data-rotate aria-hidden="true">
+    <div class="slide on" data-wide="media/hero-wide" data-tall="media/hero-tall">
+      <picture><source media="(max-aspect-ratio: 1/1)" srcset="media/hero-tall.webp"><img class="poster" src="media/hero-wide.webp" width="1920" height="1080" alt="" fetchpriority="high"></picture>
+      <video muted loop playsinline preload="none" aria-hidden="true" tabindex="-1"></video>
+    </div>
+    <div class="slide" data-wide="media/hero2-wide" data-tall="media/hero2-tall">
+      <picture><source media="(max-aspect-ratio: 1/1)" srcset="media/hero2-tall.webp"><img class="poster" src="media/hero2-wide.webp" width="1920" height="1080" alt="" loading="lazy"></picture>
+      <video muted loop playsinline preload="none" aria-hidden="true" tabindex="-1"></video>
+    </div>
+    <div class="slide" data-wide="media/hero3-wide" data-tall="media/hero3-tall">
+      <picture><source media="(max-aspect-ratio: 1/1)" srcset="media/hero3-tall.webp"><img class="poster" src="media/hero3-wide.webp" width="1920" height="1080" alt="" loading="lazy"></picture>
+      <video muted loop playsinline preload="none" aria-hidden="true" tabindex="-1"></video>
+    </div>
+</div>
+<div class="scrim" aria-hidden="true"></div>
+
+<header class="top">
+  <a class="lockup" href="/" aria-label="lime, home"><img class="mk" src="brand/lime-Logomark.svg" width="48" height="48" alt=""><img class="wm" src="brand/lime-Logotype.svg" width="54" height="21" alt=""></a>
+  <div class="rt">
+    <button class="pp" type="button" aria-label="Pause the background video"><svg viewBox="0 0 44 44" aria-hidden="true"><circle class="trk" cx="22" cy="22" r="20.5"/><path class="i-pause" d="M17 14h3.4v16H17zM23.6 14H27v16h-3.4z"/><path class="i-play" d="M18 13.5v17l13-8.5z"/></svg></button>
+    <a class="team" href="/preview/">Team</a>
+  </div>
+</header>
+
+<main id="main">
+  <section class="card" aria-labelledby="h-join">
+    <img src="brand/lime-Logomark.svg" width="64" height="64" alt="">
+    <h1 id="h-join">Where teachers connect.</h1>
+    <form class="sub stack" action="https://ddshpgfkjygftkuorrqw.supabase.co/functions/v1/waitlist-join" method="post" data-subscribe>
+      <input type="hidden" name="list" value="launch">
+      <label class="sr" for="e-join">Email address</label>
+      <input id="e-join" type="email" name="email" autocomplete="email" placeholder="Your email" required>
+      <button class="btn" type="submit" data-cta aria-label="Notify me when lime is ready">Notify me</button>
+      <output class="note" role="status" aria-live="polite"></output>
+    </form>
+    <p class="fine" data-fine>We'll email you once, when lime is ready. Nothing else.</p>
+    <!-- Store badges stay hidden until there is an app to download: set the links in landing.js (the launch switch). -->
+    <div class="stores" hidden><a data-store="appStore" href="#">Download on the App Store</a><a data-store="googlePlay" href="#">Get it on Google Play</a></div>
+    <!-- Launched, on Android, no Play link yet: "Notify me when lime is on Android" (the list "android"). Shown by landing.js. -->
+    <form class="sub stack" data-subscribe data-android action="https://ddshpgfkjygftkuorrqw.supabase.co/functions/v1/waitlist-join" method="post" hidden>
+      <input type="hidden" name="list" value="android">
+      <label class="sr" for="e-android">Email address</label>
+      <input id="e-android" type="email" name="email" autocomplete="email" placeholder="Your email" required>
+      <button class="btn" type="submit" aria-label="Notify me when lime is on Android">Notify me when lime is on Android</button>
+      <output class="note" role="status" aria-live="polite"></output>
+      <p class="fine">We'll email you once, when lime is on Android. Nothing else.</p>
+    </form>
+  </section>
+</main>
+
+<footer>
+  <nav aria-label="Footer"><a href="/privacy/">Privacy</a><a href="/terms/">Terms</a><a href="/guidelines/">Guidelines</a></nav>
+  <p>Lime Messenger LLC, powered by the Lime Messenger Foundation. Open source (MIT).</p>
+</footer>
+
+<template id="dl-card"><aside class="dl" role="region" aria-label="Get the lime app" hidden>
+  <img class="mk" src="brand/lime-Logomark.svg" width="40" height="40" alt="">
+  <div class="tx"><strong>Get lime</strong><span class="qrnote">Scan with your phone</span></div>
+  <div class="qr"><svg role="img" aria-label="QR code for limemessenger.com/get" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 33 33"><path class="qrline" stroke="#131b17" d="M2 2.5h7m1 0h1m3 0h1m2 0h4m3 0h7m-29 1h1m5 0h1m1 0h3m5 0h5m1 0h1m5 0h1m-29 1h1m1 0h3m1 0h1m1 0h1m1 0h2m3 0h2m3 0h1m1 0h1m1 0h3m1 0h1m-29 1h1m1 0h3m1 0h1m5 0h1m3 0h2m1 0h2m1 0h1m1 0h3m1 0h1m-29 1h1m1 0h3m1 0h1m1 0h3m3 0h3m1 0h3m1 0h1m1 0h3m1 0h1m-29 1h1m5 0h1m2 0h4m2 0h2m5 0h1m5 0h1m-29 1h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7m-19 1h1m2 0h1m1 0h2m3 0h1m-21 1h1m2 0h9m1 0h1m3 0h1m1 0h3m2 0h1m1 0h3m-28 1h1m2 0h1m3 0h1m1 0h1m1 0h2m2 0h4m3 0h2m1 0h2m-28 1h3m2 0h3m3 0h1m1 0h1m1 0h3m4 0h1m1 0h1m1 0h1m-20 1h1m2 0h1m1 0h2m2 0h2m2 0h3m1 0h2m2 0h1m-29 1h3m1 0h4m3 0h3m1 0h2m1 0h3m1 0h2m4 0h1m-29 1h4m4 0h1m2 0h4m1 0h3m3 0h7m-29 1h2m1 0h2m1 0h1m1 0h2m2 0h2m2 0h2m1 0h2m1 0h3m1 0h1m1 0h1m-29 1h1m3 0h1m2 0h1m1 0h1m1 0h2m2 0h1m3 0h1m1 0h3m2 0h1m1 0h1m-26 1h1m1 0h2m1 0h1m2 0h1m2 0h1m1 0h1m3 0h1m2 0h1m1 0h1m-26 1h6m1 0h4m2 0h2m1 0h6m2 0h1m1 0h2m-28 1h2m1 0h2m1 0h3m1 0h1m1 0h1m2 0h1m3 0h4m1 0h2m2 0h1m-29 1h3m1 0h2m6 0h1m1 0h1m6 0h2m2 0h2m-27 1h4m1 0h3m1 0h1m2 0h6m2 0h8m-20 1h1m1 0h1m1 0h1m1 0h1m3 0h1m1 0h1m3 0h2m-26 1h7m1 0h3m3 0h1m2 0h1m1 0h2m1 0h1m1 0h2m-26 1h1m5 0h1m1 0h3m3 0h2m1 0h1m1 0h2m3 0h1m2 0h2m-29 1h1m1 0h3m1 0h1m1 0h4m1 0h2m1 0h1m2 0h7m-26 1h1m1 0h3m1 0h1m1 0h2m10 0h2m5 0h1m-28 1h1m1 0h3m1 0h1m4 0h1m1 0h4m6 0h2m1 0h3m-29 1h1m5 0h1m2 0h1m1 0h4m1 0h1m1 0h1m3 0h1m1 0h3m1 0h1m-29 1h7m1 0h1m1 0h2m3 0h1m1 0h4m1 0h1"/></svg></div>
+  <a class="btn get" href="#notify">Download</a>
+  <button class="x" type="button" aria-label="Dismiss the download card">×</button>
+</aside></template>
+<script src="landing.js"></script>
+</body>
+</html>
