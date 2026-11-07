@@ -10,6 +10,7 @@
 <link rel="preload" href="fonts/figtree-var.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="proto/phone.css">
+<link rel="stylesheet" href="proto/shots.css">
 <script>document.documentElement.classList.add("js");</script>
 </head>
 <body>
@@ -129,6 +130,7 @@
       <h2 id="h-link" data-reveal>link up with<br>friends you<br>trust</h2>
       <p data-reveal>lime connects you directly to your teaching community, with no ads, no fees and funded by your donations.</p>
       <p data-reveal>Link with friends through direct, group messaging, voice and video calling in real-time.</p>
+      <ol class="wf" data-for="link" data-reveal hidden></ol>
       <form class="sub" data-subscribe data-reveal>
         <label class="sr" for="e-link">Email address</label>
         <input id="e-link" type="email" name="email" autocomplete="email" placeholder="Your email" required>
@@ -137,7 +139,7 @@
       </form>
 <p class="fine" data-fine data-reveal>We'll email you once, when lime is ready. Nothing else.</p>
     </div>
-    <div class="phonewrap" data-reveal data-drift="0.04"><div class="phone"><div class="lpwrap" data-demo="link" role="region" aria-label="lime demo: a chat"></div></div><p class="lpnote">A demo of lime: try it. Everything stays on this page.</p></div>
+    <div class="phonewrap" data-reveal data-drift="0.04"><div class="phone"><div class="lpwrap" data-flow="link" role="region" aria-label="lime demo: link"><noscript><img src="media/demo/flow/link-list.webp" width="600" height="1304" alt="lime's chat list" style="width:100%;height:100%;object-fit:cover"></noscript></div></div><p class="lpnote">Demo: tap the phone, or pick a feature on the left. Names and photos are illustrative.</p></div>
   </div>
 </section>
 
@@ -158,59 +160,6 @@
 <p class="fine" data-fine data-reveal>We'll email you once, when lime is ready. Nothing else.</p>
       </div>
     </div>
-  </div>
-</section>
-
-<section class="built" id="built" aria-labelledby="h-built">
-  <div class="wrap">
-    <div class="bhead" data-reveal><h2 id="h-built">Everything a teaching community needs, built in.</h2><p>No add-ons, no plug-ins: the tools are part of lime, and they're free.</p></div>
-    <div class="brow" data-stagger><div class="shot" data-reveal><div class="phone sm"><div class="lpwrap" data-demo="calls" role="img" aria-label="A group video call with four people: three cameras and one with the camera off, the speaking tile outlined"></div></div></div><div class="btx"><h3 data-reveal>Calls</h3><p data-reveal>Voice and video, one to one or with the whole grade team. Sealed end to end, like every message.</p></div></div>
-    <div class="brow rev" data-stagger><div class="shot" data-reveal><div class="phone sm"><div class="lpwrap" data-demo="band" role="img" aria-label="A band page, Science Corner: a cover photo, its members and subscribers, and its posts with covers"></div></div></div><div class="btx"><h3 data-reveal>Bands</h3><p data-reveal>A school team, a co-op or a union publishing together, with members and groups of their own.</p></div></div>
-    <div class="brow" data-stagger><div class="shot" data-reveal><div class="phone sm"><div class="lpwrap" data-demo="feed" role="img" aria-label="jam: an article with its series line, a podcast episode with a play button, and a quick post"></div></div></div><div class="btx"><h3 data-reveal>Series and podcasts</h3><p data-reveal>Record an episode, group posts into a series, and share it with the teachers who follow you.</p></div></div>
-    <div class="brow rev" data-stagger><div class="shot relay" data-reveal><svg id="mesh" viewBox="0 0 520 380" role="img" aria-labelledby="mesh-t mesh-d" focusable="false">
-  <title id="mesh-t">Messages pass from phone to phone when there is no signal</title>
-  <desc id="mesh-d">A phone at the left sends a sealed message. With no signal, it hops from one nearby phone to the next until it reaches the person it is for, who is marked as delivered. Copies spread through other nearby phones, and one reaches a phone that has a signal and is passed on to the internet. Then the reply travels back the same way.</desc>
-  <rect width="520" height="380" rx="36" fill="#f0eee6"/>
-  <ellipse cx="205" cy="205" rx="200" ry="160" fill="none" stroke="#131b17" stroke-opacity=".28" stroke-width="2" stroke-dasharray="3 9" stroke-linecap="round"/>
-  <g font-family="Figtree, system-ui, sans-serif" font-size="13" fill="#4d524c"><text x="205" y="62" text-anchor="middle">no signal</text><text x="468" y="46" text-anchor="middle">signal</text></g>
-  <g stroke="#131b17" stroke-opacity=".42" stroke-width="2" stroke-linecap="round" stroke-dasharray="1 9" fill="none">
-    <path d="M70 205 150 125M70 205 160 285M150 125 250 195M160 285 250 195M250 195 330 115M250 195 340 295M330 115 452 92M340 295 430 235M150 125 160 285"><animate attributeName="stroke-dashoffset" values="0;-20" dur="2.4s" repeatCount="indefinite"/></path>
-  </g>
-  <g id="mesh-nodes" fill="#fff" stroke="#131b17" stroke-width="2.2">
-    <g transform="translate(70 205)"><rect x="-17" y="-30" width="34" height="60" rx="9" fill="#a3e18a"/><circle r="7" fill="#131b17" stroke="none"/></g>
-    <g transform="translate(150 125)"><rect x="-13" y="-23" width="26" height="46" rx="7"/></g>
-    <g transform="translate(160 285)"><rect x="-13" y="-23" width="26" height="46" rx="7"/></g>
-    <g transform="translate(250 195)"><rect x="-13" y="-23" width="26" height="46" rx="7"/></g>
-    <g transform="translate(330 115)"><rect x="-13" y="-23" width="26" height="46" rx="7"/></g>
-    <g transform="translate(340 295)"><rect x="-13" y="-23" width="26" height="46" rx="7"/></g>
-    <g transform="translate(430 235)"><rect x="-17" y="-30" width="34" height="60" rx="9" fill="#e4f9be"/><circle r="7" fill="#131b17" stroke="none"/></g>
-    <g transform="translate(452 92)"><rect x="-13" y="-23" width="26" height="46" rx="7"/></g>
-  </g>
-  <g fill="none" stroke="#131b17" stroke-width="2.2" stroke-linecap="round" opacity=".7"><path d="M92 170a22 22 0 0 1 16 14M96 158a34 34 0 0 1 26 22"/><path d="M458 26a8 8 0 0 1 12 0M452 19a17 17 0 0 1 24 0"/></g>
-  <g id="mesh-ok" opacity="0" font-family="Figtree, system-ui, sans-serif" font-size="14" font-weight="600"><g transform="translate(430 280)"><rect x="-52" y="-13" width="104" height="26" rx="13" fill="#131b17"/><text y="5" text-anchor="middle" fill="#fff">✓ Delivered</text></g>
-    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;.52;.55;.78;.8;1" dur="14s" repeatCount="indefinite"/></g>
-  <g id="mesh-net" opacity="0" font-family="Figtree, system-ui, sans-serif" font-size="12" font-weight="600"><g transform="translate(452 138)"><rect x="-58" y="-12" width="116" height="24" rx="12" fill="#a3e18a"/><text y="4.5" text-anchor="middle" fill="#131b17">passed on online</text></g>
-    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;.43;.46;.66;.69;1" dur="14s" repeatCount="indefinite"/></g>
-  <g id="mesh-back" opacity="0" font-family="Figtree, system-ui, sans-serif" font-size="14" font-weight="600"><g transform="translate(70 252)"><rect x="-56" y="-13" width="112" height="26" rx="13" fill="#131b17"/><text y="5" text-anchor="middle" fill="#fff">Reply received</text></g>
-    <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;.95;.96;.995;1" dur="14s" repeatCount="indefinite"/></g>
-  <!-- the sealed message: a lime bubble with a small lock -->
-  <defs><g id="env"><path d="M0-12c6.600 0 12 4.7 12 10.500S6.600 9 0 9c-1.7 0-3.300-.3-4.7-.9L-10 12l1.8-5.200C-10.8 5.200-12-.4-12-1.500-12-7.300-6.600-12 0-12z" fill="#a3e18a" stroke="#131b17" stroke-width="2"/><rect x="-4" y="-3" width="8" height="6" rx="1.500" fill="#131b17"/><path d="M-2.500-3v-1.8a2.500 2.500 0 0 1 5 0V-3" fill="none" stroke="#131b17" stroke-width="1.400"/></g></defs>
-  <g id="mesh-a" opacity="0"><use href="#env"/>
-    <animateTransform attributeName="transform" type="translate" calcMode="linear" values="70 205;70 205;150 125;250 195;340 295;430 235;430 235;430 235" keyTimes="0;.035;.143;.286;.429;.536;.57;1" dur="14s" repeatCount="indefinite"/>
-    <animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;.01;.55;.58;1" dur="14s" repeatCount="indefinite"/></g>
-  <g id="mesh-b" opacity="0"><use href="#env" transform="scale(.8)"/>
-    <animateTransform attributeName="transform" type="translate" calcMode="linear" values="70 205;70 205;160 285;250 195;250 195" keyTimes="0;.035;.14;.28;1" dur="14s" repeatCount="indefinite"/>
-    <animate attributeName="opacity" values="0;.55;.55;0;0" keyTimes="0;.01;.27;.3;1" dur="14s" repeatCount="indefinite"/></g>
-  <g id="mesh-c" opacity="0"><use href="#env" transform="scale(.8)"/>
-    <animateTransform attributeName="transform" type="translate" calcMode="linear" values="250 195;250 195;330 115;452 92;452 92" keyTimes="0;.285;.36;.43;1" dur="14s" repeatCount="indefinite"/>
-    <animate attributeName="opacity" values="0;0;.6;.6;0;0" keyTimes="0;.285;.3;.43;.45;1" dur="14s" repeatCount="indefinite"/></g>
-  <g id="mesh-d2" opacity="0"><use href="#env"/>
-    <animateTransform attributeName="transform" type="translate" calcMode="linear" values="430 235;430 235;340 295;250 195;150 125;70 205;70 205" keyTimes="0;.607;.714;.8;.886;.957;1" dur="14s" repeatCount="indefinite"/>
-    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;.6;.61;.955;.97;1" dur="14s" repeatCount="indefinite"/></g>
-</svg>
-<p class="meshcap"><span>No signal? Nearby phones pass your message along.</span><span>Sealed the whole way: carriers can’t read it.</span><span>Works both ways.</span></p></div><div class="btx"><h3 data-reveal>Offline messages</h3><p data-reveal>When there's no signal, phones nearby pass sealed messages on by Bluetooth, in both directions.</p></div></div>
-    <div class="brow" data-stagger><div class="shot" data-reveal><div class="phone sm"><picture><source srcset="media/built-yours.avif" type="image/avif"><img src="media/built-yours.webp" width="600" height="1304" alt="A chat on a chalkboard background" loading="lazy" decoding="async"></picture></div></div><div class="btx"><h3 data-reveal>Make it yours</h3><p data-reveal>Eight colours, eight backgrounds, stickers and wallpapers: a chat that feels like your room.</p></div></div>
-    <div class="brow rev" data-stagger><div class="shot" data-reveal><div class="phone sm"><picture><source srcset="media/built-safety.avif" type="image/avif"><img src="media/built-safety.webp" width="600" height="1304" alt="The report sheet: what's wrong, a note, include the message, also block" loading="lazy" decoding="async"></picture></div></div><div class="btx"><h3 data-reveal>Safety</h3><p data-reveal>Report a message, block a person, and check that no student can be identified before you post publicly.</p></div></div>
   </div>
 </section>
 
@@ -261,6 +210,7 @@
   <button class="x" type="button" aria-label="Dismiss the download card">×</button>
 </aside></template>
 <script src="proto/phone.js" defer></script>
+<script src="proto/shots.js" defer></script>
 <script type="application/json" id="bloom-paths">{"w":[["M196.7,90.8L147.4,110.5C140.5,112.1,129.7,100.9,132.2,94.2L153.5,44.7C157.5,36.3,165.6,30.4,175,32.8C193.3,36.9,207.2,53.5,209.2,72.3C209.2,83.2,204.5,88.4,196.7,90.8L196.7,90.8Z",-0.833],["M152.4,46.6L132.2,94.2C128.8,100.4,113.7,100.7,110.5,94.3L88.2,45.2C84.7,36.7,85.8,26.7,93.8,21.4C109.2,10.6,130.8,11.4,146,22.6C154.1,29.9,155.9,39.2,152.4,46.6L152.4,46.6Z",-1.607],["M88.8,46.6L110.8,95.5C113.1,102.2,103.3,112.4,96.4,110.5L45.1,93.8C36.4,90.6,29.8,83.1,31.3,73.5C33.8,54.9,49,39.6,67.5,35.9C78.4,34.9,85.8,39.1,88.8,46.6L88.8,46.6Z",-2.378],["M196.3,150.7L149.1,131.4C143.2,127.4,142.3,112.7,148.9,110L202,88.9C210.9,86.2,220.7,88.3,225.2,96.8C234.5,113.1,231.6,134.5,219,148.6C211,156,204.2,154,196.3,150.7L196.3,150.7Z",-0.024],["M157.8,199.6L132.8,149.6C130.5,142.9,142.2,129.4,149.1,131.4L200.2,152.8C208.9,156.1,215.4,163.6,213.8,173.2C211.2,191.8,195.9,207,177.3,210.5C166.4,211.4,160.8,207.1,157.8,199.6L157.8,199.6Z",0.759],["M93.3,200.7L108.7,149.5C112,143.2,129.3,143.3,132.8,149.6L156.4,198C160.1,206.5,159.3,216.5,151.4,222.1C136.3,233.3,114.7,233,99.2,222.2C90.9,215.1,90,208.1,93.3,200.7L93.3,200.7Z",1.535],["M44.1,160.4L93.3,133.2C99.8,130.5,110.5,141.2,109.1,148.2L94.1,199C91.5,207.9,84.4,215,74.8,214.2C56.1,213,39.7,198.9,34.8,180.7C33,169.9,36.8,164,44.1,160.4L44.1,160.4Z",2.365],["M45.1,93.8L95.2,110.2C101.7,113.2,102.2,128,96,131.6L47.9,158.4C39.6,162.5,30.2,160.8,24.3,153.2C12.5,138.5,12,116.9,22.1,101C28.9,92.4,37.5,90.8,45.1,93.8L45.1,93.8Z",3.081]],"c":"M136.7,122.6C136.7,126.8,135.4,130.8,132.6,133.6C129.9,136.3,125.8,138,121.6,138C117.5,138,113.6,136.1,110.9,133.4C108.1,130.6,106.9,126.8,106.9,122.6C106.9,118.4,108.1,114.5,110.9,111.8C113.6,109.1,117.5,107.1,121.6,107.1C125.8,107.1,129.3,109.4,132.1,112.2C134.8,114.9,136.7,118.4,136.7,122.6L136.7,122.6Z"}</script>
 <script>
 var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -536,9 +486,6 @@ document.querySelectorAll("[data-subscribe]").forEach(function (f) {
   window.addEventListener("load", function () { setTimeout(function () { measure(); if (N > 1) { prep(1); prep(N - 1); } sync(); arm(); }, 200); });
   window.__hero = { go: go, show: function (n) { if (n !== cur) { swap(n); slides.forEach(function (s, i) { s.classList.add("cut"); s.classList.toggle("on", i === n); }); cur = n; run(n); setTimeout(function () { slides.forEach(function (s) { s.classList.remove("cut"); }); }, 50); } }, stop: function () { paused = true; sync(); } };
 })();
-
-/* The offline diagram loops slowly; with reduced motion it is a still frame of the message in flight. */
-(function () { var m = document.getElementById("mesh"); if (m && m.pauseAnimations && reduce) { m.pauseAnimations(); try { m.setCurrentTime(4.6); } catch (e) {} } })();
 
 /* Scroll motion: headings, paragraphs and images fade and rise in, and fade out once scrolled past; the collage drifts at different speeds. Off with reduced motion. */
 (function () {

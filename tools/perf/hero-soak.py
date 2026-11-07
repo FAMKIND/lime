@@ -13,6 +13,7 @@ from playwright.sync_api import sync_playwright
 
 url, minutes, out = sys.argv[1], float(sys.argv[2]), sys.argv[3]
 dpr = float(sys.argv[sys.argv.index("--dpr") + 1]) if "--dpr" in sys.argv else 2
+section = sys.argv[sys.argv.index("--section") + 1] if "--section" in sys.argv else None   # e.g. link: park on that section's phone instead of the hero
 INIT = """
 window.__f = 0; (function r(){ window.__f++; requestAnimationFrame(r); })();
 window.__lt = {n:0, ms:0};
@@ -38,11 +39,13 @@ with sync_playwright() as p:
         c = cdp.send("Memory.getDOMCounters")
         return m, c
     pg.goto(url, wait_until="load"); pg.wait_for_timeout(3000)
+    if section:
+        pg.evaluate("window.__hero && window.__hero.stop()"); pg.add_style_tag(content="header.top{display:none!important}"); pg.evaluate("document.querySelector('#%s .phone').scrollIntoView({behavior:'instant',block:'center'})" % section); pg.wait_for_timeout(1500)
     m0, _ = metrics(); s0 = pg.evaluate(SNAP); t0 = time.time(); prev_t = t0
     x, y, n = 700, 420, 0
     while time.time() - t0 < minutes * 60:
         for _ in range(2):
-            n += 1; x = 700 + (n % 7) * 40; y = 380 + (n % 5) * 30; pg.mouse.move(x, y, steps=6); pg.wait_for_timeout(2300)
+            n += 1; x = (150 if section else 700) + (n % 7) * 40; y = 380 + (n % 5) * 30; pg.mouse.move(x, y, steps=6); pg.wait_for_timeout(2300)
         m1, c1 = metrics(); s1 = pg.evaluate(SNAP); now = time.time(); dt = now - prev_t
         rows.append({
             "t": round(now - t0), "fps": round((s1["f"] - s0["f"]) / dt, 1), "longtasks": s1["lt"]["n"] - s0["lt"]["n"], "longtask_ms": round(s1["lt"]["ms"] - s0["lt"]["ms"]),

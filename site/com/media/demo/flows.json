@@ -1,0 +1,246 @@
+{
+ "link": {
+  "workflows": [
+   {
+    "id": "chats",
+    "title": "Chats",
+    "line": "Write, send, get a reply, react.",
+    "states": [
+     {
+      "id": "list",
+      "img": "link-list",
+      "alt": "lime's chat list: the Grade 4 Team group, then Mei Lin, Sam Park, Priya Nair, Lee Wong and the Staff room, with photos or initials, previews and unread counts",
+      "ms": 2300,
+      "hs": [
+       {
+        "x": 0.03,
+        "y": 0.215,
+        "w": 0.94,
+        "h": 0.085,
+        "to": "group",
+        "label": "Open the Grade 4 Team group"
+       },
+       {
+        "x": 0.03,
+        "y": 0.305,
+        "w": 0.94,
+        "h": 0.095,
+        "to": "chat",
+        "label": "Open the chat with Mei Lin"
+       }
+      ]
+     },
+     {
+      "id": "chat",
+      "img": "link-chat",
+      "alt": "A chat with Mei Lin: she asked if you are coming to the staff meeting, you said yes, and she is bringing the reading schedule",
+      "ms": 1700,
+      "hs": [
+       {
+        "x": 0.03,
+        "y": 0.86,
+        "w": 0.72,
+        "h": 0.08,
+        "to": "typing",
+        "label": "Write a message"
+       }
+      ],
+      "slide": 1
+     },
+     {
+      "id": "typing",
+      "img": "link-typing",
+      "alt": "The message field holds: Can you share the fraction wall?",
+      "ms": 2000,
+      "hs": [
+       {
+        "x": 0.78,
+        "y": 0.545,
+        "w": 0.19,
+        "h": 0.09,
+        "to": "sent",
+        "label": "Send the message"
+       }
+      ]
+     },
+     {
+      "id": "sent",
+      "img": "link-sent",
+      "alt": "Your message, Can you share the fraction wall?, has just gone",
+      "ms": 1400
+     },
+     {
+      "id": "reply",
+      "img": "link-reply",
+      "alt": "Mei Lin answers: Sending it now. Thanks for asking!",
+      "ms": 2100,
+      "hs": [
+       {
+        "x": 0.07,
+        "y": 0.42,
+        "w": 0.5,
+        "h": 0.08,
+        "to": "bar",
+        "label": "Press and hold her message to react"
+       }
+      ]
+     },
+     {
+      "id": "bar",
+      "img": "link-bar",
+      "alt": "The reaction bar above her message: thumbs up, heart, laughing, surprised, sad, praying hands and a plus for more",
+      "ms": 1900,
+      "hs": [
+       {
+        "x": 0.27,
+        "y": 0.13,
+        "w": 0.13,
+        "h": 0.08,
+        "to": "reacted",
+        "label": "React with a heart"
+       }
+      ]
+     },
+     {
+      "id": "reacted",
+      "img": "link-reacted",
+      "alt": "A heart now sits on Mei Lin's message",
+      "ms": 2500,
+      "hs": [
+       {
+        "x": 0.03,
+        "y": 0.065,
+        "w": 0.12,
+        "h": 0.07,
+        "to": "list",
+        "label": "Back to your chats"
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "groups",
+    "title": "Groups",
+    "line": "The whole grade team in one place, with its members.",
+    "states": [
+     {
+      "id": "group",
+      "img": "link-group",
+      "alt": "The Grade 4 Team group: Lee, Sam and Mei talk about the field trip, and a thumbs up with a 3 sits on Mei's message",
+      "ms": 3300,
+      "hs": [
+       {
+        "x": 0.12,
+        "y": 0.065,
+        "w": 0.45,
+        "h": 0.07,
+        "to": "info",
+        "label": "Open the group's details"
+       }
+      ]
+     },
+     {
+      "id": "info",
+      "img": "link-group-info",
+      "alt": "The Grade 4 Team's details: four members, You (the owner), Mei Lin, Lee Wong and Sam Park, with tabs for Members, Media, Files and Links",
+      "ms": 3000,
+      "hs": [
+       {
+        "x": 0.03,
+        "y": 0.065,
+        "w": 0.13,
+        "h": 0.07,
+        "to": "group",
+        "label": "Back to the group"
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "calls",
+    "title": "Calls",
+    "line": "Voice and video, one to one or with everyone.",
+    "states": [
+     {
+      "id": "call",
+      "img": "link-call",
+      "alt": "A video call with Maya, Mei, Lee and Sam: Mei is speaking and her tile is outlined; the controls are at the bottom",
+      "ms": 5000
+     }
+    ]
+   },
+   {
+    "id": "offline",
+    "title": "Offline",
+    "line": "No signal? Nearby phones pass your message along.",
+    "states": [
+     {
+      "id": "o1",
+      "img": "link-offline-waiting",
+      "alt": "A message waits for a phone nearby: Running late, start without me",
+      "ms": 3600,
+      "overlay": "mesh",
+      "nosignal": 1
+     },
+     {
+      "id": "o2",
+      "img": "link-offline-passed",
+      "alt": "The message was passed to a nearby phone",
+      "ms": 2000,
+      "nosignal": 1
+     },
+     {
+      "id": "o3",
+      "img": "link-offline-sent",
+      "alt": "The message has gone",
+      "ms": 2300
+     }
+    ]
+   },
+   {
+    "id": "yours",
+    "title": "Make it yours",
+    "line": "Colours, backgrounds and stickers: a chat that feels like your room.",
+    "states": [
+     {
+      "id": "y1",
+      "img": "yours-paper-pink",
+      "alt": "A chat on a paper background with a pink accent",
+      "ms": 2000,
+      "looks": 1
+     },
+     {
+      "id": "y2",
+      "img": "yours-chalkboard-lime",
+      "alt": "A chat on a chalkboard background with a lime accent",
+      "ms": 2000,
+      "looks": 1
+     },
+     {
+      "id": "y3",
+      "img": "yours-bulletin-blue",
+      "alt": "A chat on a bulletin board background with a blue accent",
+      "ms": 2000,
+      "looks": 1
+     },
+     {
+      "id": "y4",
+      "img": "yours-living-lavender",
+      "alt": "A chat on a living, moving background with a lavender accent",
+      "ms": 2000,
+      "looks": 1
+     },
+     {
+      "id": "y5",
+      "img": "yours-dots-orange",
+      "alt": "A chat on a dot-grid background with an orange accent",
+      "ms": 2000,
+      "looks": 1
+     }
+    ]
+   }
+  ]
+ }
+}

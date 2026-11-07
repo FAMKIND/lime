@@ -982,8 +982,8 @@ extension GroupCallManager {
         systemRinging = systemRings; answerFallback = !systemRings
     }
 
-    func demoCall(people: Int, video: Bool = true, title: String = "Grade 4 Team", conversationID: String = "grp:demo", customName: Bool = false) {
-        let names = ["Shem Chung", "Jean Park", "Lee Wong", "Sam Park", "Priya Nair", "Dee Ito", "Max Roy", "Ana Cruz", "Tom Lee", "Uma Das", "Vic Hale", "Wen Xu", "Yan Zhu"]
+    func demoCall(people: Int, video: Bool = true, title: String = "Grade 4 Team", conversationID: String = "grp:demo", customName: Bool = false, cast: [String]? = nil) {
+        let names = cast ?? ["Shem Chung", "Jean Park", "Lee Wong", "Sam Park", "Priya Nair", "Dee Ito", "Max Roy", "Ana Cruz", "Tom Lee", "Uma Das", "Vic Hale", "Wen Xu", "Yan Zhu"]
         // The demo starts from the default layout (the person's remembered choice would make tests and screenshots depend on the last run).
         chosenLayout = nil
         layoutDefaults.removeObject(forKey: Self.layoutKey)

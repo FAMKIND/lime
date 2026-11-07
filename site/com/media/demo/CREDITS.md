@@ -19,3 +19,13 @@ The interactive phones on limemessenger.com show made-up people and posts. Every
 | `tile-desk.webp` / `.avif` | `pexels-karolina-grabowska-8946860.jpg` | karolina-grabowska | https://www.pexels.com/photo/8946860/ |
 
 The camera tiles of the four-person call (`tile-hands`, `tile-back`, `tile-desk`) show hands, a person from behind and an over-the-shoulder desk: no face is the focus and no child appears; the fourth tile is the camera-off initials avatar.
+
+## Profile photos in the app screenshots (LIME-286r)
+The demo's cast ("Lee Wong", "Priya Nair") has profile photos in the app screenshots in `flow/`; the others keep their initials. The names are made up. Crops of:
+
+| Cast member | Pexels file | Author | Source |
+| --- | --- | --- | --- |
+| Lee Wong | `pexels-gabby-k-5384445.jpg` | gabby-k | https://www.pexels.com/photo/5384445/ |
+| Priya Nair | `pexels-divinetechygirl-1181519.jpg` | divinetechygirl | https://www.pexels.com/photo/1181519/ |
+
+The screenshots in `flow/` are captures of lime's own iOS app in the simulator's demo mode (`tools/hero-video/SiteShots.swift`, `site-shots.sh`); the demo seed is `ConversationStore+SiteDemo.swift` (debug builds only). A photo of a teenager in the user's set was rejected (no children).

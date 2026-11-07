@@ -1143,6 +1143,10 @@ final class ConversationStore {
         case "requests": path.append(MessagesRoute.requests)
         case "request-chat": path.append(MessagesRoute.requests); path.append("dm:ada")
         case "chat": path.append("dm:sam")
+        case "site-call":   // LIME-286r: a four-person video call for the website
+            demoSiteLink(screen: "site-link")
+            groupCalls.demoCall(people: 4, conversationID: conversations.first?.id ?? "grp:demo", cast: ["Maya Ortiz", "Mei Lin", "Lee Wong", "Sam Park"])
+        case let name? where name.hasPrefix("site-") && ["site-link", "site-chat", "site-group", "site-offline-waiting", "site-offline-passed", "site-offline-sent"].contains(name): demoSiteLink(screen: name)   // LIME-286r
         case "chat-deleted-person":
             // Sam deleted his account (LIME-113c): the chat looks like any old chat; sending shows one quiet line.
             deletedPeers = ["sam"]
@@ -1402,6 +1406,14 @@ final class ConversationStore {
             if let c = conversations.firstIndex(where: { $0.id == id }),
                let m = conversations[c].messages.firstIndex(where: { $0.id == message.id }) {
                 conversations[c].messages[m].state = .sent
+            }
+            // The website's screenshots: someone answers a moment later (`-lime-demo-autoreply "text"`).
+            let args = ProcessInfo.processInfo.arguments
+            if let at = args.firstIndex(of: "-lime-demo-autoreply"), at + 1 < args.count {
+                try? await Task.sleep(for: .seconds(1.2))
+                if let c = conversations.firstIndex(where: { $0.id == id }) {
+                    conversations[c].messages.append(Message(id: UUID().uuidString, senderID: conversations[c].members.first?.id ?? "x", text: args[at + 1], date: Date()))
+                }
             }
         }
     }
