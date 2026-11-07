@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """LIME-284e13: run the marketing page's hero for N minutes and sample it about every 5 s.
 
-    python3 tools/perf/hero-soak.py URL MINUTES OUT.json [--dpr 2]
+    python3 tools/perf/hero-soak.py URL MINUTES OUT.json [--dpr 2] [--viewport 390x844 --touch]
 
 Per sample: frames per second the page managed (a requestAnimationFrame counter), long tasks (>50 ms) and their total,
 the share of one CPU core the page's main thread used (CDP Performance TaskDuration), script/layout/style-recalc counts
@@ -14,6 +14,8 @@ from playwright.sync_api import sync_playwright
 url, minutes, out = sys.argv[1], float(sys.argv[2]), sys.argv[3]
 dpr = float(sys.argv[sys.argv.index("--dpr") + 1]) if "--dpr" in sys.argv else 2
 section = sys.argv[sys.argv.index("--section") + 1] if "--section" in sys.argv else None   # e.g. link: park on that section's phone instead of the hero
+vw, vh = (int(n) for n in (sys.argv[sys.argv.index("--viewport") + 1] if "--viewport" in sys.argv else "1440x900").split("x"))   # e.g. 390x844
+touch = "--touch" in sys.argv   # a phone: touch emulation, and every 12 s one tap on the hero (left, right, left, right…) instead of the mouse moving (LIME-284c3f)
 INIT = """
 window.__f = 0; (function r(){ window.__f++; requestAnimationFrame(r); })();
 window.__lt = {n:0, ms:0};
@@ -31,7 +33,7 @@ SNAP = """() => {
 rows = []
 with sync_playwright() as p:
     b = p.chromium.launch(args=["--enable-precise-memory-info"])
-    ctx = b.new_context(viewport={"width": 1440, "height": 900}, device_scale_factor=dpr)
+    ctx = b.new_context(viewport={"width": vw, "height": vh}, device_scale_factor=dpr, has_touch=touch, is_mobile=touch)
     pg = ctx.new_page(); pg.add_init_script(INIT)
     cdp = ctx.new_cdp_session(pg); cdp.send("Performance.enable")
     def metrics():
@@ -45,7 +47,12 @@ with sync_playwright() as p:
     x, y, n = 700, 420, 0
     while time.time() - t0 < minutes * 60:
         for _ in range(2):
-            n += 1; x = (150 if section else 700) + (n % 7) * 40; y = 380 + (n % 5) * 30; pg.mouse.move(x, y, steps=6); pg.wait_for_timeout(2300)
+            n += 1
+            if touch:
+                if n % 3 == 0: cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": 300 if (n // 3) % 2 else 80, "y": 180, "id": 0}]}); cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+                pg.wait_for_timeout(4300)
+            else:
+                x = (150 if section else 700) + (n % 7) * 40; y = 380 + (n % 5) * 30; pg.mouse.move(x, y, steps=6); pg.wait_for_timeout(2300)
         m1, c1 = metrics(); s1 = pg.evaluate(SNAP); now = time.time(); dt = now - prev_t
         rows.append({
             "t": round(now - t0), "fps": round((s1["f"] - s0["f"]) / dt, 1), "longtasks": s1["lt"]["n"] - s0["lt"]["n"], "longtask_ms": round(s1["lt"]["ms"] - s0["lt"]["ms"]),

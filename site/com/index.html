@@ -319,7 +319,7 @@ document.querySelectorAll("[data-subscribe]").forEach(function (f) {
 /* The hero, a rotator with the "lime bloom". Three slides (video, headline, credit chip). A lime-shaped portal (the logomark: eight wedges around a centre)
    follows the pointer and shows the next slide through it, with a thin arrow: right half of the screen = next, left half = previous; a click goes there. When time is up
    (6 s) or on a click the wedges swing out and grow one after another and the centre circle fills the screen with the next video, while the old headline's letters fall and
-   the new ones fall into place. With no pointer (phones, idle) the portal rests at the lower right: tap = next, swipe = next / previous; ‹ › buttons appear on keyboard focus.
+   the new ones fall into place. On a touch screen (LIME-284c3f) the portal is hidden: a tap shows it at the touch point and blooms (left half = previous, right half = next); touch and hold shows it about 64 px above the finger, it follows the drag and lifting blooms; a swipe is next / previous with no portal; the 6 s change shows it for 0.6 s first. ‹ › buttons appear on keyboard focus.
    Reduced motion: no portal, no bloom, no falling letters, a short crossfade.
    Kept light (LIME-284e13): the portal is a small canvas (just the lime) that moves with a CSS transform and draws only the patch of the next slide under it, taken from a
    small 640 px copy of that slide (one tiny decoder), at full rate only while it moves and about 15 frames a second while it rests; nothing runs when the hero is off screen,
@@ -335,6 +335,8 @@ document.querySelectorAll("[data-subscribe]").forEach(function (f) {
   var C0 = 122.7;   /* the logomark's centre, in its own 245 px space */
   var cur = 0, side = 1, bloom = null, paused = reduce, hold = false, visible = true, raf = 0, W = 0, H = 0, dpr = 1, PS = 0, RS = 0, RESTPOS = { x: 0, y: 0 }, lastDraw = 0, proxyFor = -1;
   var ptr = { x: 0, y: 0, on: false, t: 0 }, pos = { x: 0, y: 0 };
+  var touchMode = !fine && !reduce && slides.length > 1, touching = false, lastTouch = null, tOrigin = null;   /* touch screens: no resting portal (284c3f) */
+  if (touchMode) hero.classList.add("tm");
 
   /* the headline, letter by letter */
   heads.forEach(function (h) {
@@ -365,7 +367,7 @@ document.querySelectorAll("[data-subscribe]").forEach(function (f) {
     if (running() && !reduce) small.play().catch(function () {});
   }
   function sync() {
-    if (running()) { run(cur); if (N > 1 && !reduce) { setSmall(target()); small.play().catch(function () {}); } }
+    if (running()) { run(cur); if (N > 1 && !reduce && (!touchMode || hero.classList.contains("tshow"))) { setSmall(target()); small.play().catch(function () {}); } }
     else { slides.forEach(function (s, i) { vid(i).pause(); }); small.pause(); }
     loop();
   }
@@ -410,7 +412,8 @@ document.querySelectorAll("[data-subscribe]").forEach(function (f) {
   function frame(t) {
     raf = 0;
     if (reduce || N < 2 || !visible || document.hidden) return;                  /* nothing runs when the hero is off screen or the tab is hidden */
-    var aim = ptr.on && fine && t - ptr.t < 4000 ? ptr : RESTPOS, dx = aim.x - pos.x, dy = aim.y - pos.y, moving = Math.abs(dx) + Math.abs(dy) > 0.4;
+    if (touchMode && !bloom && !hero.classList.contains("tshow")) return;      /* on a touch screen nothing runs while the portal is hidden */
+    var aim = touchMode ? (touching && ptr.on ? ptr : pos) : ptr.on && fine && t - ptr.t < 4000 ? ptr : RESTPOS, dx = aim.x - pos.x, dy = aim.y - pos.y, moving = Math.abs(dx) + Math.abs(dy) > 0.4;
     if (bloom) { drawBloom(t); raf = requestAnimationFrame(frame); return; }
     if (moving) { pos.x += dx * 0.16; pos.y += dy * 0.16; }
     else if (paused) { drawPortal(); return; }                                   /* paused and still: one draw, then the loop stops (it restarts on any event) */
@@ -470,22 +473,25 @@ document.querySelectorAll("[data-subscribe]").forEach(function (f) {
     if (reduce) { slides.forEach(function (s, i) { s.classList.toggle("on", i === n); }); cur = n; if (active()) run(n); setTimeout(function () { vid(cur === n ? (n + 1) % N : n).pause(); }, 400); arm(); return; }
     try { if (small.readyState >= 1 && proxyFor === n) fv.currentTime = small.currentTime; } catch (e) {}   /* the bloom opens on the frame the portal was showing */
     run(n);
-    var from = ptr.on && fine ? ptr : RESTPOS; pos.x = from.x; pos.y = from.y;
+    var from = touchMode ? (tOrigin || (pos.x ? { x: pos.x, y: pos.y } : RESTPOS)) : ptr.on && fine ? ptr : RESTPOS; tOrigin = null; pos.x = from.x; pos.y = from.y;
+    if (touchMode) hero.classList.remove("tshow");   /* the bloom takes over from the portal */
     bloomStart(n, { x: from.x, y: from.y }); loop(); arm();
   }
   var elapsed = 0, pp = document.querySelector(".pp");
   function arm() { elapsed = 0; progress(); }
   function progress() { if (pp) pp.style.setProperty("--p", reduce ? 0 : Math.min(1, elapsed / SECONDS)); }
   setInterval(function () {                                                        /* the one timer: it counts only while the stories run */
-    if (N < 2 || bloom || !active()) return;
+    if (N < 2 || bloom || !active() || touching) return;
     elapsed += 100; progress();
-    if (elapsed >= SECONDS) { elapsed = 0; side = 1; go((cur + 1) % N); }
+    if (touchMode && elapsed >= SECONDS - 600 && !hero.classList.contains("tshow")) { var o = lastTouch || { x: W / 2, y: H * 0.83 }; side = 1; showTouch(o.x, o.y); }   /* the portal fades in just before the bloom */
+    if (elapsed >= SECONDS) { elapsed = 0; side = 1; if (touchMode) tOrigin = { x: pos.x, y: pos.y }; go((cur + 1) % N); }
   }, 100);
 
   /* the pointer */
   function local(e) { var r = hero.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
   function overUI(el) { return el.closest && el.closest("a, button, input, form, .overlay"); }
   hero.addEventListener("mousemove", function (e) {
+    if (touchMode) return;   /* the compatibility mouse events after a tap are not a pointer */
     var p = local(e); ptr.x = p.x; ptr.y = p.y; ptr.t = performance.now();
     ptr.on = !overUI(e.target); var ns = p.x > W / 2 ? 1 : -1; if (ns !== side) { side = ns; if (running() && !reduce) setSmall(target()); }
     hero.classList.toggle("portal", ptr.on && fine && !reduce && N > 1);
@@ -495,22 +501,58 @@ document.querySelectorAll("[data-subscribe]").forEach(function (f) {
   document.addEventListener("visibilitychange", function () { sync(); });
   hero.addEventListener("click", function (e) {
     if (overUI(e.target)) return;
+    if (touchMode) return;   /* a touch is handled below (tap, hold, swipe) */
     var p = local(e), d = fine ? (p.x > W / 2 ? 1 : -1) : 1;
     if (!fine) { var r = RESTPOS; if (Math.hypot(p.x - r.x, p.y - r.y) > 70) return; }
     side = d; go((cur + d + N) % N);
   });
-  var tx = 0, ty = 0;
-  hero.addEventListener("touchstart", function (e) { tx = e.touches[0].clientX; ty = e.touches[0].clientY; }, { passive: true });
-  hero.addEventListener("touchend", function (e) {
-    var dx = e.changedTouches[0].clientX - tx, dy = e.changedTouches[0].clientY - ty;
-    if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.4) { var d = dx < 0 ? 1 : -1; side = d; go((cur + d + N) % N); }
+  /* touch (284c3f): a tap, a hold (the portal 64 px above the finger, following it; lifting blooms) or a swipe. Vertical scrolling works until a hold starts. */
+  var tx = 0, ty = 0, tt = 0, holdTimer = 0, T = null, HOLD_MS = 250, SLOP = 10, LIFT = 64;
+  function tpoint(t) { var r = hero.getBoundingClientRect(); return { x: t.clientX - r.left, y: t.clientY - r.top }; }
+  function showTouch(x, y) {                       /* the portal appears at (x, y) */
+    pos.x = x; pos.y = y; ptr.x = x; ptr.y = y; ptr.t = performance.now();
+    hero.classList.add("tshow"); setSmall(target()); small.play().catch(function () {}); lastDraw = 0; loop();
+  }
+  function hideTouch() { hero.classList.remove("tshow"); touching = false; ptr.on = false; small.pause(); }
+  function sideFor(x) { var ns = x > W / 2 ? 1 : -1; if (ns !== side) { side = ns; if (hero.classList.contains("tshow")) setSmall(target()); } }
+  function cancelHold() { clearTimeout(holdTimer); holdTimer = 0; }
+  hero.addEventListener("touchstart", function (e) {
+    cancelHold(); tx = e.touches[0].clientX; ty = e.touches[0].clientY; tt = performance.now();
+    if (e.touches.length > 1 || overUI(e.target)) { T = null; return; }   /* a touch that starts on a link, button or chip never shows the portal */
+    if (!touchMode) { T = null; return; }
+    var p = tpoint(e.touches[0]); T = { x0: p.x, y0: p.y, holding: false }; lastTouch = { x: p.x, y: p.y };
+    holdTimer = setTimeout(function () {           /* a finger that stays still for 250 ms is a hold: the portal shows above it */
+      if (!T || bloom) return; T.holding = true; touching = true; ptr.on = true;
+      sideFor(T.x0); showTouch(T.x0, Math.max(PS * 0.3, T.y0 - LIFT)); ptr.x = T.x0; ptr.y = Math.max(PS * 0.3, T.y0 - LIFT);
+    }, HOLD_MS);
   }, { passive: true });
+  hero.addEventListener("touchmove", function (e) {
+    if (!touchMode || !T) return;
+    var p = tpoint(e.touches[0]);
+    if (T.holding) {                               /* the page does not scroll while the portal is held */
+      if (e.cancelable) e.preventDefault();
+      ptr.x = p.x; ptr.y = Math.max(PS * 0.3, p.y - LIFT); ptr.t = performance.now(); ptr.on = true; lastTouch = { x: p.x, y: p.y }; sideFor(p.x); loop();
+    } else if (Math.hypot(p.x - T.x0, p.y - T.y0) > SLOP) { cancelHold(); }   /* it moved first: a scroll or a swipe, not a hold */
+  }, { passive: false });
+  hero.addEventListener("touchcancel", function () { cancelHold(); if (T && T.holding) hideTouch(); T = null; }, { passive: true });
+  hero.addEventListener("touchend", function (e) {
+    var t = e.changedTouches[0], dx = t.clientX - tx, dy = t.clientY - ty, was = T; cancelHold(); T = null;
+    if (touchMode && was && was.holding) {         /* lifting a hold blooms to the slide shown in the portal */
+      touching = false; ptr.on = false; tOrigin = { x: pos.x, y: pos.y }; go(target()); hideTouch(); return;
+    }
+    if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.4) { var d = dx < 0 ? 1 : -1; side = d; go((cur + d + N) % N); return; }   /* a swipe: no portal */
+    if (touchMode && was && Math.hypot(dx, dy) <= SLOP) {   /* a tap: the portal appears at the touch point and blooms */
+      var p = tpoint(t); sideFor(p.x); showTouch(p.x, p.y); var n = target(), at = { x: p.x, y: p.y };
+      setTimeout(function () { if (hero.classList.contains("tshow")) { tOrigin = at; go(n); } }, 150);
+    }
+  }, { passive: true });
+  hero.addEventListener("contextmenu", function (e) { if (touchMode && !overUI(e.target)) e.preventDefault(); });   /* no callout on a long press */
   [].forEach.call(hero.querySelectorAll(".pn"), function (b) { b.addEventListener("click", function () { var d = +b.dataset.dir; side = d; go((cur + d + N) % N); }); });
   hero.addEventListener("focusin", function (e) { if (e.target.matches && e.target.matches(":focus-visible")) { hold = true; sync(); } });   /* keyboard focus inside the hero pauses */
   hero.addEventListener("focusout", function () { if (hold) { hold = false; sync(); } });
   if ("IntersectionObserver" in window) new IntersectionObserver(function (es) { visible = es[0].isIntersecting; pp.classList.toggle("gone", !visible); sync(); }).observe(hero);
   function pplabel() { pp.setAttribute("aria-label", paused ? "Play the stories" : "Pause the stories"); pp.classList.toggle("paused", paused); }
-  pp.addEventListener("click", function () { paused = !paused; pplabel(); sync(); });
+  pp.addEventListener("click", function () { paused = !paused; pplabel(); if (touchMode && paused) hideTouch(); sync(); });
   pplabel();
   var phone = window.matchMedia("(max-width: 640px)"), rt = document.querySelector(".top .rt");
   function place() { if (phone.matches) hero.appendChild(pp); else rt.appendChild(pp); }   /* the header is too compact on a phone */

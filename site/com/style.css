@@ -94,6 +94,10 @@ p { margin: 0 0 1.1em; }
 .bloom { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; display: none; }
 .lime-portal { position: absolute; left: 0; top: 0; pointer-events: none; will-change: transform; }
 .hero.portal { cursor: none; }
+/* LIME-284c3f: on a touch screen the portal is hidden until a tap, a hold or an automatic change shows it */
+.hero.tm .lime-portal { opacity: 0; transition: opacity .45s ease; }
+.hero.tm.tshow .lime-portal { opacity: 1; }
+.hero.tm .slides, .hero.tm .heads { touch-action: pan-y; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 .hero.portal a, .hero.portal button, .hero.portal input { cursor: pointer; }
 .slide.cut, .slide.cut video { transition: none; }
 .pn { position: absolute; right: var(--edge); bottom: 3vh; z-index: 6; min-height: 44px; padding: 0 20px; border-radius: 999px; border: 0; background: #fff; color: var(--ink); font: 500 16px var(--sans); cursor: pointer; }
