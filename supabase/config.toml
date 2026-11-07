@@ -461,3 +461,13 @@ verify_jwt = false
 # LIME-157: so does upload (the sender's signed proof authorises it, not the relay's account).
 [functions.mesh-drop]
 verify_jwt = false
+
+# The launch list (LIME-284c2): a browser form and a link in an email call these with no user token; the token in the link is the proof, and every call is rate-limited by keyed hash.
+[functions.waitlist-join]
+verify_jwt = false
+[functions.waitlist-confirm]
+verify_jwt = false
+[functions.waitlist-teach]
+verify_jwt = false
+[functions.waitlist-unsubscribe]
+verify_jwt = false

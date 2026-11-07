@@ -22,6 +22,7 @@ h1, h2, h3 { margin: 0; font-weight: 300; letter-spacing: -0.02em; line-height: 
 p { margin: 0 0 1.1em; }
 
 /* forms: an outlined email pill and the pale-lime button */
+.sub[hidden] { display: none; }
 .sub { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; position: relative; }
 .sub input { flex: 1 1 170px; min-width: 0; min-height: 44px; padding: 0 20px; border-radius: 999px; border: 1px solid currentColor; background: transparent; color: inherit; font: 400 17px var(--sans); }
 .sub input::placeholder { color: inherit; opacity: .7; }

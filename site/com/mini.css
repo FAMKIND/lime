@@ -1,0 +1,24 @@
+/* LIME-284c2: the small pages after the launch list's forms (check-email, confirmed, left, try-again). Figtree, paper background, ink text; AA contrast. */
+@font-face { font-family: "Figtree"; src: url(/fonts/figtree-var.woff2) format("woff2"); font-weight: 300 900; font-style: normal; font-display: swap; }
+:root { --ink: #131b17; --lime: #a3e18a; --paper: #f9f8f4; --warm: #f0eee6; --muted: #4d524c; --sans: "Figtree", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 32px 20px; background: var(--paper); color: var(--ink); font: 400 20px/1.45 var(--sans); }
+main { width: 100%; max-width: 520px; text-align: center; }
+.mk { width: 72px; height: 72px; display: block; margin: 0 auto 22px; }
+h1 { margin: 0 0 14px; font-weight: 300; font-size: clamp(34px, 9vw, 48px); line-height: 1.1; letter-spacing: -0.02em; }
+p { margin: 0 0 18px; color: var(--muted); }
+a { color: var(--ink); }
+a:focus-visible, button:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 26px; border-radius: 999px; border: 0; background: var(--lime); color: var(--ink); font: 500 17px var(--sans); text-decoration: none; cursor: pointer; }
+.btn:hover { background: #93d878; }
+fieldset { margin: 30px 0 8px; padding: 0; border: 0; min-width: 0; }
+legend { display: block; width: 100%; margin: 0 0 14px; padding: 0; font-weight: 500; font-size: 22px; color: var(--ink); }
+.opts { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+.opts button { min-height: 48px; padding: 0 20px; border-radius: 999px; border: 1.5px solid var(--ink); background: transparent; color: var(--ink); font: 500 17px var(--sans); cursor: pointer; }
+.opts button:hover { background: var(--warm); }
+.opts button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+.thanks { min-height: 1.5em; margin: 14px 0 0; color: var(--ink); font-weight: 500; }
+.optional { color: var(--muted); font-weight: 400; font-size: 17px; }
+.leave { margin-top: 34px; font-size: 15px; }
+.leave a { color: var(--muted); }
+.js-only[hidden] { display: none; }

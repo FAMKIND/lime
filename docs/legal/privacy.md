@@ -4,7 +4,7 @@
 
 **lime keeps your messages private. We can't read them. We don't show ads, track you or sell anything.**
 
-*Last updated: 1 November 2026 (draft).*
+*Last updated: 7 November 2026 (draft).*
 
 ## The short version
 
@@ -43,9 +43,15 @@ These companies process data for us. None may use it for their own purposes.
 | Provider | What for | What it sees |
 | --- | --- | --- |
 | Supabase | Our database and file storage | Everything in the table above that "lime's servers" can see, plus sealed bytes it cannot open. |
-| Resend | Sign-in codes and account emails | Your email address and the email it sends (a code). |
+| Resend | Sign-in codes, account emails and the launch list's emails | Your email address and the email it sends (a code, or the link to confirm the launch list). |
 | Hetzner | The servers for calls and the invite page | Network addresses while a call is connected. No access logs are kept. |
 | Apple | Notifications, later | A device token and a content-free ping. No message content. |
+
+## The launch list
+
+If you ask limemessenger.com to tell you when lime is ready, we keep your email address, the date, and, only if you tap it, which kind of place you teach in (K-12, higher ed, a studio or community, or somewhere else). We use them for one thing: to email you once, when lime is ready. If you asked about Android, we email you once more, when lime is on Android. We don't track you on the website: no cookies, no analytics. We don't sell or share the list, and Resend (above) only sends the emails.
+
+You confirm your address with a link we email you. If you don't, we delete it after 7 days. To leave, use the link on the page after you confirm, the link in any email we send, or write to support@limemessenger.com, and we delete your address at once. After the launch email we delete the list; people who asked about Android stay on a separate list until we send the Android email, then we delete it too.
 
 ## Nearby phones (the mesh)
 
@@ -58,6 +64,7 @@ lime is for teachers. Students must not have accounts. Before you post a photo, 
 ## How long we keep things
 
 - **Sealed mail:** until the phone collects it, or 30 days.
+- **The launch list:** an unconfirmed address, 7 days. A confirmed one, until we send the launch email (an Android sign-up, until the Android email), or until you leave.
 - **Files you send:** about an hour after the last recipient fetched it, or 30 days at most.
 - **Reports:** 180 days after a moderator has handled them, then deleted. If the law requires us to keep something, for example a report to the National Center for Missing & Exploited Children, we keep only what it requires.
 - **Delete for everyone** is best effort. If someone already saw or saved a message, lime cannot take it back.

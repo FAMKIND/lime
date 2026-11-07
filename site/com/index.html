@@ -19,7 +19,8 @@
   <nav class="l" aria-label="Main"><a href="#top">Home</a><a href="#link">Features</a></nav>
   <a class="lockup" href="#top" aria-label="lime, home"><img class="mk" src="brand/lime-Logomark.svg" width="40" height="40" alt=""><img class="wm" src="brand/lime-Logotype.svg" width="44" height="17" alt=""></a>
   <div class="rt">
-  <form class="sub" data-subscribe>
+  <form class="sub" action="https://ddshpgfkjygftkuorrqw.supabase.co/functions/v1/waitlist-join" method="post" data-subscribe>
+    <input type="hidden" name="list" value="launch">
     <label class="sr" for="e-top">Email address</label>
     <input id="e-top" type="email" name="email" autocomplete="email" placeholder="Your email" required>
     <button class="btn" type="submit" data-cta aria-label="Notify me when lime is ready">Notify me</button>
@@ -37,7 +38,8 @@
   <div class="bar"><img src="brand/lime-Logomark.svg" width="40" height="40" alt=""><button class="x" type="button" data-close aria-label="Close the menu">×</button></div>
   <nav aria-label="Menu"><a href="#top">Home</a><a href="#link">Features</a><a href="/privacy/">Privacy</a></nav>
   <div class="menuform">
-    <form class="sub stack" data-subscribe>
+    <form class="sub stack" action="https://ddshpgfkjygftkuorrqw.supabase.co/functions/v1/waitlist-join" method="post" data-subscribe>
+    <input type="hidden" name="list" value="launch">
       <label class="sr" for="e-menu">Email address</label>
       <input id="e-menu" type="email" name="email" autocomplete="email" placeholder="Your email" required>
       <button class="btn" type="submit" data-cta aria-label="Notify me when lime is ready">Notify me</button>
@@ -49,7 +51,8 @@
 <div class="overlay" id="sheet" role="dialog" aria-modal="true" aria-labelledby="h-sheet" hidden>
   <div class="bar"><img src="brand/lime-Logomark.svg" width="40" height="40" alt=""><button class="x" type="button" data-close aria-label="Close">×</button></div>
   <h2 id="h-sheet">Where teachers connect.</h2>
-  <form class="sub stack" data-subscribe>
+  <form class="sub stack" action="https://ddshpgfkjygftkuorrqw.supabase.co/functions/v1/waitlist-join" method="post" data-subscribe>
+    <input type="hidden" name="list" value="launch">
     <label class="sr" for="e-sheet">Email address</label>
     <input id="e-sheet" type="email" name="email" autocomplete="email" placeholder="Your email" required>
     <button class="btn" type="submit" data-cta aria-label="Notify me when lime is ready">Notify me</button>
@@ -119,7 +122,8 @@
       <h2 id="h-link" data-reveal>link up with<br>friends you<br>trust</h2>
       <p data-reveal>lime connects you directly to your teaching community, with no ads, no fees and funded by your donations.</p>
       <p data-reveal>Link with friends through direct, group messaging, voice, and video calling in real-time.</p>
-      <form class="sub" data-subscribe data-reveal>
+      <form class="sub" action="https://ddshpgfkjygftkuorrqw.supabase.co/functions/v1/waitlist-join" method="post" data-subscribe data-reveal>
+    <input type="hidden" name="list" value="launch">
         <label class="sr" for="e-link">Email address</label>
         <input id="e-link" type="email" name="email" autocomplete="email" placeholder="Your email" required>
         <button class="btn" type="submit" data-cta aria-label="Notify me when lime is ready">Notify me</button>
@@ -139,7 +143,8 @@
       <div class="txt">
         <p data-reveal>Jam on posts, articles, podcasts or band together to collectively share your expertise.</p>
         <p data-reveal>Record an episode or group posts into a series. Share with your subscribers. Members-only posts are encrypted too.</p>
-        <form class="sub" data-subscribe data-reveal>
+        <form class="sub" action="https://ddshpgfkjygftkuorrqw.supabase.co/functions/v1/waitlist-join" method="post" data-subscribe data-reveal>
+    <input type="hidden" name="list" value="launch">
           <label class="sr" for="e-jam">Email address</label>
           <input id="e-jam" type="email" name="email" autocomplete="email" placeholder="Your email" required>
           <button class="btn" type="submit" data-cta aria-label="Notify me when lime is ready">Notify me</button>
@@ -168,7 +173,8 @@
   <div class="card" data-reveal>
     <img src="brand/lime-Logomark.svg" width="64" height="64" alt="">
     <h2 id="h-join">Where teachers connect.</h2>
-    <form class="sub stack" data-subscribe>
+    <form class="sub stack" action="https://ddshpgfkjygftkuorrqw.supabase.co/functions/v1/waitlist-join" method="post" data-subscribe>
+    <input type="hidden" name="list" value="launch">
       <label class="sr" for="e-join">Email address</label>
       <input id="e-join" type="email" name="email" autocomplete="email" placeholder="Your email" required>
       <button class="btn" type="submit" data-cta aria-label="Notify me when lime is ready">Notify me</button>
@@ -177,6 +183,15 @@
 <p class="fine" data-fine>We'll email you once, when lime is ready. Nothing else.</p>
     <!-- Store badges stay hidden until there is an app to download: set the links in the script at the end of the page. -->
     <div class="stores" hidden><a data-store="appStore" href="#">Download on the App Store</a><a data-store="googlePlay" href="#">Get it on Google Play</a></div>
+    <!-- Launched, on Android, no Play link yet: "Notify me when lime is on Android" (the list "android", one email when the Play link goes live). Shown by the script below. -->
+    <form class="sub stack" data-subscribe data-android action="https://ddshpgfkjygftkuorrqw.supabase.co/functions/v1/waitlist-join" method="post" hidden>
+      <input type="hidden" name="list" value="android">
+      <label class="sr" for="e-android">Email address</label>
+      <input id="e-android" type="email" name="email" autocomplete="email" placeholder="Your email" required>
+      <button class="btn" type="submit" aria-label="Notify me when lime is on Android">Notify me when lime is on Android</button>
+      <output class="note" role="status" aria-live="polite"></output>
+      <p class="fine">We'll email you once, when lime is on Android. Nothing else.</p>
+    </form>
   </div>
 </section>
 
@@ -218,10 +233,10 @@ var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
    (iPhone and iPad go to the App Store, Android to Google Play, a desktop opens the download card with its QR code), the email forms go, the store
    badges show and the card appears. Preview the launched page locally with ?launched=1 (localhost only). */
 window.LIME_LAUNCH = { appStore: "", googlePlay: "" };
-var MSG_OK = "You're on the list. We'll email you when lime is ready.";   /* shown by the waitlist (284c) after a real sign-up */
+var MSG_OK = "Check your email to confirm. We'll email you once, when lime is ready.";   /* shown after a sign-up is accepted (the list is double opt-in: the address counts once it is confirmed) */
 (function () {
   var L = window.LIME_LAUNCH, local = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
-  if (local && /[?&]launched=1/.test(location.search)) L = window.LIME_LAUNCH = { appStore: "https://apps.apple.com/app/lime", googlePlay: "https://play.google.com/store/apps/details?id=com.limemessenger.lime" };
+  if (local && /[?&]launched=(1|ios)/.test(location.search)) L = window.LIME_LAUNCH = { appStore: "https://apps.apple.com/app/lime", googlePlay: /launched=ios/.test(location.search) ? "" : "https://play.google.com/store/apps/details?id=com.limemessenger.lime" };   /* ?launched=ios: the App Store is live, Google Play is not */
   var launched = !!(L.appStore || L.googlePlay);
   document.documentElement.classList.toggle("launched", launched);
   document.querySelectorAll("[data-store]").forEach(function (a) { var u = L[a.dataset.store]; if (u) a.href = u; else a.hidden = true; });
@@ -229,10 +244,12 @@ var MSG_OK = "You're on the list. We'll email you when lime is ready.";   /* sho
   if (!launched) return;
   var ua = navigator.userAgent, ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1), android = /Android/.test(ua);
   var store = ios ? L.appStore : android ? L.googlePlay : "";
+  document.querySelectorAll("form[data-android]").forEach(function (f) { f.hidden = !(android && !L.googlePlay); });   /* Android visitors, before Google Play: "Notify me when lime is on Android" */
+  if (android && !L.googlePlay) document.querySelector(".stores").hidden = true;   /* no App Store badge for a phone that cannot use it */
   var card = null;
   function openCard() { if (card) { card.hidden = false; card.classList.add("show"); } try { localStorage.removeItem("lime-dl-dismissed"); } catch (e) {} }
   /* every "Notify me" becomes "Download"; the email forms and the sheet go */
-  document.querySelectorAll("form[data-subscribe]").forEach(function (f) {
+  document.querySelectorAll("form[data-subscribe]:not([data-android])").forEach(function (f) {
     var a = document.createElement("a"); a.className = "btn dl-cta"; a.textContent = "Download"; a.setAttribute("aria-label", "Download the lime app"); a.setAttribute("data-dl", ""); a.href = store || "#notify";
     f.replaceWith(a);
   });
@@ -260,9 +277,26 @@ var MSG_OK = "You're on the list. We'll email you when lime is ready.";   /* sho
   if (!dismissed) card.hidden = true;
 })();
 
-/* The waitlist is wired in 284c; until then every form says so and sends nothing. */
+/* The launch list (284c2): the form posts to waitlist-join (a plain HTML post works without this script); here the answer shows in place. Nothing about the visitor is kept or tracked. */
 document.querySelectorAll("[data-subscribe]").forEach(function (f) {
-  f.addEventListener("submit", function (e) { e.preventDefault(); f.querySelector("output").textContent = "The waitlist opens soon. Nothing was sent."; f.dispatchEvent(new CustomEvent("lime-notified", { bubbles: true })); });
+  var out = f.querySelector("output"), btn = f.querySelector("button[type=submit]");
+  f.addEventListener("submit", function (e) {
+    if (!window.fetch || !window.URLSearchParams || !window.FormData) return;   /* an old browser sends the plain form */
+    e.preventDefault();
+    var android = f.hasAttribute("data-android"); btn.disabled = true; out.textContent = "";
+    fetch(f.action, { method: "POST", headers: { "Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(new FormData(f)).toString() })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (b) { return { ok: r.ok, status: r.status, body: b }; }); })
+      .then(function (r) {
+        if (r.ok) {
+          out.textContent = android ? "Check your email to confirm. We'll email you once, when lime is on Android." : MSG_OK;
+          f.querySelectorAll("input[type=email]").forEach(function (i) { i.value = ""; });
+          f.dispatchEvent(new CustomEvent("lime-notified", { bubbles: true })); return;
+        }
+        btn.disabled = false;
+        out.textContent = r.status === 429 ? "Too many tries. Please wait a few minutes." : r.status === 400 ? "That doesn't look like an email address." : "We couldn't add that just now. Please try again.";
+      })
+      .catch(function () { btn.disabled = false; out.textContent = "We couldn't reach the list. Please try again."; });
+  });
 });
 
 /* The header: visible on load, tucks away scrolling down, returns scrolling up; never while something in it has focus. */

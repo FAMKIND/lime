@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<title>You're on the list · lime</title>
+<link rel="icon" type="image/svg+xml" href="/brand/lime-Logomark.svg">
+<link rel="preload" href="/fonts/figtree-var.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/mini.css">
+</head>
+<body>
+<main>
+  <img class="mk" src="/brand/lime-Logomark.svg" alt="">
+  <h1>You're on the list.</h1>
+  <p>We'll email you once, when lime is ready.</p>
+  <form id="teach" class="js-only" hidden>
+    <fieldset>
+      <legend>I teach in… <span class="optional">(optional)</span></legend>
+      <div class="opts">
+        <button type="button" data-v="k12" aria-pressed="false">K-12</button>
+        <button type="button" data-v="higher_ed" aria-pressed="false">Higher ed</button>
+        <button type="button" data-v="studio_community" aria-pressed="false">A studio or community</button>
+        <button type="button" data-v="other" aria-pressed="false">Somewhere else</button>
+      </div>
+    </fieldset>
+    <p class="thanks" id="thanks" role="status" aria-live="polite"></p>
+  </form>
+  <noscript><p>To leave the list at any time, write to <a href="mailto:support@limemessenger.com">support@limemessenger.com</a>.</p></noscript>
+  <p class="leave js-only" id="leave" hidden><a id="leave-link" href="#">Leave the list</a></p>
+  <p><a class="btn" href="/">limemessenger.com</a></p>
+</main>
+<script>
+/* The token is in the address (?t=…): it is read once, kept here, and taken out of the address bar. The tap and "Leave the list" need it, so they show only when it is there. */
+(function () {
+  var BASE = "https://ddshpgfkjygftkuorrqw.supabase.co/functions/v1/";
+  var m = /[?&]t=([0-9a-f]{48})/.exec(location.search), t = m && m[1];
+  try { history.replaceState(null, "", location.pathname); } catch (e) {}
+  if (!t) return;
+  var form = document.getElementById("teach"), leave = document.getElementById("leave"), say = document.getElementById("thanks");
+  form.hidden = false; leave.hidden = false;
+  document.getElementById("leave-link").href = BASE + "waitlist-unsubscribe?t=" + t;
+  form.addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-v]"); if (!b) return;
+    var all = form.querySelectorAll("button[data-v]");
+    fetch(BASE + "waitlist-teach", { method: "POST", headers: { "Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded" }, body: "t=" + t + "&v=" + b.dataset.v })
+      .then(function (r) { if (!r.ok) throw 0; all.forEach(function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); }); say.textContent = "Thanks!"; })
+      .catch(function () { say.textContent = "We couldn't save that. Please try again."; });
+  });
+})();
+</script>
+</body>
+</html>
