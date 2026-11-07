@@ -79,7 +79,8 @@ final class AccountSession {
         }
         if arguments.contains("-lime-skip-sign-in") {
             // UI tests: signed in, without a backend.
-            profile = Profile(displayName: "Test Teacher", username: "teacher", school: nil, maskedEmail: "t•••@example.invalid")
+            let demoName = arguments.firstIndex(of: "-lime-demo-me-name").flatMap { $0 + 1 < arguments.count ? arguments[$0 + 1] : nil }   // the website's screenshots (LIME-286r2): "MO", not "TT"
+            profile = Profile(displayName: demoName ?? "Test Teacher", username: "teacher", school: nil, maskedEmail: "t•••@example.invalid")
             maskedEmail = "t•••@example.invalid"
             tokens = AuthTokens(accessToken: "fake-access", refreshToken: "fake-refresh", expiresAt: Date().addingTimeInterval(86_400), userID: "test-user")
             ThemeStore.shared.load(for: "demo")

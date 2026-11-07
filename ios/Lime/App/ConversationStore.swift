@@ -1143,6 +1143,7 @@ final class ConversationStore {
         case "requests": path.append(MessagesRoute.requests)
         case "request-chat": path.append(MessagesRoute.requests); path.append("dm:ada")
         case "chat": path.append("dm:sam")
+        case "site-jam", "site-jam-band": demoSiteJam(screen: screen ?? "site-jam")   // LIME-286r2: the website's jam phone
         case "site-call":   // LIME-286r: a four-person video call for the website
             demoSiteLink(screen: "site-link")
             groupCalls.demoCall(people: 4, conversationID: conversations.first?.id ?? "grp:demo", cast: ["Maya Ortiz", "Mei Lin", "Lee Wong", "Sam Park"])
