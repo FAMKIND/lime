@@ -10023,3 +10023,16 @@ Tighter feature sections: no workflow list; the phone shows it all (`site/com/`;
 - **Found and fixed on the way:** the new paragraph size had leaked into the form (it grew wider than its column and ran under the phone) and into the fine print; both are held to 440 px and 14 px again.
 - **jam's phone is still the older hand-drawn replica**: the jam workflows from real app screens (and so the same dots) are **286r2, still to do**; until then jam has no dots and no workflow switching.
 - **Not done:** no deploy, nothing installed; Chromium only.
+
+## LIME-286s (⚑ 286s-a and 286s-b)
+(`site/com/`; **not deployed**.) Stop for your check.
+- **Look at:** `docs/qa-shots/286s/`: `link-section-desktop.png`, `link-section-phone.png`, `jam-section-desktop.png`, `jam-section-phone.png`, `values-desktop.png`, `values-phone.png` (all refreshed; 0 px overflow, no console errors).
+- **286s-a, the mock's text:** the link and jam sections now carry the two paragraphs each, word for word as given. **link:** "lime connects you directly to your teaching community, with no ads, no fees and funded by your donations." / "Link with friends through direct, group messaging, voice, and video calling in real-time." **jam:** "Jam on posts, articles, podcasts or band together to collectively share your expertise." / "Record an episode or group posts into a series. Share with your subscribers. Members-only posts are encrypted too." (checked against the page's text, not by eye.) The lockup stays tight: heading, two paragraphs in body size (21 px at 1440) with a blank line between them (1.5 em), the form ("Your email" / "Notify me") and its one-line fine print; no workflow list.
+- **286s-b, the background:** `.values` is `var(--warm)` (rgb 240 238 230), the same computed colour as link and jam (checked: all three read the same). Padding, columns and icons unchanged. Note that jam and the four columns now run into each other with no change of colour between them (only the spacing separates them); the beach card follows.
+- **One set of `.sub` / `.fine` rules:** the repeated rules at the end of `style.css` (and the earlier `.txt p`, `.txt .sub`, `#link …`, `.jam …` and `.txt .fine` overrides they fought) are gone; the feature text is now one block at the end: `.feature .txt p`, `.feature .txt .sub`, `.feature .txt .fine` (+ `#link .txt h2`, `.jam .txt` and one phone media rule). The base `.sub`, `.fine`, `.card .fine`, `.overlay .sub/.fine` and `.menuform` rules are kept (other places use them).
+- **Not done:** no deploy, nothing installed; Chromium only; jam's phone is still the older replica (286r2).
+
+For plot:
+- Your two ⚑ notes are done as written. One thing you may want to decide: with `.values` on `var(--warm)`, **the jam section, the four columns and nothing between them are one continuous warm field**; if that reads as too long a run, the columns could take a hairline above them or the beach card could start sooner; I changed nothing beyond what you wrote.
+- The workflow dots (286s) exist only for link; **jam gets them with 286r2**, which is still open.
+- `PLOT.md` is not touched and not staged here.

@@ -155,8 +155,6 @@ p { margin: 0 0 1.1em; }
 .feature.warm { background: var(--warm); }
 .feature h2 { font-size: clamp(40px, 7.8 * var(--u), 112px); line-height: 1.18; letter-spacing: -0.02em; max-width: none; }
 .txt { font-size: clamp(18px, 2.2 * var(--u), 32px); line-height: 1.21; max-width: 15em; }
-.txt p { margin: 0 0 1.21em; }
-.txt .sub { margin-top: 1.21em; max-width: 440px; }
 .phonewrap { translate: 0 var(--dy, 0); }
 .phone { --ph: clamp(520px, 61.6 * var(--u), 887px); height: var(--ph); width: calc((var(--ph) - 16px) * 0.4601 + 16px); border-radius: 46px; background: #1b201d; padding: 8px; box-shadow: 0 30px 70px rgba(19,27,23,.2), 0 4px 14px rgba(19,27,23,.1); }
 .phone .pv, .phone picture { display: block; height: 100%; }
@@ -164,13 +162,11 @@ p { margin: 0 0 1.1em; }
 #link .split { display: grid; grid-template-columns: 1fr auto; align-items: start; padding: 0 calc(9.9 * var(--u)) 0 calc(7.8 * var(--u)); max-width: 1440px; margin: 0 auto; }
 #link .txt { max-width: none; }
 #link .txt h2 { margin-bottom: calc(4.9 * var(--u)); }
-#link .txt p, #link .txt .sub { max-width: 15em; }
 .jam { padding: calc(3.1 * var(--u)) 0 calc(14.9 * var(--u)); }
 .jam > .wrap { max-width: 1440px; padding: 0 calc(7.8 * var(--u)) 0 calc(7.8 * var(--u)); }
 .jam h2 { text-align: right; margin-left: auto; }
 .jam .split { display: grid; grid-template-columns: auto 1fr; align-items: start; margin-top: calc(4.5 * var(--u)); gap: 0 calc(17.4 * var(--u)); }
 .jam .txt { padding-top: calc(6.6 * var(--u)); max-width: none; justify-self: start; }
-.jam .txt p, .jam .txt .sub { max-width: 15.5em; }
 @media (max-width: 800px) {
   /* small screens stack: heading, text, form, then the phone at about 70 % width, centred */
   #link, .jam { padding: 64px 0 72px; }
@@ -274,14 +270,12 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 @media (prefers-reduced-motion: reduce) { .cue.nudge svg { animation: none; } }
 
 /* LIME-284e14: the fine print on one line under the forms (12 px under the field); the email form at the bottom of the phone menu */
-.txt .fine, #link .txt .fine, .jam .txt .fine { max-width: 440px; margin: 12px 0 0; white-space: nowrap; }
-@media (max-width: 800px) { .txt .fine, #link .txt .fine, .jam .txt .fine { white-space: normal; } }
 .overlay .menuform { margin-top: auto; padding-top: 40px; }
 .overlay .menuform .sub { max-width: none; }
 .overlay .menuform .fine { max-width: none; }
 
 /* LIME-284e15: value columns, built into lime, and the footer */
-.values { background: var(--paper); padding: calc(9 * var(--u)) 0 calc(10 * var(--u)); }
+.values { background: var(--warm); padding: calc(9 * var(--u)) 0 calc(10 * var(--u)); }
 .values .wrap { max-width: 1440px; padding: 0 calc(7.8 * var(--u)); }
 .values h2 { font-size: clamp(30px, 3.6 * var(--u), 56px); line-height: 1.16; letter-spacing: -0.02em; max-width: 24em; margin-bottom: calc(7 * var(--u)); }
 .cols4 { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 36px calc(2.4 * var(--u)); }
@@ -326,12 +320,10 @@ footer .caps a { color: #eaf3e6; text-decoration: none; font-size: 13px; font-we
 /* LIME-286b: the offline mesh and its captions; the demo phones' captions */
 .phonewrap .lpnote { margin-top: 12px; }
 
-/* LIME-286s: a tight text lockup: the heading, one short paragraph in body size, the form */
-.feature .txt p { font-size: clamp(17px, 1.45 * var(--u), 21px); line-height: 1.5; max-width: 24em; margin-bottom: 0; }
+/* LIME-286s: the feature text, one set: the heading, two paragraphs in body size with a blank line between (the mock), the form, its one-line fine print */
+.feature .txt p { font-size: clamp(17px, 1.45 * var(--u), 21px); line-height: 1.5; max-width: 24em; margin: 0 0 1.5em; }
+.feature .txt .sub { max-width: 440px; margin-top: 0; }
+.feature .txt .fine { font-size: 14px; line-height: 1.4; max-width: 440px; margin: 12px 0 0; white-space: nowrap; }
 #link .txt h2 { margin-bottom: calc(2.4 * var(--u)); }
-#link .txt p, #link .txt .sub, #link .txt .fine { max-width: 24em; }
-.jam .txt { padding-top: calc(4 * var(--u)); } .jam .txt p, .jam .txt .sub, .jam .txt .fine { max-width: 24em; }
-.feature .txt .sub { margin-top: 1.5em; max-width: 440px; }
-@media (max-width: 800px) { .feature .txt p { font-size: 18px; } }
-.feature .txt .sub, #link .txt .sub, .jam .txt .sub { max-width: 440px; }
-.feature .txt .fine, #link .txt .fine, .jam .txt .fine { font-size: 14px; line-height: 1.4; max-width: 440px; margin-top: 12px; }
+.jam .txt { padding-top: calc(4 * var(--u)); }
+@media (max-width: 800px) { .feature .txt p { font-size: 18px; } .feature .txt .fine { white-space: normal; } }
