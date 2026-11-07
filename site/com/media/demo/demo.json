@@ -1,0 +1,50 @@
+{
+  "accents": ["#F59AB0", "#F7B39E", "#F2A65A", "#EBCB45", "#6BB8F0", "#A3E18A", "#B99AF0", "#5ED6E8"],
+  "me": { "name": "Maya Ortiz", "tone": 6 },
+  "people": {
+    "mei": { "name": "Mei Lin", "tone": 5, "role": "Grade 4 · Maths", "status": "Online" },
+    "sam": { "name": "Sam Park", "tone": 7, "role": "Grade 3 · Reading", "status": "Do not disturb" },
+    "lee": { "name": "Lee Wong", "tone": 2, "role": "Grade 4 · Science", "status": "Online" },
+    "priya": { "name": "Priya Nair", "tone": 0, "role": "Art", "status": "Online" },
+    "ana": { "name": "Ana Torres", "tone": 4, "role": "Library", "status": "Online" }
+  },
+  "chats": [
+    { "id": "team", "title": "Grade 4 Team", "emoji": "🍎", "tone": 3, "group": true, "pinned": true, "unread": 2, "time": "9:20 PM", "preview": "Lee: I can bring the permission forms" },
+    { "id": "mei", "person": "mei", "time": "10:58 PM", "preview": "Are you coming to the staff meeting?" },
+    { "id": "sam", "person": "sam", "unread": 1, "time": "Yesterday", "preview": "📎 Week 4 plan.pdf" },
+    { "id": "priya", "person": "priya", "time": "Tuesday", "preview": "Thank you! The reading circles worked." },
+    { "id": "lee", "person": "lee", "time": "Monday", "preview": "I'll send the lesson plan in the morning." },
+    { "id": "staff", "title": "Staff room", "emoji": "🏫", "tone": 4, "group": true, "time": "Monday", "preview": "Ana: The photocopier is fixed." }
+  ],
+  "conversations": {
+    "mei": [
+      { "day": "Today" },
+      { "from": "mei", "text": "Are you coming to the staff meeting?", "time": "10:58 PM" },
+      { "from": "me", "text": "Yes, see you there", "time": "11:08 PM" },
+      { "from": "mei", "photo": "cover-desk", "text": "Our new reading corner", "time": "11:12 PM" },
+      { "from": "me", "link": { "title": "Fraction walls in ten minutes", "host": "example.org/walls" }, "time": "11:20 PM" },
+      { "from": "mei", "voice": "0:42", "time": "11:31 PM" },
+      { "call": "Video call · 12 min", "time": "11:40 PM" },
+      { "from": "mei", "text": "That was so helpful, thank you!", "time": "11:58 PM" }
+    ],
+    "team": [{ "day": "Today" }, { "from": "lee", "text": "Can we plan the field trip on Friday?", "time": "9:12 PM" }, { "from": "sam", "text": "I can bring the permission forms", "time": "9:20 PM" }],
+    "sam": [{ "day": "Yesterday" }, { "from": "sam", "text": "Here is the week 4 plan", "time": "6:15 PM" }],
+    "priya": [{ "day": "Tuesday" }, { "from": "priya", "text": "Thank you! The reading circles worked.", "time": "4:02 PM" }],
+    "lee": [{ "day": "Monday" }, { "from": "lee", "text": "I'll send the lesson plan in the morning.", "time": "7:30 PM" }],
+    "staff": [{ "day": "Monday" }, { "from": "ana", "text": "The photocopier is fixed.", "time": "8:40 AM" }]
+  },
+  "script": [
+    { "wait": 1600 }, { "tap": "mei" }, { "wait": 1100 },
+    { "scroll": "up" }, { "wait": 1500 }, { "scroll": "down" }, { "wait": 700 },
+    { "type": "Can you share the fraction wall?" }, { "wait": 500 }, { "send": true }, { "wait": 400 }, { "reply": "Sending it now. Thanks for asking!" }, { "wait": 1300 },
+    { "react": "❤️" }, { "wait": 1700 }, { "back": true }, { "wait": 2600 }, { "reset": true }
+  ],
+  "replies": ["Sending it now. Thanks for asking!", "Great idea, let's try it Friday.", "I love that. Can you share the file?", "Perfect, see you in the morning."],
+  "bands": [{ "id": "science", "name": "Science Corner", "cover": "cover-earth", "tone": 4, "members": 128, "about": "Short science lessons for grades 3 to 5" }],
+  "posts": [
+    { "id": "p1", "kind": "article", "title": "What folded paper taught my fourth graders", "sub": "Fractions you can hold", "cover": "cover-desk", "author": "mei" },
+    { "id": "p2", "kind": "podcast", "title": "Sunday planning, with Sam", "sub": "Week 4, in 18 minutes", "cover": "cover-notes", "author": "sam", "len": "18 min" },
+    { "id": "p3", "kind": "quick", "text": "An exit ticket that takes a minute: ask one question at the door, which pieces are equal?", "author": "lee" },
+    { "id": "p4", "kind": "article", "title": "Why the planets are not to scale", "sub": "A science circle", "cover": "cover-solar", "author": "lee" }
+  ]
+}

@@ -336,3 +336,6 @@ footer .caps a { color: #eaf3e6; text-decoration: none; font-size: 13px; font-we
 .bhead { max-width: none; }
 .bhead h2 { max-width: 13em; margin-left: auto; margin-right: auto; }
 .bhead p { max-width: 30em; margin-left: auto; margin-right: auto; }
+
+.phonewrap .lpnote { max-width: 330px; }
+.phone .lpwrap { height: 100%; aspect-ratio: auto; }

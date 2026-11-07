@@ -9,6 +9,7 @@
 <link rel="icon" type="image/svg+xml" href="brand/lime-Logomark.svg">
 <link rel="preload" href="fonts/figtree-var.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="proto/phone.css">
 <script>document.documentElement.classList.add("js");</script>
 </head>
 <body>
@@ -136,7 +137,7 @@
       </form>
 <p class="fine" data-fine data-reveal>We'll email you once, when lime is ready. Nothing else.</p>
     </div>
-    <div class="phonewrap" data-reveal data-drift="0.04"><div class="phone"><div class="pv"><video muted loop playsinline preload="none" poster="media/phone-chat.webp" data-src="media/phone-chat" aria-label="A lime chat: a teacher types a reply and sends it" width="600" height="1304"></video><button class="vp" type="button" hidden aria-label="Play the recording"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path class="i-play" d="M8 5v14l11-7z"/><path class="i-pause" d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg></button></div></div></div>
+    <div class="phonewrap" data-reveal data-drift="0.04"><div class="phone"><div class="lpwrap" data-demo="link" role="region" aria-label="lime demo: a chat"></div></div><p class="lpnote">A demo of lime: try it. Everything stays on this page.</p></div>
   </div>
 </section>
 
@@ -218,6 +219,7 @@
   <a class="btn get" href="#notify">Download</a>
   <button class="x" type="button" aria-label="Dismiss the download card">×</button>
 </aside></template>
+<script src="proto/phone.js" defer></script>
 <script type="application/json" id="bloom-paths">{"w":[["M196.7,90.8L147.4,110.5C140.5,112.1,129.7,100.9,132.2,94.2L153.5,44.7C157.5,36.3,165.6,30.4,175,32.8C193.3,36.9,207.2,53.5,209.2,72.3C209.2,83.2,204.5,88.4,196.7,90.8L196.7,90.8Z",-0.833],["M152.4,46.6L132.2,94.2C128.8,100.4,113.7,100.7,110.5,94.3L88.2,45.2C84.7,36.7,85.8,26.7,93.8,21.4C109.2,10.6,130.8,11.4,146,22.6C154.1,29.9,155.9,39.2,152.4,46.6L152.4,46.6Z",-1.607],["M88.8,46.6L110.8,95.5C113.1,102.2,103.3,112.4,96.4,110.5L45.1,93.8C36.4,90.6,29.8,83.1,31.3,73.5C33.8,54.9,49,39.6,67.5,35.9C78.4,34.9,85.8,39.1,88.8,46.6L88.8,46.6Z",-2.378],["M196.3,150.7L149.1,131.4C143.2,127.4,142.3,112.7,148.9,110L202,88.9C210.9,86.2,220.7,88.3,225.2,96.8C234.5,113.1,231.6,134.5,219,148.6C211,156,204.2,154,196.3,150.7L196.3,150.7Z",-0.024],["M157.8,199.6L132.8,149.6C130.5,142.9,142.2,129.4,149.1,131.4L200.2,152.8C208.9,156.1,215.4,163.6,213.8,173.2C211.2,191.8,195.9,207,177.3,210.5C166.4,211.4,160.8,207.1,157.8,199.6L157.8,199.6Z",0.759],["M93.3,200.7L108.7,149.5C112,143.2,129.3,143.3,132.8,149.6L156.4,198C160.1,206.5,159.3,216.5,151.4,222.1C136.3,233.3,114.7,233,99.2,222.2C90.9,215.1,90,208.1,93.3,200.7L93.3,200.7Z",1.535],["M44.1,160.4L93.3,133.2C99.8,130.5,110.5,141.2,109.1,148.2L94.1,199C91.5,207.9,84.4,215,74.8,214.2C56.1,213,39.7,198.9,34.8,180.7C33,169.9,36.8,164,44.1,160.4L44.1,160.4Z",2.365],["M45.1,93.8L95.2,110.2C101.7,113.2,102.2,128,96,131.6L47.9,158.4C39.6,162.5,30.2,160.8,24.3,153.2C12.5,138.5,12,116.9,22.1,101C28.9,92.4,37.5,90.8,45.1,93.8L45.1,93.8Z",3.081]],"c":"M136.7,122.6C136.7,126.8,135.4,130.8,132.6,133.6C129.9,136.3,125.8,138,121.6,138C117.5,138,113.6,136.1,110.9,133.4C108.1,130.6,106.9,126.8,106.9,122.6C106.9,118.4,108.1,114.5,110.9,111.8C113.6,109.1,117.5,107.1,121.6,107.1C125.8,107.1,129.3,109.4,132.1,112.2C134.8,114.9,136.7,118.4,136.7,122.6L136.7,122.6Z"}</script>
 <script>
 var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
