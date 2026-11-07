@@ -69,7 +69,7 @@ struct Message: Identifiable, Hashable, Sendable {
     /// `nil` means the message is mine.
     let senderID: String?
     var text: String
-    let date: Date
+    var date: Date
     var state: DeliveryState = .received
     /// Pictures and files that came with the message (LIME-98c).
     var attachments: [AttachmentItem] = []

@@ -44,6 +44,11 @@ extension ConversationStore {
         // Newest chat first, as the list orders them: the team, Mei, then the rest by age.
         let order = [team, "dm:mei", "dm:sam", "dm:priya.nair", "dm:lee", staff]
         conversations.sort { (order.firstIndex(of: $0.id) ?? 99) < (order.firstIndex(of: $1.id) ?? 99) }
+        // The screens are captured at any hour; the times they show are pinned to 8:04 AM today (the message times then read 7:14 AM … Yesterday, Nov 5, Nov 3).
+        if let pinned = Calendar.current.date(bySettingHour: 8, minute: 4, second: 0, of: now) {
+            let shift = pinned.timeIntervalSince(now)
+            for c in conversations.indices { for m in conversations[c].messages.indices { conversations[c].messages[m].date.addTimeInterval(shift) } }
+        }
         switch screen {
         case "site-chat", "site-offline-waiting", "site-offline-passed", "site-offline-sent": path.append("dm:mei")
         case "site-group": path.append(team)
