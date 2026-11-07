@@ -10,6 +10,8 @@ set -euo pipefail
 ONLY=0; [ "${1:-}" = "--invite-only" ] && { ONLY=1; shift; }
 HOST="${1:-root@178.156.199.1}"
 cd "$(dirname "$0")/../.."
+# A page that still carries placeholder people must not go out (LIME-284c3c: `data-illustrative` marks examples that are labelled; `data-placeholder` marks ones that are not).
+if grep -rn "data-placeholder" site/com >&2; then echo "Refusing to publish: site/com still has data-placeholder (see above). Label it (data-illustrative) or replace it." >&2; exit 1; fi
 STAGE="$(mktemp -d)"; trap 'rm -rf "$STAGE"' EXIT
 if [ "$ONLY" = 0 ]; then
   # The invite page and the legal pages first, then the home page's files over them (its index.html and brand/ replace the holding page's).
