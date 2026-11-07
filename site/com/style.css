@@ -284,7 +284,7 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 .values h2 { font-size: clamp(30px, 3.6 * var(--u), 56px); line-height: 1.16; letter-spacing: -0.02em; max-width: 24em; margin-bottom: calc(7 * var(--u)); }
 .cols4 { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 36px calc(2.4 * var(--u)); }
 .cols4 .ic { display: block; color: var(--ink); }
-.cols4 .ic svg { display: block; width: 84px; height: 84px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }   /* dew's icons (24 grid, 1.5 stroke) at 84 px: the weight dew shows at 48 px, scaled up with it */
+.cols4 .ic svg { display: block; width: 84px; height: 84px; fill: none; stroke: currentColor; stroke-width: 0.857; stroke-linecap: round; stroke-linejoin: round; }   /* dew's icons on its 24 grid at 84 px, drawn 3 px thick on screen (0.857 x 84/24), the same for all four */
 .cols4 hr { border: 0; border-top: 1px solid rgba(19,27,23,.22); margin: 24px 0 20px; }
 .cols4 h3 { font-size: clamp(20px, 1.7 * var(--u), 26px); font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; margin-bottom: 8px; }
 .cols4 p { margin: 0; font-size: clamp(17px, 1.35 * var(--u), 20px); line-height: 1.4; color: var(--muted); max-width: 17em; }
