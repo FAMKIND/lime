@@ -22,7 +22,7 @@ read -r H
 case "$H" in \$2*) ;; *) echo "not a bcrypt hash" >&2; exit 1 ;; esac
 install -d -m 755 /etc/caddy
 umask 027
-printf "basic_auth @preview {\n\tteam %s\n}\n" "$H" > "$F.new"
+printf "basicauth @preview {\n\tteam %s\n}\n" "$H" > "$F.new"
 chgrp caddy "$F.new"; chmod 640 "$F.new"
 [ -f "$F" ] && cp -p "$F" "$F.old" || true
 mv -f "$F.new" "$F"
