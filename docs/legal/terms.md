@@ -4,11 +4,11 @@
 
 **lime is a private messenger for teachers. Be kind, be lawful, keep students safe. Your content stays yours.**
 
-*Last updated: 1 November 2026 (draft).*
+*Last updated: 7 November 2026 (draft).*
 
 ## Who can use lime
 
-- lime is for teachers and school staff who are **18 or older**. Students must not have accounts.
+- lime is for people who teach (in schools, colleges, studios, libraries, nonprofits and communities) and the staff who support them, who are **18 or older**. Students must not have accounts.
 - You keep your sign-in safe. Anything done from your account is on you.
 - One person, one account. Don't pretend to be someone else.
 
@@ -62,4 +62,4 @@ If we change these terms we will tell you in the app before they apply. If you d
 2. Is the licence wording enough for public band posts (including remixing, which is planned)?
 3. DMCA / copyright takedown: do we need a designated agent before public posts go live?
 4. Terms acceptance: a tap at sign-up, with records kept? (No age gate or acceptance screen is built yet.)
-5. The "teachers only" rule: how much do we verify, and what do the terms say if someone isn't a teacher?
+5. The "people who teach" rule: how much do we verify, and what do the terms say if someone isn't a teacher?

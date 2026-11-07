@@ -2,7 +2,7 @@
 
 > **Draft, pending legal review.**
 
-**lime is a place for teachers. Treat everyone with respect. Never share anything that puts a child at risk.**
+**lime is a place for people who teach. Treat everyone with respect. Never share anything that puts a child at risk.**
 
 *Last updated: 1 November 2026 (draft).*
 

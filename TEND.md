@@ -10221,3 +10221,22 @@ On phones the hero's lime portal follows your touch (`site/com/index.html`, `sty
 - **Not checked by me:** the login with your password (yours), and the iPhone: the landing at `/`, then `/preview/` (log in as `team`) to see the full site with the touch portal, the notch and the forms, and the "Preview: not public" tag.
 
 **For plot:** (1) the iPhone check is the gate: landing (pause button, the card, Team link), then `/preview/` after the login. (2) The login prompt is the browser's own Basic-auth box; some password managers need "team" typed once. (3) Going public later: `bash infra/invite/deploy.sh --full` after the launch links are set in `site/com/index.html`, `site/com/get/index.html` (and `site/landing/landing.js` if the landing stays). (4) The list forms on both pages still post to the staging Supabase project; the 287a staging deploy still waits for your go.
+
+## LIME-285
+
+**"People who teach" in sign-up, the terms, privacy and guidelines. Committed, not published; ready for you to read.**
+
+**Survey:** the old wording was in exactly the places the brief lists (`OnboardingScreens.swift` ×3 lines, `terms.md` ×2, `privacy.md`, `guidelines.md` and their generated pages); nothing elsewhere. No UI test asserted the old strings (the tests find the box by identifier); only a comment in `Terms283UITests.swift` repeated them, which I updated.
+
+**What changed (the exact text)**
+- **Sign-up screen:** title "lime is for people who teach, 18 or older."; a line under it, "In a classroom, a studio, a library or a community."; the checkbox text and its accessibility label "I teach, I'm 18 or older, and I agree to the Terms and Privacy"; the doc comment. Identifiers unchanged. The line uses the scaffold's existing `subtitle` (body size, secondary colour), the same as the other onboarding screens, rather than a new style.
+- **`terms.md`:** "lime is for people who teach (in schools, colleges, studios, libraries, nonprofits and communities) and the staff who support them, who are **18 or older**." ("Students must not have accounts." stays); open question 5 now reads The "people who teach" rule; **Last updated 1 → 7 November 2026 (draft)**.
+- **`privacy.md`:** "lime is for people who teach, 18 or older."
+- **`guidelines.md`:** "lime is a place for people who teach." (rest of the bold line unchanged).
+- **`invite-site/`** regenerated with `tools/build-legal-pages.py`: the diff is 4 lines in 3 files (the three sentences above and the terms page's date), nothing else.
+
+**Verification:** `grep -rn -E "I'm a teacher|for teachers, 18|teachers and school staff|a place for teachers" ios/Lime docs/legal invite-site` → nothing. The app builds; `Terms283UITests` (sign-up shows the terms screen and Continue waits for the box; signing in doesn't ask) **2 tests, 0 failures** on the iPhone 17 simulator (iOS 27.0). Screenshots in `docs/qa-shots/285/`: `terms-screen-default.png` and `terms-screen-largest.png` (accessibility XXXL: the title and the line wrap to several lines, the page scrolls so the box and Continue are reached by scrolling). The screenshot helper is `tools/hero-video/TermsShot.swift` (copied into the UI-test folder to run, not part of the target).
+
+**Not done:** not published (`infra/invite/deploy.sh` is a separate go and would republish the landing and preview unchanged); no device install.
+
+**For plot:** (1) the sign-up wording now differs from the headline "Where teachers connect." on purpose, per the brief; the site copy already fits. (2) The terms date is a draft date (7 November 2026): bump it again if the lawyer's pass changes more. (3) Publishing the three legal pages is the next go; the app change ships with the next TestFlight build.

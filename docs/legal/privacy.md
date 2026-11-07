@@ -10,7 +10,7 @@
 
 - Your messages, calls, files and group chats are end-to-end encrypted. Only the people in them can read them.
 - lime's servers hold the minimum needed to deliver them: your sign-in email, your devices' public keys, and sealed mail waiting for a phone to pick it up.
-- lime is for teachers, 18 or older. It is free, always. Donations and grants pay for it.
+- lime is for people who teach, 18 or older. It is free, always. Donations and grants pay for it.
 
 ## What lime stores, and who can see it
 

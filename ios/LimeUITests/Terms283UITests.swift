@@ -1,6 +1,6 @@
 import XCTest
 
-/// LIME-283 (demo): sign-up asks "teachers, 18 or older" once, before the password; signing in does not.
+/// LIME-283 (demo): sign-up asks "people who teach, 18 or older" once, before the password; signing in does not.
 @MainActor
 final class Terms283UITests: LimeUITestCase {
     private func onboarding() -> XCUIApplication {

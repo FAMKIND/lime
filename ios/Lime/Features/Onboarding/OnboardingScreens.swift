@@ -340,14 +340,15 @@ struct ProfileScreen: View {
 
 // MARK: Terms (LIME-283)
 
-/// Sign-up only, before "Create a password": lime is for teachers 18 or older, and one checkbox says so.
+/// Sign-up only, before "Create a password": lime is for people who teach, 18 or older, and one checkbox says so.
 struct TermsScreen: View {
     @Bindable var model: OnboardingModel
     @State private var agreed = false
     @State private var opened: URL?
 
     var body: some View {
-        OnboardingScaffold(title: "lime is for teachers, 18 or older.", showsNext: false, canNext: agreed,
+        OnboardingScaffold(title: "lime is for people who teach, 18 or older.", subtitle: "In a classroom, a studio, a library or a community.",
+                           showsNext: false, canNext: agreed,
                            onBack: { model.back() }) {
             Button { agreed.toggle() } label: {
                 HStack(alignment: .top, spacing: 12) {
@@ -355,7 +356,7 @@ struct TermsScreen: View {
                         .font(.system(size: 26))
                         .foregroundStyle(Theme.text)
                         .accessibilityHidden(true)
-                    Text("I'm a teacher, 18 or older, and I agree to the Terms and Privacy")
+                    Text("I teach, I'm 18 or older, and I agree to the Terms and Privacy")
                         .font(Theme.body)
                         .foregroundStyle(Theme.text)
                         .multilineTextAlignment(.leading)
@@ -366,7 +367,7 @@ struct TermsScreen: View {
             }
             .buttonStyle(.plain)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("I'm a teacher, 18 or older, and I agree to the Terms and Privacy")
+            .accessibilityLabel("I teach, I'm 18 or older, and I agree to the Terms and Privacy")
             .accessibilityValue(agreed ? "checked" : "not checked")
             .accessibilityAddTraits(.isToggle)
             .accessibilityIdentifier("terms-agree")
