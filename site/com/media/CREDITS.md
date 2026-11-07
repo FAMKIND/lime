@@ -14,3 +14,6 @@ Self-hosted; the page embeds nothing from Pexels. Pexels licence: free to use, a
 | Group on the beach | `pexels-kindelmedia-7148445.jpg` | kindelmedia | https://www.pexels.com/photo/7148445/ |
 
 The mock's quote portrait (a woman with long dark hair against grey siding) was not among the downloaded files, so the quote uses divinetechygirl-1181519 as a stand-in. `pexels-ron-lach-8274732.jpg` and `pexels-silverkblack-36729918.jpg` were downloaded but are not used yet (a second and third hero video are planned).
+
+## LIME-284e15 (the "Built into lime" screens)
+Screens are lime's own demo captures (default look, demo names, no students), made with `tools/hero-video/` (the report sheet by `SafetyShot.swift`): `built-calls`, `built-bands`, `built-series` (the jam recording's poster), `built-yours`, `built-safety` (`.avif` / `.webp`), and `built-offline.svg` (the drawn relay illustration). No Pexels material.
