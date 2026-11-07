@@ -10240,3 +10240,11 @@ On phones the hero's lime portal follows your touch (`site/com/index.html`, `sty
 **Not done:** not published (`infra/invite/deploy.sh` is a separate go and would republish the landing and preview unchanged); no device install.
 
 **For plot:** (1) the sign-up wording now differs from the headline "Where teachers connect." on purpose, per the brief; the site copy already fits. (2) The terms date is a draft date (7 November 2026): bump it again if the lawyer's pass changes more. (3) Publishing the three legal pages is the next go; the app change ships with the next TestFlight build.
+
+### LIME-285: published (typed go received)
+- `bash infra/invite/deploy.sh` (default layout): "landing + /preview/ + invite + legal". Caddyfile untouched.
+- **Live:** `/terms/` has "lime is for people who teach (in schools, colleges, studios, libraries, nonprofits and communities) and the staff who support them, who are 18 or older" and "Last updated: 7 November 2026 (draft)"; `/privacy/` has "lime is for people who teach, 18 or older."; `/guidelines/` has "lime is a place for people who teach." The three live pages are hash-identical to `invite-site/`. None of the old strings remain.
+- **Unchanged:** `/` is still the landing (Team link to `/preview/`); `/preview/` and `/preview/media/hero-wide.webp` → 401 without a password; `/confirmed/`, `/u/shem`, `/.well-known/security.txt`, `/robots.txt` → 200.
+- **Found, not changed (the brief says to ask):** `docs/legal/privacy.md` line 62, the "Students" paragraph, still opens **"lime is for teachers. Students must not have accounts. …"** (live on `/privacy/`). The brief's grep pattern ("for teachers, 18") could not match it, so the survey missed it. `privacy.md` line 89, "lime is for adults.", is fine as it is.
+
+**For plot:** (1) one more line says "lime is for teachers." (`privacy.md:62`, the student paragraph). Suggested: "lime is for people who teach." with the rest of the sentence unchanged. It is a one-line follow-up plus a republish; say yes and I'll do both. (2) The app's new sign-up wording ships with the next TestFlight build; the website and legal pages are consistent now apart from that line.
