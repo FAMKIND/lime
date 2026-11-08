@@ -10375,3 +10375,23 @@ On phones the hero's lime portal follows your touch (`site/com/index.html`, `sty
 **Gate (yours):** look at the screenshots. **Not published**: publishing is a separate go (`bash infra/invite/deploy.sh`, default layout).
 
 **For plot:** (1) One thing to know: the invite pages' legal line was a comment, so it was never visible; I deleted it rather than leaving the outdated "Lime Messenger Inc" in the source. When the companies exist, the line comes back from the plot brief, not from here. (2) The three legal pages that still show the contact addresses (`legal@`, `abuse@`) now read "legal@limemessenger.com." with no "to be confirmed": if those mailboxes are not live yet, say so before publishing. (3) 130-2 is in progress in the same working tree; this commit holds only the 290 files.
+
+## LIME-291
+
+**Goal:** a limemessenger.com link (the landing, the legal pages, an invite link) shows lime's preview card and icon when pasted into Messages and other apps, not a compass.
+
+**What changed**
+- `tools/make-link-previews.py` (needs `pip install playwright` + `playwright install chromium`, like `tools/shoot-site.py`) draws, from `design/brand/*.svg` and the site's Figtree: `site/landing/og.png` (1200×630, 60.6 KB: pale lime `#e4f9be`, the stacked logomark + "lime" wordmark on the left, "Where teachers connect." in ink `#131b17` on the right; everything inside the centre 1000×520), `apple-touch-icon.png` (180×180, 10.9 KB, the logomark on pale lime, full-bleed, no transparency), `favicon-32.png` (2.3 KB) and `favicon.ico` (32 + 48, 6.2 KB).
+- **Tags** (Open Graph + Twitter `summary_large_image`, absolute `https://limemessenger.com/og.png`, 1200×630, alt "lime: Where teachers connect.", plus `apple-touch-icon` and a 32×32 PNG icon next to the SVG): the landing (`site/landing/index.html`), the full site (`site/com/index.html`, `og:url` the root), the legal pages (the template in `tools/build-legal-pages.py`, each with its own title and URL, description "A private space where teachers connect. Free, encrypted, no ads."), and the invite page (`invite-site/u/index.html`: "You're invited to lime" / "Join a private space where teachers connect. Free, encrypted, no ads.", static, **no inviter's name**). The invite and legal pages' old `apple-touch-icon` pointed at `/lime-logo.png`, a file that does not exist; it now points at the new one.
+- `infra/invite/deploy.sh` copies the four images to the root in every layout (landing, `--full`, `--invite-only`).
+- Regenerated `invite-site/` (only the new head lines and the icon link differ).
+
+**Verification**
+- `bash infra/invite/deploy.sh --out DIR` (default layout): `/`, `/terms/`, `/privacy/`, `/u/index.html` (which Caddy serves for every `/u/x`) and `/preview/` each have `og:image`, `twitter:card`, the touch icon and the PNG icon; `og.png`, `apple-touch-icon.png`, `favicon-32.png`, `favicon.ico` are at the root. `--full --out DIR`: the images are at the root and `index.html` has the tags.
+- Sizes: `og.png` 1200×630 PNG, 60,608 bytes (under 300 KB); touch icon 180×180 RGB (no alpha); `favicon-32.png` 32×32; `favicon.ico` two PNG entries (32, 48).
+- Screenshots (the files themselves): `docs/qa-shots/291/og.png`, `apple-touch-icon.png`.
+- What each party learns: nothing new. A preview is fetched by the sender's or the app's link fetcher, the same as opening the page; no tracker, no query string on the image.
+
+**Gate (yours):** look at `docs/qa-shots/291/og.png`; then a separate go to publish; then the Messages test with a **new** link (`https://limemessenger.com/?v=2`, Messages caches old previews). **Not published.**
+
+**For plot:** (1) The card is the branded default (pale lime, stacked logo, tagline). If you want a photo cover instead, `tools/make-link-previews.py` is the one place to change; say so. (2) `/preview/` is behind the team login, so its `og:` tags are harmless but also unused. (3) The invite page still carries an empty `data:,` icon link (so a visitor's browser does not fetch an icon); the PNG icon link now sits beside it and which one a browser picks is its own business: not touched, but worth knowing if the tab icon looks odd. (4) The holding page `invite-site/index.html` (the `--invite-only` layout) got no tags: it is outside this brief's scope.

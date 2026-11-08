@@ -62,7 +62,21 @@ PAGE = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/svg+xml" href="/brand/lime-Logomark.svg">
-<link rel="apple-touch-icon" href="/lime-logo.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="lime">
+<meta property="og:title" content="{title} · lime">
+<meta property="og:description" content="A private space where teachers connect. Free, encrypted, no ads.">
+<meta property="og:url" content="https://limemessenger.com/{slug}/">
+<meta property="og:image" content="https://limemessenger.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="lime: Where teachers connect.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{title} · lime">
+<meta name="twitter:description" content="A private space where teachers connect. Free, encrypted, no ads.">
+<meta name="twitter:image" content="https://limemessenger.com/og.png">
 <title>{title} · lime</title>
 <style>
   :root {{ --bg: #fbfaf5; --text: #1d2a14; --muted: #5d6b50; --line: #dfe3d3; }}
@@ -87,7 +101,7 @@ PAGE = """<!doctype html>
 for slug, title in pages.items():
     d = out / slug
     d.mkdir(exist_ok=True)
-    (d / "index.html").write_text(PAGE.format(title=title, body=body((src / f"{slug}.md").read_text())))
+    (d / "index.html").write_text(PAGE.format(title=title, slug=slug, body=body((src / f"{slug}.md").read_text())))
 bad = []
 for slug in pages:
     text = (out / slug / "index.html").read_text()

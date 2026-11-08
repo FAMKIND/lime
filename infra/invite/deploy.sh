@@ -51,6 +51,8 @@ case "$MODE" in
     ;;
   holding) ;;
 esac
+# the link-preview card and the icons (tools/make-link-previews.py) at the root in every layout (LIME-291)
+for f in og.png apple-touch-icon.png favicon-32.png favicon.ico; do cp "site/landing/$f" "$STAGE/$f"; done
 LAYOUT=$([ "$MODE" = holding ] && echo "holding page" || { [ "$MODE" = full ] && echo "the full site at the root + invite + legal" || echo "landing + /preview/ + invite + legal"; })
 if [ -n "$OUT" ]; then echo "Built into $OUT ($LAYOUT); nothing copied."; exit 0; fi
 tar -C "$STAGE" -cf - . | ssh "$HOST" 'install -d -m 755 /srv/invite && find /srv/invite -mindepth 1 -delete && tar -C /srv/invite -xf - && chmod -R a+rX /srv/invite'
