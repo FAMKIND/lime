@@ -388,6 +388,17 @@ enum VoiceFormat {
         let (h, m, s) = (total / 3600, (total % 3600) / 60, total % 60)
         return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
     }
+
+    /// "7 seconds", "1 minute 23 seconds": what VoiceOver says for a time.
+    static func spoken(_ seconds: Double) -> String {
+        let total = Int(seconds.rounded())
+        let (h, m, s) = (total / 3600, (total % 3600) / 60, total % 60)
+        var parts: [String] = []
+        if h > 0 { parts.append("\(h) \(h == 1 ? "hour" : "hours")") }
+        if m > 0 { parts.append("\(m) \(m == 1 ? "minute" : "minutes")") }
+        if s > 0 || parts.isEmpty { parts.append("\(s) \(s == 1 ? "second" : "seconds")") }
+        return parts.joined(separator: " ")
+    }
 }
 
 // MARK: Recording (in the composer)
@@ -401,6 +412,8 @@ struct RecordingBar: View {
         HStack(spacing: 10) {
             Circle().fill(Color.red).frame(width: 10, height: 10).opacity(Int(recorder.elapsed * 2) % 2 == 0 ? 1 : 0.35)
             Text(VoiceFormat.clock(recorder.elapsed)).font(Theme.body.monospacedDigit()).foregroundStyle(Theme.text)
+                // The recording element for VoiceOver: "Recording", with the time so far as its value (LIME-130-1).
+                .accessibilityLabel("Recording").accessibilityValue(VoiceFormat.spoken(recorder.elapsed))
                 .accessibilityIdentifier("recording-time")
             HStack(spacing: 2) {
                 ForEach(Array(recorder.levels.suffix(28).enumerated()), id: \.offset) { _, level in

@@ -45,6 +45,9 @@ struct LimeApp: App {
         WindowGroup {
             RootView()
                 #if DEBUG
+                .overlay { if AXProbe.enabled { AXProbeOverlay() } }
+                #endif
+                #if DEBUG
                 // `-lime-demo-window-width <pt>` lays lime out in a window that wide (a narrow Stage Manager window), for screenshots.
                 .frame(width: Self.demoWindowWidth)
                 #endif

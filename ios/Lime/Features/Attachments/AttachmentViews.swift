@@ -545,6 +545,7 @@ struct MediaTap: ViewModifier {
     let action: () -> Void
     @Environment(\.mediaLongPress) private var longPress
     @Environment(\.mediaSelecting) private var selecting
+    @Environment(\.messageAccessibility) private var ax
 
     func body(content: Content) -> some View {
         if selecting {
@@ -556,6 +557,7 @@ struct MediaTap: ViewModifier {
                 .onLongPressGesture(minimumDuration: 0.4) { longPress?.action() }
                 .accessibilityElement(children: .ignore)
                 .accessibilityAddTraits(.isButton)
+                .messageAccessibilityActions(ax)
         }
     }
 }

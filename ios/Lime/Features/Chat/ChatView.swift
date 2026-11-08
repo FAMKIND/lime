@@ -816,6 +816,7 @@ struct MessageBubble: View {
     /// Only the bubble and the sender's name (no avatar, footer or replies): the lifted copy the long-press menu shows (LIME-152d).
     var liftedOnly = false
     @Environment(\.menuFrameSink) private var menuFrameSink
+    @Environment(\.messageActionPerformer) private var performer
     /// Where the bubble is on the screen, so the menu can lift a copy of it to the same place. A plain box, not state: the frame changes
     /// while a chat is opening and while it scrolls, and SwiftUI must not redraw every bubble each time (LIME-152a-fix).
     @State private var frameBox = FrameBox()
@@ -937,6 +938,7 @@ struct MessageBubble: View {
                     .padding(.horizontal, 14).padding(.vertical, 10)
                     .overlay(RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous).strokeBorder(Theme.bubbleEdge, lineWidth: 0.8))
                     .accessibilityIdentifier("deleted-bubble")
+                    .messageAccessibilityActions(ax)
             } else {
                 if message.forwarded {
                     Label("Forwarded", systemImage: "arrowshape.turn.up.right")
@@ -946,10 +948,13 @@ struct MessageBubble: View {
                 }
                 if let card = message.emergency {
                     EmergencyCardView(card: card, senderName: sender?.name ?? "You", date: message.date, id: message.id)
+                        .messageAccessibilityActions(ax)
                 }
-                if let call = message.call { CallBubbleView(call: call, id: message.id, conversationID: conversationID, callerName: sender?.name, onTap: onCallBack) }
+                if let call = message.call { CallBubbleView(call: call, id: message.id, conversationID: conversationID, callerName: sender?.name, onTap: onCallBack)
+                        .messageAccessibilityActions(ax)
+                }
                 if !message.attachments.isEmpty { AttachmentStack(message: message, isOwn: message.isOwn) }
-                if let preview = message.linkPreview { MessageLinkCard(messageID: message.id, preview: preview, isOwn: message.isOwn) }
+                if let preview = message.linkPreview { MessageLinkCard(messageID: message.id, preview: preview, isOwn: message.isOwn).messageAccessibilityActions(ax) }
                 if message.call == nil, message.emergency == nil, !message.text.isEmpty || message.attachments.isEmpty {
                     FormattedMessageText(markdown: message.text, ink: message.isOwn ? (ownStyle?.ink ?? Theme.ownBubbleInk) : Theme.text,
                                          link: message.isOwn ? (ownStyle?.link ?? Theme.linkOwn) : Theme.linkOther, pressed: pressedLink?.absoluteString,
@@ -963,6 +968,7 @@ struct MessageBubble: View {
                         )
                         .animation(.easeInOut(duration: 0.2), value: highlighted)
                         .accessibilityIdentifier(message.isOwn ? "own-bubble" : "other-bubble")
+                        .messageAccessibilityActions(ax)
                         .overlay(alignment: .topLeading) {
                             // For assistive tools and UI tests: which message a search or find landed on.
                             if highlighted { Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("match-marker-\(message.id)") }
@@ -981,6 +987,13 @@ struct MessageBubble: View {
         .onLongPressGesture(minimumDuration: 0.4) { if selection == nil { lift() } }
         .environment(\.mediaLongPress, selection == nil && onActions != nil ? MediaLongPress(messageID: message.id, action: { lift() }) : nil)
         .environment(\.mediaSelecting, selection != nil)
+        .environment(\.messageAccessibility, ax)
+    }
+
+    /// What VoiceOver, Switch Control and Voice Control get on this message: the menu's actions and "More actions" (LIME-130-1). Not in select mode.
+    private var ax: MessageAccessibility? {
+        guard selection == nil, !liftedOnly, onActions != nil, let performer else { return nil }
+        return MessageAccessibility(message: message, performer: performer, more: { lift() })
     }
 
     /// A long-press: a light haptic, the bubble's place on the screen, then the menu.

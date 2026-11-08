@@ -30,6 +30,108 @@ final class MessageActionsState {
     var reporting: ReportTarget?
 }
 
+/// One thing a message's menu can do (LIME-130-1). The long-press menu and VoiceOver's actions are both built from `MessageActionPlan`, so they cannot drift.
+enum MessageAction: String, CaseIterable, Sendable {
+    case react = "React", reply = "Reply", forward = "Forward", edit = "Edit", copy = "Copy", saveGIF = "Save to my GIFs", select = "Select", report = "Report", delete = "Delete"
+    var title: String { rawValue }
+    var symbol: String {
+        switch self {
+        case .react: "face.smiling"
+        case .reply: "arrowshape.turn.up.left"
+        case .forward: "arrowshape.turn.up.right"
+        case .edit: "pencil"
+        case .copy: "doc.on.doc"
+        case .saveGIF: "square.and.arrow.down"
+        case .select: "checkmark.circle"
+        case .report: "flag"
+        case .delete: "trash"
+        }
+    }
+    var identifier: String {
+        switch self {
+        case .react: "action-react"
+        case .reply: "reply-in-thread"
+        case .forward: "action-forward"
+        case .edit: "action-edit"
+        case .copy: "action-copy"
+        case .saveGIF: "action-save-gif"
+        case .select: "action-select"
+        case .report: "action-report"
+        case .delete: "action-delete"
+        }
+    }
+    var destructive: Bool { self == .report || self == .delete }
+}
+
+/// Which actions a message offers, in the menu's order: the reaction row first, then Reply, Forward, Edit, Copy, Save to my GIFs, Select, Report, Delete.
+enum MessageActionPlan {
+    static func actions(for message: Message, inThread: Bool, now: Date = Date()) -> [MessageAction] {
+        let settled = !message.state.isInFlight && message.state != .failed
+        var list: [MessageAction] = []
+        if !message.deleted && settled { list.append(.react) }
+        if !message.deleted, !inThread, settled { list.append(.reply) }
+        if !message.deleted, message.call == nil, message.emergency == nil { list.append(.forward) }
+        // On a photo, album, video, voice message or file, Edit changes the caption only (so it needs one).
+        if message.canEdit(now: now), !message.deleted, message.attachments.isEmpty || !message.text.isEmpty { list.append(.edit) }
+        if !message.deleted, message.call == nil, !message.text.isEmpty || copyableImage(message) != nil { list.append(.copy) }
+        if !message.deleted, message.attachments.contains(where: { GIF.isGIF(mime: $0.mime) && !$0.removed }) { list.append(.saveGIF) }
+        if message.call == nil { list.append(.select) }
+        if !message.isOwn, !message.deleted, !message.isSystem, message.call == nil { list.append(.report) }
+        list.append(.delete)
+        return list
+    }
+
+    /// A single picture with no words: Copy puts the picture on the pasteboard.
+    static func copyableImage(_ message: Message) -> AttachmentItem? {
+        guard message.text.isEmpty, message.attachments.count == 1, let only = message.attachments.first, only.kind == .image else { return nil }
+        return only
+    }
+}
+
+/// Runs a message action (set by the screen's `MessageActionsHost`, read by each bubble).
+struct MessageActionPerformer: Equatable {
+    let inThread: Bool
+    let perform: (MessageAction, Message) -> Void
+    static func == (lhs: MessageActionPerformer, rhs: MessageActionPerformer) -> Bool { lhs.inThread == rhs.inThread }
+}
+
+/// What a message element needs to offer the actions to VoiceOver, Switch Control and Voice Control (LIME-130-1): the message, how to run an action, and "More actions".
+struct MessageAccessibility: Equatable {
+    let message: Message
+    let performer: MessageActionPerformer
+    let more: () -> Void
+    static func == (lhs: MessageAccessibility, rhs: MessageAccessibility) -> Bool { lhs.message == rhs.message && lhs.performer == rhs.performer }
+}
+
+extension EnvironmentValues {
+    @Entry var messageActionPerformer: MessageActionPerformer? = nil
+    /// Set on a message's content, so the photo, voice and file elements inside it carry the same actions as its text.
+    @Entry var messageAccessibility: MessageAccessibility? = nil
+}
+
+/// The actions as accessibility actions, named exactly as in the long-press menu, plus "More actions" (the same overlay the long-press opens).
+struct MessageAccessibilityActions: ViewModifier {
+    let ax: MessageAccessibility?
+
+    func body(content: Content) -> some View {
+        if let ax {
+            // SwiftUI hands VoiceOver these in the reverse of the order they are written, so they are written backwards: React first … Delete, then More actions.
+            content.accessibilityActions {
+                Button("More actions") { ax.more() }
+                ForEach(MessageActionPlan.actions(for: ax.message, inThread: ax.performer.inThread).reversed(), id: \.self) { action in
+                    Button(action.title) { ax.performer.perform(action, ax.message) }
+                }
+            }
+        } else {
+            content
+        }
+    }
+}
+
+extension View {
+    func messageAccessibilityActions(_ ax: MessageAccessibility?) -> some View { modifier(MessageAccessibilityActions(ax: ax)) }
+}
+
 /// The long-press menu in this order: an emoji row (six quick ones and "+"), Reply, Forward, Edit (my own, for a day), Copy, Select, Delete.
 /// Also the sheets it leads to: Edit, the emoji picker, who reacted, and the Delete confirmation.
 struct MessageActionsHost: ViewModifier {
@@ -53,6 +155,7 @@ struct MessageActionsHost: ViewModifier {
             // The chat stays recognisable behind the lifted message: a light blur (LIME-152f), never a solid grey. Reduce Transparency: no blur.
             .blur(radius: state.menu != nil && !reduceTransparency ? 4 : 0)
             .environment(\.menuFrameSink, MenuFrameSink { state.menuFrame = $0 })
+            .environment(\.messageActionPerformer, MessageActionPerformer(inThread: inThread) { action, message in perform(action, on: message) })
             .overlay {
                 if let message = state.menu { menu(for: message) }
             }
@@ -115,10 +218,34 @@ struct MessageActionsHost: ViewModifier {
         return (live ?? message).reactions
     }
 
-    /// A single picture with no words: Copy puts the picture on the pasteboard.
-    private func copyableImage(_ message: Message) -> AttachmentItem? {
-        guard message.text.isEmpty, message.attachments.count == 1, let only = message.attachments.first, only.kind == .image else { return nil }
-        return only
+    /// Runs an action (a menu row, or an accessibility action: one path for both).
+    private func perform(_ action: MessageAction, on message: Message) {
+        state.menu = nil
+        switch action {
+        case .react: state.picking = message
+        case .reply: onReply(message)
+        case .forward: state.requestForward([message], store: store)
+        case .edit:
+            state.editText = message.text
+            state.editing = message
+        case .copy:
+            if let single = MessageActionPlan.copyableImage(message) { Task { if let image = await store.image(for: single) { UIPasteboard.general.image = image } } }
+            else { store.copyToPasteboard(message) }
+        case .saveGIF:
+            guard let gif = message.attachments.first(where: { GIF.isGIF(mime: $0.mime) && !$0.removed }) else { return }
+            let caption = message.text
+            Task {
+                guard let data = await store.attachmentData(gif) else { store.showBanner("That GIF isn\u{2019}t on this iPhone yet."); return }
+                switch await store.saveMyGIF(data, messageText: caption) {
+                case .saved: store.showBanner("Saved to my GIFs")
+                case .full: store.showBanner("My GIFs is full. Remove some in Settings.")
+                case .failed: store.showBanner("That GIF couldn\u{2019}t be saved.")
+                }
+            }
+        case .select: selection = [message.id]
+        case .report: state.reporting = store.reportTarget(message: message, conversationID: conversationID, from: message.senderID.map { store.teacherName($0) })
+        case .delete: state.deleting = [message]
+        }
     }
 
     private var everyoneAllowed: Bool { !state.deleting.isEmpty && state.deleting.allSatisfy { $0.canDeleteForEveryone() } }
@@ -164,6 +291,11 @@ struct MessageActionsHost: ViewModifier {
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
         }
+        // For VoiceOver and Switch Control: the menu is a modal layer (the chat behind it is skipped), focus moves into it when it opens, and
+        // Escape (the two-finger scrub) closes it (LIME-130-1).
+        .accessibilityAddTraits(.isModal)
+        .accessibilityAction(.escape) { state.menu = nil }
+        .onAppear { UIAccessibility.post(notification: .screenChanged, argument: nil) }
         .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98)))
     }
 
@@ -205,7 +337,7 @@ struct MessageActionsHost: ViewModifier {
 
     @ViewBuilder
     private func reactionBar(_ message: Message) -> some View {
-                if !message.deleted && !message.state.isInFlight && message.state != .failed {
+                if MessageActionPlan.actions(for: message, inThread: inThread).contains(.react) {
                     HStack(spacing: 2) {
                         ForEach(ConversationStore.quickReactions, id: \.self) { emoji in
                             let mine = message.reactions.first { $0.emoji == emoji }?.mine ?? false
@@ -241,76 +373,33 @@ struct MessageActionsHost: ViewModifier {
 
     private func actionsMenu(_ message: Message) -> some View {
         VStack(spacing: 0) {
-                    if !message.deleted, !inThread, !message.state.isInFlight, message.state != .failed {
-                        row("arrowshape.turn.up.left", "Reply", id: "reply-in-thread") { state.menu = nil; onReply(message) }
-                    }
-                    if !message.deleted, message.call == nil, message.emergency == nil {
-                        if state.cannotForward.contains(message.id) {
-                            VStack(spacing: 0) {
-                                HStack(spacing: 12) {
-                                    VStack(alignment: .leading, spacing: 1) {
-                                        Text("Forward").font(Theme.body)
-                                        Text("This file is no longer available").font(Theme.caption)
-                                    }
-                                    Spacer()
-                                    Image(systemName: "arrowshape.turn.up.right").font(.system(size: 17))
-                                }
-                                .foregroundStyle(Theme.textSecondary)
-                                .padding(.horizontal, 16).frame(minHeight: 48)
-                                Divider().overlay(Theme.hairline)
+            // The reaction row is above; the rest follow the plan, the same list VoiceOver gets.
+            ForEach(MessageActionPlan.actions(for: message, inThread: inThread).filter { $0 != .react }, id: \.self) { action in
+                if action == .forward, state.cannotForward.contains(message.id) {
+                    VStack(spacing: 0) {
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("Forward").font(Theme.body)
+                                Text("This file is no longer available").font(Theme.caption)
                             }
-                            .accessibilityElement(children: .combine)
-                            .accessibilityAddTraits(.isButton)
-                            .accessibilityLabel("Forward, this file is no longer available")
-                            .accessibilityIdentifier("action-forward-unavailable")
-                        } else {
-                            row("arrowshape.turn.up.right", "Forward", id: "action-forward") { state.menu = nil; state.requestForward([message], store: store) }
+                            Spacer()
+                            Image(systemName: action.symbol).font(.system(size: 17))
                         }
+                        .foregroundStyle(Theme.textSecondary)
+                        .padding(.horizontal, 16).frame(minHeight: 48)
+                        Divider().overlay(Theme.hairline)
                     }
-                    // On a photo, album, video, voice message or file, Edit changes the caption only (so it needs one).
-                    if message.canEdit(), !message.deleted, message.attachments.isEmpty || !message.text.isEmpty {
-                        row("pencil", "Edit", id: "action-edit") {
-                            state.menu = nil
-                            state.editText = message.text
-                            state.editing = message
-                        }
-                    }
-                    // Copy: the words (a caption included), or the picture when it is a single picture without words.
-                    if !message.deleted, message.call == nil, !message.text.isEmpty || copyableImage(message) != nil {
-                        row("doc.on.doc", "Copy", id: "action-copy") {
-                            state.menu = nil
-                            if let single = copyableImage(message) { Task { if let image = await store.image(for: single) { UIPasteboard.general.image = image } } }
-                            else { store.copyToPasteboard(message) }
-                        }
-                    }
-                    // Any GIF in a chat can be kept in my GIFs (LIME-207).
-                    if !message.deleted, let gif = message.attachments.first(where: { GIF.isGIF(mime: $0.mime) && !$0.removed }) {
-                        row("square.and.arrow.down", "Save to my GIFs", id: "action-save-gif") {
-                            state.menu = nil
-                            let caption = message.text
-                            Task {
-                                guard let data = await store.attachmentData(gif) else { store.showBanner("That GIF isn’t on this iPhone yet."); return }
-                                switch await store.saveMyGIF(data, messageText: caption) {
-                                case .saved: store.showBanner("Saved to my GIFs")
-                                case .full: store.showBanner("My GIFs is full. Remove some in Settings.")
-                                case .failed: store.showBanner("That GIF couldn’t be saved.")
-                                }
-                            }
-                        }
-                    }
-                    if message.call == nil {
-                        row("checkmark.circle", "Select", id: "action-select") { state.menu = nil; selection = [message.id] }
-                    }
-                    if !message.isOwn, !message.deleted, !message.isSystem, message.call == nil {
-                        row("flag", "Report", id: "action-report", destructive: true) {
-                            state.menu = nil
-                            state.reporting = store.reportTarget(message: message, conversationID: conversationID, from: message.senderID.map { store.teacherName($0) })
-                        }
-                    }
-                    row("trash", "Delete", id: "action-delete", destructive: true, last: true) { state.menu = nil; state.deleting = [message] }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityLabel("Forward, this file is no longer available")
+                    .accessibilityIdentifier("action-forward-unavailable")
+                } else {
+                    row(action.symbol, action.title, id: action.identifier, destructive: action.destructive, last: action == .delete) { perform(action, on: message) }
                 }
-                .background(Theme.canvas, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 0.5))
+            }
+        }
+        .background(Theme.canvas, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 0.5))
     }
 
     private func row(_ symbol: String, _ title: String, id: String, destructive: Bool = false, last: Bool = false, action: @escaping () -> Void) -> some View {

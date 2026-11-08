@@ -29,6 +29,8 @@ struct ChatComposer: View {
     @State private var recorder = VoiceRecorder()
     @State private var dragX: CGFloat = 0
     @State private var released = true
+    /// Where VoiceOver goes when a recording starts from an accessibility activation: the Send button (LIME-130-1).
+    @AccessibilityFocusState private var sendFocused: Bool
     @State private var micDenied = false
     /// 0...1 while a video is being prepared (compressed), else nil.
     @State private var preparingVideo: Double?
@@ -269,27 +271,50 @@ struct ChatComposer: View {
                     dragX = 0
                 })
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Voice message")
-            .accessibilityHint("Hold to record, release to send")
+            .accessibilityLabel("Record voice message")
+            .accessibilityHint("Double tap to start recording, then send or cancel")
             .accessibilityAddTraits(.isButton)
+            // An accessibility activation (VoiceOver double-tap, Switch Control select, Voice Control "Tap Record voice message") cannot hold, release or
+            // slide, so it starts a recording already locked. The touch gesture above is unchanged (LIME-130-1).
+            .accessibilityAction { startLockedForAccessibility() }
             .accessibilityIdentifier("composer-mic")
     }
 
     private var lockedRow: some View {
         HStack {
-            Button { recorder.cancel() } label: {
+            Button { cancelVoice() } label: {
                 Image(systemName: "trash").font(.system(size: 19)).foregroundStyle(Color.red).frame(width: 44, height: 40)
             }
-            .accessibilityLabel("Delete recording").accessibilityIdentifier("voice-cancel")
+            .accessibilityLabel("Cancel recording").accessibilityIdentifier("voice-cancel")
             Spacer()
-            Text("Recording").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
+            Text("Recording").font(Theme.secondary).foregroundStyle(Theme.textSecondary).accessibilityHidden(true)   // the recording bar above says it, with the time
             Spacer()
             Button { finishVoice() } label: {
                 Image(systemName: "arrow.up").font(.system(size: 18, weight: .semibold)).foregroundStyle(Theme.primaryInk)
                     .frame(width: 36, height: 36).background(Theme.primary, in: Circle()).frame(width: 44, height: 40)
             }
             .accessibilityLabel("Send voice message").accessibilityIdentifier("voice-send")
+            .accessibilityFocused($sendFocused)
         }
+    }
+
+    /// An accessibility activation of the mic: record, locked, and put VoiceOver's focus on Send.
+    private func startLockedForAccessibility() {
+        guard !recorder.isRecording else { return }
+        Task {
+            guard await recorder.start() else { micDenied = true; released = true; return }
+            recorder.lock()
+            released = true
+            Haptics.tick()
+            Announce.say("Recording")
+            try? await Task.sleep(for: .milliseconds(300))   // the locked row is drawn on the next pass
+            sendFocused = true
+        }
+    }
+
+    private func cancelVoice() {
+        recorder.cancel()
+        Announce.say("Recording cancelled")
     }
 
     private func beginVoice() async {
@@ -301,10 +326,11 @@ struct ChatComposer: View {
 
     /// Stops and sends the voice message (a very short one is dropped).
     private func finishVoice() {
-        guard let note = recorder.finish(), let onSendAttachments else { return }
+        guard let note = recorder.finish(), let onSendAttachments else { Announce.say("Recording too short, not sent"); return }
         let voice = OutgoingAttachment(bytes: note.bytes, name: "Voice message.m4a", mime: "audio/mp4", width: nil, height: nil,
                                        durationMs: UInt32(note.durationMs), thumb: Data(note.waveform), poster: Data())
         onSendAttachments([voice], "")
+        Announce.say("Voice message sent")
     }
 
     // MARK: Video

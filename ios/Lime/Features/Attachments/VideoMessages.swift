@@ -222,6 +222,13 @@ struct TransferRing: View {
     }
 }
 
+/// Says something to VoiceOver (and Switch Control's speech) without moving focus; queued, so it does not cut off what is being read.
+enum Announce {
+    @MainActor static func say(_ words: String) {
+        UIAccessibility.post(notification: .announcement, argument: NSAttributedString(string: words, attributes: [.accessibilitySpeechQueueAnnouncement: true]))
+    }
+}
+
 /// A small tap of feedback (when recording locks or is cancelled).
 enum Haptics {
     @MainActor static func tick() { UIImpactFeedbackGenerator(style: .light).impactOccurred() }

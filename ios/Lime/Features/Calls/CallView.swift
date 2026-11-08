@@ -20,6 +20,25 @@ private struct RoutePicker: UIViewRepresentable {
     func updateUIView(_ view: AVRoutePickerView, context: Context) {}
 }
 
+/// When a video call's controls may hide (LIME-130-1): never while VoiceOver or Switch Control is running (a person using them cannot tap the picture to bring them back);
+/// for everyone else after five seconds, as before.
+enum CallControlsPolicy {
+    static func mayAutoHide(voiceOver: Bool, switchControl: Bool) -> Bool { !voiceOver && !switchControl }
+
+    @MainActor static var voiceOverRunning: Bool {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-lime-force-voiceover") { return true }   // UI tests: the simulator has no VoiceOver switch
+        #endif
+        return UIAccessibility.isVoiceOverRunning
+    }
+    @MainActor static var switchControlRunning: Bool { UIAccessibility.isSwitchControlRunning }
+
+    /// Whether the controls are hidden now: a video call, nobody using an assistive tool, and the five seconds have passed.
+    static func hidden(video: Bool, visible: Bool, voiceOver: Bool, switchControl: Bool) -> Bool {
+        video && !visible && mayAutoHide(voiceOver: voiceOver, switchControl: switchControl)
+    }
+}
+
 private enum Corner: CaseIterable { case topLeading, topTrailing, bottomLeading, bottomTrailing }
 
 /// The 1:1 call screen (LIME-118), FaceTime's layout in lime's style: the other person full-bleed (or a large avatar until there is
@@ -34,6 +53,10 @@ struct CallView: View {
     @State private var fadeTask: Task<Void, Never>?
     @State private var showPerson = false
     @State private var showEmoji = false
+    /// VoiceOver or Switch Control is running: the controls stay (LIME-130-1).
+    @State private var voiceOver = CallControlsPolicy.voiceOverRunning
+    @State private var switchControl = CallControlsPolicy.switchControlRunning
+    @AccessibilityFocusState private var muteFocused: Bool
 
     private let tile = CGSize(width: 108, height: 148)
 
@@ -80,11 +103,20 @@ struct CallView: View {
                     .accessibilityLabel("Minimise").accessibilityIdentifier("call-minimize")
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(.top, 8).padding(.trailing, 16)
                 }
+                let hidden = controlsHidden(call)
                 controls(call, landscape: geo.size.width > geo.size.height)
-                    .opacity(call.video && !controlsVisible ? 0 : 1)
-                    .allowsHitTesting(!(call.video && !controlsVisible))
-                    .accessibilityHidden(call.video && !controlsVisible)
+                    .opacity(hidden ? 0 : 1)
+                    .allowsHitTesting(!hidden)
+                    .accessibilityHidden(hidden)
                     .animation(.easeInOut(duration: 0.25), value: controlsVisible)
+                if hidden {
+                    // The controls are away (a touch user): the picture is one button, so Voice Control ("Tap Show call controls") and Switch Control can bring
+                    // them back. It takes no touches itself; a tap on the picture is the gesture below, as before.
+                    Color.clear.allowsHitTesting(false)
+                        .accessibilityElement().accessibilityLabel("Show call controls").accessibilityAddTraits(.isButton)
+                        .accessibilityAction { showControls(); focusMuteSoon() }
+                        .accessibilityIdentifier("call-show-controls")
+                }
             }
             // Pinned to the screen, so no layer can widen the layout (a 400 pt background once pushed the controls off a 375 pt screen).
             .frame(width: geo.size.width, height: geo.size.height)
@@ -99,6 +131,14 @@ struct CallView: View {
             .onAppear { showControls(); preparePictureInPicture(call) }
             .onChange(of: call.phase) { _, _ in showControls(); preparePictureInPicture(call) }
             .onChange(of: call.video) { _, _ in preparePictureInPicture(call) }
+            .onReceive(NotificationCenter.default.publisher(for: UIAccessibility.voiceOverStatusDidChangeNotification)) { _ in
+                voiceOver = CallControlsPolicy.voiceOverRunning
+                showControls()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIAccessibility.switchControlStatusDidChangeNotification)) { _ in
+                switchControl = CallControlsPolicy.switchControlRunning
+                showControls()
+            }
         }
         .sheet(isPresented: $showPerson) { personSheet(call) }
         .sheet(isPresented: $showEmoji) { emojiSheet(call) }
@@ -285,7 +325,7 @@ struct CallView: View {
                 toggle("arrow.triangle.2.circlepath.camera", "Flip camera", on: false, id: "call-flip") { call.flipCamera(); showControls() }
                 CallEffectsButton(size: 56, id: "call-effects", support: { call.effectsSupport }) { call.perform($0); showControls() }
                 toggle(call.cameraOn ? "video.fill" : "video.slash.fill", "Camera", on: !call.cameraOn, id: "call-video") { call.toggleCamera(); showControls() }
-                toggle(call.muted ? "mic.slash.fill" : "mic.fill", "Mute", on: call.muted, id: "call-mute") { call.setMuted(!call.muted); showControls() }
+                toggle(call.muted ? "mic.slash.fill" : "mic.fill", "Mute", on: call.muted, id: "call-mute", focus: $muteFocused) { call.setMuted(!call.muted); showControls() }
                 toggle("arrow.down.right.and.arrow.up.left", "Minimise", on: false, id: "call-minimize") { call.minimize() }
                 routeButton(call)
                 round("xmark", "End call", .red, id: "call-end") { Task { await call.end() } }
@@ -299,7 +339,7 @@ struct CallView: View {
                     Spacer()
                     CallEffectsButton(size: 56, id: "call-effects", support: { call.effectsSupport }) { call.perform($0); showControls() }
                     toggle(call.cameraOn ? "video.fill" : "video.slash.fill", "Camera", on: !call.cameraOn, id: "call-video") { call.toggleCamera(); showControls() }
-                    toggle(call.muted ? "mic.slash.fill" : "mic.fill", "Mute", on: call.muted, id: "call-mute") { call.setMuted(!call.muted); showControls() }
+                    toggle(call.muted ? "mic.slash.fill" : "mic.fill", "Mute", on: call.muted, id: "call-mute", focus: $muteFocused) { call.setMuted(!call.muted); showControls() }
                     toggle("arrow.down.right.and.arrow.up.left", "Minimise", on: false, id: "call-minimize") { call.minimize() }
                     routeButton(call)
                     round("xmark", "End call", .red, id: "call-end") { Task { await call.end() } }
@@ -349,9 +389,22 @@ struct CallView: View {
         call.preparePictureInPicture(sourceView: view)
     }
 
+    private func controlsHidden(_ call: CallManager) -> Bool {
+        CallControlsPolicy.hidden(video: call.video, visible: controlsVisible, voiceOver: voiceOver, switchControl: switchControl)
+    }
+
+    /// After "Show call controls": VoiceOver's focus goes to Mute (once the controls are back).
+    private func focusMuteSoon() {
+        Task {
+            try? await Task.sleep(for: .milliseconds(350))
+            muteFocused = true
+        }
+    }
+
     private func showControls() {
         controlsVisible = true
         fadeTask?.cancel()
+        guard CallControlsPolicy.mayAutoHide(voiceOver: CallControlsPolicy.voiceOverRunning, switchControl: CallControlsPolicy.switchControlRunning) else { return }
         fadeTask = Task {
             try? await Task.sleep(for: .seconds(5))
             if !Task.isCancelled, store.calls.video, store.calls.phase == .active { controlsVisible = false }
@@ -366,11 +419,20 @@ struct CallView: View {
         .accessibilityLabel(label).accessibilityIdentifier(id)
     }
 
-    private func toggle(_ symbol: String, _ label: String, on: Bool, id: String, action: @escaping () -> Void) -> some View {
+    private func toggle(_ symbol: String, _ label: String, on: Bool, id: String, focus: AccessibilityFocusState<Bool>.Binding? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol).font(.system(size: 22)).foregroundStyle(on ? .black : .white)
                 .frame(width: 56, height: 56).background(on ? Color.white : Color.white.opacity(0.2), in: Circle())
         }
         .accessibilityLabel(label).accessibilityIdentifier(id)
+        .modifier(OptionalAccessibilityFocus(focus: focus))
+    }
+}
+
+/// `accessibilityFocused` when a binding is given.
+private struct OptionalAccessibilityFocus: ViewModifier {
+    let focus: AccessibilityFocusState<Bool>.Binding?
+    func body(content: Content) -> some View {
+        if let focus { content.accessibilityFocused(focus) } else { content }
     }
 }
