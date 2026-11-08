@@ -10374,6 +10374,8 @@ On phones the hero's lime portal follows your touch (`site/com/index.html`, `sty
 
 **Gate (yours):** look at the screenshots. **Not published**: publishing is a separate go (`bash infra/invite/deploy.sh`, default layout).
 
+**Published (2026-11-08, on your typed go):** `bash infra/invite/deploy.sh` (default layout) copied the site to `root@178.156.199.1:/srv/invite`. Checked live on https://limemessenger.com: the landing footer is `<footer>` with Privacy · Terms · Guidelines and "Open source (MIT).", with no LLC, Foundation or "Lime Messenger" anywhere on the page; `/terms/`, `/privacy/` and `/safety/` answer 200 with no `[bracketed]` text and no "LAWYER", "placeholder" or "Lime Messenger"; `/u/shem` answers 200 with no company line; `/preview/` answers 401 (`WWW-Authenticate: Basic realm="restricted"`) without the password. The gate above (your look at the screenshots) is still yours.
+
 **For plot:** (1) One thing to know: the invite pages' legal line was a comment, so it was never visible; I deleted it rather than leaving the outdated "Lime Messenger Inc" in the source. When the companies exist, the line comes back from the plot brief, not from here. (2) The three legal pages that still show the contact addresses (`legal@`, `abuse@`) now read "legal@limemessenger.com." with no "to be confirmed": if those mailboxes are not live yet, say so before publishing. (3) 130-2 is in progress in the same working tree; this commit holds only the 290 files.
 
 ## LIME-291
@@ -10393,5 +10395,7 @@ On phones the hero's lime portal follows your touch (`site/com/index.html`, `sty
 - What each party learns: nothing new. A preview is fetched by the sender's or the app's link fetcher, the same as opening the page; no tracker, no query string on the image.
 
 **Gate (yours):** look at `docs/qa-shots/291/og.png`; then a separate go to publish; then the Messages test with a **new** link (`https://limemessenger.com/?v=2`, Messages caches old previews). **Not published.**
+
+**Published (2026-11-08, same deploy as LIME-290):** live on https://limemessenger.com, `og.png` 200 `image/png` 60,608 B, `apple-touch-icon.png` 200 10,933 B, `favicon-32.png` 200 2,316 B, `favicon.ico` 200 6,201 B (the same sizes as the committed files). `og:image` is present on `/`, `/u/shem`, `/terms/`, `/privacy/` and `/safety/`. Still untested: pasting a link into Messages (yours: use `https://limemessenger.com/?v=2`).
 
 **For plot:** (1) The card is the branded default (pale lime, stacked logo, tagline). If you want a photo cover instead, `tools/make-link-previews.py` is the one place to change; say so. (2) `/preview/` is behind the team login, so its `og:` tags are harmless but also unused. (3) The invite page still carries an empty `data:,` icon link (so a visitor's browser does not fetch an icon); the PNG icon link now sits beside it and which one a browser picks is its own business: not touched, but worth knowing if the tab icon looks odd. (4) The holding page `invite-site/index.html` (the `--invite-only` layout) got no tags: it is outside this brief's scope.
