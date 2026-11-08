@@ -36,9 +36,11 @@ lime is provided as it is, free of charge. We work hard to keep it safe and runn
 
 To the extent the law allows, lime and the people who make it are not liable for indirect losses. [LAWYER: confirm the limitation of liability and the governing law.]
 
+<!-- public:hide -->
 ## The companies
 
 lime is made by Lime Messenger LLC, owned by Lime Messenger Inc, a nonprofit. [placeholder: the exact legal line will be confirmed once both companies exist; never write "501(c)(3)" until it is granted.]
+<!-- /public:hide -->
 
 ## Changes
 

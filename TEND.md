@@ -10352,3 +10352,26 @@ On phones the hero's lime portal follows your touch (`site/com/index.html`, `sty
 **Two small things to look at on a phone (no gate, my reading):** (1) the podcast player's volume slider shows no route (AirPlay) button, as before; (2) the colours with "Increase Contrast" on still take the higher-contrast palette.
 
 **For plot:** (1) Release broke at `33acc35` and stayed broken for 15 days: nothing builds Release in the loop. Suggest `check-warnings.sh` (or a quick Release build) be part of every iOS brief's verification, or run it before each TestFlight. (2) Rule for future briefs: state used by production code must never sit under `#if DEBUG`; only the demo fixtures do. (3) 183b (the 18 failing tests listed in `## LIME-130-1`) is next.
+
+## LIME-290
+
+**Goal:** no company names on the public pages; no team notes in the public legal pages; the drafts in `docs/legal/` keep their notes; `/preview/` unchanged.
+
+**What changed**
+- `site/landing/index.html`: the footer line is now "Open source (MIT)." (the company line is gone; Privacy · Terms · Guidelines stay).
+- `invite-site/u/index.html`, `invite-site/index.html`: the commented-out "lime is made by …" legal line (it carried the outdated "Lime Messenger Inc") is removed, not just hidden.
+- `tools/build-legal-pages.py`: (a) drops every `[ … ]` that is not a Markdown link (not followed by `(`), with the space before it; (b) drops blocks between `<!-- public:hide -->` and `<!-- /public:hide -->`; (c) after building, **exits with an error** if a built page still has a non-link bracket, "LAWYER", "placeholder" or "Lime Messenger" (case-insensitive). `LEGAL_SRC` / `LEGAL_OUT` override the folders so the check can be tried on a dummy page.
+- `docs/legal/terms.md` ("## The companies") and `privacy.md` (the "made by Lime Messenger LLC" line): wrapped in the hide markers only; their text, notes included, is unchanged. To bring them back when the companies exist, delete the two marker lines.
+- Regenerated `invite-site/`.
+
+**The diff of the regenerated pages (nothing else changed):** privacy: the company line; safety: "[placeholder: to be confirmed]"; terms: the LAWYER note, the whole "The companies" section, "[placeholder mailbox: …]". The "Draft, pending legal review." line and the "(draft)" dates stay.
+
+**Verification**
+- `grep -rn -E "LLC|Foundation|Lime Messenger Inc|LAWYER|placeholder|\[[^]]*\]([^(]|$)" site/landing invite-site`: only false positives remain: the `placeholder="Your email"` attributes and `::placeholder` CSS on the landing, a JS regex (`[A-Za-z0-9._]`) in `invite-site/u/index.html`, and the same regex quoted in `invite-site/README.md`. No company name, no note.
+- The builder's own check passes on the real drafts and exits with an error on a dummy page that contains "Lime Messenger" (a dummy `[LAWYER: …]` note is dropped by (a) before it can be checked, which is the point of (a); (c) is the backstop).
+- `site/com/index.html` (the preview) still has its footer line with the company names, untouched.
+- Screenshots in `docs/qa-shots/290/`: the landing (desktop, phone), its footer (both), the terms page (desktop, phone).
+
+**Gate (yours):** look at the screenshots. **Not published**: publishing is a separate go (`bash infra/invite/deploy.sh`, default layout).
+
+**For plot:** (1) One thing to know: the invite pages' legal line was a comment, so it was never visible; I deleted it rather than leaving the outdated "Lime Messenger Inc" in the source. When the companies exist, the line comes back from the plot brief, not from here. (2) The three legal pages that still show the contact addresses (`legal@`, `abuse@`) now read "legal@limemessenger.com." with no "to be confirmed": if those mailboxes are not live yet, say so before publishing. (3) 130-2 is in progress in the same working tree; this commit holds only the 290 files.

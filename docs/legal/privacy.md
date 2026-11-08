@@ -92,7 +92,9 @@ lime is for adults. If you believe a child has an account, write to **abuse@lime
 
 If we change this page we will say so in the app before the change applies. Questions: **privacy@limemessenger.com**.
 
+<!-- public:hide -->
 lime is made by Lime Messenger LLC. [legal line: to be confirmed once the companies exist]
+<!-- /public:hide -->
 
 ---
 

@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Builds invite-site/{privacy,terms,guidelines,safety,security}/index.html and
 invite-site/.well-known/security.txt from docs/legal/*.md (LIME-282a).
-Handles the small Markdown subset the drafts use; drops everything from "## Sources" on."""
-import html, re, shutil
+Handles the small Markdown subset the drafts use; drops everything from "## Sources" on, every [bracketed note] that is not a link,
+and every block between <!-- public:hide --> and <!-- /public:hide --> (LIME-290: the drafts keep their notes for the team, the public pages never show them).
+Fails if a built page still has a bracketed note, "LAWYER", "placeholder" or "Lime Messenger".
+LEGAL_SRC and LEGAL_OUT override the folders (to test the check on a dummy page)."""
+import html, os, re, shutil, sys
 from pathlib import Path
 
 root = Path(__file__).resolve().parent.parent
-src, out = root / "docs/legal", root / "invite-site"
+src, out = Path(os.environ.get("LEGAL_SRC", root / "docs/legal")), Path(os.environ.get("LEGAL_OUT", root / "invite-site"))
 pages = {"privacy": "Privacy", "terms": "Terms of use", "guidelines": "Community guidelines", "safety": "Safety and abuse", "security": "Security"}
 
 def inline(t):
@@ -16,8 +19,14 @@ def inline(t):
     t = re.sub(r"\[([^\]]+)\]\((/[^)]*|https?://[^)]*)\)", r'<a href="\2">\1</a>', t)
     return re.sub(r"(?<![\w>])([\w.]+@limemessenger\.com)", r'<a href="mailto:\1">\1</a>', t)
 
+NOTE = re.compile(r"[ \t]*\[[^\]]*\](?!\()")   # a [ ... ] that is not a Markdown link (not followed by "(")
+HIDDEN = re.compile(r"<!-- public:hide -->.*?<!-- /public:hide -->\n?", re.S)
+FORBIDDEN = re.compile(r"LAWYER|placeholder|Lime Messenger", re.I)
+
 def body(md):
     md = md.split("\n---\n\n## Sources")[0]
+    md = HIDDEN.sub("", md)
+    md = NOTE.sub("", md)
     o, para, lst, tbl, quote = [], [], False, [], False
     def flush():
         nonlocal para
@@ -79,6 +88,13 @@ for slug, title in pages.items():
     d = out / slug
     d.mkdir(exist_ok=True)
     (d / "index.html").write_text(PAGE.format(title=title, body=body((src / f"{slug}.md").read_text())))
+bad = []
+for slug in pages:
+    text = (out / slug / "index.html").read_text()
+    for m in re.finditer(r"\[[^\]]*\](?!\()|LAWYER|placeholder|Lime Messenger", text, re.I):
+        bad.append(f"{slug}: {m.group(0)!r}")
+if bad:
+    sys.exit("A public page still has a team note or a company name (LIME-290):\n  " + "\n  ".join(bad))
 (out / ".well-known").mkdir(exist_ok=True)
 shutil.copy(src / "security.txt", out / ".well-known/security.txt")
 print("built", ", ".join(pages), "+ .well-known/security.txt")
