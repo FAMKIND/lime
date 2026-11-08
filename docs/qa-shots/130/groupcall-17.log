@@ -1,0 +1,10 @@
+	 Executed 3 tests, with 1 failure (0 unexpected) in 45.775 (45.779) seconds
+	 Executed 3 tests, with 1 failure (0 unexpected) in 45.775 (45.780) seconds
+** TEST FAILED **
+/Users/shem/Sites/lime/ios/LimeUITests/GroupCallHeaderUITests.swift:41: error: -[LimeUITests.GroupCallHeaderUITests testThePillOpensThePeopleSheetWhichHasTheLayoutAtTheTopAndMinimiseStaysInTheControls] : Failed to get matching snapshot: No matches found for Elements matching predicate '"People" IN identifiers' from input {(
+Test Case '-[LimeUITests.GroupCallHeaderUITests testAGroupNamedByAPersonShowsItsNameWithTheCountAndADefaultNamedOneShowsThePeople]' passed (19.893 seconds).
+Test Case '-[LimeUITests.GroupCallHeaderUITests testAGroupNamedByAPersonShowsItsNameWithTheCountAndADefaultNamedOneShowsThePeople]' started.
+Test Case '-[LimeUITests.GroupCallHeaderUITests testTheHeaderHasThePillTheTimerAndTheEncryptionChipAndTheChipExplainsItself]' passed (11.645 seconds).
+Test Case '-[LimeUITests.GroupCallHeaderUITests testTheHeaderHasThePillTheTimerAndTheEncryptionChipAndTheChipExplainsItself]' started.
+Test Case '-[LimeUITests.GroupCallHeaderUITests testThePillOpensThePeopleSheetWhichHasTheLayoutAtTheTopAndMinimiseStaysInTheControls]' failed (14.236 seconds).
+Test Case '-[LimeUITests.GroupCallHeaderUITests testThePillOpensThePeopleSheetWhichHasTheLayoutAtTheTopAndMinimiseStaysInTheControls]' started.
