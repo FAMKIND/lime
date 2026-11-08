@@ -46,7 +46,7 @@ struct CoverColourSheet: View {
                 VStack(alignment: .leading, spacing: 22) {
                     coverSection
                     colourSection
-                    if let problem { Text(problem).font(Theme.secondary).foregroundStyle(Color.red) }
+                    if let problem { Text(problem).font(Theme.secondary).foregroundStyle(Theme.danger).announcesWhenShown(problem) }
                     Text(note).font(Theme.caption).foregroundStyle(Theme.textSecondary)
                 }
                 .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 24)

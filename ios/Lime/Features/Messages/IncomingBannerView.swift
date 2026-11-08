@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The banner at the top while Lime is open and a message arrives in another chat. Tap it to open the
-/// chat; it goes by itself after a few seconds, or when swiped up.
+/// chat; it goes by itself after a few seconds (not while VoiceOver or Switch Control runs), or when swiped up or dismissed with its Dismiss action.
 struct IncomingBannerView: View {
     @Environment(NotificationCoordinator.self) private var notifications
 
@@ -27,14 +27,17 @@ struct IncomingBannerView: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("\(banner.content.title). \(banner.content.body)")
                 .accessibilityHint("Opens the chat")
+                .accessibilityAction(named: "Open") { notifications.openBanner() }
+                .accessibilityAction(named: "Dismiss") { notifications.dismissBanner() }
                 .accessibilityIdentifier("incoming-banner")
                 .gesture(DragGesture(minimumDistance: 12).onEnded { drag in
                     if drag.translation.height < -10 { notifications.dismissBanner() }
                 })
                 .transition(.move(edge: .top).combined(with: .opacity))
                 .task(id: banner.id) {
-                    try? await Task.sleep(for: .seconds(4.5))
-                    if notifications.banner?.id == banner.id { notifications.dismissBanner() }
+                    Announce.say("Message from \(banner.content.title): \(banner.content.body)")
+                    // It stays until dismissed while VoiceOver or Switch Control runs (WCAG 2.2.1).
+                    if await BannerTiming.shouldAutoDismiss(), notifications.banner?.id == banner.id { notifications.dismissBanner() }
                 }
             }
         }

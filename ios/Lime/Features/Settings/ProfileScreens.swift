@@ -17,7 +17,7 @@ struct FieldEditorSheet: View {
                 VStack(spacing: 16) {
                     fieldPill
                     if let message = model.errorMessage ?? (model.hasChange ? model.validationMessage : nil) {
-                        Text(message).font(Theme.secondary).foregroundStyle(Color.red)
+                        Text(message).font(Theme.secondary).foregroundStyle(Theme.danger).announcesWhenShown(message)
                             .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 6)
                             .accessibilityIdentifier("editor-error")
                     } else if let footer = model.footer {

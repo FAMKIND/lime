@@ -315,8 +315,8 @@ struct CallView: View {
             Color.clear.frame(height: 0).accessibilityHidden(true)
         } else if call.phase == .incoming {
             HStack(spacing: 80) {
-                round("phone.down.fill", "Decline", .red, id: "call-decline") { Task { await call.decline() } }
-                round("phone.fill", "Accept", .green, id: "call-accept") { Task { await call.accept() } }
+                round("phone.down.fill", "Decline", Theme.dangerFill, id: "call-decline") { Task { await call.decline() } }
+                round("phone.fill", "Accept", Color(uiColor: UIColor(hex: LimeColours.accentHex[LimeColours.lime])), ink: Color(uiColor: UIColor(hex: 0x131B17)), id: "call-accept") { Task { await call.accept() } }
             }
             .frame(maxHeight: .infinity, alignment: .bottom).padding(.bottom, 48)
         } else if call.video && landscape {
@@ -328,7 +328,7 @@ struct CallView: View {
                 toggle(call.muted ? "mic.slash.fill" : "mic.fill", "Mute", on: call.muted, id: "call-mute", focus: $muteFocused) { call.setMuted(!call.muted); showControls() }
                 toggle("arrow.down.right.and.arrow.up.left", "Minimise", on: false, id: "call-minimize") { call.minimize() }
                 routeButton(call)
-                round("xmark", "End call", .red, id: "call-end") { Task { await call.end() } }
+                round("xmark", "End call", Theme.dangerFill, id: "call-end") { Task { await call.end() } }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom).padding(.bottom, 20)
             .accessibilityElement(children: .contain)
@@ -342,7 +342,7 @@ struct CallView: View {
                     toggle(call.muted ? "mic.slash.fill" : "mic.fill", "Mute", on: call.muted, id: "call-mute", focus: $muteFocused) { call.setMuted(!call.muted); showControls() }
                     toggle("arrow.down.right.and.arrow.up.left", "Minimise", on: false, id: "call-minimize") { call.minimize() }
                     routeButton(call)
-                    round("xmark", "End call", .red, id: "call-end") { Task { await call.end() } }
+                    round("xmark", "End call", Theme.dangerFill, id: "call-end") { Task { await call.end() } }
                 }
                 .frame(maxWidth: .infinity, alignment: .trailing).padding(.trailing, 16)
                 VStack {
@@ -364,7 +364,7 @@ struct CallView: View {
                 toggle(call.muted ? "mic.slash.fill" : "mic.fill", "Mute", on: call.muted, id: "call-mute") { call.setMuted(!call.muted) }
                 toggle("speaker.wave.2.fill", "Speaker", on: call.speaker, id: "call-speaker") { call.toggleSpeaker() }
                 routeButton(call)
-                round("phone.down.fill", "End call", .red, id: "call-end") { Task { await call.end() } }
+                round("phone.down.fill", "End call", Theme.dangerFill, id: "call-end") { Task { await call.end() } }
             }
             .frame(maxHeight: .infinity, alignment: .bottom).padding(.bottom, 48)
             .accessibilityElement(children: .contain)
@@ -411,9 +411,10 @@ struct CallView: View {
         }
     }
 
-    private func round(_ symbol: String, _ label: String, _ color: Color, id: String, action: @escaping () -> Void) -> some View {
+    /// A round call button: a white glyph on `color`, or (Accept) lime's ink on lime green (LIME-130-2: 4.5:1 either way).
+    private func round(_ symbol: String, _ label: String, _ color: Color, ink: Color = .white, id: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 24, weight: .semibold)).foregroundStyle(.white)
+            Image(systemName: symbol).font(.system(size: 24, weight: .semibold)).foregroundStyle(ink)
                 .frame(width: 64, height: 64).background(color, in: Circle())
         }
         .accessibilityLabel(label).accessibilityIdentifier(id)

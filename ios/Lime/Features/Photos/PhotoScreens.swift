@@ -252,7 +252,7 @@ struct ProfilePhotoScreen: View {
                 Text(title).font(Theme.body)
                 Spacer()
             }
-            .foregroundStyle(destructive ? Color.red : Theme.text)
+            .foregroundStyle(destructive ? Theme.danger : Theme.text)
             .padding(.horizontal, 18).frame(minHeight: 58).contentShape(Rectangle())
         }
         .buttonStyle(.plain)

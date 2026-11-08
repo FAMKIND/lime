@@ -122,6 +122,8 @@ struct ResolvedTheme: Equatable {
     var bubble: UIColor, bubbleEdge: UIColor, link: UIColor, placeholder: UIColor, placeholderLarge: UIColor
     /// My own bubble (it follows the accent, LIME-277d), the ink on it, links in it, and the reaction pill's two fills (the second when I reacted).
     var own: UIColor, ownInk: UIColor, linkOwn: UIColor, chip: UIColor, chipMine: UIColor
+    /// Red for text and icons (an error, "Delete", "Missed"): 4.5:1 (7:1 with Increase Contrast) on the canvas, the surface and the bubble (LIME-130-2).
+    var danger: UIColor
 
     /// Every pairing the app draws text in meets WCAG AA (7:1 for the main text with Increase Contrast).
     func passes(increaseContrast: Bool = false) -> Bool {
@@ -168,9 +170,11 @@ enum ThemeResolver {
         // The reaction pill: lime's own two fills on Plain, a faint tint of the text colour over the surface elsewhere.
         let chip = background == .plain ? UIColor(hex: darkMode ? 0x1B241F : 0xF1EFE8) : ContrastGuard.blend(surface, text, 0.07)
         let chipMine = background == .plain ? UIColor(hex: darkMode ? 0x1F2823 : 0xECEAE0) : ContrastGuard.blend(surface, text, 0.14)
+        let danger = ContrastGuard.nudge(UIColor(hex: darkMode ? Theme.dangerHex.dark : Theme.dangerHex.light), against: on + [bubble],
+                                         minimum: increaseContrast ? ContrastGuard.enhanced : ContrastGuard.text)
         let made = ResolvedTheme(canvas: canvas, surface: surface, text: text, secondary: secondary, hairline: hairline, accent: accentFill, accentInk: ContrastGuard.ink(on: accentFill),
                             bubble: bubble, bubbleEdge: UIColor(hex: base.bubbleEdge ?? (darkMode ? 0x3D4441 : 0xDDDDD9)), link: link, placeholder: placeholder, placeholderLarge: placeholderLarge,
-                            own: own, ownInk: ownInk, linkOwn: linkOwn, chip: chip, chipMine: chipMine)
+                            own: own, ownInk: ownInk, linkOwn: linkOwn, chip: chip, chipMine: chipMine, danger: danger)
         cache[key] = made
         return made
     }
@@ -222,7 +226,7 @@ final class ThemeStore: @unchecked Sendable {
         ThemeResolver.resolve(accent: accent, background: background, dark: dark, increaseContrast: increaseContrast)
     }
 
-    enum Role { case canvas, surface, text, secondary, hairline, accent, accentInk, bubble, bubbleEdge, link, placeholder, placeholderLarge, own, ownInk, linkOwn, chip, chipMine }
+    enum Role { case canvas, surface, text, secondary, hairline, accent, accentInk, bubble, bubbleEdge, link, placeholder, placeholderLarge, own, ownInk, linkOwn, chip, chipMine, danger }
 
     /// A colour that follows the choice. Reading `accent` and `background` here makes the view that asked redraw when they change.
     func colour(_ role: Role) -> Color {
@@ -247,6 +251,7 @@ final class ThemeStore: @unchecked Sendable {
             case .linkOwn: return theme.linkOwn
             case .chip: return theme.chip
             case .chipMine: return theme.chipMine
+            case .danger: return theme.danger
             }
         })
     }

@@ -316,19 +316,19 @@ struct GroupDetailsView: View {
             SettingsFootnote(text: "The name is up to 50 characters. Only people in the group see it.")
             SettingsCard {
                 Button { leaving = true } label: {
-                    HStack { Text("Leave group").font(Theme.body).foregroundStyle(Color.red); Spacer(minLength: 0) }
+                    HStack { Text("Leave group").font(Theme.body).foregroundStyle(Theme.danger); Spacer(minLength: 0) }
                         .padding(.horizontal, 18).frame(minHeight: 58).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain).accessibilityIdentifier("group-leave")
                 if details.myRole == "owner" {
                     Button { deletingForEveryone = true } label: {
-                        HStack { Text("Delete group").font(Theme.body).foregroundStyle(Color.red); Spacer(minLength: 0) }
+                        HStack { Text("Delete group").font(Theme.body).foregroundStyle(Theme.danger); Spacer(minLength: 0) }
                             .padding(.horizontal, 18).frame(minHeight: 58).contentShape(Rectangle())
                     }
                     .buttonStyle(.plain).accessibilityIdentifier("group-delete")
                 } else {
                     Button { clearing = true } label: {
-                        HStack { Text("Clear messages").font(Theme.body).foregroundStyle(Color.red); Spacer(minLength: 0) }
+                        HStack { Text("Clear messages").font(Theme.body).foregroundStyle(Theme.danger); Spacer(minLength: 0) }
                             .padding(.horizontal, 18).frame(minHeight: 58).contentShape(Rectangle())
                     }
                     .buttonStyle(.plain).accessibilityIdentifier("group-clear")

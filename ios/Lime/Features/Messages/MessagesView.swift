@@ -38,7 +38,7 @@ struct MessagesView: View {
         .sheet(isPresented: $startingEmergency) { EmergencySheet(conversationID: nil) }
         .overlay(alignment: .top) {
             if let warning = MeshService.shared.keyWarning {
-                Text(warning).font(Theme.caption).foregroundStyle(.white).padding(10).frame(maxWidth: .infinity).background(Color.red)
+                Text(warning).font(Theme.caption).foregroundStyle(.white).padding(10).frame(maxWidth: .infinity).background(Theme.dangerFill)
                     .accessibilityIdentifier("mesh-key-warning")
             }
         }
@@ -178,6 +178,9 @@ struct MessagesView: View {
     private func listBody(top: CGFloat, bottom: CGFloat) -> some View {
         List {
             filterRow
+                // The banners come and go without moving focus: say so (LIME-130-2). Their appearing is announced by the banners themselves.
+                .onChange(of: store.problem) { old, new in if old != nil, new == nil { Announce.say("Back online") } }
+                .onChange(of: store.lowStorage) { old, new in if old, !new { Announce.say("There is room again. lime resumed downloads.") } }
                 .listRowInsets(EdgeInsets())
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
@@ -212,16 +215,16 @@ struct MessagesView: View {
                             // A group still going: Mute, Leave, and Delete (owner: for everyone) or Clear messages (anyone else).
                             if conversation.myRole == "owner" {
                                 Button { groupAction = GroupRowAction(id: conversation.id, kind: .deleteForEveryone) } label: { Label("Delete", systemImage: "trash") }
-                                    .tint(.red).accessibilityIdentifier("swipe-delete-\(conversation.id)")
+                                    .tint(Theme.dangerFill).accessibilityIdentifier("swipe-delete-\(conversation.id)")
                             } else {
                                 Button { groupAction = GroupRowAction(id: conversation.id, kind: .clear) } label: { Label("Clear", systemImage: "eraser") }
-                                    .tint(.red).accessibilityIdentifier("swipe-clear-\(conversation.id)")
+                                    .tint(Theme.dangerFill).accessibilityIdentifier("swipe-clear-\(conversation.id)")
                             }
                             Button { groupAction = GroupRowAction(id: conversation.id, kind: .leave) } label: { Label("Leave", systemImage: "rectangle.portrait.and.arrow.right") }
                                 .tint(.gray).accessibilityIdentifier("swipe-leave-\(conversation.id)")
                         } else {
                             Button { deleting = conversation.id } label: { Label("Delete", systemImage: "trash") }
-                                .tint(.red).accessibilityIdentifier("swipe-delete-\(conversation.id)")
+                                .tint(Theme.dangerFill).accessibilityIdentifier("swipe-delete-\(conversation.id)")
                         }
                         if notifications.settings.isMuted(conversation.id) {
                             Button { notifications.settings.unmute(conversation.id) } label: { Label("Unmute", systemImage: "bell") }
@@ -379,6 +382,7 @@ private struct ProblemBanner: View {
         .padding(.bottom, 8)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("problem-banner")
+        .onAppear { Announce.say(words) }
         .sheet(isPresented: $explaining) { OfflineSheet() }
     }
 }
@@ -798,6 +802,7 @@ private struct LowStorageBanner: View {
         .padding(.horizontal, 8).padding(.bottom, 8)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("low-storage-banner")
+        .onAppear { Announce.say("Your iPhone is almost full. lime paused downloads.") }
     }
 }
 

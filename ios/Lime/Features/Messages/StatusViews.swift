@@ -10,18 +10,20 @@ struct StatusBadge: View {
     /// The badge is over a photo (the profile hero): the ring is white whatever the app's appearance.
     var onPhoto = false
     @Environment(\.colorScheme) private var scheme
+    /// The dots and the moon are 3:1 or better against the canvas and the surface, light and dark (LIME-130-2, WCAG 1.4.11); the shape still carries the state.
+    static let availableHex: UInt32 = 0x1F8F3F, awayHex: UInt32 = 0x9A6A00, dndHex: UInt32 = 0xE0474D
 
     var body: some View {
         ZStack {
             switch state {
             case .available:
-                Circle().fill(Color(red: 0.20, green: 0.72, blue: 0.36)).frame(width: size - 2, height: size - 2)
+                Circle().fill(Color(uiColor: UIColor(hex: Self.availableHex))).frame(width: size - 2, height: size - 2)
             case .away:
                 // A solid disc with the moon on it, like the other two, so it reads the same on any background.
-                Circle().fill(Color(red: 0.96, green: 0.70, blue: 0.10)).frame(width: size - 1, height: size - 1)
+                Circle().fill(Color(uiColor: UIColor(hex: Self.awayHex))).frame(width: size - 1, height: size - 1)
                     .overlay(Image(systemName: "moon.fill").font(.system(size: size * 0.5, weight: .bold)).foregroundStyle(.white))
             case .dnd:
-                Circle().fill(Color(red: 0.88, green: 0.28, blue: 0.30)).frame(width: size - 1, height: size - 1)
+                Circle().fill(Color(uiColor: UIColor(hex: Self.dndHex))).frame(width: size - 1, height: size - 1)
                     .overlay(Text("z").font(.system(size: size * 0.72, weight: .black, design: .rounded)).foregroundStyle(.white).offset(y: -0.5))
             case .offline:
                 // Hollow: nothing inside, the cue is the shape (WCAG 1.4.11) and the colour that contrasts with what is behind.

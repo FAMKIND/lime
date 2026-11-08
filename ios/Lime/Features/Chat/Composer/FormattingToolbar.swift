@@ -133,7 +133,7 @@ struct LinkSheet: View {
                     .accessibilityIdentifier("link-text")
             }
             if let problem {
-                Text(problem).font(Theme.secondary).foregroundStyle(Color.red).accessibilityIdentifier("link-error")
+                Text(problem).font(Theme.secondary).foregroundStyle(Theme.danger).announcesWhenShown(problem).accessibilityIdentifier("link-error")
             } else {
                 Text(LinkInput.url(from: address).map { "Opens \($0.absoluteString)" } ?? "Only http, https and mailto links are supported.").font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(2)
             }
@@ -275,7 +275,7 @@ struct ButtonSheet: View {
             }
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             if let problem {
-                Text(problem).font(Theme.secondary).foregroundStyle(Color.red).accessibilityIdentifier("button-error")
+                Text(problem).font(Theme.secondary).foregroundStyle(Theme.danger).announcesWhenShown(problem).accessibilityIdentifier("button-error")
             } else if let shown = LinkInput.https(from: address) {
                 Text("Opens \(shown)").font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(2).accessibilityIdentifier("button-shown")
             } else {
@@ -307,7 +307,7 @@ struct ButtonSheet: View {
                     .padding(.horizontal, 16).frame(minHeight: 52)
             }
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            if let problem { Text(problem).font(Theme.secondary).foregroundStyle(Color.red).accessibilityIdentifier("button-error") }
+            if let problem { Text(problem).font(Theme.secondary).foregroundStyle(Theme.danger).announcesWhenShown(problem).accessibilityIdentifier("button-error") }
         }
     }
 

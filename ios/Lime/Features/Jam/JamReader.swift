@@ -423,7 +423,7 @@ struct JamSubscribersView: View {
                     AvatarView(person: store.teacher(person.userId), size: 40).accessibilityHidden(true)
                     Text(person.name == person.userId ? store.teacherName(person.userId) : person.name).font(Theme.body).foregroundStyle(Theme.text)
                     Spacer()
-                    Button("Remove") { removing = person }.font(Theme.secondary).foregroundStyle(.red).frame(minHeight: 44)
+                    Button("Remove") { removing = person }.font(Theme.secondary).foregroundStyle(Theme.danger).frame(minHeight: 44)
                         .accessibilityLabel("Remove \(person.name)").accessibilityIdentifier("jam-remove-\(person.userId)")
                 }
                 .listRowBackground(Theme.canvas)

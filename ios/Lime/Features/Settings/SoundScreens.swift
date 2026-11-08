@@ -91,7 +91,7 @@ struct AddSoundSheet: View {
                         }
                         .accessibilityIdentifier("sound-save")
                     }
-                    if let problem { Text(problem).font(Theme.secondary).foregroundStyle(Color.red).accessibilityIdentifier("sound-problem") }
+                    if let problem { Text(problem).font(Theme.secondary).foregroundStyle(Theme.danger).announcesWhenShown(problem).accessibilityIdentifier("sound-problem") }
                     Button("Cancel") { SoundPreview.shared.stop(); dismiss() }.foregroundStyle(Theme.text).accessibilityIdentifier("sound-cancel")
                 }
                 .padding(.horizontal, 20).padding(.bottom, 32)

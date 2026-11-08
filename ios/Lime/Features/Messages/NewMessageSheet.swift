@@ -501,7 +501,7 @@ struct LookupProblem: View {
     let text: String
 
     var body: some View {
-        Text(text).font(Theme.body).foregroundStyle(Color.red)
+        Text(text).font(Theme.body).foregroundStyle(Theme.danger).announcesWhenShown(text)
             .padding(.horizontal, 20).padding(.vertical, 14)
             .accessibilityIdentifier("find-result-problem")
     }

@@ -30,7 +30,7 @@ struct EmergencyCardView: View {
                     .font(Theme.font(.caption2, weight: .semibold)).tracking(1)
                     .lineLimit(typeSize.isAccessibilitySize ? nil : 1).minimumScaleFactor(0.8)
             }
-            .foregroundStyle(Color.red)
+            .foregroundStyle(Theme.danger)
             Text(card.isEnd ? EmergencyCopy.endedWords(by: senderName) : EmergencyCopy.summary(card))
                 .font(Theme.title).foregroundStyle(Theme.text).fixedSize(horizontal: false, vertical: true)
             if !card.note.isEmpty && !card.isEnd { Text(card.note).font(Theme.secondary).foregroundStyle(Theme.text).fixedSize(horizontal: false, vertical: true) }
@@ -39,7 +39,7 @@ struct EmergencyCardView: View {
         .padding(.horizontal, 12).padding(.vertical, 10)
         .frame(maxWidth: 300, alignment: .leading)
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(card.needsHelp ? Color.red.opacity(0.8) : Theme.hairline, lineWidth: card.needsHelp ? 1.5 : 1))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(card.needsHelp ? Theme.danger.opacity(0.8) : Theme.hairline, lineWidth: card.needsHelp ? 1.5 : 1))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(spoken)
         .accessibilityIdentifier("emergency-card-\(id)")
@@ -73,7 +73,7 @@ struct EmergencySheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 HStack {
-                    Text(EmergencyCopy.label).font(Theme.font(.body, weight: .bold)).tracking(1.4).foregroundStyle(Color.red)
+                    Text(EmergencyCopy.label).font(Theme.font(.body, weight: .bold)).tracking(1.4).foregroundStyle(Theme.danger)
                     Spacer()
                     Button("Close") { dismiss() }.font(Theme.body).frame(minWidth: 60, minHeight: 60)
                         .accessibilityIdentifier("emergency-close")
@@ -324,7 +324,7 @@ struct EmergencyPanel: View {
         let line = Self.summary(safe: Int(rollup.safe), needHelp: Int(rollup.needHelp), students: Int(rollup.studentsTotal))
         Button(action: toggle) {
             HStack(spacing: 8) {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color.red).accessibilityHidden(true)
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.danger).accessibilityHidden(true)
                 Text(line).font(Theme.font(.subheadline, weight: .semibold)).lineLimit(2).multilineTextAlignment(.leading)
                 Spacer(minLength: 4)
                 Image(systemName: "chevron.right").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.textSecondary).accessibilityHidden(true)
@@ -339,7 +339,7 @@ struct EmergencyPanel: View {
                 HStack {
                     Text(name(entry)).font(Theme.font(.body, weight: .semibold))
                     Spacer()
-                    Text(EmergencyCopy.statusWords(entry.status)).font(Theme.body).foregroundStyle(Color.red)
+                    Text(EmergencyCopy.statusWords(entry.status)).font(Theme.body).foregroundStyle(Theme.danger)
                 }
                 let detail = [EmergencyCopy.situationWords(entry.situation), EmergencyCopy.studentsWords(Int(entry.students)), entry.place].filter { !$0.isEmpty }.joined(separator: " \u{00B7} ")
                 Text(detail).font(Theme.caption).foregroundStyle(Theme.textSecondary)
@@ -363,7 +363,7 @@ struct EmergencyPanel: View {
                     Button(action: toggle) {
                         HStack(spacing: 8) {
                             Image(systemName: "exclamationmark.triangle.fill").accessibilityHidden(true)
-                            Text(EmergencyCopy.label).font(Theme.font(.caption, weight: .semibold)).tracking(1).foregroundStyle(Color.red)
+                            Text(EmergencyCopy.label).font(Theme.font(.caption, weight: .semibold)).tracking(1).foregroundStyle(Theme.danger)
                             Spacer()
                             Image(systemName: "chevron.up").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.textSecondary).accessibilityHidden(true)
                         }

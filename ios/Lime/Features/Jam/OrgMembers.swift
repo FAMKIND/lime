@@ -32,7 +32,7 @@ struct OrgMembersTab: View {
             section("Members", role: "member")
             if !iOwn {
                 Button(role: .destructive) { leaving = true } label: {
-                    Text("Leave band").font(Theme.body).foregroundStyle(Color.red).frame(maxWidth: .infinity, minHeight: 52)
+                    Text("Leave band").font(Theme.body).foregroundStyle(Theme.danger).frame(maxWidth: .infinity, minHeight: 52)
                         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
                 .buttonStyle(.plain).accessibilityIdentifier("org-leave")

@@ -100,7 +100,7 @@ struct CallRowView: View {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text(call.peerName + (group.count > 1 ? " (\(group.count))" : ""))
                                 .font(Theme.font(.body, weight: .semibold))
-                                .foregroundStyle(missed ? Color.red : Theme.text)
+                                .foregroundStyle(missed ? Theme.danger : Theme.text)
                                 .lineLimit(1)
                                 .accessibilityIdentifier("call-row-name")
                             Spacer(minLength: 4)
@@ -211,7 +211,7 @@ struct CallHistoryView: View {
                     .listRowBackground(Color.clear)
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button(role: .destructive) { log.delete(ids: group.records.map(\.id)) } label: { Label("Delete", systemImage: "trash") }
-                            .tint(.red).accessibilityIdentifier("call-swipe-delete")
+                            .tint(Theme.dangerFill).accessibilityIdentifier("call-swipe-delete")
                     }
             }
         }

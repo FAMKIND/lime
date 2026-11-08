@@ -188,7 +188,7 @@ struct CallMiniPlayer: View {
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(.white)
                         .frame(width: Self.button, height: Self.button)
-                        .background(Circle().fill(Color.red))
+                        .background(Circle().fill(Theme.dangerFill))
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }

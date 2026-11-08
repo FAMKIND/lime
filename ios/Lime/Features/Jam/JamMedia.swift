@@ -423,7 +423,7 @@ struct JamVideoScreen: View {
                     }
                 }
             } label: {
-                Image(systemName: "ellipsis").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white).frame(width: 44, height: 44).limeGlass(in: Circle())
+                Image(systemName: "ellipsis").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white).frame(width: 44, height: 44).limeGlass(in: Circle(), overMedia: true)
             }
             .accessibilityLabel("More").accessibilityIdentifier("jam-video-more")
         }
@@ -436,7 +436,7 @@ struct JamVideoScreen: View {
     private var modeToggle: some View {
         if isAudio {
             // Audio only: just the waveform, one glass chip that does nothing: there is no picture to switch to.
-            Image(systemName: "waveform").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white).frame(width: 64, height: 36).limeGlass(in: Capsule())
+            Image(systemName: "waveform").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white).frame(width: 64, height: 36).limeGlass(in: Capsule(), overMedia: true)
                 .accessibilityElement(children: .ignore).accessibilityLabel("Audio only").accessibilityIdentifier("jam-player-audio-only")
         } else {
             // The system's segmented control (glass on iOS 26; a segmented control for VoiceOver).
@@ -451,7 +451,7 @@ struct JamVideoScreen: View {
 
     private func glassCircle(_ symbol: String, label: String, id: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 16, weight: .semibold)).foregroundStyle(.white).frame(width: 44, height: 44).limeGlass(in: Circle())
+            Image(systemName: symbol).font(.system(size: 16, weight: .semibold)).foregroundStyle(.white).frame(width: 44, height: 44).limeGlass(in: Circle(), overMedia: true)
         }
         .buttonStyle(.plain).accessibilityLabel(label).accessibilityIdentifier(id)
     }
@@ -538,7 +538,7 @@ struct JamVideoScreen: View {
             Spacer(minLength: 0)
             Button { Task { await controller.toggle(data: { await store.jamAttachmentData(active.postID, active.file.attachmentId) }) } } label: {
                 Image(systemName: controller.isPlaying ? "pause.fill" : "play.fill").font(.system(size: 30)).foregroundStyle(.white)
-                    .frame(width: 72, height: 72).background { if circle { Circle().fill(.clear).limeGlass(in: Circle()) } }
+                    .frame(width: 72, height: 72).background { if circle { Circle().fill(.clear).limeGlass(in: Circle(), overMedia: true) } }
             }
             .buttonStyle(.plain).accessibilityLabel(controller.isPlaying ? "Pause" : "Play").accessibilityIdentifier("jam-video-play")
             Spacer(minLength: 0)
@@ -663,7 +663,7 @@ struct JamVideoScreen: View {
     /// AirPlay · ♥ 💬 remix share · Up next, all glass.
     private func bottomBar(_ item: (postID: String, file: JamAttachmentInfo, controller: PodcastController), _ post: JamPostInfo?) -> some View {
         HStack(spacing: 10) {
-            AirPlayButton().frame(width: 44, height: 44).limeGlass(in: Circle()).accessibilityLabel("AirPlay").accessibilityIdentifier("jam-video-airplay")
+            AirPlayButton().frame(width: 44, height: 44).limeGlass(in: Circle(), overMedia: true).accessibilityLabel("AirPlay").accessibilityIdentifier("jam-video-airplay")
             JamActionPill(dark: true, share: { sharing = true }, postID: item.postID, comment: { commenting = true })
             glassCircle("list.bullet", label: "Up next", id: "jam-video-upnext") { upNext = true }
         }
@@ -752,7 +752,7 @@ struct JamActionPill: View {
                 .accessibilityLabel(label).accessibilityHint(live ? "Sends the post to a chat" : "Coming soon").accessibilityIdentifier("jam-pill-\(label)")
             }
         }
-        .padding(.horizontal, 8).limeGlass(in: Capsule())
+        .padding(.horizontal, 8).limeGlass(in: Capsule(), overMedia: dark)
     }
 }
 
@@ -982,7 +982,7 @@ struct JamVideoFullScreen: View {
                 .accessibilityLabel("Picture in Picture").accessibilityIdentifier("jam-fullscreen-pip")
             AirPlayButton().frame(width: 44, height: 44).accessibilityLabel("AirPlay").accessibilityIdentifier("jam-fullscreen-airplay")
         }
-        .padding(.horizontal, 4).limeGlass(in: Capsule())
+        .padding(.horizontal, 4).limeGlass(in: Capsule(), overMedia: true)
     }
 
     /// The sound toggle and the system volume slider, in one glass capsule: [speaker · slider], the slider filling the rest of the width, the capsule as
@@ -996,7 +996,7 @@ struct JamVideoFullScreen: View {
             VolumeSlider().frame(maxWidth: .infinity).frame(height: 44).padding(.trailing, 14)
                 .accessibilityLabel("Volume").accessibilityIdentifier("jam-fullscreen-volume-slider")
         }
-        .frame(width: 180, height: 44).limeGlass(in: Capsule())
+        .frame(width: 180, height: 44).limeGlass(in: Capsule(), overMedia: true)
         .accessibilityElement(children: .contain).accessibilityIdentifier("jam-fullscreen-volume")
     }
 
@@ -1012,7 +1012,7 @@ struct JamVideoFullScreen: View {
                     .accessibilityLabel("Listen").accessibilityIdentifier("jam-fullscreen-listen")
             }
         }
-        .padding(.horizontal, 4).limeGlass(in: Capsule())
+        .padding(.horizontal, 4).limeGlass(in: Capsule(), overMedia: true)
     }
 
     /// Landscape: the date and writer, and the title as a marquee.
@@ -1062,12 +1062,12 @@ struct JamVideoFullScreen: View {
             .accessibilityIdentifier("jam-fullscreen-timeline")
             Text("-" + VoiceFormat.clock(max(0, controller.duration - controller.position))).font(Theme.caption.monospacedDigit()).foregroundStyle(.white)
         }
-        .padding(.horizontal, 16).frame(minHeight: 44).limeGlass(in: Capsule())
+        .padding(.horizontal, 16).frame(minHeight: 44).limeGlass(in: Capsule(), overMedia: true)
     }
 
     private func circle(_ symbol: String, _ label: String, size: CGFloat = 44, id: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: size > 50 ? 26 : 16, weight: .semibold)).foregroundStyle(.white).frame(width: size, height: size).limeGlass(in: Circle())
+            Image(systemName: symbol).font(.system(size: size > 50 ? 26 : 16, weight: .semibold)).foregroundStyle(.white).frame(width: size, height: size).limeGlass(in: Circle(), overMedia: true)
         }
         .buttonStyle(.plain).accessibilityLabel(label).accessibilityIdentifier(id)
     }

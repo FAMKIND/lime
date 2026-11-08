@@ -88,7 +88,7 @@ struct ReportSheet: View {
                         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .accessibilityIdentifier("report-also-block")
                 }
-                if failed { Text("Couldn\u{2019}t send. Try again.").font(Theme.caption).foregroundStyle(.red).accessibilityIdentifier("report-failed") }
+                if failed { Text("Couldn\u{2019}t send. Try again.").font(Theme.caption).foregroundStyle(Theme.danger).announcesWhenShown("Couldn\u{2019}t send. Try again.").accessibilityIdentifier("report-failed") }
             }
             .padding(16)
         }

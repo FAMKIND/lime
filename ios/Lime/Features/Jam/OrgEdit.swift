@@ -92,7 +92,7 @@ struct OrgFieldSheet: View {
     }
 
     private func count(_ text: String, over: Bool) -> some View {
-        Text(text).font(Theme.caption).foregroundStyle(over ? Color.red : Theme.textSecondary).frame(maxWidth: .infinity, alignment: .trailing)
+        Text(text).font(Theme.caption).foregroundStyle(over ? Theme.danger : Theme.textSecondary).frame(maxWidth: .infinity, alignment: .trailing)
     }
 
     private func toggle(_ topic: String) {

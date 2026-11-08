@@ -709,8 +709,8 @@ struct ReaderOptionsSheet: View {
     private func row(_ symbol: String, _ title: String, chevron: Bool = false, id: String, destructive: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 16) {
-                Image(systemName: symbol).font(.system(size: 20)).frame(width: 28).foregroundStyle(destructive ? Color.red : Theme.text)
-                Text(title).font(Theme.body).foregroundStyle(destructive ? Color.red : Theme.text).multilineTextAlignment(.leading)
+                Image(systemName: symbol).font(.system(size: 20)).frame(width: 28).foregroundStyle(destructive ? Theme.danger : Theme.text)
+                Text(title).font(Theme.body).foregroundStyle(destructive ? Theme.danger : Theme.text).multilineTextAlignment(.leading)
                 Spacer()
                 if chevron { Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.textSecondary) }
             }

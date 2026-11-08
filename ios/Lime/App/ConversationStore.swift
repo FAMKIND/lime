@@ -1022,34 +1022,26 @@ final class ConversationStore {
         }.value
     }
 
-    /// A short note at the top of the screen ("Forwarded").
+    /// A short note at the top of the screen ("Forwarded"). It is spoken when it appears, goes by itself after 4 s, and stays until it is dismissed while
+    /// VoiceOver or Switch Control runs (LIME-130-2).
     func showBanner(_ text: String) {
         banner = text
+        Announce.say(text)
         bannerTask?.cancel()
         bannerTask = Task {
-            try? await Task.sleep(for: .seconds(2))
-            if !Task.isCancelled { banner = nil }
+            if await BannerTiming.shouldAutoDismiss() { banner = nil }
         }
+    }
+
+    func dismissBanner() {
+        bannerTask?.cancel()
+        banner = nil
     }
 
     /// "Coming next": for the entry points whose screens are the next brief's.
-    func comingNext(_ what: String) {
-        banner = "\(what): coming next"
-        bannerTask?.cancel()
-        bannerTask = Task {
-            try? await Task.sleep(for: .seconds(2))
-            if !Task.isCancelled { banner = nil }
-        }
-    }
+    func comingNext(_ what: String) { showBanner("\(what): coming next") }
 
-    func comingSoon(_ what: String = "This") {
-        banner = "\(what) is coming soon"
-        bannerTask?.cancel()
-        bannerTask = Task {
-            try? await Task.sleep(for: .seconds(2))
-            if !Task.isCancelled { banner = nil }
-        }
-    }
+    func comingSoon(_ what: String = "This") { showBanner("\(what) is coming soon") }
 
     #if DEBUG
     // MARK: Debug demo (screenshots and UI tests)

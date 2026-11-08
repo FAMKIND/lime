@@ -416,7 +416,7 @@ struct PodcastRecorder: View {
                 modeToggle
                 if isRecording {
                     Text(VoiceFormat.clock(elapsed)).font(Theme.font(.subheadline, weight: .semibold).monospacedDigit()).foregroundStyle(.white)
-                        .padding(.horizontal, 16).frame(minHeight: 32).background(.red, in: Capsule())
+                        .padding(.horizontal, 16).frame(minHeight: 32).background(Theme.dangerFill, in: Capsule())
                         .accessibilityLabel("Recording").accessibilityValue(PodcastFormat.spoken(elapsed)).accessibilityIdentifier("podcast-timer")
                 }
             }
@@ -459,7 +459,7 @@ struct PodcastRecorder: View {
                     .accessibilityIdentifier("podcast-mic-\(input.id)")
             }
         } label: {
-            Image(systemName: mic.current?.symbol ?? "mic.fill").font(.system(size: 22, weight: .semibold)).foregroundStyle(.white).frame(width: 52, height: 52).limeGlass(in: Circle())
+            Image(systemName: mic.current?.symbol ?? "mic.fill").font(.system(size: 22, weight: .semibold)).foregroundStyle(.white).frame(width: 52, height: 52).limeGlass(in: Circle(), overMedia: true)
         }
         .accessibilityLabel("Microphone: \(mic.current?.name ?? "iPhone microphone")").accessibilityHint("Choose the microphone").accessibilityIdentifier("podcast-mic")
     }
@@ -470,7 +470,7 @@ struct PodcastRecorder: View {
             ZStack {
                 Circle().strokeBorder(.white, lineWidth: 4).frame(width: 84, height: 84)
                 if isRecording {
-                    Circle().fill(.red).frame(width: 68, height: 68)
+                    Circle().fill(Theme.dangerFill).frame(width: 68, height: 68)
                     RoundedRectangle(cornerRadius: 5).fill(.white).frame(width: 26, height: 26)
                 } else {
                     Circle().fill(.white).frame(width: 68, height: 68)
@@ -482,7 +482,7 @@ struct PodcastRecorder: View {
 
     private func glass(_ symbol: String, _ label: String, id: String, size: CGFloat = 44, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: size > 48 ? 22 : 18, weight: .semibold)).foregroundStyle(.white).frame(width: size, height: size).limeGlass(in: Circle())
+            Image(systemName: symbol).font(.system(size: size > 48 ? 22 : 18, weight: .semibold)).foregroundStyle(.white).frame(width: size, height: size).limeGlass(in: Circle(), overMedia: true)
         }
         .buttonStyle(.plain).accessibilityLabel(label).accessibilityIdentifier(id)
     }
@@ -929,7 +929,7 @@ struct PodcastRecorder: View {
                 Button { Task { await stop() } } label: {
                     ZStack {
                         Circle().strokeBorder(.white, lineWidth: 4).frame(width: 72, height: 72)
-                        RoundedRectangle(cornerRadius: 6).fill(.red).frame(width: 28, height: 28)
+                        RoundedRectangle(cornerRadius: 6).fill(Theme.dangerFill).frame(width: 28, height: 28)
                     }
                     .background(.black.opacity(0.35), in: Circle())
                 }
@@ -939,7 +939,7 @@ struct PodcastRecorder: View {
             Button { Task { await begin() } } label: {
                 ZStack {
                     Circle().strokeBorder(.white, lineWidth: 4).frame(width: 72, height: 72)
-                    Circle().fill(.red).frame(width: 56, height: 56)
+                    Circle().fill(Theme.dangerFill).frame(width: 56, height: 56)
                 }
                 .background(.black.opacity(0.35), in: Circle())
             }

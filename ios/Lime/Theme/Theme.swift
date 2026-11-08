@@ -51,6 +51,13 @@ enum Theme {
     static let heartHex: (light: UInt32, dark: UInt32) = (0xB3261E, 0xFFB4AB)
     static let heart = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: heartHex.dark) : UIColor(hex: heartHex.light) })
     static let heartOnBlack = Color(UIColor(hex: heartHex.dark))
+    /// Red for text and icons (LIME-130-2): #B3261E in light, #FF8A80 in dark, nudged per theme to 4.5:1 (7:1 with Increase Contrast) on the canvas, surface and bubble.
+    static let dangerHex: (light: UInt32, dark: UInt32) = (0xB3261E, 0xFF8A80)
+    static var danger: Color { ThemeStore.shared.colour(.danger) }
+    /// Red under white text or a white glyph (Delete, End call, Decline, recording): white on it is 6.5:1 (8:1 with Increase Contrast), light and dark.
+    static let dangerFillHex: (normal: UInt32, increased: UInt32) = (0xB3261E, 0x9C1F18)
+    static let dangerFillUIColor = UIColor { $0.accessibilityContrast == .high ? UIColor(hex: dangerFillHex.increased) : UIColor(hex: dangerFillHex.normal) }
+    static let dangerFill = Color(dangerFillUIColor)
     static var accentInk: Color { ThemeStore.shared.colour(.accentInk) }
     // My bubble and the main button follow the accent (LIME-277d); a chat can have its own colour (`ChatLook`).
     static var ownBubble: Color { ThemeStore.shared.colour(.own) }

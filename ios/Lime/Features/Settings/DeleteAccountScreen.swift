@@ -90,6 +90,7 @@ struct DeleteAccountScreen: View {
                     .font(Theme.body).padding(.horizontal, 18).frame(minHeight: 56)
                     .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .accessibilityIdentifier("delete-type")
+                    .accessibilityHint(model.errorMessage ?? "")
                 RevealablePassword(prompt: "Password", text: $model.password, identifier: "delete-password", contentType: .password, submit: .done, minHeight: 56)
                 if let message = model.errorMessage { error(message) }
                 destructive("Send code", enabled: model.canContinue, busy: model.isBusy, id: "delete-send") { await model.sendCode() }
@@ -102,6 +103,7 @@ struct DeleteAccountScreen: View {
                     .padding(.horizontal, 18).frame(minHeight: 56)
                     .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .accessibilityIdentifier("delete-code")
+                    .accessibilityHint(model.errorMessage ?? "")   // the error is on the field while it shows
                 if let message = model.errorMessage { error(message) }
                 destructive("Delete my account", enabled: model.canDelete, busy: model.isBusy, id: "delete-confirm") { await model.delete() }
                 backButton(model)
@@ -117,7 +119,7 @@ struct DeleteAccountScreen: View {
     }
 
     private func error(_ message: String) -> some View {
-        Text(message).font(Theme.secondary).foregroundStyle(Color.red)
+        Text(message).font(Theme.secondary).foregroundStyle(Theme.danger).announcesWhenShown(message)
             .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12)
             .accessibilityIdentifier("delete-error")
     }
@@ -136,7 +138,7 @@ struct DeleteAccountScreen: View {
             }
             .foregroundStyle(Color.white.opacity(enabled ? 1 : 0.6))
             .frame(maxWidth: .infinity, minHeight: 54)
-            .background(Color.red.opacity(enabled ? 1 : 0.4), in: Capsule())
+            .background(Theme.dangerFill.opacity(enabled ? 1 : 0.4), in: Capsule())
         }
         .disabled(!enabled)
         .accessibilityIdentifier(id)

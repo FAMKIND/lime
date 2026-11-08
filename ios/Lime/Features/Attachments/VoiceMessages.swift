@@ -410,7 +410,7 @@ struct RecordingBar: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Circle().fill(Color.red).frame(width: 10, height: 10).opacity(Int(recorder.elapsed * 2) % 2 == 0 ? 1 : 0.35)
+            Circle().fill(Theme.dangerFill).frame(width: 10, height: 10).opacity(Int(recorder.elapsed * 2) % 2 == 0 ? 1 : 0.35)
             Text(VoiceFormat.clock(recorder.elapsed)).font(Theme.body.monospacedDigit()).foregroundStyle(Theme.text)
                 // The recording element for VoiceOver: "Recording", with the time so far as its value (LIME-130-1).
                 .accessibilityLabel("Recording").accessibilityValue(VoiceFormat.spoken(recorder.elapsed))

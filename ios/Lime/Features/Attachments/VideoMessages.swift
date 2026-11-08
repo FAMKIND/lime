@@ -225,7 +225,36 @@ struct TransferRing: View {
 /// Says something to VoiceOver (and Switch Control's speech) without moving focus; queued, so it does not cut off what is being read.
 enum Announce {
     @MainActor static func say(_ words: String) {
+        #if DEBUG
+        said.append(words)   // for the UI tests (`-lime-ax-probe` shows the list)
+        #endif
         UIAccessibility.post(notification: .announcement, argument: NSAttributedString(string: words, attributes: [.accessibilitySpeechQueueAnnouncement: true]))
+    }
+}
+
+#if DEBUG
+extension Announce {
+    /// Everything said so far in this launch (debug builds only).
+    @MainActor static var said: [String] = []
+}
+#endif
+
+extension View {
+    /// Speaks `words` when this view appears and when they change: an error, "Saved" or a scan result that shows up without moving focus (LIME-130-2).
+    func announcesWhenShown(_ words: String) -> some View {
+        onAppear { Announce.say(words) }.onChange(of: words) { _, new in Announce.say(new) }
+    }
+}
+
+/// How long a banner or toast stays (WCAG 2.2.1): for touch users a few seconds, never under 4; while VoiceOver or Switch Control runs it stays until dismissed.
+enum BannerTiming {
+    static let touchSeconds = 4.0
+    @MainActor static var staysUntilDismissed: Bool { CallControlsPolicy.voiceOverRunning || CallControlsPolicy.switchControlRunning }
+    /// Sleeps for the touch time and returns true when the banner should go now; returns false at once when assistive technology is running (it stays).
+    @MainActor static func shouldAutoDismiss() async -> Bool {
+        if staysUntilDismissed { return false }
+        try? await Task.sleep(for: .seconds(touchSeconds))
+        return !Task.isCancelled && !staysUntilDismissed
     }
 }
 

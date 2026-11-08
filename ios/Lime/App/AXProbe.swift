@@ -105,6 +105,8 @@ struct AXProbeOverlay: View {
             Button("probe-more") { output = "more:\(AXProbe.run("More actions"))" }.accessibilityIdentifier("ax-probe-more")
             Button("probe-mic") { output = "mic:\(AXProbe.activate("composer-mic"))" }.accessibilityIdentifier("ax-probe-mic")
             Button("probe-escape") { output = "escape:\(AXProbe.escape())" }.accessibilityIdentifier("ax-probe-escape")
+            Button("probe-dismiss") { output = "dismiss:\(AXProbe.run("Dismiss"))" }.accessibilityIdentifier("ax-probe-dismiss")
+            Button("probe-said") { output = "said:" + Announce.said.joined(separator: "|") }.accessibilityIdentifier("ax-probe-said")
             Text(output).font(.system(size: 1)).accessibilityLabel(output).accessibilityIdentifier("ax-probe-out")
         }
         .font(.system(size: 9)).padding(2).background(.yellow.opacity(0.6))

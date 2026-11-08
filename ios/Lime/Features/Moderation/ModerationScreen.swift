@@ -46,7 +46,7 @@ struct ModerationScreen: View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    if item.urgent { Text("URGENT").font(Theme.font(.caption2, weight: .bold)).foregroundStyle(.white).padding(.horizontal, 6).padding(.vertical, 2).background(Color.red, in: Capsule()) }
+                    if item.urgent { Text("URGENT").font(Theme.font(.caption2, weight: .bold)).foregroundStyle(.white).padding(.horizontal, 6).padding(.vertical, 2).background(Theme.dangerFill, in: Capsule()) }
                     Text((ReportReason(rawValue: item.reason)?.title ?? item.reason)).font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text)
                 }
                 Text("\(Self.kindName(item.kind)) \u{00B7} \(item.created.formatted(.relative(presentation: .named)))").font(Theme.caption).foregroundStyle(Theme.textSecondary)
@@ -94,7 +94,7 @@ struct ModerationReportScreen: View {
                     if !detail.note.isEmpty { card("Note") { Text(detail.note).font(Theme.body).foregroundStyle(Theme.text) } }
                     card("Reported by") { Text(store.teacherName(detail.reporter)).font(Theme.body).foregroundStyle(Theme.text); Text(detail.reporter).font(Theme.caption).foregroundStyle(Theme.textSecondary).textSelection(.enabled) }
                     card("Sent with the report") {
-                        if !detail.readable { Text("This report can\u{2019}t be opened (sealed to another key).").font(Theme.body).foregroundStyle(.red) }
+                        if !detail.readable { Text("This report can\u{2019}t be opened (sealed to another key).").font(Theme.body).foregroundStyle(Theme.danger).announcesWhenShown("This report can\u{2019}t be opened (sealed to another key).") }
                         else if detail.included.isEmpty { Text("Nothing was included.").font(Theme.body).foregroundStyle(Theme.textSecondary) }
                         else if detail.item.kind == "group", let group = GroupReportReading(json: detail.included) { groupReport(group) }
                         else { Text(detail.included).font(.system(.footnote, design: .monospaced)).foregroundStyle(Theme.text).textSelection(.enabled).accessibilityIdentifier("moderation-included") }
@@ -107,7 +107,7 @@ struct ModerationReportScreen: View {
                     }
                     if detail.item.status == "open" { actions(detail) }
                 } else if failed {
-                    Text("Couldn\u{2019}t open this report.").font(Theme.body).foregroundStyle(.red)
+                    Text("Couldn\u{2019}t open this report.").font(Theme.body).foregroundStyle(Theme.danger).announcesWhenShown("Couldn\u{2019}t open this report.")
                 } else {
                     ProgressView().frame(maxWidth: .infinity).padding(.top, 40)
                 }
@@ -154,7 +154,7 @@ struct ModerationReportScreen: View {
                 // A group has no one account to suspend: each person whose message was included can be.
                 ForEach(group.senders, id: \.id) { sender in
                     Button { groupSuspect = sender.id; pending = Pending(id: "suspend", title: "Suspend \(sender.name)?", button: "Suspend", message: "They can\u{2019}t sign in or use lime until you lift it.") } label: {
-                        Label("Suspend \(sender.name)", systemImage: "person.crop.circle.badge.xmark").font(Theme.body).foregroundStyle(Color.red)
+                        Label("Suspend \(sender.name)", systemImage: "person.crop.circle.badge.xmark").font(Theme.body).foregroundStyle(Theme.danger)
                             .frame(maxWidth: .infinity, minHeight: 50).background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
                     .accessibilityIdentifier("moderation-suspend-\(sender.id)")
@@ -190,7 +190,7 @@ struct ModerationReportScreen: View {
 
     private func actionButton(_ title: String, id: String, symbol: String, pending next: Pending) -> some View {
         Button { pending = next } label: {
-            Label(title, systemImage: symbol).font(Theme.body).foregroundStyle(id == "dismiss" ? Theme.text : Color.red)
+            Label(title, systemImage: symbol).font(Theme.body).foregroundStyle(id == "dismiss" ? Theme.text : Theme.danger)
                 .frame(maxWidth: .infinity, minHeight: 50).background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(.plain).accessibilityIdentifier("moderation-\(id)")

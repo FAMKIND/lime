@@ -262,6 +262,7 @@ struct ComingSoonBanner: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
                 .accessibilityIdentifier("coming-soon-banner")
                 .accessibilityAddTraits(.updatesFrequently)
+                .accessibilityAction(named: "Dismiss") { store.dismissBanner() }
         }
     }
 }

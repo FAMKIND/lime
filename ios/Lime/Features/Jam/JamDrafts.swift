@@ -73,7 +73,7 @@ struct JamDraftsList: View {
                 localRow(draft)
                     .listRowInsets(EdgeInsets()).listRowSeparator(.hidden).listRowBackground(Color.clear)
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button { deletingLocal = draft } label: { Label("Delete", systemImage: "trash") }.tint(.red).accessibilityIdentifier("swipe-local-draft-delete-\(draft.id)")
+                        Button { deletingLocal = draft } label: { Label("Delete", systemImage: "trash") }.tint(Theme.dangerFill).accessibilityIdentifier("swipe-local-draft-delete-\(draft.id)")
                     }
                     .swipeActions(edge: .leading, allowsFullSwipe: true) {
                         Button { openingLocal = draft } label: { Label("Edit", systemImage: "pencil") }.tint(.blue)
@@ -168,7 +168,7 @@ struct JamDraftsList: View {
 
     @ViewBuilder private func trailing(_ row: DraftRow) -> some View {
         Button { deleting = [row] } label: { Label(row.isWriter ? "Delete" : "Leave", systemImage: row.isWriter ? "trash" : "rectangle.portrait.and.arrow.right") }
-            .tint(.red).accessibilityIdentifier("swipe-draft-delete-\(row.draftID)")
+            .tint(Theme.dangerFill).accessibilityIdentifier("swipe-draft-delete-\(row.draftID)")
         Button { store.copyDraft(row.draftID) } label: { Label("Copy", systemImage: "doc.on.doc") }
             .tint(.gray).accessibilityIdentifier("swipe-draft-copy-\(row.draftID)")
     }
@@ -246,7 +246,7 @@ struct DraftSelectionBar: View {
         HStack(spacing: 0) {
             item("doc.on.doc", "Copy", id: "jam-drafts-copy") { for r in rows { store.copyDraft(r.draftID) }; store.exitDraftSelection() }
             item("pin", rows.allSatisfy(\.pinned) && !none ? "Unpin" : "Pin", id: "jam-drafts-pin") { store.togglePin(rows.map(\.draftID)); store.exitDraftSelection() }
-            item("trash", rows.allSatisfy(\.isWriter) ? "Delete" : "Leave", id: "jam-drafts-bar-delete", tint: .red) { confirming = true }
+            item("trash", rows.allSatisfy(\.isWriter) ? "Delete" : "Leave", id: "jam-drafts-bar-delete", tint: Theme.danger) { confirming = true }
         }
         .padding(.horizontal, 8).limeGlass(in: Capsule()).padding(.horizontal, 24).padding(.bottom, 8)
         .disabled(none).opacity(none ? 0.5 : 1)

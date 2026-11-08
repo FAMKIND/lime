@@ -42,7 +42,7 @@ struct CreatePublicationSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     if step == 1 { first } else { second }
-                    if failed { Text("Could not make it. Try again.").font(Theme.secondary).foregroundStyle(Color.red).accessibilityIdentifier("publication-failed") }
+                    if failed { Text("Could not make it. Try again.").font(Theme.secondary).foregroundStyle(Theme.danger).announcesWhenShown("Could not make it. Try again.").accessibilityIdentifier("publication-failed") }
                 }
                 .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 24)
             }

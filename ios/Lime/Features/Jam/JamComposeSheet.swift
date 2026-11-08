@@ -316,7 +316,7 @@ struct JamComposeSheet: View {
     @ViewBuilder
     private var problemText: some View {
         if let problem {
-            Text(problem).font(Theme.secondary).foregroundStyle(.red).padding(.horizontal, 20).padding(.top, 6).frame(maxWidth: .infinity, alignment: .leading)
+            Text(problem).font(Theme.secondary).foregroundStyle(Theme.danger).announcesWhenShown(problem).padding(.horizontal, 20).padding(.top, 6).frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityIdentifier("jam-compose-problem")
         }
     }

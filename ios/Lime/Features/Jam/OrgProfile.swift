@@ -103,7 +103,7 @@ struct JamOrgsSection: View {
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         if owns(org) {
                             // Red, but not the `.destructive` role: that makes the list remove the row at once, before the confirmation has been answered.
-                            Button { action = .end(org) } label: { Label("Delete band", systemImage: "xmark.circle") }.tint(.red).accessibilityIdentifier("org-swipe-end-\(org.jamId)")
+                            Button { action = .end(org) } label: { Label("Delete band", systemImage: "xmark.circle") }.tint(Theme.dangerFill).accessibilityIdentifier("org-swipe-end-\(org.jamId)")
                             Button { action = .subscribers(org) } label: { Label("Subscribers", systemImage: "person.2") }.tint(.gray).accessibilityIdentifier("org-swipe-subscribers-\(org.jamId)")
                             Button { action = .edit(org) } label: { Label("Edit", systemImage: "pencil") }.tint(.blue).accessibilityIdentifier("org-swipe-edit-\(org.jamId)")
                         }
@@ -515,7 +515,7 @@ struct OrgProfileView: View {
             SettingsFootnote(text: "Subscribers can join a group chat with you. Up to 100 people.")
             if !isOwnSpace { SettingsCard {
                 Button { action = .end(page) } label: {
-                    HStack { Text("Delete band").font(Theme.body).foregroundStyle(Color.red); Spacer(minLength: 0) }
+                    HStack { Text("Delete band").font(Theme.body).foregroundStyle(Theme.danger); Spacer(minLength: 0) }
                         .padding(.horizontal, 18).frame(minHeight: 58).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain).accessibilityIdentifier("jam-end")

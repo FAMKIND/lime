@@ -244,7 +244,7 @@ struct ChatComposer: View {
     private var micButton: some View {
         Image(systemName: "waveform").font(.system(size: 20)).foregroundStyle(recorder.isRecording ? Color.white : Theme.text)
             .frame(width: 44, height: 40)
-            .background(recorder.isRecording ? Color.red : Color.clear, in: Circle())
+            .background(recorder.isRecording ? Theme.dangerFill : Color.clear, in: Circle())
             .scaleEffect(recorder.isRecording ? 1.35 : 1)
             .overlay(alignment: .top) {
                 if recorder.phase == .recording {
@@ -283,7 +283,7 @@ struct ChatComposer: View {
     private var lockedRow: some View {
         HStack {
             Button { cancelVoice() } label: {
-                Image(systemName: "trash").font(.system(size: 19)).foregroundStyle(Color.red).frame(width: 44, height: 40)
+                Image(systemName: "trash").font(.system(size: 19)).foregroundStyle(Theme.danger).frame(width: 44, height: 40)
             }
             .accessibilityLabel("Cancel recording").accessibilityIdentifier("voice-cancel")
             Spacer()

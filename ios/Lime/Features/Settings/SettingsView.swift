@@ -226,8 +226,8 @@ struct SettingsRowLabel: View {
         VStack(spacing: 0) {
             HStack(spacing: 14) {
                 Image(systemName: symbol).font(.system(size: 20)).frame(width: 28)
-                    .foregroundStyle(destructive ? Color.red : Theme.text)
-                Text(title).font(Theme.body).foregroundStyle(destructive ? Color.red : Theme.text)
+                    .foregroundStyle(destructive ? Theme.danger : Theme.text)
+                Text(title).font(Theme.body).foregroundStyle(destructive ? Theme.danger : Theme.text)
                 Spacer(minLength: 8)
                 if let value { Text(value).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(1) }
                 Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.textSecondary.opacity(0.7))

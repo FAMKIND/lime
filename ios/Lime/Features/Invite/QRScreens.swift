@@ -208,11 +208,12 @@ struct ScanResult: View {
 
     private func warning(_ text: String, id: String) -> some View {
         Label(text, systemImage: "exclamationmark.triangle.fill")
-            .font(Theme.secondary).foregroundStyle(Color.red).padding(14)
+            .font(Theme.secondary).foregroundStyle(Theme.danger).padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(Theme.danger.opacity(0.1), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .padding(.horizontal, 16)
             .accessibilityIdentifier(id)
+            .announcesWhenShown(text)
     }
 }
 

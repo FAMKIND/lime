@@ -13,6 +13,8 @@ private struct ConfirmSheetModifier<Actions: View, Message: View>: ViewModifier 
 
     func body(content: Content) -> some View {
         content.sheet(isPresented: $isPresented) {
+            // It scrolls when it is taller than the sheet (the largest text size, six buttons), so Cancel is always reachable.
+            ScrollView {
             VStack(spacing: 10) {
                 Text(title)
                     .font(Theme.font(.title3, weight: .bold)).foregroundStyle(Theme.text)
@@ -39,8 +41,10 @@ private struct ConfirmSheetModifier<Actions: View, Message: View>: ViewModifier 
             .frame(maxWidth: .infinity)
             // (An identifier on the container would replace the buttons' own, so it sits on this background.)
             .background(GeometryReader { geo in Color.clear.preference(key: SheetHeightKey.self, value: geo.size.height) }.accessibilityIdentifier("confirm-sheet"))
+            }
+            .scrollBounceBehavior(.basedOnSize)
             .onPreferenceChange(SheetHeightKey.self) { height = $0 }
-            .presentationDetents([.height(min(height + 8, 640))])
+            .presentationDetents([.height(min(height + 8, 640)), .large])
             .presentationDragIndicator(.visible)
             .presentationBackground(Theme.canvas)
         }
@@ -57,7 +61,7 @@ struct ConfirmButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(Theme.font(.body, weight: configuration.role == .cancel ? .regular : .semibold))
-            .foregroundStyle(configuration.role == .destructive ? Color.red : Theme.text)
+            .foregroundStyle(configuration.role == .destructive ? Theme.danger : Theme.text)
             .frame(maxWidth: .infinity, minHeight: 52)
             .background(Theme.surface.opacity(configuration.isPressed ? 0.7 : 1), in: Capsule())
             .contentShape(Capsule())

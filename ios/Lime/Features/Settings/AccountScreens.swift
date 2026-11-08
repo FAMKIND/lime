@@ -107,6 +107,7 @@ struct ChangePasswordScreen: View {
                     .padding(.horizontal, 18).frame(minHeight: 56)
                     .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .accessibilityIdentifier("pw-code")
+                    .accessibilityHint(model.errorMessage ?? "")   // the error is on the field while it shows
                 if let message = model.errorMessage { error(message) }
                 primary("Change password", enabled: model.canVerify, busy: model.isBusy, id: "pw-verify") { await model.verify() }
                 Button("Back") { model.back() }.font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
@@ -116,6 +117,7 @@ struct ChangePasswordScreen: View {
                     Image(systemName: "checkmark.circle.fill").font(.system(size: 48)).foregroundStyle(Theme.accent)
                     Text("Your password was changed.").font(Theme.title).foregroundStyle(Theme.text)
                         .accessibilityIdentifier("pw-done")
+                        .announcesWhenShown("Your password was changed.")
                     Text("You are still signed in on this iPhone. Other phones will need the new password.")
                         .font(Theme.secondary).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
                 }
@@ -130,7 +132,7 @@ struct ChangePasswordScreen: View {
     }
 
     private func error(_ message: String) -> some View {
-        Text(message).font(Theme.secondary).foregroundStyle(Color.red)
+        Text(message).font(Theme.secondary).foregroundStyle(Theme.danger).announcesWhenShown(message)
             .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12)
             .accessibilityIdentifier("pw-error")
     }

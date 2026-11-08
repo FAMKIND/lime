@@ -229,8 +229,8 @@ struct MessageActionsHost: ViewModifier {
             state.editText = message.text
             state.editing = message
         case .copy:
-            if let single = MessageActionPlan.copyableImage(message) { Task { if let image = await store.image(for: single) { UIPasteboard.general.image = image } } }
-            else { store.copyToPasteboard(message) }
+            if let single = MessageActionPlan.copyableImage(message) { Task { if let image = await store.image(for: single) { UIPasteboard.general.image = image; store.showBanner("Copied") } } }
+            else { store.copyToPasteboard(message); store.showBanner("Copied") }
         case .saveGIF:
             guard let gif = message.attachments.first(where: { GIF.isGIF(mime: $0.mime) && !$0.removed }) else { return }
             let caption = message.text
@@ -410,7 +410,7 @@ struct MessageActionsHost: ViewModifier {
                     Spacer()
                     Image(systemName: symbol).font(.system(size: 17))
                 }
-                .foregroundStyle(destructive ? Color.red : Theme.text)
+                .foregroundStyle(destructive ? Theme.danger : Theme.text)
                 .padding(.horizontal, 16).frame(minHeight: 48).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -576,7 +576,7 @@ struct SelectionBar: View {
     var body: some View {
         HStack {
             Button(action: onDelete) {
-                Image(systemName: "trash").font(.system(size: 20)).foregroundStyle(count == 0 ? Theme.textSecondary : Color.red).frame(width: 48, height: 48)
+                Image(systemName: "trash").font(.system(size: 20)).foregroundStyle(count == 0 ? Theme.textSecondary : Theme.danger).frame(width: 48, height: 48)
             }
             .disabled(count == 0)
             .accessibilityLabel("Delete").accessibilityIdentifier("select-trash")

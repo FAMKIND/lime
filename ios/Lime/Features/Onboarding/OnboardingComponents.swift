@@ -56,9 +56,10 @@ struct OnboardingScaffold<Content: View>: View {
                     if let errorMessage {
                         Text(errorMessage)
                             .font(Theme.secondary)
-                            .foregroundStyle(Color(red: 0.72, green: 0.17, blue: 0.2))
+                            .foregroundStyle(Theme.danger)
                             .fixedSize(horizontal: false, vertical: true)
                             .accessibilityIdentifier("error-message")
+                            .announcesWhenShown(errorMessage)
                     }
                 }
                 .padding(.horizontal, 24)

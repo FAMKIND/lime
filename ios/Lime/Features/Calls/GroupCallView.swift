@@ -257,7 +257,7 @@ struct GroupCallView: View {
         control(call.speakerOn ? "speaker.wave.3.fill" : "speaker.fill", label: call.speakerOn ? "Speaker on" : "Speaker off", on: call.speakerOn, id: "group-call-speaker", size: size) { call.toggleSpeaker() }
         Button { Task { await call.leave() } } label: {
             Image(systemName: "phone.down.fill").font(.system(size: size * 0.4)).foregroundStyle(.white)
-                .frame(width: size, height: size).background(Color.red, in: Circle())
+                .frame(width: size, height: size).background(Theme.dangerFill, in: Circle())
         }
         .accessibilityLabel("Leave call").accessibilityIdentifier("group-call-leave")
     }

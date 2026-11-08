@@ -761,7 +761,7 @@ struct ChatView: View {
             Button {
                 Task { await store.deleteChat(conversation.id); store.path = NavigationPath() }
             } label: {
-                Text("Remove from my list").font(Theme.font(.body, weight: .semibold)).foregroundStyle(Color.red).frame(maxWidth: .infinity, minHeight: 48)
+                Text("Remove from my list").font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.danger).frame(maxWidth: .infinity, minHeight: 48)
             }
             .accessibilityIdentifier("group-ended-remove")
         }
@@ -1025,11 +1025,11 @@ struct MessageBubble: View {
                 case .sent: Text("· Sent").accessibilityIdentifier("delivery-sent")
                 case .failed:
                     Button("· Not sent. Tap to retry", action: onRetry)
-                        .foregroundStyle(Color.red)
+                        .foregroundStyle(Theme.danger)
                         .accessibilityIdentifier("delivery-failed")
                 case .undelivered:
                     Button("· Not delivered. Tap to resend", action: onRetry)
-                        .foregroundStyle(Color.red)
+                        .foregroundStyle(Theme.danger)
                         .accessibilityIdentifier("delivery-undelivered")
                 case .waiting, .passed:
                     // On its way through nearby phones (LIME-142): words and an icon, grey (not an error), no retry (it resumes by itself).
@@ -1254,7 +1254,7 @@ struct CallBubbleView: View {
     }
 
     private var ordinary: some View {
-        let tint: Color = call.isMissedIncoming ? .red : Theme.text
+        let tint: Color = call.isMissedIncoming ? Theme.danger : Theme.text
         // A tap gesture, not a Button: a Button would take the touch from the bubble's long-press menu.
         return Group {
             // The same type and padding as a text message, so a call bubble is no taller than a two-line message.

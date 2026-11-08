@@ -416,7 +416,7 @@ struct EditSeriesSheet: View {
                     TextField("Title", text: $title).font(Theme.body).padding(.horizontal, 16).frame(minHeight: 52).background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous)).accessibilityIdentifier("series-edit-title")
                     TextField("Description", text: $description, axis: .vertical).font(Theme.body).lineLimit(3...8).padding(16).frame(maxWidth: .infinity, alignment: .leading)
                         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous)).accessibilityIdentifier("series-edit-description")
-                    Text("\(description.count)/1000").font(Theme.caption).foregroundStyle(description.count > 1000 ? Color.red : Theme.textSecondary).frame(maxWidth: .infinity, alignment: .trailing)
+                    Text("\(description.count)/1000").font(Theme.caption).foregroundStyle(description.count > 1000 ? Theme.danger : Theme.textSecondary).frame(maxWidth: .infinity, alignment: .trailing)
                     HStack(spacing: 12) {
                         if let picked { Image(uiImage: picked).resizable().scaledToFill().frame(width: 72, height: 72).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)).accessibilityHidden(true) }
                         Button { picking = true } label: {
@@ -426,7 +426,7 @@ struct EditSeriesSheet: View {
                         .buttonStyle(.plain).accessibilityIdentifier("series-edit-cover")
                     }
                     Text("The description and cover show to people who follow you.").font(Theme.caption).foregroundStyle(Theme.textSecondary)
-                    if failed { Text("Could not save. Try again.").font(Theme.secondary).foregroundStyle(Color.red) }
+                    if failed { Text("Could not save. Try again.").font(Theme.secondary).foregroundStyle(Theme.danger).announcesWhenShown("Could not save. Try again.") }
                 }
                 .padding(20)
             }

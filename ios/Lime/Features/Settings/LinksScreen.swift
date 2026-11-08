@@ -34,8 +34,10 @@ struct LinksScreen: View {
                     .accessibilityIdentifier("links-add")
                 }
             } footer: {
-                Text(problem ?? "Up to \(ProfileLinks.maxCount) links. Drag to change the order.").foregroundStyle(problem == nil ? Theme.textSecondary : Color.red)
+                Text(problem ?? "Up to \(ProfileLinks.maxCount) links. Drag to change the order.").foregroundStyle(problem == nil ? Theme.textSecondary : Theme.danger)
                     .accessibilityIdentifier("links-footer")
+                    .onChange(of: problem) { _, new in if let new { Announce.say(new) } }
+                    .onChange(of: saved) { _, new in if new { Announce.say("Saved") } }
             }
             Section {
                 choice(.everyone, "Everyone on lime", detail: "Any signed-in teacher who sees your profile can open your links. lime's servers keep a copy.", id: "links-vis-everyone")

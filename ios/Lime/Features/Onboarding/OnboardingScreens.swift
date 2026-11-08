@@ -158,7 +158,7 @@ struct ConfirmationSheet: View {
                     }
                 }
                 if let error = model.errorMessage {
-                    Text(error).font(Theme.secondary).foregroundStyle(Color(red: 0.72, green: 0.17, blue: 0.2))
+                    Text(error).font(Theme.secondary).foregroundStyle(Theme.danger).announcesWhenShown(error)
                         .accessibilityIdentifier("error-message")
                 }
             }
@@ -297,8 +297,9 @@ struct PasswordScreen: View {
                     if !model.confirmPassword.isEmpty && !checks.matches {
                         Text("The two passwords don't match.")
                             .font(Theme.secondary)
-                            .foregroundStyle(Color(red: 0.72, green: 0.17, blue: 0.2))
+                            .foregroundStyle(Theme.danger)
                             .accessibilityIdentifier("password-mismatch")
+                            .announcesWhenShown("The two passwords don't match.")
                     }
                 }
             }
@@ -325,7 +326,7 @@ struct ProfileScreen: View {
             OnboardingField(label: "Username (optional)", text: $model.username, prompt: "e.g. ms.park", identifier: "username-field",
                             contentType: .username)
             if let problem = model.usernameProblem {
-                Text(problem).font(Theme.secondary).foregroundStyle(Color(red: 0.72, green: 0.17, blue: 0.2))
+                Text(problem).font(Theme.secondary).foregroundStyle(Theme.danger).announcesWhenShown(problem)
                     .accessibilityIdentifier("username-problem")
             }
             OnboardingField(label: "School (optional)", text: $model.school, prompt: "Where you teach", identifier: "school-field",
