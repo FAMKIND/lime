@@ -212,9 +212,11 @@ final class ConversationStore {
     /// Registers this device when it is not connected yet (set by the account session), so a phone
     /// that was offline at launch, or whose first attempt failed, connects on the next sync.
     var registrar: (@MainActor () async -> Void)?
-    #if DEBUG
-    /// Debug builds only (`-lime-demo-chat`): made-up conversations that live in memory, for screenshots and UI tests.
+    /// A counter the GIF views watch, bumped when My GIFs change (LIME-207).
+    var myGIFRevision = 0
+    /// Demo mode (`-lime-demo-chat`, debug builds only): made-up conversations that live in memory, for screenshots and UI tests. Never set in a release build.
     private(set) var isDemo = false
+    #if DEBUG
     /// Debug demo: a message that "arrives" in a chat that is open (LIME-134: a reload right after the chat opened).
     func demoReceive(_ conversationID: String, text: String) {
         guard let index = conversations.firstIndex(where: { $0.id == conversationID }) else { return }
@@ -224,9 +226,8 @@ final class ConversationStore {
     /// Debug demo: my photo and who may see it (no server).
     /// Debug demo: the decrypted bytes of the demo attachments, by id, and whether the composer opens with drafts.
     var demoAttachmentData: [String: Data] = [:]
-    /// My GIFs in the demo (LIME-207), and a counter the GIF views watch.
+    /// My GIFs in the demo (LIME-207).
     var demoMyGIFs: [(gif: MyGif, data: Data)] = []
-    var myGIFRevision = 0
     var demoEmergencySettings = EmergencySettings(groupId: "", schoolActions: true, sound: false, lastStudents: 0, lastPlace: "")
     var demoEmergencySessions: [String: String] = [:]
     var demoEmergencyStatuses: [String: (EmergencyDraft, Date)] = [:]
@@ -237,15 +238,16 @@ final class ConversationStore {
     var attachmentViewer: AttachmentViewerRequest?
     var openedFile: AttachmentItem?
     var playingVideo: VideoRequest?
-    #if DEBUG
-    var demoMyPhoto: Data?
-    /// My links and background in the demo (by slot), who may see them, and a counter so screens reload after a change (LIME-214, LIME-217).
-    var demoExtras: [String: Data] = [:]
-    var demoExtraVisibility: [String: String] = [:]
     /// Edit your profile in place (LIME-225): set by Settings' profile card, taken by your profile when it appears; and whether it is on screen.
     var profileEditRequest = false
     var myProfileOnScreen = false
+    /// A counter so screens reload after my links or background change (LIME-214, LIME-217).
     var extrasVersion = 0
+    #if DEBUG
+    var demoMyPhoto: Data?
+    /// My links and background in the demo (by slot), and who may see them.
+    var demoExtras: [String: Data] = [:]
+    var demoExtraVisibility: [String: String] = [:]
     var demoFetchedPending = false
     var demoPhotoVisibility: PhotoVisibility = .everyone
     #endif
@@ -254,12 +256,17 @@ final class ConversationStore {
     @ObservationIgnored private var callManager: CallManager?
     /// My account's user id (for the call rule that settles crossed calls).
     @ObservationIgnored var myUserID: String?
+    /// UI tests and demo mode (debug builds only) run calls with no system call screen; a release build never does.
+    private static var callsAreQuiet: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.arguments.contains("-lime-skip-sign-in") || ProcessInfo.processInfo.arguments.contains("-lime-fake-auth")
+        #else
+        false
+        #endif
+    }
     var calls: CallManager {
         if let callManager { return callManager }
-        var quiet = false
-        #if DEBUG
-        quiet = ProcessInfo.processInfo.arguments.contains("-lime-skip-sign-in") || ProcessInfo.processInfo.arguments.contains("-lime-fake-auth")
-        #endif
+        let quiet = Self.callsAreQuiet
         let system: CallSystem = quiet ? QuietCallSystem() : CallKitSystem()
         let manager = CallManager(signalling: StoreSignalling(store: self), system: system, sounds: quiet ? QuietCallSounds() : SystemCallSounds(),
                                   quietReason: { StatusSettings.shared.quietCallReason() }, myID: { [weak self] in self?.myUserID }, makeMedia: { WebRTCMedia(manualAudio: !quiet) })
@@ -275,10 +282,7 @@ final class ConversationStore {
     @ObservationIgnored private var groupCallManager: GroupCallManager?
     var groupCalls: GroupCallManager {
         if let groupCallManager { return groupCallManager }
-        var quiet = false
-        #if DEBUG
-        quiet = ProcessInfo.processInfo.arguments.contains("-lime-skip-sign-in") || ProcessInfo.processInfo.arguments.contains("-lime-fake-auth")
-        #endif
+        let quiet = Self.callsAreQuiet
         let manager = GroupCallManager(core: StoreGroupCallCore(store: self), system: calls.system,
                                        quietReason: { StatusSettings.shared.quietCallReason() },
                                        isOtherCallActive: { [weak self] in self?.calls.inCall ?? false },

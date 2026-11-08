@@ -246,7 +246,7 @@ final class MoveListener: @unchecked Sendable {
     /// The first connection that arrives.
     func accept(timeout: TimeInterval) async throws -> NetworkMoveChannel {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<NetworkMoveChannel, Error>) in
-            queue.async {
+            queue.async { [self] in
                 self.continuation = continuation
                 self.listener.newConnectionHandler = { [weak self] connection in
                     guard let self, !self.accepted, let continuation = self.continuation else { connection.cancel(); return }

@@ -71,7 +71,7 @@ extension EnvironmentValues {
 /// The looks of every chat on this phone for the open account.
 @Observable
 final class ChatLooks: @unchecked Sendable {
-    nonisolated(unsafe) static let shared = ChatLooks()
+    static let shared = ChatLooks()
 
     private(set) var chats: [String: ChatLook] = [:]
     /// "Use for all chats": the look every chat without its own has.

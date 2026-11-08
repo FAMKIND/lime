@@ -179,7 +179,7 @@ enum ThemeResolver {
 /// What the person chose, kept on this phone for the account that is open.
 @Observable
 final class ThemeStore: @unchecked Sendable {
-    nonisolated(unsafe) static let shared = ThemeStore()
+    static let shared = ThemeStore()
 
     /// The tone index of the accent (5 = lime, the default).
     var accent = LimeColours.lime { didSet { save() } }
@@ -218,8 +218,8 @@ final class ThemeStore: @unchecked Sendable {
     func reset() { accent = LimeColours.lime; background = .plain }
 
     /// The theme for a trait collection, read when a colour is drawn.
-    func resolved(dark: Bool) -> ResolvedTheme {
-        ThemeResolver.resolve(accent: accent, background: background, dark: dark, increaseContrast: UIAccessibility.isDarkerSystemColorsEnabled)
+    func resolved(dark: Bool, increaseContrast: Bool) -> ResolvedTheme {
+        ThemeResolver.resolve(accent: accent, background: background, dark: dark, increaseContrast: increaseContrast)
     }
 
     enum Role { case canvas, surface, text, secondary, hairline, accent, accentInk, bubble, bubbleEdge, link, placeholder, placeholderLarge, own, ownInk, linkOwn, chip, chipMine }
@@ -228,7 +228,7 @@ final class ThemeStore: @unchecked Sendable {
     func colour(_ role: Role) -> Color {
         _ = accent; _ = background
         return Color(UIColor { [self] traits in
-            let theme = resolved(dark: traits.userInterfaceStyle == .dark)
+            let theme = resolved(dark: traits.userInterfaceStyle == .dark, increaseContrast: traits.accessibilityContrast == .high)
             switch role {
             case .canvas: return theme.canvas
             case .surface: return theme.surface

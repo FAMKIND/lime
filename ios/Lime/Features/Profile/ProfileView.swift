@@ -465,10 +465,9 @@ struct ProfileView: View {
     // MARK: The top
 
     private var top: some View {
-        let onPhoto = true   // every profile is on the hero (LIME-217d)
-        // On a photo the name and the lines are white with a soft shadow (the gradient behind them keeps them readable); otherwise as before.
-        let primary: Color = onPhoto ? .white : Theme.text
-        let secondary: Color = onPhoto ? .white.opacity(0.92) : Theme.textSecondary
+        // Every profile is on the hero (LIME-217d): the name and the lines are white with a soft shadow (the gradient behind them keeps them readable).
+        let primary: Color = .white
+        let secondary: Color = .white.opacity(0.92)
         return VStack(spacing: 6) {
             avatar.padding(.top, 12)
             let nameLine = HStack(spacing: 6) {
@@ -505,11 +504,10 @@ struct ProfileView: View {
     @ViewBuilder
     private var avatar: some View {
         // On a photo the avatar takes the lime logomark's outline (LIME-217b); everywhere else people are circles.
-        let shaped = true   // the lime-shaped avatar on every hero (LIME-217d)
         if route.isMe {
             let state = store.status(of: route.userID)?.state ?? .available
             Group {
-                if shaped { LimeShapedAvatar(person: person, size: 104) } else { AvatarView(person: person, size: 96) }
+                LimeShapedAvatar(person: person, size: 104)   // the lime-shaped avatar on every hero (LIME-217d)
             }
             // The badge's notch is cut out of the avatar: the photo behind shows through the gap (and through the offline ring).
             .statusNotch(true, box: 28, inset: 12)
@@ -533,7 +531,7 @@ struct ProfileView: View {
                     .accessibilityLabel("Change photo").accessibilityIdentifier("profile-edit-photo")
                 }
             }
-        } else if shaped {
+        } else {
             LimeShapedAvatar(person: person, size: 104)
                 .statusNotch(store.status(of: route.userID) != nil, box: 26, inset: 9)
                 .overlay(alignment: .bottomTrailing) {
@@ -543,8 +541,6 @@ struct ProfileView: View {
                             .accessibilityIdentifier("status-badge-\(route.userID)")
                     }
                 }
-        } else {
-            AvatarView(person: person, size: 96, showsStatus: true)
         }
     }
 

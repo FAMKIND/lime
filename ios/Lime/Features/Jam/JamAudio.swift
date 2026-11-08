@@ -254,7 +254,6 @@ struct AudioMiniPlayer: View {
             }
             .padding(.leading, 12).padding(.trailing, 4).frame(minHeight: 56).limeGlass(in: Capsule()).padding(.horizontal, 16).padding(.bottom, 4)
         } else if let item = now.item {
-            let writer = store.teacher(store.jamPost(item.postID)?.author ?? "")
             HStack(spacing: 10) {
                 Button { now.showsScreen = true } label: {
                     HStack(spacing: 10) {

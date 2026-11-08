@@ -10318,3 +10318,37 @@ On phones the hero's lime portal follows your touch (`site/com/index.html`, `sty
 **Gate (yours, VoiceOver on, 13 mini or iPad):** (1) on a message, swipe up/down: React, Reply, Copy, Delete are there and work; "More actions" opens the menu and a two-finger scrub closes it; (2) double-tap the mic: it says "Recording", focus is on Send, Send sends it; try Cancel too; (3) in a video call wait 10 s: Mute and End call are still reachable; (4) with VoiceOver off, the long press, the hold-to-record and the 5 s hide behave as before. Switch Control and Voice Control ("Tap Record voice message", "Tap Show call controls") if you can.
 
 **For plot:** (1) 130-1 is committed but not signed off: nothing in the test suite can hear VoiceOver, so your gate is the proof. (2) Decide **"Stop"** on the locked recording (see above): my reading is that Cancel and Send are enough. (3) The 18 failing tests and the Release build failure (`ProfileView.swift:281`) are old and not mine; they want their own brief (LIME-183 as you named it), Release first, since a Release build is what TestFlight needs. (4) The probe (`-lime-ax-probe`) is reusable: the other 130-n briefs can assert their accessibility actions and announcements the same way. (5) Announcements now have one helper (`Announce.say`); 130-2 (common) can adopt it for banners and delivery states instead of adding another.
+
+## LIME-183a
+
+**Goal:** the Release build builds, and `ios/check-warnings.sh` reports 0, with the smallest fixes: no suppressions, no behaviour change.
+
+**Phase 1: when Release broke.** `git bisect` with a Release build (simulator, `CODE_SIGNING_ALLOWED=NO`) in a separate worktree (generated files copied in). Good at `f77fca5` (18 Oct); bad at `5329050` (26 Oct). **First bad commit: `33acc35` (2026-10-24) "feat: Info first on every profile, and links you choose who sees"**, which put `extrasVersion` (a real counter that `ProfileView` and the Extras code use) inside the `#if DEBUG` block of `ConversationStore`. Later commits added more of the same: `myGIFRevision` (`7d0a77d`, 31 Oct, LIME-207), `profileEditRequest` / `myProfileOnScreen` (`5c9cfae`, LIME-225). `isDemo` is used by production code too. The `ProfileView.swift:281` "unable to type-check in reasonable time" error was fallout from those missing members, not a separate problem; it is gone with them.
+
+**Warnings and their causes (all fixed at the cause):**
+| File | Cause | Fix |
+|---|---|---|
+| `ConversationStore.swift` | `extrasVersion`, `myGIFRevision`, `profileEditRequest`, `myProfileOnScreen` declared under `#if DEBUG` but used by Release code | declared outside the `#if DEBUG` (they are real state) |
+| `ConversationStore.swift` | `isDemo` the same | now a plain stored `false` outside the `#if DEBUG` (only debug code ever sets it) |
+| `ConversationStore.swift` ×3 "will never be executed" (Release only) | `var quiet = false` never changed in Release, so `quiet ? A : B` folded | one `callsAreQuiet` static: debug reads the launch arguments, Release returns `false` |
+| `ProfileView.swift` ×3 "will never be executed" | `let onPhoto = true` and `let shaped = true` with dead else-branches | the dead branches removed (always the hero and the lime-shaped avatar, LIME-217d) |
+| `MoveChannel.swift` ×3 | `[weak self]` inside a closure that already captured `self` strongly | the outer closure says `[self]` (same retention as before) |
+| `ChatAppearanceScreen.swift` | `look` (main actor) read inside PhotosPicker's Sendable label closure | read into a local first |
+| `ChatLook.swift`, `LocalDrafts.swift`, `ThemeEngine.swift` | `nonisolated(unsafe)` on a constant of a `Sendable` type | removed |
+| `CoEdit.swift` ×14 | `CoEditSplice.apply` and a nested `characters(_:)` touch UITextView / `text` from a nonisolated context; `oldMid`, `newMid` never mutated | `@MainActor` on both (callers are already on the main actor); `let` |
+| `JamAudio.swift` | `let writer` never used | removed |
+| `JamMedia.swift` | `MPVolumeView.showsRouteButton` deprecated since iOS 13 | line removed (iOS 13+ no longer shows the route button there; see the check below) |
+| `ThemeEngine.swift` | `UIAccessibility.isDarkerSystemColorsEnabled` (main actor) read in the colour provider | `resolved(dark:increaseContrast:)`; the provider passes `traits.accessibilityContrast == .high`, the view caller passes the same system flag as before |
+| `Band246UITests`, `Org216UITests` | unused `waitForExistence` result | `_ =` (the wait still happens) |
+
+**Verification:**
+- Release build, `generic/platform=iOS Simulator` and `generic/platform=iOS`: succeeds, 0 warnings in our sources.
+- `./ios/check-warnings.sh`: **0 warnings in Lime's own sources** (simulator and device, from clean). The only line left is WebRTC's own header, listed "for information".
+- `./ios/check-release-no-bluetooth.sh`: passes.
+- Release binaries (simulator and device): 0 matches for `AXProbe`, `force-voiceover`, `SiteJamDemo`, `lime-ax-probe`, `lime-demo-chat`, `lime-demo-covers`, `demoReceive`, `ax-probe-dump` (strings and symbols). Control: the Debug build does contain `SiteJamDemo`.
+- Debug build and the 130-1 tests: Access130Tests 13/13, Access130UITests 6/6, CallScreenUITests 12/12.
+- The full suite was not re-run (183b's job); the changes are declarations, dead-branch removal and actor annotations.
+
+**Two small things to look at on a phone (no gate, my reading):** (1) the podcast player's volume slider shows no route (AirPlay) button, as before; (2) the colours with "Increase Contrast" on still take the higher-contrast palette.
+
+**For plot:** (1) Release broke at `33acc35` and stayed broken for 15 days: nothing builds Release in the loop. Suggest `check-warnings.sh` (or a quick Release build) be part of every iOS brief's verification, or run it before each TestFlight. (2) Rule for future briefs: state used by production code must never sit under `#if DEBUG`; only the demo fixtures do. (3) 183b (the 18 failing tests listed in `## LIME-130-1`) is next.

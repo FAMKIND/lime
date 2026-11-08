@@ -841,7 +841,6 @@ struct TranscriptSheet: View {
 struct VolumeSlider: UIViewRepresentable {
     func makeUIView(context: Context) -> MPVolumeView {
         let view = MPVolumeView(frame: .zero)
-        view.showsRouteButton = false
         view.tintColor = .white
         view.setContentHuggingPriority(.defaultLow, for: .horizontal)
         return view

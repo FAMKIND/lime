@@ -41,7 +41,7 @@ struct LocalDraft: Codable, Identifiable, Equatable {
 
 @Observable
 final class LocalDrafts: @unchecked Sendable {
-    nonisolated(unsafe) static let shared = LocalDrafts()
+    static let shared = LocalDrafts()
 
     private(set) var drafts: [LocalDraft] = []
     private var account: String?

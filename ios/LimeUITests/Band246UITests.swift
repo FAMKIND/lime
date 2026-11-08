@@ -41,7 +41,7 @@ final class Band246UITests: LimeUITestCase {
 
     func testOwnersMakeAGroupInsideTheBandOpenOrInviteOnly() {
         let app = openMyBand()
-        app.buttons["profile-tab-Groups"].waitForExistence(timeout: 10)
+        _ = app.buttons["profile-tab-Groups"].waitForExistence(timeout: 10)
         app.buttons["profile-tab-Groups"].tap()
         XCTAssertTrue(app.staticTexts["Science"].waitForExistence(timeout: 5) && app.staticTexts["Leads"].exists)
         app.buttons["org-new-group"].tap()

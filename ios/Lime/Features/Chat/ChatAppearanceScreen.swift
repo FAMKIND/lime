@@ -63,8 +63,9 @@ struct ChatAppearanceScreen: View {
         VStack(alignment: .leading, spacing: 12) {
             sectionTitle("Wallpaper")
             SettingsCard {
+                let hasPhoto = look.wallpaper == .photo
                 PhotosPicker(selection: $picked, matching: .images) {
-                    SettingsRowLabel(symbol: "photo.on.rectangle", title: "Choose from Photos", showsDivider: look.wallpaper == .photo)
+                    SettingsRowLabel(symbol: "photo.on.rectangle", title: "Choose from Photos", showsDivider: hasPhoto)
                 }
                 .buttonStyle(.plain).accessibilityIdentifier("chat-photo-pick")
                 if look.wallpaper == .photo {

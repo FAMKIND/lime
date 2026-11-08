@@ -69,7 +69,7 @@ final class Org216UITests: LimeUITestCase {
         app.launch()
         app.buttons["conversation-row-dm:sam"].tap()
         any(app, "chat-title").tap()
-        app.buttons["profile-tab-Orgs"].waitForExistence(timeout: 10)
+        _ = app.buttons["profile-tab-Orgs"].waitForExistence(timeout: 10)
         app.buttons["profile-tab-Orgs"].tap()
         any(app, "profile-org-demo-sam-band-1").tap()
         let subscribe = app.buttons["profile-org-page-subscribe"]

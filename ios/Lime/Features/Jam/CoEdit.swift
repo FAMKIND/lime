@@ -781,7 +781,7 @@ struct CaretTextField: View {
                     guard let now, case .selection(let range) = now.indices else { return }
                     // The selection's indices belong to the text as it was a moment ago: count by UTF-16 offsets, clamped, never by index distance.
                     let ns = text as NSString
-                    func characters(_ index: String.Index) -> Int {
+                    @MainActor func characters(_ index: String.Index) -> Int {
                         guard index <= text.endIndex else { return text.count }
                         return ns.substring(to: min(max(index.utf16Offset(in: text), 0), ns.length)).count
                     }
@@ -888,7 +888,7 @@ struct CursorTag: View {
 enum CoEditSplice {
     /// Replaces only the part of the text that differs, in place, and moves this author's caret and selection by the change (never a guess): the text view
     /// is not reset, so focus, scrolling and the keyboard stay as they are.
-    static func apply(_ new: NSAttributedString, into view: UITextView) {
+    @MainActor static func apply(_ new: NSAttributedString, into view: UITextView) {
         let storage = view.textStorage
         let old = storage.string as NSString, fresh = new.string as NSString
         var prefix = 0
@@ -898,8 +898,8 @@ enum CoEditSplice {
         var suffix = 0
         while suffix < limit - prefix, old.character(at: old.length - 1 - suffix) == fresh.character(at: fresh.length - 1 - suffix) { suffix += 1 }
         if suffix > 0, UTF16.isTrailSurrogate(old.character(at: old.length - suffix)) { suffix -= 1 }
-        var oldMid = NSRange(location: prefix, length: old.length - prefix - suffix)
-        var newMid = NSRange(location: prefix, length: fresh.length - prefix - suffix)
+        let oldMid = NSRange(location: prefix, length: old.length - prefix - suffix)
+        let newMid = NSRange(location: prefix, length: fresh.length - prefix - suffix)
         if oldMid.length == 0 && newMid.length == 0 {   // the same words, other styles: the whole text, still in place, and my caret where it was
             let selection = view.selectedRange
             view.textStorage.beginEditing()

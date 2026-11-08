@@ -12,7 +12,7 @@ struct ThemeBackgroundView: View {
     var body: some View {
         let store = ThemeStore.shared
         let kind = override ?? store.background
-        let theme = override == nil ? store.resolved(dark: colorScheme == .dark)
+        let theme = override == nil ? store.resolved(dark: colorScheme == .dark, increaseContrast: UIAccessibility.isDarkerSystemColorsEnabled)
             : ThemeResolver.resolve(accent: store.accent, background: kind, dark: colorScheme == .dark, increaseContrast: UIAccessibility.isDarkerSystemColorsEnabled)
         let canvas = Color(theme.canvas)
         ZStack {
