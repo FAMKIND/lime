@@ -1,6 +1,8 @@
 package com.limemessenger.lime
 
 import android.app.Application
+import com.limemessenger.lime.auth.AccountSession
+import com.limemessenger.lime.auth.LiveAuthService
 import com.limemessenger.lime.keys.KeyWrapper
 import com.limemessenger.lime.keys.KeystoreKey
 import com.limemessenger.lime.keys.SecureBlobStore
@@ -19,4 +21,20 @@ class LimeApp : Application() {
 
     val backend: BackendConfig? get() = BackendConfig.current
     val transport: HttpTransport? by lazy { backend?.let { HttpTransport(it.url, it.apiKey) } }
+
+    /** One session for the whole process; the screens read it. Tests can replace it before the activity starts. */
+    var session: AccountSession by mutableLazy {
+        AccountSession(
+            auth = backend?.let { LiveAuthService(HttpTransport(it.url, it.apiKey, connectTimeoutMs = 30_000, readTimeoutMs = 30_000)) },
+            backend = backend, storage = storage, secrets = secrets,
+        )
+    }
+}
+
+/** A lazily made property that can also be assigned (tests swap the session for one with a fake auth service). */
+private fun <T> mutableLazy(init: () -> T) = object : kotlin.properties.ReadWriteProperty<Any?, T> {
+    private var value: T? = null
+    @Suppress("UNCHECKED_CAST")
+    override fun getValue(thisRef: Any?, property: kotlin.reflect.KProperty<*>): T = value ?: init().also { value = it }
+    override fun setValue(thisRef: Any?, property: kotlin.reflect.KProperty<*>, value: T) { this.value = value }
 }

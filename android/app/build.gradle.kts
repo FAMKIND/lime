@@ -40,6 +40,9 @@ android {
         buildConfig = true
     }
     sourceSets["main"].kotlin.directories.add("build/generated/uniffi")
+    // Test doubles shared by the unit tests and the instrumented UI tests.
+    sourceSets["test"].kotlin.directories.add("src/testShared/java")
+    sourceSets["androidTest"].kotlin.directories.add("src/testShared/java")
 }
 
 kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
@@ -64,6 +67,7 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.json)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(platform(libs.androidx.compose.bom))
