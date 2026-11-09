@@ -24,7 +24,7 @@ extension ConversationStore {
             theirs("m3", "mei", "Great. I'm bringing the new reading schedule.", 2_800),
         ]
         if screen.hasPrefix("site-offline") {
-            let state: DeliveryState = screen.hasSuffix("waiting") ? .waiting : screen.hasSuffix("passed") ? .passed : .sent
+            let state: DeliveryState = screen.hasSuffix("waiting") ? .waiting : screen.hasSuffix("passed") ? .passed : screen.hasSuffix("internet") ? .offline : .sent
             meiMessages.append(mine("m4", "Running late: start without me. Notes are in the shared folder.", 20, state))
         }
         conversations = [

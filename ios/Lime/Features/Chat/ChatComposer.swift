@@ -262,8 +262,8 @@ struct ChatComposer: View {
                     }
                     guard recorder.phase == .recording else { return }
                     dragX = value.translation.width
-                    if value.translation.width < -90 { recorder.cancel(); dragX = 0; Haptics.tick() }
-                    else if value.translation.height < -70 { recorder.lock(); dragX = 0; released = true; Haptics.tick() }   // the mic leaves the row when locked, so its end never comes
+                    if value.translation.width < -90 { recorder.cancel(); dragX = 0; Haptics.tick(); Announce.say("Recording cancelled") }
+                    else if value.translation.height < -70 { recorder.lock(); dragX = 0; released = true; Haptics.tick(); Announce.say("Recording locked") }   // the mic leaves the row when locked, so its end never comes
                 }
                 .onEnded { _ in
                     released = true
@@ -559,6 +559,7 @@ struct ThreadSummaryRow: View {
     let messageID: String
     let thread: ThreadInfo
     let action: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         Button(action: action) {
@@ -572,14 +573,15 @@ struct ThreadSummaryRow: View {
                 Text(thread.summaryText)
                     .font(Theme.caption)
                     .foregroundStyle(Theme.text)
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)   // wraps at the larger text sizes
                 if thread.unread > 0 {
                     // New replies: an accent dot (the count is in the accessibility label).
                     Circle().fill(Theme.accent).frame(width: 9, height: 9)
                 }
             }
             .padding(.horizontal, 10).padding(.vertical, 6)
-            .fixedSize()
+            .frame(minHeight: 44)
+            .fixedSize(horizontal: !dynamicTypeSize.isAccessibilitySize, vertical: true)
             .background(Theme.surface, in: Capsule())
             .contentShape(Capsule())
         }

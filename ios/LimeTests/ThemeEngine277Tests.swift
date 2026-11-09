@@ -40,7 +40,10 @@ final class ThemeEngine277Tests: XCTestCase {
                 XCTAssertEqual(x.0, y.0, accuracy: 0.004, "\(name) dark \(dark)"); XCTAssertEqual(x.1, y.1, accuracy: 0.004); XCTAssertEqual(x.2, y.2, accuracy: 0.004)
             }
             same(theme.canvas, Theme.Name.canvas); same(theme.surface, Theme.Name.surface); same(theme.text, Theme.Name.text)
-            same(theme.secondary, Theme.Name.textSecondary); same(theme.hairline, Theme.Name.hairline)
+            // 130-3a: the secondary text is nudged only as far as it needs to read on the other person's bubble too, so it may differ from the asset.
+            XCTAssertGreaterThanOrEqual(ContrastGuard.ratio(theme.secondary, theme.canvas), 4.5, "secondary on canvas, dark \(dark)")
+            XCTAssertGreaterThanOrEqual(ContrastGuard.ratio(theme.secondary, theme.bubble), 4.5, "secondary on their bubble, dark \(dark)")
+            same(theme.hairline, Theme.Name.hairline)
             same(theme.accent, Theme.Name.accent); same(theme.accentInk, Theme.Name.accentInk)
             same(theme.bubble, Theme.Name.bubbleOther); same(theme.bubbleEdge, Theme.Name.bubbleEdge); same(theme.link, Theme.Name.linkOther)
         }

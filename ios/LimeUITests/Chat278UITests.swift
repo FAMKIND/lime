@@ -28,6 +28,7 @@ final class Chat278UITests: LimeUITestCase {
     }
 
     /// LIME-278d: circles are added toward the sender's side, never past the bubble's inner edge, never off the screen; each has its own count.
+    // 130-3a: a circle's touch area is 44 pt around the 30 pt circle, so its frame reaches 7 pt past the circle.
     func testCirclesGrowTowardTheSendersSideFromTheInnerCornerAndNeverPastIt() {
         let app = chat()
         let window = app.windows.firstMatch.frame
@@ -36,8 +37,8 @@ final class Chat278UITests: LimeUITestCase {
         let ownCircles = ["😂", "👍", "❤️", "🎉"].map { chip(app, "s2", $0) }
         for c in ownCircles {
             XCTAssertTrue(c.exists, c.label)
-            XCTAssertGreaterThanOrEqual(c.frame.minX, own.frame.minX - 5, "mine: nothing past the inner (left) edge into the middle")
-            XCTAssertLessThanOrEqual(c.frame.maxX, window.maxX, "on the screen")
+            XCTAssertGreaterThanOrEqual(c.frame.minX, own.frame.minX - 12, "mine: nothing past the inner (left) edge into the middle")
+            XCTAssertLessThanOrEqual(c.frame.maxX, window.maxX + 8, "on the screen (its 44 pt touch area may reach a few points past)")
         }
         XCTAssertLessThan(ownCircles[0].frame.minX, ownCircles[1].frame.minX, "the second is toward my side (right) of the first")
         XCTAssertTrue(ownCircles[2].label.contains("3 people"), "❤️ has its own count of 3")
@@ -47,7 +48,7 @@ final class Chat278UITests: LimeUITestCase {
         let theirs = ["❤️", "👍", "😮", "🙏"].map { chip(app, "s1", $0) }
         XCTAssertTrue(theirs[0].exists)
         for c in theirs where c.exists {
-            XCTAssertLessThanOrEqual(c.frame.maxX, theirBubble.frame.maxX + 5, "theirs: nothing past the inner (right) edge")
+            XCTAssertLessThanOrEqual(c.frame.maxX, theirBubble.frame.maxX + 12, "theirs: nothing past the inner (right) edge")
             XCTAssertGreaterThanOrEqual(c.frame.minX, 0)
         }
         if theirs[1].exists { XCTAssertGreaterThan(theirs[0].frame.minX, theirs[1].frame.minX - 1, "the second is toward their avatar (left)") }

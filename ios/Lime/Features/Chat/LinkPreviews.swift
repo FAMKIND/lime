@@ -123,6 +123,7 @@ struct LinkCardView: View {
     @Environment(\.ownBubbleStyle) private var ownStyle   // a chat's own colour for my bubbles (LIME-277d)
     private var ownFill: Color { ownStyle?.fill ?? Theme.ownBubble }
     private var ownInk: Color { ownStyle?.ink ?? Theme.ownBubbleInk }
+    private var ownSecondary: Color { ownStyle?.secondary ?? Theme.ownBubbleSecondary }
     let title: String
     let site: String
     var image: UIImage?
@@ -138,7 +139,7 @@ struct LinkCardView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(isOwn ? ownInk : Theme.text).lineLimit(2)
                     .accessibilityIdentifier("link-card-title")
-                Text(site).font(Theme.caption).foregroundStyle(isOwn ? ownInk.opacity(0.7) : Theme.textSecondary).lineLimit(1)
+                Text(site).font(Theme.caption).foregroundStyle(isOwn ? ownSecondary : Theme.textSecondary).lineLimit(1)
                     .accessibilityIdentifier("link-card-site")
             }
             .padding(.horizontal, 12).padding(.vertical, 9)

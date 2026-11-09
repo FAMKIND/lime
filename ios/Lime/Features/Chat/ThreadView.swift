@@ -100,7 +100,14 @@ struct ThreadView: View {
                 .attachmentPresenting()
                 .onChange(of: messages.count) { _, count in
                     // A reply arrived: show it. The root message loading (0 to 1) is not a reply: it keeps its first line at the top.
-                    if count > 1 { withAnimation { proxy.scrollTo("bottom") } } else { settle(proxy) }
+                    if count > 1 {
+                        withAnimation { proxy.scrollTo("bottom") }
+                        // A reply from someone else is read out (the same as in a chat).
+                        if let last = messages.last, !last.isOwn, !last.deleted {
+                            let name = conversation?.members.first { $0.id == last.senderID }?.name ?? "Reply"
+                            Announce.say("\(name): \(String((MessageSpeech.body(of: last).split(separator: "\n").first.map(String.init) ?? "").prefix(120)))")
+                        }
+                    } else { settle(proxy) }
                     Task { await store.markThreadRead(target.rootID, in: target.conversationID) }
                 }
                 .onChange(of: scrollRequest) { _, _ in
@@ -147,15 +154,19 @@ struct ThreadView: View {
                 // Who the replies answer, like a chat's header: their avatar, "Replies · Name", and how many replies.
                 HStack(spacing: 8) {
                     if let root = messages.first, let author = rootAuthor(root) {
-                        AvatarView(person: author, size: 30)
-                            .contentShape(Circle())
-                            .onTapGesture { store.openProfile(ProfileRoute(userID: author.id, name: author.name, conversationID: target.conversationID)) }
-                            .accessibilityIdentifier("replies-author-avatar")
+                        Button { store.openProfile(ProfileRoute(userID: author.id, name: author.name, conversationID: target.conversationID)) } label: {
+                            AvatarView(person: author, size: 30)
+                                .frame(width: 44, height: 44).contentShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(-7)   // a 44 pt target that takes no more room than the avatar did
+                        .accessibilityLabel("\(author.name), profile")
+                        .accessibilityIdentifier("replies-author-avatar")
                     }
                     VStack(alignment: .leading, spacing: 0) {
                         Text(rootAuthor(messages.first).map { "Replies · \($0.name)" } ?? "Replies")
-                            .font(Theme.font(.headline, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
-                        Text(replyCountText).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                            .font(Theme.font(.headline, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(2)
+                        Text(replyCountText).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(2)
                             .accessibilityIdentifier("replies-subtitle")
                     }
                 }

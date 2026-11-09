@@ -68,6 +68,25 @@ struct ChatView: View {
                     legacyContent(conversation)
                 }
             }
+            // On every iOS: the explanation "Says why" opens (on iOS 26 it was attached to nothing, LIME-130-3a).
+            .alert("Waiting for internet", isPresented: Binding(get: { offlineReason != nil }, set: { if !$0 { offlineReason = nil } })) {
+            Button("OK", role: .cancel) {}
+            } message: { Text(offlineReason ?? "") }
+            // Said aloud, since nothing else tells a VoiceOver user: a message from the other person in the open chat, and a delivery that went wrong.
+            .onChange(of: conversation.messages.last?.id) {
+                guard let last = conversation.messages.last, !last.isOwn, last.state != .system, !last.deleted else { return }
+                let name = conversation.members.first { $0.id == last.senderID }?.name ?? conversation.title
+                let first = MessageSpeech.body(of: last).split(separator: "\n").first.map(String.init) ?? ""
+                Announce.say("\(name): \(String(first.prefix(120)))")
+            }
+            .onChange(of: conversation.messages.last(where: { $0.isOwn })?.state) { _, state in
+                switch state {
+                case .failed: Announce.say("Not sent. Retry available")
+                case .undelivered: Announce.say("Not delivered. Resend available")
+                case .offline: Announce.say("Waiting for internet")
+                default: break
+                }
+            }
             // This chat's own look (LIME-277d): my bubble colour, a chip behind text outside the bubbles when it has a wallpaper, a text size.
             .environment(\.ownBubbleStyle, ChatLooks.shared.look(for: conversationID).ownBubble)
             .environment(\.chatWallpaperActive, ChatLooks.shared.look(for: conversationID).wallpaper != .none)
@@ -115,7 +134,7 @@ struct ChatView: View {
         .toolbar {
             // The avatar and name sit beside the system ‹, with no glass of their own, left-aligned in a width worked out from the screen's (the room between ‹ and the two circles; .principal would centre it);
             // the name truncates rather than vanishing (LIME-247, 247b).
-            ToolbarItem(placement: .principal) { titlePill(conversation).frame(width: max(120, WindowMetrics.shared.size.width - 196), alignment: .leading) }
+            ToolbarItem(placement: .principal) { titlePill(conversation).frame(width: max(120, WindowMetrics.shared.size.width - 196), alignment: .leading).fixedSize(horizontal: false, vertical: true) }
                 .sharedBackgroundVisibility(.hidden)
             // Search and the call button are two 44 pt circles of our own glass (the system's would be a capsule), last; a fixed gap keeps them apart.
             ToolbarItem(placement: .topBarTrailing) {
@@ -145,9 +164,6 @@ struct ChatView: View {
         .safeAreaInset(edge: .bottom) { bottomBar(conversation) }
         .toolbar(.hidden, for: .navigationBar)
         .swipeBackEnabled()
-        .alert("Waiting for internet", isPresented: Binding(get: { offlineReason != nil }, set: { if !$0 { offlineReason = nil } })) {
-            Button("OK", role: .cancel) {}
-        } message: { Text(offlineReason ?? "") }
     }
 
     // MARK: Shared
@@ -397,6 +413,9 @@ struct ChatView: View {
         return "You scanned \(name)'s QR code in person on \(date.formatted(.dateTime.month(.wide).day().year()))."
     }
 
+    /// The name and the line under it are one line, and wrap at the larger sizes instead of being cut (LIME-130-3a).
+    private var headerLines: Int? { globalTypeSize >= .accessibility1 ? nil : 2 }
+
     private func titlePill(_ conversation: Conversation) -> some View {
         HStack(spacing: 8) {
             ConversationAvatar(conversation: conversation, size: 36)
@@ -406,27 +425,32 @@ struct ChatView: View {
                     Text(conversation.title)
                         .font(Theme.font(.subheadline, weight: .semibold))
                         .foregroundStyle(Theme.text)
-                        .lineLimit(1)
+                        .lineLimit(headerLines)
                     // "Verified in person" (they scanned each other's QR codes): a small seal after the name, with the date when tapped.
                     if conversation.verified && !conversation.isGroup {
-                        Image(systemName: "checkmark.seal.fill")
-                            .font(.system(size: 13)).foregroundStyle(Theme.textSecondary)
-                            .contentShape(Rectangle())
-                            .onTapGesture { showingSeal = true }
-                            .accessibilityLabel("Verified in person").accessibilityAddTraits(.isButton)
-                            .accessibilityIdentifier("chat-verified")
+                        Button { showingSeal = true } label: {
+                            Image(systemName: "checkmark.seal.fill")
+                                .font(.system(size: 13)).foregroundStyle(Theme.textSecondary)
+                                .frame(width: 44, height: 44).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(-15)   // a 44 pt target that takes no more room than the seal did
+                        .accessibilityLabel("Verified")
+                        .accessibilityHint("Verified in person. Shows when")
+                        .accessibilityIdentifier("chat-verified")
                     }
                 }
                 if conversation.isGroup {
                     Text(conversation.subtitle)
                         .font(Theme.caption)
                         .foregroundStyle(Theme.textSecondary)
-                        .lineLimit(1)
+                        .lineLimit(headerLines)
                 } else if let person = conversation.members.first, person.label == nil, let status = store.status(of: person.id), let words = StatusPlan.caption(state: status.state, until: status.until) {
                     Text(words)
                         .font(Theme.caption)
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
+                        .lineLimit(headerLines)
                         .accessibilityIdentifier("chat-status")
                 } else if let person = conversation.members.first, let label = person.label {
                     // My label for them, then their status when they have one ("Grade 4 · Do not disturb").
@@ -434,7 +458,7 @@ struct ChatView: View {
                     Text(status.map { "\(label) · \($0)" } ?? label)
                         .font(Theme.caption)
                         .foregroundStyle(Theme.textSecondary)
-                        .lineLimit(1)
+                        .lineLimit(headerLines)
                         .accessibilityIdentifier("chat-label")
                 }
             }
@@ -564,6 +588,7 @@ struct ChatView: View {
             .accessibilityIdentifier("back-button")
 
             titlePill(conversation)
+            .layoutPriority(1)
             .padding(.horizontal, 10).padding(.vertical, 6)
             .frame(minHeight: 48)
             .limeGlass()
@@ -583,8 +608,6 @@ struct ChatView: View {
         }
         .padding(.horizontal, 12)
         .padding(.top, 4)
-        // The bar of buttons keeps to a size that fits one line across the screen; the messages below follow the full size (LIME-168).
-        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
     }
 
     private var cancelSelectButton: some View {
@@ -823,6 +846,14 @@ struct MessageBubble: View {
     /// The bubble's width, for where its reaction circles wrap (LIME-278c).
     @State private var bubbleWidth: CGFloat = 0
     @Environment(\.pressedLink) private var pressedLink
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverOn
+    @Environment(\.accessibilitySwitchControlEnabled) private var switchControlOn
+    @Environment(\.openURL) private var openURL
+    /// With VoiceOver or Switch Control on, a message is one stop that says who, what, when and its state, with every action on it (LIME-130-3a).
+    /// (The parts stay separate for everyone else, and for Voice Control, which names them.)
+    private var oneStop: Bool { selection == nil && !liftedOnly && (voiceOverOn || switchControlOn || CallControlsPolicy.voiceOverRunning || CallControlsPolicy.switchControlRunning) }
+    /// A message with only words (or deleted): its single stop has no controls inside it; a photo, voice, file, card or call keeps its own controls.
+    private var isPlain: Bool { message.attachments.isEmpty && message.call == nil && message.emergency == nil && message.linkPreview == nil }
     /// How far the chat has been dragged left to show every time, 0 to 1 (LIME-278).
     @Environment(\.timeReveal) private var reveal
     /// A chat's own colour for my bubbles (LIME-277d).
@@ -855,8 +886,9 @@ struct MessageBubble: View {
                         .contentShape(Circle())
                         .onTapGesture { onAvatarTap?() }
                         .accessibilityAddTraits(onAvatarTap == nil ? [] : .isButton)
-                        .accessibilityLabel(onAvatarTap == nil ? "" : "\(sender.name), profile")
+                        .accessibilityLabel(onAvatarTap == nil ? sender.name : "\(sender.name), profile")
                         .accessibilityIdentifier("message-avatar-\(sender.id)")
+                        .accessibilityHidden(oneStop)
                 }
                 else { Color.clear.frame(width: avatarSize, height: 1) }
             }
@@ -866,6 +898,7 @@ struct MessageBubble: View {
                         .font(Theme.font(.caption, weight: .medium))
                         .foregroundStyle(Theme.text)
                         .wallpaperChip()
+                        .accessibilityHidden(oneStop)
                 }
                 // Top to bottom: the bubble (its reactions are a pill on its inner bottom corner, LIME-278); a footer with the time and status, only
                 // where it matters (the last of a run, a message with a status or an edit), as wide as the bubble; then the replies.
@@ -877,9 +910,11 @@ struct MessageBubble: View {
                         timeStamp
                     }
                     .layoutValue(key: BubbleFooterKey.self, value: true)
+                    .accessibilityHidden(oneStop)
                 }
                 if let thread = message.thread, let onOpenThread {
                     ThreadSummaryRow(messageID: message.id, thread: thread, action: onOpenThread)
+                        .accessibilityHidden(oneStop)
                 }
             }
             if !message.isOwn { Spacer(minLength: 56) }
@@ -887,19 +922,45 @@ struct MessageBubble: View {
         }
         .offset(x: -reveal * Self.revealGutter)
         .overlay(alignment: .trailing) { revealedTime }
-        // A message whose time is not drawn still has it for VoiceOver (LIME-278).
+        // A message whose time is not drawn still has it for VoiceOver (LIME-278). With one stop per message, a message that keeps its own
+        // controls (a photo, a voice message…) has one more element: who sent it, when, its state, reactions and replies, read first.
         .overlay(alignment: .bottomTrailing) {
-            if !showsTime && !message.deleted {
+            if oneStop && !isPlain && !message.deleted {
+                Color.clear.frame(width: 1, height: 1).accessibilityElement().accessibilityLabel(headerLabel)
+                    .accessibilitySortPriority(1)
+                    .modifier(MessageExtraActions(actions: extraActions))
+                    .accessibilityIdentifier("message-header-\(message.id)")
+            } else if !showsTime && !message.deleted && !oneStop {
                 Color.clear.frame(width: 1, height: 1).accessibilityElement().accessibilityLabel(MessageFormat.clock(message.date))
                     .accessibilityIdentifier("message-time-silent-\(message.id)")
             }
         }
         .contentShape(Rectangle())
         .onTapGesture { if selection != nil { onToggleSelect?() } }
-        .accessibilityElement(children: selection != nil ? .ignore : .contain)
-        .accessibilityLabel(selection != nil ? "\(message.deleted ? "Deleted message" : messagePlainText(text: message.text))" : "")
+        .accessibilityElement(children: selection != nil || (oneStop && isPlain) ? .ignore : .contain)
+        .accessibilityLabel(selection != nil ? "\(message.deleted ? "Deleted message" : messagePlainText(text: message.text))" : (oneStop && isPlain ? MessageSpeech.label(for: message, senderName: sender?.name) : ""))
+        .modifier(MessageExtraActions(actions: oneStop && isPlain ? extraActions : []))
+        .messageAccessibilityActions(oneStop && isPlain ? ax : nil)
         .accessibilityAddTraits(selection == true ? [.isButton, .isSelected] : (selection == false ? .isButton : []))
         .accessibilityIdentifier(selection != nil ? "select-row-\(message.id)" : "")
+    }
+
+    /// The header element of a message that keeps its own controls: who, when, state, reactions, replies (not the body, which its own parts read).
+    private var headerLabel: String { MessageSpeech.label(for: message, senderName: sender?.name, includeBody: false) }
+
+    /// What the footer, the reaction pill, the replies row, the avatar and the links do by touch, as actions on the message's one stop.
+    private var extraActions: [MessageExtraAction] {
+        var out: [MessageExtraAction] = []
+        if message.isOwn, message.state == .failed { out.append(.init("Retry sending", onRetry)) }
+        if message.isOwn, message.state == .undelivered { out.append(.init("Resend", onRetry)) }
+        if message.isOwn, message.state == .offline { out.append(.init("Why is it waiting?", onWhy)) }
+        if let onShowReactions, hasReactions { out.append(.init("Who reacted", onShowReactions)) }
+        if message.thread != nil, let onOpenThread { out.append(.init("Open replies", onOpenThread)) }
+        if let onAvatarTap, !message.isOwn, let sender { out.append(.init("Open \(sender.name)'s profile", onAvatarTap)) }
+        if isPlain {
+            for url in MessageSpeech.links(in: message.text) { out.append(.init("Open link \(url.host() ?? url.absoluteString)") { openURL(url) }) }
+        }
+        return out
     }
 
     /// The gutter the chat slides over when it is dragged left, which is where each message's time appears.
@@ -980,6 +1041,7 @@ struct MessageBubble: View {
         .overlay(alignment: .bottomLeading) {
             if hasReactions {
                 ReactionCluster(reactions: message.reactions, messageID: message.id, own: message.isOwn) { if selection == nil { onShowReactions?() } }
+                    .accessibilityHidden(oneStop)
             }
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { bubbleWidth = $0 }
@@ -1017,19 +1079,23 @@ struct MessageBubble: View {
         HStack(spacing: 4) {
             Text(MessageFormat.clock(message.date)).accessibilityIdentifier("message-time-\(message.id)")
             if message.edited {
-                Text("· Edited").accessibilityIdentifier("edited-\(message.id)")
+                Text("· Edited").accessibilityLabel("Edited").accessibilityIdentifier("edited-\(message.id)")
             }
             if showState {
                 switch message.state {
-                case .sending: Text("· Sending…").accessibilityIdentifier("delivery-sending")
-                case .sent: Text("· Sent").accessibilityIdentifier("delivery-sent")
+                case .sending: Text("· Sending…").accessibilityLabel("Sending").accessibilityIdentifier("delivery-sending")
+                case .sent: Text("· Sent").accessibilityLabel("Sent").accessibilityIdentifier("delivery-sent")
                 case .failed:
                     Button("· Not sent. Tap to retry", action: onRetry)
                         .foregroundStyle(Theme.danger)
+                        .frame(minHeight: 44).contentShape(Rectangle()).padding(.vertical, -10)
+                        .accessibilityLabel("Not sent. Retry")
                         .accessibilityIdentifier("delivery-failed")
                 case .undelivered:
                     Button("· Not delivered. Tap to resend", action: onRetry)
                         .foregroundStyle(Theme.danger)
+                        .frame(minHeight: 44).contentShape(Rectangle()).padding(.vertical, -10)
+                        .accessibilityLabel("Not delivered. Resend")
                         .accessibilityIdentifier("delivery-undelivered")
                 case .waiting, .passed:
                     // On its way through nearby phones (LIME-142): words and an icon, grey (not an error), no retry (it resumes by itself).
@@ -1052,7 +1118,7 @@ struct MessageBubble: View {
         }
         .font(Theme.caption)
         .foregroundStyle(Theme.textSecondary)
-        .lineLimit(1)
+        .fixedSize(horizontal: false, vertical: true)   // wraps at the larger text sizes instead of being cut
         .wallpaperChip()
     }
 }
@@ -1539,3 +1605,23 @@ struct OlderOnScrollModifier: ViewModifier {
 }
 
 struct ScrollMetricsSnap: Equatable { var contentH: CGFloat; var offsetY: CGFloat }
+
+
+/// One touch-only control of a message, as an accessibility action on the message's single stop.
+struct MessageExtraAction {
+    let title: String
+    let run: () -> Void
+    init(_ title: String, _ run: @escaping () -> Void) { self.title = title; self.run = run }
+}
+
+struct MessageExtraActions: ViewModifier {
+    let actions: [MessageExtraAction]
+    func body(content: Content) -> some View {
+        if actions.isEmpty { content } else {
+            // (Written backwards: SwiftUI hands VoiceOver actions in the reverse of the order they are written.)
+            content.accessibilityActions {
+                ForEach(Array(actions.enumerated().reversed()), id: \.offset) { _, action in Button(action.title) { action.run() } }
+            }
+        }
+    }
+}

@@ -58,6 +58,13 @@ enum StickerPack {
     }
 
     static let namePrefix = "lime-sticker-"
+
+    /// What VoiceOver says for a received lime sticker (from its file name), or "Sticker" if it is not one of ours (LIME-130-3a).
+    static func spokenName(forFileName name: String, in pack: [LimeSticker] = all) -> String {
+        guard name.hasPrefix(namePrefix) else { return "Sticker" }
+        let file = (String(name.dropFirst(namePrefix.count)) as NSString).deletingPathExtension
+        return pack.first { $0.file == file }?.label ?? "Sticker"
+    }
 }
 
 /// A still frame of a sticker (the grid and the strip do not animate: they follow Reduce Motion and stay light).

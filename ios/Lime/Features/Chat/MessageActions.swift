@@ -149,6 +149,8 @@ struct MessageActionsHost: ViewModifier {
     @State private var actionsSize = CGSize(width: 260, height: 7 * 48)
     /// The sender's name row above a lifted message in a group (the caption line and the 4 pt gap), scaling with the text size.
     @ScaledMetric(relativeTo: .caption) private var nameRowHeight: CGFloat = 22
+    /// The actions list is as wide as its text needs, up to the screen.
+    @ScaledMetric(relativeTo: .body) private var menuWidth: CGFloat = MessageMenuLayout.menuWidth
 
     func body(content: Content) -> some View {
         content
@@ -275,9 +277,9 @@ struct MessageActionsHost: ViewModifier {
                     liftedBubble(message, placement: placement)
                     reactionBar(message).fixedSize().onGeometryChange(for: CGSize.self) { $0.size } action: { reactionSize = $0 }
                         .position(x: placement.bar.midX, y: placement.bar.midY)
-                    // The menu's rows keep to a size that fits beside the message on a small screen at the largest text size; the message itself
-                    // follows the full size (LIME-168).
-                    actionsMenu(message).dynamicTypeSize(...DynamicTypeSize.xxxLarge).frame(width: MessageMenuLayout.menuWidth).fixedSize(horizontal: false, vertical: true)
+                    // The menu's rows grow with the text size; a list taller than the room beside the message scrolls (LIME-130-3a).
+                    actionsMenu(message).frame(width: min(menuWidth, geo.size.width - 2 * MessageMenuLayout.margin))
+                        .frame(maxHeight: geo.size.height * 0.55).fixedSize(horizontal: false, vertical: true)
                         .onGeometryChange(for: CGSize.self) { $0.size } action: { actionsSize = $0 }
                         .position(x: placement.menu.midX, y: placement.menu.midY)
                         .accessibilityElement(children: .contain).accessibilityIdentifier("message-actions")
@@ -372,6 +374,7 @@ struct MessageActionsHost: ViewModifier {
     }
 
     private func actionsMenu(_ message: Message) -> some View {
+        ScrollView {
         VStack(spacing: 0) {
             // The reaction row is above; the rest follow the plan, the same list VoiceOver gets.
             ForEach(MessageActionPlan.actions(for: message, inThread: inThread).filter { $0 != .react }, id: \.self) { action in
@@ -398,6 +401,8 @@ struct MessageActionsHost: ViewModifier {
                 }
             }
         }
+        }
+        .scrollBounceBehavior(.basedOnSize)
         .background(Theme.canvas, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 0.5))
     }

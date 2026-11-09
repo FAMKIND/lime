@@ -36,6 +36,7 @@ struct MessageSearchScreen: View {
         .swipeBackEnabled()
         .inviteFlow(start: $inviting, username: session.profile?.username)
         .onChange(of: query) { _, _ in if lookup.state != .searching { lookup.reset() } }
+        .announcesLookup(lookup)
         .onAppear {
             focused = true
             #if DEBUG
@@ -326,8 +327,9 @@ struct SearchHeader: View {
                     .onSubmit { onSubmit?() }
                 if !query.isEmpty {
                     Button { query = "" } label: {
-                        Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.textSecondary)
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.textSecondary).frame(width: 44, height: 44).contentShape(Rectangle())
                     }
+                    .padding(.vertical, -8)
                     .accessibilityLabel("Clear").accessibilityIdentifier("search-clear")
                 }
             }

@@ -63,6 +63,48 @@ enum AXProbe {
         return target?.accessibilityActivate() ?? false
     }
 
+    /// The elements VoiceOver would stop on, found the way it finds them: an element is a stop and what is inside it is not walked. One line per stop,
+    /// `label | identifier`.
+    static func stops() -> String {
+        var found: [String] = []
+        var seen = Set<ObjectIdentifier>()
+        func visit(_ object: NSObject, _ depth: Int) {
+            guard depth < 60, seen.insert(ObjectIdentifier(object)).inserted else { return }
+            if object.isAccessibilityElement { found.append("\(object.accessibilityLabel ?? "") | \(identifier(of: object))"); return }
+            if let view = object as? UIView { for sub in view.subviews { visit(sub, depth + 1) } }
+            let count = object.accessibilityElementCount()
+            if count != NSNotFound, count > 0 {
+                for index in 0..<count { if let e = object.accessibilityElement(at: index) as? NSObject { visit(e, depth + 1) } }
+            }
+            if let elements = object.accessibilityElements { for element in elements { if let e = element as? NSObject { visit(e, depth + 1) } } }
+        }
+        for scene in UIApplication.shared.connectedScenes {
+            for window in (scene as? UIWindowScene)?.windows ?? [] { visit(window, 0) }
+        }
+        return found.joined(separator: "\n")
+    }
+
+    /// VoiceOver's swipe up or down on the first element whose identifier starts with `prefix`: an adjustable element's increment or decrement.
+    @discardableResult
+    static func adjust(_ prefix: String, up: Bool) -> NSObject? {
+        var target: NSObject?
+        func visit(_ object: NSObject, _ depth: Int) {
+            guard depth < 40, target == nil else { return }
+            if Self.identifier(of: object).hasPrefix(prefix), object.accessibilityTraits.contains(.adjustable) { target = object; return }
+            if let view = object as? UIView { for sub in view.subviews { visit(sub, depth + 1) } }
+            let count = object.accessibilityElementCount()
+            if count != NSNotFound, count > 0 {
+                for index in 0..<count { if let e = object.accessibilityElement(at: index) as? NSObject { visit(e, depth + 1) } }
+            }
+        }
+        for scene in UIApplication.shared.connectedScenes {
+            for window in (scene as? UIWindowScene)?.windows ?? [] { visit(window, 0) }
+        }
+        guard let target else { return nil }
+        if up { target.accessibilityIncrement() } else { target.accessibilityDecrement() }
+        return target
+    }
+
     /// Runs the action called `name` on the first element that has it.
     @discardableResult
     static func run(_ name: String) -> Bool {
@@ -106,6 +148,11 @@ struct AXProbeOverlay: View {
             Button("probe-mic") { output = "mic:\(AXProbe.activate("composer-mic"))" }.accessibilityIdentifier("ax-probe-mic")
             Button("probe-escape") { output = "escape:\(AXProbe.escape())" }.accessibilityIdentifier("ax-probe-escape")
             Button("probe-dismiss") { output = "dismiss:\(AXProbe.run("Dismiss"))" }.accessibilityIdentifier("ax-probe-dismiss")
+            Button("probe-stops") { output = AXProbe.stops() }.accessibilityIdentifier("ax-probe-stops")
+            Button("probe-up") {
+                let target = AXProbe.adjust("voice-bubble-", up: true)
+                Task { try? await Task.sleep(for: .milliseconds(600)); output = "up:\(target != nil) value:\(target?.accessibilityValue ?? "")" }
+            }.accessibilityIdentifier("ax-probe-up")
             Button("probe-said") { output = "said:" + Announce.said.joined(separator: "|") }.accessibilityIdentifier("ax-probe-said")
             Text(output).font(.system(size: 1)).accessibilityLabel(output).accessibilityIdentifier("ax-probe-out")
         }

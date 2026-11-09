@@ -122,6 +122,8 @@ struct ResolvedTheme: Equatable {
     var bubble: UIColor, bubbleEdge: UIColor, link: UIColor, placeholder: UIColor, placeholderLarge: UIColor
     /// My own bubble (it follows the accent, LIME-277d), the ink on it, links in it, and the reaction pill's two fills (the second when I reacted).
     var own: UIColor, ownInk: UIColor, linkOwn: UIColor, chip: UIColor, chipMine: UIColor
+    /// The captions in my bubble (the ink a little softer, still 4.5:1 on it, LIME-130-3a).
+    var ownSecondary: UIColor
     /// Red for text and icons (an error, "Delete", "Missed"): 4.5:1 (7:1 with Increase Contrast) on the canvas, the surface and the bubble (LIME-130-2).
     var danger: UIColor
 
@@ -130,6 +132,7 @@ struct ResolvedTheme: Equatable {
         let main = increaseContrast ? ContrastGuard.enhanced : ContrastGuard.text
         return ContrastGuard.ratio(text, canvas) >= main && ContrastGuard.ratio(text, surface) >= main
             && ContrastGuard.ratio(secondary, canvas) >= ContrastGuard.text && ContrastGuard.ratio(secondary, surface) >= ContrastGuard.text
+            && ContrastGuard.ratio(secondary, bubble) >= ContrastGuard.text && ContrastGuard.ratio(ownSecondary, own) >= ContrastGuard.text
             && ContrastGuard.ratio(accentInk, accent) >= ContrastGuard.text
             // The bubble pairs: their text, a link inside, mine (fixed colours), and the hints of empty fields.
             && ContrastGuard.ratio(text, bubble) >= main && ContrastGuard.ratio(link, bubble) >= ContrastGuard.text
@@ -154,7 +157,7 @@ enum ThemeResolver {
         let bubble = UIColor(hex: base.bubble ?? (darkMode ? 0x3D4441 : 0xFFFEFE))
         let on = [canvas, surface]
         let text = ContrastGuard.nudge(UIColor(hex: base.text), against: on + [bubble], minimum: increaseContrast ? ContrastGuard.enhanced : ContrastGuard.text)
-        let secondary = ContrastGuard.nudge(UIColor(hex: base.secondary), against: on, minimum: increaseContrast ? ContrastGuard.enhanced : ContrastGuard.text)
+        let secondary = ContrastGuard.nudge(UIColor(hex: base.secondary), against: on + [bubble], minimum: increaseContrast ? ContrastGuard.enhanced : ContrastGuard.text)
         var hairline = UIColor(hex: base.hairline)
         if increaseContrast { hairline = ContrastGuard.nudge(hairline, against: [canvas], minimum: ContrastGuard.large) }
         let link = ContrastGuard.nudge(UIColor(hex: darkMode ? 0x8ECF73 : 0x1B7A3A), against: [bubble, canvas], minimum: ContrastGuard.text)
@@ -166,6 +169,7 @@ enum ThemeResolver {
         let own = tone == LimeColours.lime ? UIColor(hex: darkMode ? 0x8ECF73 : 0xE4F9BE)
             : (darkMode ? Theme.avatarUIColor(tone, dark: true) : ContrastGuard.blend(Theme.avatarUIColor(tone, dark: false), .white, 0.35))
         let ownInk = ContrastGuard.ink(on: own)
+        let ownSecondary = ContrastGuard.nudge(ContrastGuard.blend(ownInk, own, 0.3), against: [own], minimum: increaseContrast ? ContrastGuard.enhanced : ContrastGuard.text)
         let linkOwn = ContrastGuard.nudge(UIColor(hex: darkMode ? 0x0A5524 : 0x1F6B2E), against: [own], minimum: ContrastGuard.text)
         // The reaction pill: lime's own two fills on Plain, a faint tint of the text colour over the surface elsewhere.
         let chip = background == .plain ? UIColor(hex: darkMode ? 0x1B241F : 0xF1EFE8) : ContrastGuard.blend(surface, text, 0.07)
@@ -174,7 +178,7 @@ enum ThemeResolver {
                                          minimum: increaseContrast ? ContrastGuard.enhanced : ContrastGuard.text)
         let made = ResolvedTheme(canvas: canvas, surface: surface, text: text, secondary: secondary, hairline: hairline, accent: accentFill, accentInk: ContrastGuard.ink(on: accentFill),
                             bubble: bubble, bubbleEdge: UIColor(hex: base.bubbleEdge ?? (darkMode ? 0x3D4441 : 0xDDDDD9)), link: link, placeholder: placeholder, placeholderLarge: placeholderLarge,
-                            own: own, ownInk: ownInk, linkOwn: linkOwn, chip: chip, chipMine: chipMine, danger: danger)
+                            own: own, ownInk: ownInk, linkOwn: linkOwn, chip: chip, chipMine: chipMine, ownSecondary: ownSecondary, danger: danger)
         cache[key] = made
         return made
     }
@@ -226,7 +230,7 @@ final class ThemeStore: @unchecked Sendable {
         ThemeResolver.resolve(accent: accent, background: background, dark: dark, increaseContrast: increaseContrast)
     }
 
-    enum Role { case canvas, surface, text, secondary, hairline, accent, accentInk, bubble, bubbleEdge, link, placeholder, placeholderLarge, own, ownInk, linkOwn, chip, chipMine, danger }
+    enum Role { case canvas, surface, text, secondary, hairline, accent, accentInk, bubble, bubbleEdge, link, placeholder, placeholderLarge, own, ownInk, linkOwn, chip, chipMine, ownSecondary, danger }
 
     /// A colour that follows the choice. Reading `accent` and `background` here makes the view that asked redraw when they change.
     func colour(_ role: Role) -> Color {
@@ -251,6 +255,7 @@ final class ThemeStore: @unchecked Sendable {
             case .linkOwn: return theme.linkOwn
             case .chip: return theme.chip
             case .chipMine: return theme.chipMine
+            case .ownSecondary: return theme.ownSecondary
             case .danger: return theme.danger
             }
         })

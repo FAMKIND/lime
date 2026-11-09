@@ -5,7 +5,7 @@ import XCTest
 final class GIF209bUITests: LimeUITestCase {
     private func any(_ app: XCUIApplication, _ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
     private func gifBubbles(_ app: XCUIApplication) -> XCUIElementQuery {
-        app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'attachment-image-' AND (label == 'GIF' OR label == 'Sticker')"))
+        app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'attachment-image-' AND (label == 'GIF' OR label == 'Sticker' OR label BEGINSWITH 'lime sticker')"))
     }
     private func chat(_ extra: [String] = []) -> (XCUIApplication, XCUIElement) {
         let app = XCUIApplication()

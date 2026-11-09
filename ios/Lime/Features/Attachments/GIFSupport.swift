@@ -70,7 +70,9 @@ enum GIF {
 @MainActor
 final class GIFPlaybackBudget {
     static let shared = GIFPlaybackBudget()
-    static let limit = 6
+    /// One GIF plays at a time in view (WCAG 2.2.2); the others show their first frame, and the next one starts when this one stops (LIME-130-3a).
+    static let limit = 1
+    static let freed = Notification.Name("lime.gif.budget.freed")
     private var playing: Set<UUID> = []
     func request(_ id: UUID) -> Bool {
         if playing.contains(id) { return true }
@@ -78,7 +80,10 @@ final class GIFPlaybackBudget {
         playing.insert(id)
         return true
     }
-    func release(_ id: UUID) { playing.remove(id) }
+    func release(_ id: UUID) {
+        guard playing.remove(id) != nil else { return }
+        NotificationCenter.default.post(name: Self.freed, object: nil)
+    }
 }
 
 /// Plays a GIF: ImageIO decodes one frame at a time as the display needs it (the whole file is never decoded into memory), and it stops when it leaves the screen.
@@ -91,6 +96,9 @@ final class GIFPlayerView: UIView {
     private var nextChange: CFTimeInterval = 0
     private let token = UUID()
     var wantsToPlay = true { didSet { refresh() } }
+    /// Called when it begins to play (the five seconds count from then).
+    var onStart: (() -> Void)?
+    private var freedObserver: NSObjectProtocol?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -100,6 +108,10 @@ final class GIFPlayerView: UIView {
         imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         addSubview(imageView)
         clipsToBounds = true
+        // Another GIF stopped: one that was waiting for its turn may go now.
+        freedObserver = NotificationCenter.default.addObserver(forName: GIFPlaybackBudget.freed, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { if let self, self.link == nil { self.refresh() } }
+        }
     }
     required init?(coder: NSCoder) { fatalError() }
 
@@ -128,6 +140,7 @@ final class GIFPlayerView: UIView {
             link.add(to: .main, forMode: .common)
             self.link = link
             nextChange = CACurrentMediaTime() + delays[index]
+            onStart?()
         } else if !shouldRun, link != nil {
             link?.invalidate(); link = nil
             MainActor.assumeIsolated { GIFPlaybackBudget.shared.release(token) }
@@ -155,13 +168,40 @@ struct GIFView: UIViewRepresentable {
     let data: Data
     var playing = true
     var fit = false
+    var onStart: (() -> Void)?
 
     func makeUIView(context: Context) -> GIFPlayerView {
         let view = GIFPlayerView()
+        view.onStart = onStart
         view.load(data, fit: fit)
         view.wantsToPlay = playing
         return view
     }
 
-    func updateUIView(_ view: GIFPlayerView, context: Context) { view.wantsToPlay = playing }
+    func updateUIView(_ view: GIFPlayerView, context: Context) { view.onStart = onStart; view.wantsToPlay = playing }
+}
+
+
+/// Which GIFs in the chat are playing (LIME-130-3a, WCAG 2.2.2): one that has looped for five seconds pauses, unless the person tapped it to play;
+/// with Reduce Motion none starts by itself. "Play GIF" and "Pause GIF" are the same choice as an accessibility action.
+@MainActor @Observable
+final class GIFPlayback {
+    static let shared = GIFPlayback()
+    nonisolated static let loopSeconds = 5.0
+    private(set) var asked: Set<String> = []     // tapped to play: it keeps playing
+    private(set) var paused: Set<String> = []    // five seconds done, or paused by the person
+
+    /// The rule, apart from the state (tested): plays when asked to, or when nothing stopped it and Reduce Motion is off.
+    nonisolated static func plays(reduceMotion: Bool, asked: Bool, paused: Bool) -> Bool {
+        asked || (!reduceMotion && !paused)
+    }
+
+    func isPlaying(_ id: String, reduceMotion: Bool) -> Bool { Self.plays(reduceMotion: reduceMotion, asked: asked.contains(id), paused: paused.contains(id)) }
+
+    func toggle(_ id: String, reduceMotion: Bool) {
+        if isPlaying(id, reduceMotion: reduceMotion) { asked.remove(id); paused.insert(id) } else { asked.insert(id); paused.remove(id) }
+    }
+
+    /// Five seconds after it began to play: it stops, unless it was tapped.
+    func loopedEnough(_ id: String) { if !asked.contains(id) { paused.insert(id) } }
 }

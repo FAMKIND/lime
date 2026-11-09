@@ -168,7 +168,7 @@ struct VideoPlayerScreen: View {
             if let player { VideoPlayer(player: player).ignoresSafeArea() }
             Button { dismiss() } label: {
                 Image(systemName: "xmark").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
-                    .frame(width: 44, height: 44).background(.ultraThinMaterial, in: Circle())
+                    .frame(width: 44, height: 44).viewerGlass(in: Circle())
             }
             .padding(.leading, 16).padding(.top, 8)
             .accessibilityLabel("Close").accessibilityIdentifier("video-player-close")

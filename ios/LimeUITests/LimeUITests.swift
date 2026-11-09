@@ -109,7 +109,9 @@ class LimeUITestCase: XCTestCase {
     }
 
     func longPress(_ app: XCUIApplication, _ text: String) {
-        let bubble = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
+        // (With VoiceOver on, a message is one element that says who, what and when, not a static text: LIME-130-3a.)
+        var bubble = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
+        if !bubble.waitForExistence(timeout: 4) { bubble = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch }
         XCTAssertTrue(bubble.waitForExistence(timeout: 10), text)
         bubble.press(forDuration: 1.0)
         XCTAssertTrue(app.descendants(matching: .any)["message-actions"].waitForExistence(timeout: 5), "the actions menu opens")
@@ -356,7 +358,7 @@ final class LimeUITestsMessages: LimeUITestCase {
         app.launch()
         let seal = app.descendants(matching: .any)["chat-verified"]
         XCTAssertTrue(seal.waitForExistence(timeout: 10), "a seal after the name")
-        XCTAssertEqual(seal.label, "Verified in person")
+        XCTAssertEqual(seal.label, "Verified") // 130-3a: a button now; the hint says "Verified in person"
         XCTAssertFalse(app.staticTexts["Verified in person"].exists, "not a line of its own under the name")
         let title = app.descendants(matching: .any)["chat-title"]
         XCTAssertLessThan(seal.frame.midY - title.frame.minY, title.frame.height / 2 + 6, "on the name's line")
@@ -455,11 +457,11 @@ final class LimeUITestsMessages: LimeUITestCase {
         plays.element(boundBy: 0).tap()
         let speed = app.buttons["voice-speed"]
         XCTAssertTrue(speed.waitForExistence(timeout: 5), "the speed button shows on the one playing")
-        XCTAssertEqual(speed.label, "Playback speed 1×")
+        XCTAssertEqual(speed.label, "Speed, 1×")
         speed.tap()
-        XCTAssertEqual(speed.label, "Playback speed 1.5×")
+        XCTAssertEqual(speed.label, "Speed, 1.5×")
         speed.tap()
-        XCTAssertEqual(speed.label, "Playback speed 2×")
+        XCTAssertEqual(speed.label, "Speed, 2×")
         // The first is 6 s long: at 2× it ends after about 3 s, and the second one starts by itself.
         let second = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'voice-play-'")).element(boundBy: 1)
         let playingNext = NSPredicate(format: "label == 'Pause voice message'")

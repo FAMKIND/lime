@@ -43,7 +43,8 @@ struct ChatLook: Codable, Equatable {
     var ownBubble: OwnBubbleStyle? {
         guard let tone = bubbleTone else { return nil }
         let (fill, ink) = Self.bubbleColours(tone: tone, deep: bubbleDeep)
-        return OwnBubbleStyle(fill: Color(fill), ink: Color(ink), link: Color(ink))
+        let soft = ContrastGuard.nudge(ContrastGuard.blend(ink, fill, 0.3), against: [fill], minimum: ContrastGuard.text)
+        return OwnBubbleStyle(fill: Color(fill), ink: Color(ink), link: Color(ink), secondary: Color(soft))
     }
 
     /// The fill of a tone's deep or pastel shade, and the ink that reads on it (WCAG AA by `ContrastGuard`).
@@ -59,6 +60,8 @@ struct OwnBubbleStyle {
     let fill: Color
     let ink: Color
     let link: Color
+    /// Captions: the ink a little softer, still 4.5:1 on the fill.
+    let secondary: Color
 }
 
 extension EnvironmentValues {

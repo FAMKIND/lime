@@ -56,8 +56,9 @@ struct AttachmentStack: View {
             ImageTile(item: only, uploading: uploading, bare: true)
                 .frame(width: 160, height: 160)
                 .mediaTap { openPicture(0) }
-                .accessibilityLabel("Sticker")
+                .accessibilityLabel(StickerPack.spokenName(forFileName: only.name))
                 .accessibilityIdentifier("attachment-image-\(only.id)")
+                .modifier(GIFActionModifier(item: only))
         } else if images.count == 1, let only = images.first {
             let aspect = min(max(only.aspect, 0.6), 1.7)
             ImageTile(item: only, uploading: uploading)
@@ -66,6 +67,7 @@ struct AttachmentStack: View {
                 .mediaTap { openPicture(0) }
             .accessibilityLabel(pictureLabel(only))
             .accessibilityIdentifier("attachment-image-\(only.id)")
+            .modifier(GIFActionModifier(item: only))
         } else {
             let shown = Array(images.prefix(4))
             let side = (width - 4) / 2
@@ -81,7 +83,7 @@ struct AttachmentStack: View {
                         }
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .mediaTap { openPicture(index) }
-                    .accessibilityLabel(pictureLabel(item))
+                    .accessibilityLabel(index == 3 && images.count > 4 ? "\(pictureLabel(item)), and \(images.count - 4) more" : pictureLabel(item))
                     .accessibilityIdentifier("attachment-image-\(item.id)")
                 }
             }
@@ -109,12 +111,13 @@ struct AttachmentPresenting: ViewModifier {
         content
             .fullScreenCover(item: Binding(get: { store.attachmentViewer }, set: { store.attachmentViewer = $0 })) { request in
                 AttachmentViewer(items: request.items, start: request.index, messageID: request.messageID, conversationID: request.conversationID)
+                    .preferredColorScheme(.dark)   // the viewer is always dark: its glass and white glyphs are drawn for it (LIME-130-3a)
             }
             .background(Color.clear.fullScreenCover(item: Binding(get: { store.openedFile }, set: { store.openedFile = $0 })) { item in
                 FileOpener(item: item)
             })
             .background(Color.clear.fullScreenCover(item: Binding(get: { store.playingVideo }, set: { store.playingVideo = $0 })) { request in
-                VideoPlayerScreen(request: request)
+                VideoPlayerScreen(request: request).preferredColorScheme(.dark)
             })
     }
 }
@@ -133,7 +136,7 @@ struct ImageTile: View {
     @State private var full: UIImage?
     /// An animated GIF (LIME-206): the file's bytes, played a frame at a time; still with Reduce Motion until the person taps play.
     @State private var gifData: Data?
-    @State private var gifPlaying = false
+    private var gifControl: GIFPlayback { GIFPlayback.shared }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var failed = false
     /// Not fetched by itself (the settings, or a nearly full phone): a placeholder with its size, to tap.
@@ -143,7 +146,11 @@ struct ImageTile: View {
         ZStack {
             if !bare { Theme.surface }
             if let gifData {
-                GIFView(data: gifData, playing: !reduceMotion || gifPlaying)
+                GIFView(data: gifData, playing: gifControl.isPlaying(item.id, reduceMotion: reduceMotion), onStart: {
+                    // Five seconds of looping, then it stops (unless it was tapped to play).
+                    let id = item.id
+                    Task { try? await Task.sleep(for: .seconds(GIFPlayback.loopSeconds)); GIFPlayback.shared.loopedEnough(id) }
+                })
                 if !bare { gifBadge }
             } else if let full {
                 Image(uiImage: full).resizable().scaledToFill()
@@ -174,8 +181,8 @@ struct ImageTile: View {
         ZStack {
             VStack { Spacer(); HStack { Text("GIF").font(.system(size: 11, weight: .bold)).foregroundStyle(.white).padding(.horizontal, 6).padding(.vertical, 2).background(.black.opacity(0.55), in: Capsule()).padding(6); Spacer() } }
                 .accessibilityHidden(true)
-            if reduceMotion && !gifPlaying && gifData != nil {
-                Button { gifPlaying = true } label: {
+            if !gifControl.isPlaying(item.id, reduceMotion: reduceMotion) && gifData != nil {
+                Button { gifControl.toggle(item.id, reduceMotion: reduceMotion) } label: {
                     Image(systemName: "play.fill").font(.system(size: 22)).foregroundStyle(.white).frame(width: 52, height: 52).background(.black.opacity(0.5), in: Circle())
                 }
                 .accessibilityLabel("Play GIF").accessibilityIdentifier("gif-play-\(item.id)")
@@ -213,6 +220,7 @@ struct FileCard: View {
     @Environment(\.ownBubbleStyle) private var ownStyle   // a chat's own colour for my bubbles (LIME-277d)
     private var ownFill: Color { ownStyle?.fill ?? Theme.ownBubble }
     private var ownInk: Color { ownStyle?.ink ?? Theme.ownBubbleInk }
+    private var ownSecondary: Color { ownStyle?.secondary ?? Theme.ownBubbleSecondary }
     @Environment(ConversationStore.self) private var store
     let item: AttachmentItem
     let isOwn: Bool
@@ -224,9 +232,9 @@ struct FileCard: View {
                 Image(systemName: symbol).font(.system(size: 26)).frame(width: 36)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.name.isEmpty ? "File" : item.name).font(Theme.body).lineLimit(1).truncationMode(.middle)
-                    Text(item.removed ? "Media removed" : item.detail).font(Theme.caption).foregroundStyle(isOwn ? ownInk.opacity(0.7) : Theme.textSecondary)
+                    Text(item.removed ? "Media removed" : item.detail).font(Theme.caption).foregroundStyle(isOwn ? ownSecondary : Theme.textSecondary)
                     if !item.downloaded && !item.removed && !isOwn {
-                        AvailabilityText(item: item).font(Theme.caption).foregroundStyle(isOwn ? ownInk.opacity(0.7) : Theme.textSecondary)
+                        AvailabilityText(item: item).font(Theme.caption).foregroundStyle(isOwn ? ownSecondary : Theme.textSecondary)
                     }
                 }
                 Spacer(minLength: 0)
@@ -357,20 +365,20 @@ struct AttachmentViewer: View {
             HStack {
                 Button { dismiss() } label: {
                     Image(systemName: "xmark").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
-                        .frame(width: 44, height: 44).background(.ultraThinMaterial, in: Circle())
+                        .frame(width: 44, height: 44).viewerGlass(in: Circle())
                 }
                 .accessibilityLabel("Close").accessibilityIdentifier("attachment-viewer-close")
                 Spacer()
                 if items.count > 1 {
                     Text("\(page + 1) of \(items.count)").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(.white)
-                        .padding(.horizontal, 12).padding(.vertical, 6).background(.ultraThinMaterial, in: Capsule())
+                        .padding(.horizontal, 12).padding(.vertical, 6).viewerGlass(in: Capsule())
                         .accessibilityIdentifier("attachment-viewer-count")
                 }
                 Spacer()
                 ViewerReactButton(messageID: messageID, conversationID: conversationID)
                 Button { Task { await save() } } label: {
                     Image(systemName: saved ? "checkmark" : "square.and.arrow.down").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
-                        .frame(width: 44, height: 44).background(.ultraThinMaterial, in: Circle())
+                        .frame(width: 44, height: 44).viewerGlass(in: Circle())
                 }
                 .accessibilityLabel(saved ? "Saved to Photos" : "Save to Photos").accessibilityIdentifier("attachment-save")
             }
@@ -498,11 +506,14 @@ struct DraftStrip: View {
                         }
                         .frame(width: 64, height: 64)
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(draft.outgoing.name)
                         Button { remove(draft) } label: {
                             Image(systemName: "xmark.circle.fill").font(.system(size: 20)).symbolRenderingMode(.palette).foregroundStyle(.white, Color.black.opacity(0.6))
+                                .frame(width: 44, height: 44).contentShape(Rectangle())   // a 44 pt target around the 20 pt glyph
                         }
-                        .offset(x: 6, y: -6)
-                        .accessibilityLabel("Remove").accessibilityIdentifier("draft-remove")
+                        .offset(x: 16, y: -16)
+                        .accessibilityLabel("Remove \(draft.outgoing.name)").accessibilityIdentifier("draft-remove")
                     }
                     .padding(.top, 6).padding(.trailing, 6)
                 }
@@ -651,5 +662,37 @@ struct AvailabilityText: View {
         Text(words)
             .accessibilityIdentifier("available-until-\(item.id)")
             .task(id: item.id) { state = await store.availableUntil(item) }
+    }
+}
+
+
+/// "Play GIF" / "Pause GIF" on a GIF's tile, the same choice as the button on it (LIME-130-3a).
+struct GIFActionModifier: ViewModifier {
+    let item: AttachmentItem
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    func body(content: Content) -> some View {
+        if GIF.isGIF(mime: item.mime) {
+            content.accessibilityAction(named: GIFPlayback.shared.isPlaying(item.id, reduceMotion: reduceMotion) ? "Pause GIF" : "Play GIF") {
+                GIFPlayback.shared.toggle(item.id, reduceMotion: reduceMotion)
+            }
+        } else { content }
+    }
+}
+
+
+extension View {
+    /// The circle or capsule behind a white glyph over a photo or video: the dark material with a black tint under it (so the glyph reads on a white picture too,
+    /// 3:1), and nearly solid black with Reduce Transparency.
+    func viewerGlass<S: Shape>(in shape: S) -> some View { modifier(ViewerGlass(shape: shape)) }
+}
+
+private struct ViewerGlass<S: Shape>: ViewModifier {
+    let shape: S
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    func body(content: Content) -> some View {
+        content.background {
+            if reduceTransparency { shape.fill(Color.black.opacity(0.8)) }
+            else { shape.fill(Color.black.opacity(0.35)).background(.ultraThinMaterial, in: shape) }
+        }
     }
 }

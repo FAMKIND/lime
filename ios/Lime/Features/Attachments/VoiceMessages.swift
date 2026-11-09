@@ -234,6 +234,14 @@ final class VoicePlayer: NSObject, AVAudioPlayerDelegate {
         isPlaying = player?.play() ?? false
     }
 
+    /// Moves the position of the voice message that is playing by `seconds` (negative: back), of a message `total` seconds long (VoiceOver's swipe up and down).
+    func skip(by seconds: Double, total: Double) {
+        guard currentID != nil, total > 0 else { return }
+        let to = VoiceFormat.moved(progress: progress, total: total, by: seconds)
+        if simulated { simulatedClock = to * total } else { player?.currentTime = to * (player?.duration ?? total) }
+        progress = to
+    }
+
     /// 1× to 1.5× to 2× and round again; takes effect at once.
     func cycleRate() {
         let index = Self.speeds.firstIndex(of: rate) ?? 0
@@ -301,6 +309,12 @@ struct VoiceBubble: View {
     @Environment(ConversationStore.self) private var store
     @State private var player = VoicePlayer.shared
     @State private var loading = false
+    @Environment(\.messageAccessibility) private var messageAX
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverOn
+    @Environment(\.accessibilitySwitchControlEnabled) private var switchControlOn
+    /// With VoiceOver or Switch Control the bubble is one adjustable element (position as its value, swipe up or down skips 5 s); the parts stay for everyone else.
+    private var oneStop: Bool { voiceOverOn || switchControlOn || CallControlsPolicy.voiceOverRunning || CallControlsPolicy.switchControlRunning }
+    private var totalSeconds: Double { Double(item.durationMs ?? 0) / 1000 }
 
     private var isCurrent: Bool { player.isCurrent(item.id) }
     private var ink: Color { isOwn ? ownInk : Theme.text }
@@ -315,6 +329,7 @@ struct VoiceBubble: View {
                     Image(systemName: isCurrent && player.isPlaying ? "pause.fill" : "play.fill").font(.system(size: 16)).foregroundStyle(ink)
                 }
             }
+            .frame(width: 44, height: 44).contentShape(Rectangle())
             .mediaTap { Task { await play() } }
             .accessibilityLabel(isCurrent && player.isPlaying ? "Pause voice message" : "Play voice message")
             .accessibilityIdentifier("voice-play-\(item.id)")
@@ -329,9 +344,11 @@ struct VoiceBubble: View {
                         Text(rateText).font(Theme.font(.caption, weight: .bold)).foregroundStyle(ink)
                             .padding(.horizontal, 6).padding(.vertical, 1)
                             .background(ink.opacity(0.14), in: Capsule())
+                            .padding(.horizontal, 6).padding(.vertical, 12).contentShape(Rectangle())   // a 44 pt target around the small pill
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Playback speed \(rateText)")
+                    .padding(.horizontal, -6).padding(.vertical, -12)
+                    .accessibilityLabel("Speed, \(rateText)")
                     .accessibilityIdentifier("voice-speed")
                 }
             }
@@ -340,7 +357,20 @@ struct VoiceBubble: View {
         .padding(.horizontal, 10).padding(.vertical, 8)
         .background(isOwn ? ownFill : Theme.bubbleOther, in: RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous).strokeBorder(isOwn ? Color.clear : Theme.bubbleEdge, lineWidth: 0.5))
-        .accessibilityElement(children: .contain)
+        .accessibilityElement(children: oneStop ? .ignore : .contain)
+        .accessibilityLabel(oneStop ? "Voice message, \(VoiceFormat.spoken(totalSeconds))" : "")
+        .accessibilityValue(oneStop ? VoiceFormat.position(progress: isCurrent ? player.progress : 0, total: totalSeconds) : "")
+        .accessibilityHint(oneStop ? "Double-tap to play or pause. Swipe up or down to skip 5 seconds" : "")
+        .accessibilityAdjustableAction { direction in
+            guard oneStop else { return }
+            let delta = direction == .increment ? 5.0 : -5.0
+            Task {
+                if !isCurrent { await play() }
+                player.skip(by: delta, total: totalSeconds)
+            }
+        }
+        .modifier(VoiceOneStopActions(active: oneStop, rate: rateText, play: { Task { await play() } }, cycle: { player.cycleRate() }))
+        .messageAccessibilityActions(oneStop ? messageAX : nil)
         .accessibilityIdentifier("voice-bubble-\(item.id)")
     }
 
@@ -382,6 +412,17 @@ struct Waveform: View {
 }
 
 enum VoiceFormat {
+    /// "0:12 of 0:40": where a voice message is, for VoiceOver's value.
+    static func position(progress: Double, total: Double) -> String {
+        "\(clock(min(max(progress, 0), 1) * total)) of \(clock(total))"
+    }
+
+    /// The progress (0 to 1) after moving by `seconds`, kept inside the message.
+    static func moved(progress: Double, total: Double, by seconds: Double) -> Double {
+        guard total > 0 else { return 0 }
+        return min(max(progress + seconds / total, 0), 1)
+    }
+
     /// "0:07", "1:23" (and "1:02:03" for the very long).
     static func clock(_ seconds: Double) -> String {
         let total = Int(seconds.rounded())
@@ -431,5 +472,22 @@ struct RecordingBar: View {
         .padding(.horizontal, 6).frame(minHeight: 44)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("recording-bar")
+    }
+}
+
+
+/// The voice bubble's play and speed controls as actions on its one stop (VoiceOver activates it with a double-tap: play or pause).
+struct VoiceOneStopActions: ViewModifier {
+    let active: Bool
+    let rate: String
+    let play: () -> Void
+    let cycle: () -> Void
+    func body(content: Content) -> some View {
+        if active {
+            content
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction { play() }
+                .accessibilityActions { Button("Speed, \(rate). Change") { cycle() } }
+        } else { content }
     }
 }

@@ -83,6 +83,17 @@ final class TeacherLookup {
         case found(FoundUser)
         case nobody
         case problem(String)
+
+        /// What is said when the state changes (the lookup appears with no focus move): nothing for idle (LIME-130-3a).
+        var spokenWords: String? {
+            switch self {
+            case .idle: nil
+            case .searching: "Searching"
+            case .found: "1 found"
+            case .nobody: "No teacher found"
+            case .problem(let text): text
+            }
+        }
     }
 
     private(set) var state: State = .idle
@@ -280,7 +291,12 @@ struct NewMessageSheet: View {
         }
     }
 
+
     private var searchBar: some View {
+        searchBarContent.announcesLookup(lookup)
+    }
+
+    private var searchBarContent: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass").foregroundStyle(Theme.textSecondary)
             TextField("Name, username or email", text: $query)
@@ -295,8 +311,9 @@ struct NewMessageSheet: View {
                 .onSubmit { search() }
             if !query.isEmpty {
                 Button { query = "" } label: {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.textSecondary)
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.textSecondary).frame(width: 44, height: 44).contentShape(Rectangle())
                 }
+                .padding(.vertical, -8)
                 .accessibilityLabel("Clear").accessibilityIdentifier("new-message-clear")
             }
         }
@@ -408,11 +425,26 @@ struct TeacherRow: View {
     }
 }
 
-/// The A–Z strip down the right edge: touch or drag to jump to a letter. Letters nobody has are dimmed.
+/// The A–Z strip down the right edge: touch or drag to jump to a letter. Letters nobody has are dimmed. For VoiceOver and Switch Control it is
+/// one adjustable element (swipe up or down for the next letter that has someone) instead of 27 stops (LIME-130-3a).
 struct IndexRail: View {
     let available: Set<String>
     let jump: (String) -> Void
     @State private var last: String?
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverOn
+    @Environment(\.accessibilitySwitchControlEnabled) private var switchControlOn
+
+    private var oneStop: Bool { voiceOverOn || switchControlOn || CallControlsPolicy.voiceOverRunning || CallControlsPolicy.switchControlRunning }
+
+    /// The letters that have someone, in order.
+    private var present: [String] { KnownTeachers.rail.filter(available.contains) }
+
+    /// The next (or previous) letter that has someone, from the one last jumped to; the first at the start.
+    nonisolated static func step(from current: String?, among present: [String], by delta: Int) -> String? {
+        guard !present.isEmpty else { return nil }
+        guard let current, let index = present.firstIndex(of: current) else { return delta >= 0 ? present.first : present.last }
+        return present[min(max(index + delta, 0), present.count - 1)]
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -423,7 +455,7 @@ struct IndexRail: View {
                     Text(letter)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(available.contains(letter) ? Theme.text : Theme.textSecondary.opacity(0.5))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
                         .accessibilityLabel("Jump to \(letter)")
                         .accessibilityIdentifier("index-\(letter)")
                         .accessibilityAddTraits(.isButton)
@@ -441,10 +473,20 @@ struct IndexRail: View {
                 jump(target)
             }.onEnded { _ in last = nil })
         }
-        .frame(width: 22)
+        .frame(width: 44)   // a 44 pt wide touch area; the letters sit at its edge
         .frame(maxHeight: 520)
         .padding(.trailing, 2)
-        .accessibilityElement(children: .contain)
+        .accessibilityElement(children: oneStop ? .ignore : .contain)
+        .accessibilityLabel(oneStop ? "Teachers by letter" : "")
+        .accessibilityValue(oneStop ? (last ?? "") : "")
+        .accessibilityHint(oneStop ? "Swipe up or down to jump to the next letter" : "")
+        .accessibilityAdjustableAction { direction in
+            guard oneStop else { return }
+            let target = Self.step(from: last, among: present, by: direction == .increment ? 1 : -1)
+            guard let target else { return }
+            last = target
+            jump(target)
+        }
         .accessibilityIdentifier("index-rail")
     }
 }
@@ -632,5 +674,13 @@ struct RequestsView: View {
         .accessibilityIdentifier("requests-list")
         // Nothing left to answer: go back to Messages.
         .onChange(of: store.requests.isEmpty) { _, empty in if empty { dismiss() } }
+    }
+}
+
+
+extension View {
+    /// Says a teacher lookup's states aloud: "Searching", "1 found", "No teacher found", or the problem.
+    func announcesLookup(_ lookup: TeacherLookup) -> some View {
+        onChange(of: lookup.state) { _, state in if let words = state.spokenWords { Announce.say(words) } }
     }
 }

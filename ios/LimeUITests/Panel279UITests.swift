@@ -5,7 +5,7 @@ import XCTest
 final class Panel279UITests: LimeUITestCase {
     private func any(_ app: XCUIApplication, _ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
     private func gifBubbles(_ app: XCUIApplication) -> XCUIElementQuery {
-        app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'attachment-image-' AND (label == 'GIF' OR label == 'Sticker')"))
+        app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'attachment-image-' AND (label == 'GIF' OR label == 'Sticker' OR label BEGINSWITH 'lime sticker')"))
     }
     private func chat() -> XCUIApplication {
         let app = XCUIApplication()
@@ -97,7 +97,7 @@ final class Panel279UITests: LimeUITestCase {
         let found = any(app, "panel-found-sticker-snow-day")
         XCTAssertTrue(found.waitForExistence(timeout: 5))
         found.tap()
-        let images = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'attachment-image-' AND label == 'Sticker'"))
+        let images = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'attachment-image-' AND (label == 'Sticker' OR label BEGINSWITH 'lime sticker')"))
         XCTAssertTrue(images.firstMatch.waitForExistence(timeout: 8), "it is a sticker in the chat")
         let frame = images.firstMatch.frame
         XCTAssertEqual(frame.width, 160, accuracy: 2); XCTAssertEqual(frame.height, 160, accuracy: 2)

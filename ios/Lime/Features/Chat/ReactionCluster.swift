@@ -63,24 +63,29 @@ struct ReactionCircle: View {
     let chip: ReactionChip
     let messageID: String
     let onTap: () -> Void
+    /// The emoji and the count grow with the text size (the circle keeps its size, so the layout of the row does not change).
+    @ScaledMetric(relativeTo: .body) private var emojiSize: CGFloat = 16
 
     var body: some View {
         Button(action: onTap) {
-            Text(chip.emoji).font(.system(size: 16))
+            Text(chip.emoji).font(.system(size: min(emojiSize, 22)))
                 .frame(width: ReactionPlan.chip, height: ReactionPlan.chip)
                 .background(chip.mine ? Theme.accent : Theme.chipFill, in: Circle())
-                .overlay(Circle().strokeBorder(chip.mine ? Color.clear : Theme.hairline, lineWidth: 0.5))
+                // Mine is the accent fill and also a ring, so it does not rest on colour alone (LIME-130-3a).
+                .overlay(Circle().strokeBorder(chip.mine ? Theme.text : Theme.hairline, lineWidth: chip.mine ? 1.5 : 0.5))
                 .shadow(color: .black.opacity(0.12), radius: 2, y: 1)
                 .overlay(alignment: .bottomTrailing) {
                     if chip.count > 1 {
-                        Text("\(chip.count)").font(.system(size: 10, weight: .bold)).foregroundStyle(Theme.text)
+                        Text("\(chip.count)").font(.caption2.weight(.bold)).foregroundStyle(Theme.text)
                             .frame(minWidth: 16, minHeight: 16).padding(.horizontal, 2)
                             .background(Theme.canvas, in: Capsule())
                             .overlay(Capsule().strokeBorder(Theme.hairline, lineWidth: 0.5))
                             .offset(x: 5, y: 5)
                     }
                 }
-                .contentShape(Circle().inset(by: -4))
+                // A 44 pt target around the 30 pt circle (the next circle's own area wins where they meet).
+                .frame(width: 44, height: 44).contentShape(Rectangle())
+                .frame(width: ReactionPlan.chip, height: ReactionPlan.chip)
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
@@ -107,10 +112,12 @@ struct ReactionCluster: View {
             }
             if more > 0 {
                 Button(action: onTap) {
-                    Text("+\(more)").font(.system(size: 12, weight: .bold)).foregroundStyle(Theme.text)
+                    Text("+\(more)").font(.caption.weight(.bold)).minimumScaleFactor(0.6).foregroundStyle(Theme.text)
                         .frame(width: ReactionPlan.chip, height: ReactionPlan.chip)
                         .background(Theme.chipFill, in: Circle())
                         .overlay(Circle().strokeBorder(Theme.hairline, lineWidth: 0.5))
+                        .frame(width: 44, height: 44).contentShape(Rectangle())
+                        .frame(width: ReactionPlan.chip, height: ReactionPlan.chip)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("\(more) more reactions").accessibilityHint("Double-tap to see who")

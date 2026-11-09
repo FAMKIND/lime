@@ -48,7 +48,7 @@ struct FormattedMessageText: View {
                         if let postImage { postImage(caption, index) }
                     case .heading(let level, let spans):
                         Text(MessageRender.attributed(spans, ink: ink, link: link, mentions: mentions))
-                            .font(headingFont(level)).foregroundStyle(level == 6 ? ink.opacity(0.7) : ink).textCase(level == 6 ? .uppercase : nil)
+                            .font(headingFont(level)).foregroundStyle(ink).textCase(level == 6 ? .uppercase : nil)
                             .fixedSize(horizontal: false, vertical: true).padding(.top, 6)
                             .accessibilityAddTraits(.isHeader)
                     case .quote(let spans):

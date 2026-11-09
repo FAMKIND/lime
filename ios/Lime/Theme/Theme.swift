@@ -62,6 +62,8 @@ enum Theme {
     // My bubble and the main button follow the accent (LIME-277d); a chat can have its own colour (`ChatLook`).
     static var ownBubble: Color { ThemeStore.shared.colour(.own) }
     static var ownBubbleInk: Color { ThemeStore.shared.colour(.ownInk) }
+    /// Captions in my bubble: the ink a little softer, 4.5:1 on it (LIME-130-3a).
+    static var ownBubbleSecondary: Color { ThemeStore.shared.colour(.ownSecondary) }
     static var text: Color { ThemeStore.shared.colour(.text) }
     static var textSecondary: Color { ThemeStore.shared.colour(.secondary) }
     /// The soft grey of an empty field's hint (LIME-188f): one grey for every placeholder, readable (4.5:1) on the canvas in light and dark.

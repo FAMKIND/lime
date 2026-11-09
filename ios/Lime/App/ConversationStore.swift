@@ -1143,7 +1143,7 @@ final class ConversationStore {
         case "site-call":   // LIME-286r: a four-person video call for the website
             demoSiteLink(screen: "site-link")
             groupCalls.demoCall(people: 4, conversationID: conversations.first?.id ?? "grp:demo", cast: ["Maya Ortiz", "Mei Lin", "Lee Wong", "Sam Park"])
-        case let name? where name.hasPrefix("site-") && ["site-link", "site-chat", "site-group", "site-offline-waiting", "site-offline-passed", "site-offline-sent"].contains(name): demoSiteLink(screen: name)   // LIME-286r
+        case let name? where name.hasPrefix("site-") && ["site-link", "site-chat", "site-group", "site-offline-waiting", "site-offline-passed", "site-offline-sent", "site-offline-internet"].contains(name): demoSiteLink(screen: name)   // LIME-286r
         case "chat-deleted-person":
             // Sam deleted his account (LIME-113c): the chat looks like any old chat; sending shows one quiet line.
             deletedPeers = ["sam"]
