@@ -184,6 +184,9 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
 1e575. **The user is reviewing 284a3 and will make mocks; after them, develop from the mocks, or at least the email signup (284c) first. The user asked what "band card" meant: it is the page's "Bands" feature section (`site/com/index.html:119`), a screenshot of a band's page on its Info tab (a big "F" letter, no picture). Plot's suggestion: show the band's Posts tab instead (a post, an article and a podcast card with the band as the author), which says what a band is. Waiting for the user's answer. Cleanup: START HERE refreshed (2026-11-02).**
+1e649. **DESIGN-33 DECIDED (the user, 2026-11-09): D1 = A** ("the core app is done, we're doing accessibility and polish now": the full Android build starts now, beside the TestFlight path), **D2 = organization account as Lime Messenger LLC** (waits on the LLC + a D-U-N-S number, like the Apple account, 1e626), **D3 = minSdk 26 (Android 8.0)**, **D4 = two phones**, plot recommended a refurbished Pixel 7a (~$190, Back Market) + a Galaxy A10e (~$70, unlocked; a 2 GB budget phone). Android 8.0 itself is covered by the API 26 emulator. **applicationId = `com.limemessenger.lime`** (the same as the iOS bundle id, 1e236). **LIME-294 DRAFTED (the app skeleton), after 293.** Order: 293 → 294 → plot splits 133 from 293's table → the Android screens in iOS order, each from a `docs/screens/` spec.
+1e648. **The user (2026-11-09): "start building our Android app so we can launch on the App Store and Google Play and support teachers with different devices." → DESIGN-33 OPEN (timing, Play account, minSdk, test phones; see `### DESIGN-33`). LIME-293 DRAFTED (the LIME-133 inventory, read-only; useful under every option).** Survey: LimeCore builds for Android (132b, `check-android.sh`; JDK, kotlin, sdkmanager, NDK 30, cargo-ndk all present); no `android/` app yet; **LIME-133 (the Android debt) was never run**; iOS = ~59k Swift lines (~20k generated bindings, ~30k feature views, `ConversationStore*` 5.8k = app state and rules, `Core/Calls` 5.2k); core = ~40k Rust; `docs/screens/` has 4 specs; shared token JSON and Tolgee keys (LIME-109) not done. This reverses part of 1e390 ("Android right after TestFlight 1") only if the user picks A or B.
+1e648. **LIME-130-3b LANDED `750be92` (installed: 13 mini, Jean's 12 mini, iPad): photo descriptions inside the encrypted message (LimeCore; set from the draft strip only: the viewer has no ⋯ menu, accepted), on-device "Show transcript" for voice/video (cached locally). Core 428 pass; Release clean; 0 warnings.** Not yet proven: a transcript on real speech; the iOS 26 SpeechAnalyzer path on a device; the no-network test sees only lime's process. 183b gains `ChatOpensUITests.testBackFromAThreadKeepsThePlaceInTheChat` (fails at 7bdee0b too) and `Review273UITests…ReviewInsteadOfPublishing` (fails only in the main tree; suspect the local `Local.xcconfig` / `BackendConfig.generated.swift`). Waiting: the user's gates for 130-3a + 130-3b together. Next: 130-4 (calls).
 1e647. **LIME-130-3a LANDED `66207d7` (installed: 13 mini, Jean's 12 mini, iPad): one VoiceOver stop per message (`MessageSpeech`, VoiceOver/Switch Control only, on purpose: Voice Control keeps the parts), announcements, the iOS 26 offline alert fixed, 44 pt targets, scaling header/footer/list, the adjustable voice player, GIFs stop after 5 s (one plays at a time), the viewer dark, bubble-contrast guard incl. `ownSecondary`, sticker names. Harness 60 → 49. Release (sim) clean; no new failures.** Plot accepts the VoiceOver-only one-stop and the 1-GIF budget. 183b gains: 3 from 130-2 + the flaky Jam188q / Jam188z (pin the flake). Waiting: the user's gate.
 1e646. **The user: app icon customization, like wallpapers → LIME-292 DRAFTED (before TestFlight 1; the user designs the art): lime (default) + 8-bit, Rainbow, Notebook, Chalkboard, Teacher's apple, each the lime logo "with a little play"; Settings → Customize → App icon; local only.** Art spec given (1024 square PNG, no transparency/corners; optional dark + tinted). Runs when the art is in ~/Downloads.
 1e645. **LIME-130-2 GATE PASSED (the user: "looks good").** 130-3 split: **130-3a** (chat + attachments majors: one element per message, announcements, the iOS 26 alert bug, targets, scaling text, the voice player, GIF pause, the viewer, bubble contrast) and **130-3b** (photo descriptions inside the encrypted message via LimeCore + on-device transcripts on request) DRAFTED.
@@ -11493,6 +11496,74 @@ Jean sends 2 messages + a reaction in the group → they appear on the offline 1
 4. Add `docs/android.md`: the plan (Kotlin + Jetpack Compose UI on LimeCore; ConnectionService/FCM/Android BLE/CameraX as the platform adapters) and the current "Android debt" list (logic still in Swift).
 
 **Verification:** `./core/check-android.sh` passes; core tests pass; nothing changes on iOS. **Record:** `## LIME-132`. **Commit:** `chore(core): Android build and Kotlin bindings check; docs/android.md`, trailer `Brief: LIME-132`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+### DESIGN-33 (DECIDED 2026-11-09, 1e649: A, LLC org account, minSdk 26, two phones): starting the Android app
+**Where things stand:** the core already runs on Android (132b). What's missing: the app itself (Kotlin + Compose, `docs/android.md`), the Android debt still in Swift (LIME-133, never run; `ConversationStore*` alone is 5.8k lines of state and rules), shared tokens/strings/icon map, and screen specs (4 of ~20).
+
+**D1. When.**
+- **A. Full Android build now, beside the TestFlight path.** *Pro:* both stores sooner. *Con:* tend's time splits; iOS screens are still changing (130, 183, 292), so Android chases a moving target and gets rebuilt.
+- **B. Foundations now, screens after TestFlight 1.** Now: LIME-133 (debt into core), shared tokens + icon map, a skeleton app that signs in, lists chats and sends/receives an encrypted message on a real Android phone. After TestFlight 1: the screens, from frozen iOS + `docs/screens/` specs. *Pro:* nothing built twice; the core work also makes iOS simpler; the hardest risk (core on a real phone) is proven early. *Con:* Play launch a few weeks after iOS.
+- **C. Keep 1e390 as is** (nothing until TestFlight 1). *Pro:* full focus. *Con:* the debt keeps growing.
+- **Plot's lean: B.**
+
+**D2. Play Console account.** **A. Organization (Lime Messenger LLC):** needs a D-U-N-S number; the store shows the company; (to verify at sign-up) new *personal* accounts must run a closed test with ~12 testers for 14 days before production, organizations don't. **B. Personal:** faster to open, the store shows your name, the testing rule applies. **Lean: A**, if the LLC exists; open it early (D-U-N-S can take weeks). One-time US$25. The user only (accounts, money).
+
+**D3. Oldest Android supported (minSdk).** **Lean: Android 8.0 (API 26)**: covers nearly all phones teachers use worldwide, incl. cheap and older ones, with a working Keystore and Bluetooth LE. Lower adds testing cost for little reach.
+
+**D4. Test phones.** Mesh, calls and push need real Android phones (the emulator has no Bluetooth). **Lean: two** (one recent mid-range Samsung/Pixel, one older budget phone on Android 8–10), to match "different devices". Which does the user have or can get?
+
+**What each party learns (privacy bar):** same server ops as iOS, no new metadata. Push on Android goes through FCM: Google learns *when* a wake-up is sent to a device, never content (same as Apple with APNs). UnifiedPush (Apache-2.0, see 1e76) is a later option for phones without Google.
+
+### LIME-293 → `tend` (lime-aa) (DRAFTED 2026-11-09; runs under every DESIGN-33 option; read-only + one docs file): size the Android debt (LIME-133 Phase 1)
+**Goal:** `docs/android.md`'s "Android debt" section lists every piece of non-UI logic still in Swift, with its file, line count, and a proposed one-commit move into LimeCore, so plot can split LIME-133 into briefs.
+
+**Capabilities assumed:** read files, run `wc`/`grep`/`cargo test`, edit one docs file, commit and push. No Swift or Rust edits.
+
+**Scope:** read `ios/Lime/App/` (esp. `ConversationStore*.swift`), `ios/Lime/Core/` (except `Generated/`), `ios/Lime/Features/`, `ios/Lime/Model/`, `core/src/`. **Edit only `docs/android.md` (the "Android debt" section) and TEND.md.** No other file.
+
+**Phase 0:** `git add PLOT.md` only, commit `chore: update PLOT.md`.
+
+**Phase 1 (inventory).** For each Swift type/function that decides something rather than draws or calls an Apple API (rules, state machines, filters, counts, sorting, parsing, formatting, validation, timers' decisions), record: file:line range, ~lines, what it decides, whether core already has a twin (then it's a duplicate to delete), and a proposed core API (names obey the UniFFI rule: no `List`/`Map`/`Set`/`String`/`Int`/`Unit`/`Result`). Start from the six known items in `### LIME-133`. **Not debt:** SwiftUI views, layout, animation, and thin adapters to CallKit/PushKit/CoreBluetooth/AVFoundation/WebRTC/LiveKit/Photos/Keychain. Where it's unclear, list it under "Unsure" with one line why.
+
+**Phase 2 (write).** Replace the "Android debt" list in `docs/android.md` with a table: `# | Area | Swift file(s) | ~lines | Core twin? | Proposed move (one commit) | Risk (low/med/high)`, ordered by what an Android skeleton needs first (sign-in, chat list, open chat, send/receive), then the rest. Keep the six known items.
+
+**Verification:**
+- `git diff --stat` shows only `docs/android.md` and `TEND.md` (+ the Phase 0 commit).
+- `cargo test` in `core/` still passes (sanity; nothing changed).
+- The table has every one of the six known items, and every row has a file path that exists (`ls` each).
+
+**Gate:** plot reviews the table and splits LIME-133 into briefs; no user check needed.
+
+**Record:** `## LIME-293` in TEND.md with "For plot:" (row count, total lines, the 3 riskiest moves, the "Unsure" list). **Commit:** `docs(android): inventory the logic still in Swift`, trailer `Brief: LIME-293` + attribution. Push. Stop. No install. If anything here needs a decision the brief didn't make, stop and ask the user. ~30 min.
+
+### LIME-294 → `tend` (lime-aa) (DRAFTED 2026-11-09, after 293): the Android app skeleton runs LimeCore on an emulator
+**Goal:** `android/` holds a Kotlin + Jetpack Compose app (`com.limemessenger.lime`, minSdk 26) that bundles `liblime_core.so` and its UniFFI Kotlin bindings, and on launch shows one screen with `coreVersion()` and the result of `encryptionSelfTest()`, run on the API 26 and the newest emulator.
+
+**Capabilities assumed:** edit files, run Gradle/cargo/sdkmanager/emulator, commit and push. Network for Gradle dependencies. No Play Console, no signing keys (debug signing only), no real phone (the user has none yet).
+
+**Scope:** create `android/` (Gradle Kotlin DSL, version catalog, wrapper committed); one new script `android/build-core.sh`; `.gitignore` lines for Android build output and generated bindings/`.so` files; `docs/android.md` ("Running the app" section; "not started" line updated). **Do not touch** `core/src/`, `core/Cargo.toml`, `core/check-android.sh`, `ios/`, `public/assets/*`. No app features, no networking, no sign-in.
+
+**What plot read:** `core/check-android.sh` (cargo-ndk builds a `cdylib` for arm64-v8a + x86_64 into `core/target/android-libs`; Kotlin generated from the **non-stripped** `target/debug/liblime_core.a` because release strips UniFFI metadata; JNA 5.14.0); `core/src/lib.rs:63` `core_version()`, `:70` `encryption_self_test() -> SelfTestReport`; `docs/android.md` (the plan; the UniFFI naming rule). Tools present on this Mac: JDK, kotlin, sdkmanager, NDK 30 at `ANDROID_NDK_HOME`, cargo-ndk in `~/.cargo/bin`.
+
+**Phase 0:** `git add PLOT.md` only, commit `chore: update PLOT.md`.
+
+**Phase 1 (survey, read-only, report before building):** installed SDK platforms/build-tools/system images (`sdkmanager --list_installed`); the current stable AGP, Kotlin and Compose BOM versions; **Google Play's current required targetSdk** (check developer.android.com; use it, or newer stable). If an SDK/emulator image must be installed, install it with `sdkmanager` (licences: if they need accepting interactively, stop and ask the user).
+
+**Phase 2 (build):**
+1. `android/build-core.sh`: the same steps as `check-android.sh` 1–2, but outputs into `android/app/src/main/jniLibs/<abi>/liblime_core.so` and `android/app/build/generated/uniffi/` (or a Gradle source dir under `build/`); both gitignored. Gradle runs it before `preBuild` (an `Exec` task), so `./gradlew assembleDebug` alone is enough.
+2. Module `app`: `applicationId "com.limemessenger.lime"`, `namespace` the same, `minSdk 26`, Java/Kotlin 17, Compose + Material 3, JNA as `net.java.dev.jna:jna:5.14.0@aar` (the Android AAR, not the JVM jar). ABIs: arm64-v8a, x86_64 only. No other dependencies.
+3. One `MainActivity` + one composable: "lime" (lowercase), the core version, and "Encryption self-test: passed / failed (<reason>)". Colours from the brand palette: background `#f9f8f4`, text `#131b17`, the "passed" mark `#09a950` (the one lime use). Text in `strings.xml` with semantic keys (`selftest_passed`, …), sp text sizes (scales with the font setting), a content description where text isn't enough, light + dark.
+4. One instrumented test (`connectedDebugAndroidTest`) asserting `encryptionSelfTest()` passes and `coreVersion()` is non-empty.
+
+**Verification:**
+- `./gradlew assembleDebug` from a clean clone of the tree succeeds; report the debug APK size.
+- The instrumented test passes on **two emulators: API 26 (x86_64) and the newest stable API**.
+- Launch on both: the screen shows the version and "passed" (a screenshot each, saved under `docs/design/android/`, is fine here: the first screens, not a visual tweak).
+- `git status` shows no `.so`, generated `.kt`, or `build/` files staged; `./core/check-android.sh` still passes; `cargo test` in `core/` passes.
+
+**Gate:** the user looks at the two screenshots; no phone yet. Not exercised: real hardware (until the Pixel 7a / A10e arrive).
+
+**Record:** `## LIME-294` in TEND.md with "For plot:" (versions chosen: AGP, Kotlin, Compose BOM, targetSdk and why; APK size; build time; anything in the core that didn't work on a real Android runtime, e.g. SQLCipher's OpenSSL or JNA loading). **Commit:** `feat(android): the app skeleton runs LimeCore`, trailer `Brief: LIME-294` + attribution. Push. Stop for the user's check. If a decision isn't made here, stop and ask the user. ~45 min.
 
 ### LIME-133 → `tend` (lime-aa) (after 117, the end of the call series; may be split): move shared logic from Swift into LimeCore ("Android debt" payoff)
 **Goal:** the logic that crept into Swift moves into the core with UniFFI APIs and core tests, and iOS calls it, so Android gets it for free. **Candidates (Phase 1 confirms and sizes them):**
