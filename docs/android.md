@@ -28,6 +28,14 @@ cd android
 - The first build compiles OpenSSL and the core for two ABIs (about 5 minutes); later builds reuse it.
 - Skeleton screenshots: `docs/design/android/`.
 
+### Playing with it on staging
+
+1. `android/tools/staging-test-accounts.sh --push` makes (or reuses) the two throwaway accounts `android-a@example.invalid` (Ada) and `android-b@example.invalid` (Ben) and pushes fresh sessions into the debug app on the running emulator. It reads the staging keys in memory only and touches nothing else on staging. `--delete` removes both.
+2. `./gradlew installDebug`, open lime, tap **Use a test account** → Ada (a debug-only button; a release build has none, proved by `android/tools/check-release-clean.sh`).
+3. In a terminal: `android/tools/partner/run reset` (once per fresh sign-in of Ada: her keys are new and Ben pins the old ones), then `android/tools/partner/run echo`. Ben accepts Ada's first message and answers every message with `Ben here: got "<first 40 characters>"`; he answers a photo with its size and a photo of his own. `run send "<text>"` and `run photo <file>` send Ben's own.
+4. `android/tools/connected.sh` runs every instrumented test on API 26 and API 36, one emulator at a time and headless, including the real Ada ↔ Ben exchange. `android/tools/record-demo.sh` films the walk-through into `~/Desktop/lime-android-prototype/`.
+5. **Staging allows 10 device registrations per hour per account** (`LIME_RATE_REGISTER_PER_HOUR`); the app registers on every launch, so a day of test runs can use them up ("Busy").
+
 ## Checking the core builds for Android
 
 ```sh
