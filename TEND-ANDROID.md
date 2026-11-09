@@ -43,6 +43,7 @@
 > 3. **What works end to end on staging:** sign in (test account), the chat list, open a chat, send and receive end-to-end-encrypted text (bold, replies, retry), the Sending/Sent states, light and dark, the largest font. Not yet: new chat, photos (299), profile and settings (300), calls, push, Bluetooth, jam.
 > 4. **First clip and screenshots:** `~/Desktop/lime-android-prototype/` (`*-walkthrough.mp4`, `1-…10-*.png`; re-make them with `android/tools/record-demo.sh`).
 > 5. **Proof:** `android/tools/connected.sh` runs every test on API 26 and API 36 including the real Ada ↔ Ben exchange (`StagingChatTest`). Details per brief below; decisions for you under each "Choices made".
+> 6. **`StagingChatTest` and `DemoRecordingTest` need the partner running** (`partner/run reset`, then `partner/run echo`) when run on their own: without it they time out after 120 s (seen on API 36 at 11:18, 2026-11-09); with it both pass (11:25). `tools/connected.sh` starts the partner for you.
 
 The record for tend-Android (branch `android`). One `## LIME-29x` per brief. PLOT.md and TEND.md are never edited here.
 

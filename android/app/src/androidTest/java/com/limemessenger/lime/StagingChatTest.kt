@@ -34,6 +34,7 @@ import org.junit.runner.RunWith
 /**
  * The end-to-end proof on STAGING: Ada (this emulator) and Ben (the host-side partner, `android/tools/partner`, running `echo`) exchange
  * end-to-end encrypted messages. Needs the pushed test accounts and a running partner (tools/connected.sh does both), so it is skipped without them.
+ * NEEDS THE PARTNER RUNNING (`partner/run reset` on a fresh sign-in, then `partner/run echo`): with accounts pushed but no partner it does not skip, it times out after 120 s.
  */
 @Staging
 @RunWith(AndroidJUnit4::class)
