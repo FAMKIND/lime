@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,7 +15,9 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -143,15 +146,34 @@ private fun Card(content: @Composable () -> Unit) {
 @Composable
 private fun Row2(title: String, value: String, tag: String, last: Boolean = false, destructive: Boolean = false, onClick: (() -> Unit)?) {
     val colors = Lime.colors
+    val measurer = rememberTextMeasurer()
+    val titleStyle = LocalTextStyle.current.copy(fontSize = 17.sp)
+    val valueStyle = LocalTextStyle.current.copy(fontSize = 16.sp)
     Column {
-        Row(
+        BoxWithConstraints(
             Modifier.fillMaxWidth().heightIn(min = 56.dp)
                 .then(if (onClick != null) Modifier.semantics(mergeDescendants = true) { role = Role.Button }.clickable(onClick = onClick) else Modifier.semantics(mergeDescendants = true) { })
                 .padding(horizontal = 16.dp).testTag(tag),
-            verticalAlignment = Alignment.CenterVertically,
+            contentAlignment = Alignment.CenterStart,
         ) {
-            Text(title, color = if (destructive) colors.danger else colors.text, fontSize = 17.sp, modifier = Modifier.weight(1f))
-            if (value.isNotEmpty()) Text(value, color = colors.textSecondary, fontSize = 16.sp, maxLines = 1, modifier = Modifier.padding(start = 12.dp).widthIn(max = 200.dp))
+            val titleColor = if (destructive) colors.danger else colors.text
+            // Side by side only when both fit on one line (the normal-size look); otherwise the value goes under the label and wraps, never cut off.
+            val fits = value.isEmpty() || with(LocalDensity.current) {
+                val t = measurer.measure(title, titleStyle, maxLines = 1).size.width
+                val v = measurer.measure(value, valueStyle, maxLines = 1).size.width
+                t + v + 12.dp.roundToPx() <= constraints.maxWidth && v <= 200.dp.roundToPx()
+            }
+            if (fits) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(title, color = titleColor, fontSize = 17.sp, modifier = Modifier.weight(1f))
+                    if (value.isNotEmpty()) Text(value, color = colors.textSecondary, fontSize = 16.sp, maxLines = 1, modifier = Modifier.padding(start = 12.dp))
+                }
+            } else {
+                Column(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
+                    Text(title, color = titleColor, fontSize = 17.sp)
+                    Text(value, color = colors.textSecondary, fontSize = 16.sp)
+                }
+            }
         }
         if (!last) Box(Modifier.fillMaxWidth().padding(start = 16.dp).size(1.dp).background(colors.hairline))
     }
