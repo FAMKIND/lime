@@ -3,6 +3,13 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// Backend config: the same public values ios/generate.sh reads (the anon key ships inside apps by design).
+// A missing file still builds; the app then says "No backend configured". Never hard-code these.
+val backendEnv: Map<String, String> = file("../../supabase/.staging.public.env").takeIf { it.exists() }
+    ?.readLines().orEmpty()
+    .mapNotNull { line -> line.trim().takeIf { it.isNotEmpty() && !it.startsWith("#") && "=" in it } }
+    .associate { it.substringBefore("=").trim() to it.substringAfter("=").trim().trim('"', '\'') }
+
 android {
     namespace = "com.limemessenger.lime"
     compileSdk = 37
@@ -14,6 +21,8 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "BACKEND_URL", "\"${backendEnv["SUPABASE_URL"].orEmpty()}\"")
+        buildConfigField("String", "BACKEND_API_KEY", "\"${backendEnv["SUPABASE_ANON_KEY"].orEmpty()}\"")
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
 
@@ -26,7 +35,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
     sourceSets["main"].kotlin.directories.add("build/generated/uniffi")
 }
 
@@ -47,9 +59,11 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.kotlinx.coroutines.android)
     implementation("net.java.dev.jna:jna:${libs.versions.jna.get()}@aar")
 
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(platform(libs.androidx.compose.bom))
