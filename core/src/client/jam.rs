@@ -567,6 +567,7 @@ impl LimeStore {
                 duration_ms: file.duration_ms,
                 thumb: file.thumb.clone(),
                 poster: file.poster.clone(),
+                alt: String::new(),
             };
             let mut value = descriptor.to_json();
             value["blob_sha"] = json!(hash);
@@ -744,6 +745,7 @@ impl LimeStore {
                         duration_ms: file.duration_ms,
                         thumb: file.thumb.clone(),
                         poster: file.poster.clone(),
+                        alt: String::new(),
                     };
                     let mut value = descriptor.to_json();
                     value["blob_sha"] = json!(hash);

@@ -306,6 +306,8 @@ struct VoiceBubble: View {
     let item: AttachmentItem
     let isOwn: Bool
     var uploading = false
+    /// The message it is in (a transcript is kept with it, LIME-130-3b).
+    var messageID = ""
     @Environment(ConversationStore.self) private var store
     @State private var player = VoicePlayer.shared
     @State private var loading = false
@@ -370,6 +372,9 @@ struct VoiceBubble: View {
             }
         }
         .modifier(VoiceOneStopActions(active: oneStop, rate: rateText, play: { Task { await play() } }, cycle: { player.cycleRate() }))
+        .accessibilityActions {
+            if oneStop, item.downloaded, !messageID.isEmpty { Button("Show transcript") { Transcripts.shared.show(item, messageID: messageID, store: store) } }
+        }
         .messageAccessibilityActions(oneStop ? messageAX : nil)
         .accessibilityIdentifier("voice-bubble-\(item.id)")
     }

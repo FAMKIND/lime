@@ -413,13 +413,13 @@ final class LimeUITestsMessages: LimeUITestCase {
         app.launch()
         let tiles = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'attachment-image-'"))
         XCTAssertTrue(tiles.firstMatch.waitForExistence(timeout: 10), "the album's pictures show")
-        XCTAssertTrue(app.buttons["Trip 1.jpg"].exists, "the album's first picture")
+        XCTAssertTrue(app.buttons["Trip 1"].exists, "the album's first picture")
         let file = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'attachment-file-'")).firstMatch
         XCTAssertTrue(file.exists, "the PDF has a file card")
         XCTAssertTrue(file.label.contains("Permission slip.pdf"), file.label)
         XCTAssertTrue(file.label.contains("PDF"), file.label)
 
-        app.buttons["Trip 1.jpg"].tap()
+        app.buttons["Trip 1"].tap()
         XCTAssertTrue(app.buttons["attachment-viewer-close"].waitForExistence(timeout: 5), "the viewer opens")
         let count = app.descendants(matching: .any)["attachment-viewer-count"]
         XCTAssertTrue(count.waitForExistence(timeout: 5))

@@ -40,6 +40,16 @@ pub(crate) struct Descriptor {
     pub thumb: Vec<u8>,
     /// A sharp JPEG cover for a video (about 480 px), or empty (older senders, other kinds of file).
     pub poster: Vec<u8>,
+    /// A photo's description, written by the sender for people who cannot see it (LIME-130-3b), at most [`MAX_ALT_CHARS`] characters, or empty.
+    pub alt: String,
+}
+
+/// A photo's description is at most this many characters (a longer one is cut when read).
+pub(crate) const MAX_ALT_CHARS: usize = 250;
+
+/// A description as it is kept: no control characters, trimmed, cut to the limit.
+pub(crate) fn clean_alt(text: &str) -> String {
+    text.chars().filter(|c| !c.is_control() || *c == '\n').take(MAX_ALT_CHARS * 2).collect::<String>().trim().chars().take(MAX_ALT_CHARS).collect()
 }
 
 impl Descriptor {
@@ -53,6 +63,7 @@ impl Descriptor {
         if let Some(d) = self.duration_ms { value["duration_ms"] = json!(d); }
         if !self.thumb.is_empty() { value["thumb"] = json!(vodozemac::base64_encode(&self.thumb)); }
         if !self.poster.is_empty() { value["poster"] = json!(vodozemac::base64_encode(&self.poster)); }
+        if !self.alt.is_empty() { value["alt"] = json!(self.alt); }
         value
     }
 
@@ -72,7 +83,7 @@ impl Descriptor {
         };
         // A poster that does not decode or is too big is left out: the message is still good, the cover just stays the blur.
         let poster = text("poster").and_then(|t| vodozemac::base64_decode(t).ok()).filter(|b| b.len() <= MAX_POSTER).unwrap_or_default();
-        Some(Descriptor { id, key, digest, size, mime, name, width: number("w"), height: number("h"), duration_ms: number("duration_ms"), thumb, poster })
+        Some(Descriptor { id, key, digest, size, mime, name, width: number("w"), height: number("h"), duration_ms: number("duration_ms"), thumb, poster, alt: text("alt").map(clean_alt).unwrap_or_default() })
     }
 }
 
@@ -176,12 +187,13 @@ fn insert_as(conn: &Connection, message_id: &str, position: i64, d: &Descriptor,
     };
     conn.execute(
         "INSERT OR IGNORE INTO message_attachments
-           (attachment_id, message_id, position, key, digest, size, mime, name, width, height, duration_ms, thumb, bytes, role, poster)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+           (attachment_id, message_id, position, key, digest, size, mime, name, width, height, duration_ms, thumb, bytes, role, poster, alt)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
         params![
             d.id, message_id, position, vodozemac::base64_encode(&d.key), d.digest, d.size as i64, d.mime, d.name,
             d.width, d.height, d.duration_ms, if d.thumb.is_empty() { None } else { Some(&d.thumb) }, bytes.map(<[u8]>::to_vec).or(copied), role,
-            if d.poster.is_empty() { None } else { Some(&d.poster) }
+            if d.poster.is_empty() { None } else { Some(&d.poster) },
+            if d.alt.is_empty() { None } else { Some(&d.alt) }
         ],
     )
     .map_err(db_err)?;
@@ -203,12 +215,13 @@ fn from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<(Descriptor, bool)> {
             duration_ms: r.get(8)?,
             thumb: r.get::<_, Option<Vec<u8>>>(9)?.unwrap_or_default(),
             poster: r.get::<_, Option<Vec<u8>>>(11)?.unwrap_or_default(),
+            alt: r.get::<_, Option<String>>(12)?.unwrap_or_default(),
         },
         r.get::<_, bool>(10)?,
     ))
 }
 
-const COLUMNS: &str = "attachment_id, key, digest, size, mime, name, width, height, duration_ms, thumb, bytes IS NOT NULL, poster";
+const COLUMNS: &str = "attachment_id, key, digest, size, mime, name, width, height, duration_ms, thumb, bytes IS NOT NULL, poster, alt";
 
 /// A message's files in order (not its link preview's picture), with whether this phone holds each one's bytes.
 pub(crate) fn for_message(conn: &Connection, message_id: &str) -> Result<Vec<(Descriptor, bool)>, StoreError> {
@@ -230,6 +243,14 @@ pub(crate) fn preview_of(conn: &Connection, message_id: &str) -> Result<Option<(
 pub(crate) fn is_removed(conn: &Connection, message_id: &str, attachment_id: &str) -> bool {
     conn.query_row("SELECT removed FROM message_attachments WHERE message_id = ?1 AND attachment_id = ?2", params![message_id, attachment_id], |r| r.get::<_, bool>(0))
         .unwrap_or(false)
+}
+
+/// The transcript this phone made of a voice or video message's file, or empty.
+pub(crate) fn transcript_of(conn: &Connection, message_id: &str, attachment_id: &str) -> String {
+    conn.query_row("SELECT transcript FROM message_attachments WHERE message_id = ?1 AND attachment_id = ?2", params![message_id, attachment_id], |r| r.get::<_, Option<String>>(0))
+        .ok()
+        .flatten()
+        .unwrap_or_default()
 }
 
 /// Removed on this phone on purpose, and no copy held anywhere: it cannot be downloaded again.
@@ -373,7 +394,7 @@ mod tests {
     fn a_descriptor_survives_json_and_a_malformed_one_is_refused() {
         let d = Descriptor {
             id: id(), key: new_key(), digest: digest_hex(b"x"), size: 1, mime: "image/jpeg".into(), name: "a.jpg".into(),
-            width: Some(10), height: Some(20), duration_ms: None, thumb: vec![1, 2, 3], poster: vec![4, 5, 6],
+            width: Some(10), height: Some(20), duration_ms: None, thumb: vec![1, 2, 3], poster: vec![4, 5, 6], alt: "A dog".into(),
         };
         assert_eq!(Descriptor::parse(&d.to_json()), Some(d.clone()));
         let mut bad = d.to_json();
@@ -401,5 +422,28 @@ mod tests {
         assert_eq!(Descriptor::parse(&without).map(|p| p.poster.len()), Some(0), "an older message has none");
         assert_eq!(parse_payload(&json!({ "attachments": vec![d.to_json(); 11] })), None, "too many");
         assert_eq!(parse_payload(&json!({ "text": "x" })), Some(vec![]));
+    }
+
+    #[test]
+    fn a_description_is_optional_an_old_payload_decodes_and_unknown_fields_are_ignored() {
+        let mut d = Descriptor {
+            id: "0b3e7d0e-5a43-4a53-8d7d-62d1b2f2a6c1".into(), key: vec![9; 32], digest: "a".repeat(64), size: 10, mime: "image/jpeg".into(), name: "a.jpg".into(),
+            width: None, height: None, duration_ms: None, thumb: vec![], poster: vec![], alt: String::new(),
+        };
+        // Without one the field is not written, so an older client sees exactly what it always saw.
+        assert!(d.to_json().get("alt").is_none());
+        assert_eq!(Descriptor::parse(&d.to_json()).map(|p| p.alt), Some(String::new()), "an old payload (no alt) decodes");
+        d.alt = "A dog".into();
+        assert_eq!(Descriptor::parse(&d.to_json()).map(|p| p.alt), Some("A dog".into()));
+        // A newer client's extra fields are ignored; a wrong type for alt is no description, not a refusal.
+        let mut value = d.to_json();
+        value["future_field"] = json!({"x": [1, 2, 3]});
+        assert_eq!(Descriptor::parse(&value).map(|p| p.alt), Some("A dog".into()));
+        value["alt"] = json!(5);
+        assert_eq!(Descriptor::parse(&value).map(|p| p.alt), Some(String::new()));
+        // Too long is cut; control characters go.
+        value["alt"] = json!(format!("a\u{7}{}", "b".repeat(400)));
+        assert_eq!(Descriptor::parse(&value).map(|p| p.alt.chars().count()), Some(MAX_ALT_CHARS));
+        assert!(!Descriptor::parse(&value).unwrap().alt.contains('\u{7}'));
     }
 }

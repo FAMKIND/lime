@@ -138,9 +138,38 @@ enum AXProbe {
     static var enabled: Bool { ProcessInfo.processInfo.arguments.contains("-lime-ax-probe") }
 }
 
+/// Counts every request the app's own URL loading system is asked to make (LIME-130-3b: no network call while a transcript is made). It answers
+/// `false` to all of them, so it only counts; it does not take any request over.
+final class NetCanary: URLProtocol {
+    nonisolated(unsafe) static var seen: [String] = []
+    private static let lock = NSLock()
+    override class func canInit(with request: URLRequest) -> Bool {
+        lock.lock(); seen.append(request.url?.absoluteString ?? "?"); lock.unlock()
+        return false
+    }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {}
+    override func stopLoading() {}
+    static var count: Int { lock.lock(); defer { lock.unlock() }; return seen.count }
+}
+
+/// A second of silence as a WAV file, for the transcript probe.
+private func silentWAV() -> Data {
+    let rate: UInt32 = 16_000, samples = Int(rate)
+    var data = Data()
+    func put<T: FixedWidthInteger>(_ v: T) { var x = v.littleEndian; withUnsafeBytes(of: &x) { data.append(contentsOf: $0) } }
+    data.append("RIFF".data(using: .ascii)!); put(UInt32(36 + samples * 2)); data.append("WAVEfmt ".data(using: .ascii)!)
+    put(UInt32(16)); put(UInt16(1)); put(UInt16(1)); put(rate); put(rate * 2); put(UInt16(2)); put(UInt16(16))
+    data.append("data".data(using: .ascii)!); put(UInt32(samples * 2)); data.append(Data(count: samples * 2))
+    return data
+}
+
 /// The probe's three buttons and its output, drawn over the app in probe mode only.
 struct AXProbeOverlay: View {
     @State private var output = ""
+    init() {
+        if ProcessInfo.processInfo.arguments.contains("-lime-net-canary") { URLProtocol.registerClass(NetCanary.self) }
+    }
     var body: some View {
         VStack(spacing: 2) {
             Button("probe-dump") { output = AXProbe.dump() }.accessibilityIdentifier("ax-probe-dump")
@@ -153,6 +182,14 @@ struct AXProbeOverlay: View {
                 let target = AXProbe.adjust("voice-bubble-", up: true)
                 Task { try? await Task.sleep(for: .milliseconds(600)); output = "up:\(target != nil) value:\(target?.accessibilityValue ?? "")" }
             }.accessibilityIdentifier("ax-probe-up")
+            Button("probe-transcribe") {
+                output = "transcribing"
+                Task {
+                    let outcome = await Transcriber.transcribe(bytes: silentWAV(), fileExtension: "wav", seconds: 1)
+                    output = "transcribe:\(outcome) net:\(NetCanary.count)"
+                }
+            }.accessibilityIdentifier("ax-probe-transcribe")
+            Button("probe-net") { output = "net:\(NetCanary.count) \(NetCanary.seen.joined(separator: " "))" }.accessibilityIdentifier("ax-probe-net")
             Button("probe-said") { output = "said:" + Announce.said.joined(separator: "|") }.accessibilityIdentifier("ax-probe-said")
             Text(output).font(.system(size: 1)).accessibilityLabel(output).accessibilityIdentifier("ax-probe-out")
         }

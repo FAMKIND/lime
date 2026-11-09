@@ -29,10 +29,10 @@ final class Access130UITests: XCTestCase {
         let dump = probe(app, "ax-probe-dump")
         let lines = dump.split(separator: "\n").map(String.init)
         func actions(_ label: String) -> String? { lines.first { $0.hasPrefix(label) }?.components(separatedBy: " | ").last }
-        XCTAssertEqual(actions("Trip 1.jpg"), "React, Reply, Forward, Copy, Select, Report, Delete, More actions", "someone else's photo, in the menu's order:\n\(dump)")
+        XCTAssertEqual(actions("Trip 1"), "React, Reply, Forward, Copy, Select, Report, Delete, More actions", "someone else's photo, in the menu's order:\n\(dump)")
         XCTAssertEqual(actions("Field trip photos"), "React, Reply, Forward, Copy, Select, Report, Delete, More actions", "someone else's words:\n\(dump)")
         XCTAssertEqual(actions("Permission slip.pdf"), "React, Reply, Forward, Select, Report, Delete, More actions", "a file:\n\(dump)")
-        XCTAssertEqual(actions("Poster.jpg"), "React, Reply, Forward, Copy, Select, Delete, More actions", "my photo (no caption, so no Edit, no Report):\n\(dump)")
+        XCTAssertEqual(actions("Poster"), "React, Reply, Forward, Copy, Select, Delete, More actions", "my photo (no caption, so no Edit, no Report):\n\(dump)")
     }
 
     func testMoreActionsOpensTheMenuAndEscapeClosesIt() {

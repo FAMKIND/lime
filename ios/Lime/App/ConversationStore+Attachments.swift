@@ -109,6 +109,21 @@ extension ConversationStore {
         return (try? await Task.detached(priority: .userInitiated) { try core.attachmentData(attachmentId: id) }.value) ?? nil
     }
 
+    /// Keeps a transcript this phone made (LIME-130-3b): in the encrypted store with the message, deleted with it, never sent.
+    func keepTranscript(_ text: String, for item: AttachmentItem, messageID: String) {
+        for c in conversations.indices {
+            for m in conversations[c].messages.indices {
+                if let a = conversations[c].messages[m].attachments.firstIndex(where: { $0.id == item.id }) { conversations[c].messages[m].attachments[a].transcript = text }
+            }
+        }
+        #if DEBUG
+        if isDemo { return }
+        #endif
+        guard let core else { return }
+        let id = item.id
+        Task.detached(priority: .utility) { try? core.setAttachmentTranscript(messageId: messageID, attachmentId: id, text: text) }
+    }
+
     /// A file written where Quick Look and the share sheet can read it (in the temporary folder, under its own name).
     func fileURL(for item: AttachmentItem) async -> URL? {
         guard let data = await attachmentData(item) else { return nil }
@@ -165,7 +180,9 @@ extension ConversationStore {
         let data = picture.jpegData(compressionQuality: 0.8) ?? Data()
         let id = UUID().uuidString.lowercased()
         demoAttachmentData[id] = data
-        return AttachmentItem(id: id, mime: "image/jpeg", name: name, size: Int64(data.count), width: 1200, height: 900, thumb: AttachmentProcessing.thumbnail(picture), downloaded: true)
+        // The demo photos carry a description (their name without ".jpg"), as a sender's would (LIME-130-3b).
+        return AttachmentItem(id: id, mime: "image/jpeg", name: name, size: Int64(data.count), width: 1200, height: 900, thumb: AttachmentProcessing.thumbnail(picture),
+                              alt: name.replacingOccurrences(of: ".jpg", with: ""), downloaded: true)
     }
 
     func demoVoice(seconds: Int) -> AttachmentItem {
@@ -257,7 +274,7 @@ extension ConversationStore {
             let attachmentID = UUID().uuidString.lowercased()
             demoAttachmentData[attachmentID] = Data(item.bytes)
             return AttachmentItem(id: attachmentID, mime: item.mime, name: item.name, size: Int64(item.bytes.count), width: item.width.map(Int.init), height: item.height.map(Int.init),
-                                  thumb: item.thumb, downloaded: true)
+                                  thumb: item.thumb, alt: item.alt, downloaded: true)
         }
         if let root {
             demoThreads[root, default: []].append(message)

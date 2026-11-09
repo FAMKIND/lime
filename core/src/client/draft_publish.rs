@@ -199,7 +199,7 @@ impl LimeStore {
         if let Some(bytes) = bytes {
             return Ok(bytes);
         }
-        let descriptor = Descriptor { id, key, digest, size: size as u64, mime, name, width, height, duration_ms, thumb, poster };
+        let descriptor = Descriptor { id, key, digest, size: size as u64, mime, name, width, height, duration_ms, thumb, poster, alt: String::new() };
         let plain = self.download_blob(&transport, &auth_token, &descriptor)?;
         self.with_conn(|conn| conn.execute("UPDATE draft_files SET bytes = ?3 WHERE draft_id = ?1 AND number = ?2", params![draft_id, number, plain]).map(|_| ()).map_err(db_err))?;
         Ok(plain)
@@ -235,7 +235,7 @@ impl LimeStore {
         for number in &numbers {
             let info = self.draft_files(draft_id.clone())?.into_iter().find(|f| f.number == *number).ok_or(StoreError::Rejected)?;
             let bytes = self.draft_file_data(transport.clone(), auth_token.clone(), draft_id.clone(), *number)?;
-            attachments.push(OutgoingAttachment { bytes, name: info.name, mime: info.mime, width: info.width, height: info.height, duration_ms: info.duration_ms, thumb: info.thumb, poster: info.poster });
+            attachments.push(OutgoingAttachment { bytes, name: info.name, mime: info.mime, width: info.width, height: info.height, duration_ms: info.duration_ms, thumb: info.thumb, poster: info.poster, alt: String::new() });
         }
         let markdown = self.with_conn(|conn| self.with_draft_conn(conn, &draft_id, false, |d| Ok(d.export_markdown_numbered(&|n| numbers.iter().position(|x| *x == n).unwrap_or(0) as u32))))?;
         let post_id = self.publish_jam_post_with(jam_id, "article".into(), meta.title, meta.subtitle, markdown, "free".into(), attachments, coauthors, display_as, options)?;
@@ -274,7 +274,7 @@ impl LimeStore {
             if !shared || others.is_empty() {
                 continue;
             }
-            let descriptor = Descriptor { id, key, digest, size: size as u64, mime, name, width, height, duration_ms, thumb, poster };
+            let descriptor = Descriptor { id, key, digest, size: size as u64, mime, name, width, height, duration_ms, thumb, poster, alt: String::new() };
             if !uploaded {
                 let Some(bytes) = bytes else { continue };
                 if self.upload_blob(transport, token, &descriptor, &bytes, others.len() as u32).is_err() {

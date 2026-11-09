@@ -141,6 +141,10 @@ pub struct AttachmentInfo {
     pub thumb: Vec<u8>,
     /// A sharp cover frame for a video (about 480 px JPEG), empty when there is none (older messages: the blurred thumbnail is all there is).
     pub poster: Vec<u8>,
+    /// The sender's description of a photo, empty when there is none (LIME-130-3b).
+    pub alt: String,
+    /// A transcript of a voice or video message that this phone made on request, empty until then. Never sent.
+    pub transcript: String,
     /// This phone holds the decrypted file.
     pub downloaded: bool,
     /// Removed from this phone on purpose (by hand or by "Keep media"): it cannot be downloaded again.
@@ -830,9 +834,10 @@ pub(crate) fn attachment_infos(conn: &Connection, message_id: &str) -> Vec<Attac
         .into_iter()
         .map(|(d, downloaded)| {
             let removed = attachments::is_removed(conn, message_id, &d.id);
+            let transcript = attachments::transcript_of(conn, message_id, &d.id);
             AttachmentInfo {
                 id: d.id, mime: d.mime, name: d.name, size: d.size, width: d.width, height: d.height, duration_ms: d.duration_ms,
-                thumb: d.thumb, poster: d.poster, downloaded, removed,
+                thumb: d.thumb, poster: d.poster, alt: d.alt, transcript, downloaded, removed,
             }
         })
         .collect()

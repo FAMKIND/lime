@@ -20,6 +20,9 @@ pub struct OutgoingAttachment {
     pub thumb: Vec<u8>,
     /// A video's sharp cover frame (JPEG, about 480 px, at most 30 KB), or empty.
     pub poster: Vec<u8>,
+    /// A photo's description (at most 250 characters), or empty. It travels inside the encrypted message.
+    #[uniffi(default = "")]
+    pub alt: String,
 }
 
 /// How far a transfer has got.
@@ -74,6 +77,7 @@ impl LimeStore {
                 duration_ms: item.duration_ms,
                 thumb: item.thumb,
                 poster: item.poster,
+                alt: files::clean_alt(&item.alt),
             };
             prepared.push((descriptor, item.bytes));
         }
@@ -89,6 +93,23 @@ impl LimeStore {
             return Err(StoreError::Rejected);
         }
         self.queue_with(conversation_id, caption, reply_to, prepared, QueueExtras::default())
+    }
+
+    /// Keeps a transcript this phone made of a voice or video message (LIME-130-3b): on this phone only, with the message (deleted with it), never
+    /// sent anywhere. At most 100 000 characters; an empty text clears it. Rejected when the message has no such file.
+    pub fn set_attachment_transcript(&self, message_id: String, attachment_id: String, text: String) -> Result<(), StoreError> {
+        if text.chars().count() > 100_000 {
+            return Err(StoreError::Rejected);
+        }
+        self.with_conn(|conn| {
+            let changed = conn
+                .execute(
+                    "UPDATE message_attachments SET transcript = ?3 WHERE message_id = ?1 AND attachment_id = ?2",
+                    params![message_id, attachment_id, if text.is_empty() { None } else { Some(text.as_str()) }],
+                )
+                .map_err(db_err)?;
+            if changed == 0 { Err(StoreError::NotFound) } else { Ok(()) }
+        })
     }
 
     /// Whether the server still has an attachment, and until when (milliseconds since the Unix epoch). `None` means it is gone:
@@ -347,6 +368,7 @@ impl LimeStore {
                 duration_ms: None,
                 thumb: Vec::new(),
                 poster: Vec::new(),
+                alt: String::new(),
             };
             (descriptor, Some(preview.image.clone()))
         });

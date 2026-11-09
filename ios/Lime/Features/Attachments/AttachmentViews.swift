@@ -23,8 +23,12 @@ struct AttachmentStack: View {
             if !images.isEmpty { album }
             ForEach(others) { item in
                 switch item.kind {
-                case .audio: VoiceBubble(item: item, isOwn: isOwn, uploading: uploading)
-                case .video: VideoTile(item: item, isOwn: isOwn, uploading: uploading, messageID: message.id, conversationID: chatConversationID)
+                case .audio:
+                    VoiceBubble(item: item, isOwn: isOwn, uploading: uploading, messageID: message.id)
+                    if item.downloaded { TranscriptSection(item: item, messageID: message.id, isOwn: isOwn) }
+                case .video:
+                    VideoTile(item: item, isOwn: isOwn, uploading: uploading, messageID: message.id, conversationID: chatConversationID)
+                    if item.downloaded { TranscriptSection(item: item, messageID: message.id, isOwn: isOwn) }
                 default: FileCard(item: item, isOwn: isOwn, uploading: uploading) { if !item.removed { store.openedFile = item } }
                 }
             }
@@ -32,7 +36,8 @@ struct AttachmentStack: View {
     }
 
     private func pictureLabel(_ item: AttachmentItem) -> String {
-        let name = GIF.isGIF(mime: item.mime) ? "GIF" : (item.name.isEmpty ? "Photo" : item.name)
+        // The sender's description when there is one, else "Photo": never the file name (LIME-130-3b).
+        let name = GIF.isGIF(mime: item.mime) ? "GIF" : (item.alt.isEmpty ? "Photo" : item.alt)
         guard let phrase = store.downloadPhrase(item) else { return name }
         return item.removed ? "\(name), \(phrase)" : "\(name), tap to download, \(phrase)"
     }
@@ -338,6 +343,8 @@ struct AttachmentViewer: View {
     @State private var page = 0
     @State private var saved = false
     @State private var zoomed = false
+    /// The sender's description of the photo on screen, shown under it on request (LIME-130-3b).
+    @State private var showDescription = false
     /// A single tap hides the bars and shows them again; a downward drag fades the background (LIME-211).
     @State private var barsHidden = false
     @State private var fade: CGFloat = 0
@@ -375,6 +382,13 @@ struct AttachmentViewer: View {
                         .accessibilityIdentifier("attachment-viewer-count")
                 }
                 Spacer()
+                if !currentAlt.isEmpty {
+                    Button { withAnimation(.easeOut(duration: 0.2)) { showDescription.toggle() } } label: {
+                        Image(systemName: showDescription ? "text.bubble.fill" : "text.bubble").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
+                            .frame(width: 44, height: 44).viewerGlass(in: Circle())
+                    }
+                    .accessibilityLabel("Description").accessibilityValue(showDescription ? "Shown" : "Hidden").accessibilityIdentifier("attachment-description-toggle")
+                }
                 ViewerReactButton(messageID: messageID, conversationID: conversationID)
                 Button { Task { await save() } } label: {
                     Image(systemName: saved ? "checkmark" : "square.and.arrow.down").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
@@ -383,6 +397,16 @@ struct AttachmentViewer: View {
                 .accessibilityLabel(saved ? "Saved to Photos" : "Save to Photos").accessibilityIdentifier("attachment-save")
             }
             .padding(.horizontal, 16).padding(.top, 8)
+            if showDescription, !currentAlt.isEmpty {
+                VStack {
+                    Spacer()
+                    Text(currentAlt).font(Theme.body).foregroundStyle(.white).multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(14)
+                        .viewerGlass(in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .padding(.horizontal, 16).padding(.bottom, bottomBar == nil ? 24 : 90)
+                        .accessibilityIdentifier("attachment-description")
+                }
+            }
             if let bottomBar { VStack { Spacer(); bottomBar } }
             }
             .opacity(barsHidden ? 0 : 1 - Double(fade)).allowsHitTesting(!barsHidden)
@@ -391,6 +415,8 @@ struct AttachmentViewer: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("attachment-viewer")
     }
+
+    private var currentAlt: String { items.indices.contains(page) ? items[page].alt : "" }
 
     private func save() async {
         guard items.indices.contains(page) else { return }
@@ -438,6 +464,7 @@ private struct ZoomablePicture: View {
             } else if let image {
                 // Apple's gestures (LIME-211): a scroll view that zooms under the fingers, pans with momentum and bounce, double-taps to a point.
                 ZoomablePhoto(image: image, active: active, onZoom: onZoom, onSingleTap: onSingleTap, onDismissProgress: onDismissProgress, onDismiss: onDismiss, onEdgePush: onEdgePush, reduceMotion: reduceMotion)
+                    .accessibilityLabel(item.alt.isEmpty ? "Photo" : item.alt)
             } else if let thumb = UIImage(data: item.thumb) {
                 Image(uiImage: thumb).resizable().scaledToFit().blur(radius: 10)
                 ProgressView().tint(.white)
@@ -484,6 +511,12 @@ struct DocumentPicker: UIViewControllerRepresentable {
 struct DraftStrip: View {
     let drafts: [DraftAttachment]
     let remove: (DraftAttachment) -> Void
+    /// Opens the description sheet for a photo (LIME-130-3b); nil where photos cannot have one.
+    var describe: ((DraftAttachment) -> Void)? = nil
+
+    static func canDescribe(_ draft: DraftAttachment) -> Bool {
+        draft.outgoing.mime.hasPrefix("image/") && !draft.outgoing.name.hasPrefix(StickerPack.namePrefix)
+    }
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -507,13 +540,28 @@ struct DraftStrip: View {
                         .frame(width: 64, height: 64)
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(draft.outgoing.name)
+                        .accessibilityLabel(Self.canDescribe(draft) ? (draft.outgoing.alt.isEmpty ? "Photo" : "Photo, \(draft.outgoing.alt)") : draft.outgoing.name)
+                        .accessibilityActions {
+                            if let describe, Self.canDescribe(draft) { Button(draft.outgoing.alt.isEmpty ? "Add description" : "Edit description") { describe(draft) } }
+                        }
+                        .overlay(alignment: .bottomLeading) {
+                            if let describe, Self.canDescribe(draft) {
+                                Button { describe(draft) } label: {
+                                    Text(draft.outgoing.alt.isEmpty ? "+ Alt" : "Alt").font(Theme.font(.caption2, weight: .bold)).foregroundStyle(.white)
+                                        .padding(.horizontal, 6).padding(.vertical, 2).background(.black.opacity(0.65), in: Capsule())
+                                        .padding(.horizontal, 2).padding(.vertical, 12).contentShape(Rectangle())   // a 44 pt target around the small pill
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.bottom, -8).padding(.leading, 2)
+                                .accessibilityLabel(draft.outgoing.alt.isEmpty ? "Add description" : "Edit description").accessibilityIdentifier("draft-describe")
+                            }
+                        }
                         Button { remove(draft) } label: {
                             Image(systemName: "xmark.circle.fill").font(.system(size: 20)).symbolRenderingMode(.palette).foregroundStyle(.white, Color.black.opacity(0.6))
                                 .frame(width: 44, height: 44).contentShape(Rectangle())   // a 44 pt target around the 20 pt glyph
                         }
                         .offset(x: 16, y: -16)
-                        .accessibilityLabel("Remove \(draft.outgoing.name)").accessibilityIdentifier("draft-remove")
+                        .accessibilityLabel(Self.canDescribe(draft) ? "Remove photo" : "Remove \(draft.outgoing.name)").accessibilityIdentifier("draft-remove")
                     }
                     .padding(.top, 6).padding(.trailing, 6)
                 }
@@ -694,5 +742,58 @@ private struct ViewerGlass<S: Shape>: ViewModifier {
             if reduceTransparency { shape.fill(Color.black.opacity(0.8)) }
             else { shape.fill(Color.black.opacity(0.35)).background(.ultraThinMaterial, in: shape) }
         }
+    }
+}
+
+
+/// "Add description" (LIME-130-3b): the photo and a field, at most 250 characters. What is written travels inside the encrypted message; VoiceOver reads it
+/// for the people who get the photo, and the viewer shows it.
+struct PhotoDescriptionSheet: View {
+    let draft: DraftAttachment
+    let save: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var text: String
+    @FocusState private var focused: Bool
+    nonisolated static let limit = 250
+
+    init(draft: DraftAttachment, save: @escaping (String) -> Void) {
+        self.draft = draft; self.save = save
+        _text = State(initialValue: draft.outgoing.alt)
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    if let image = UIImage(data: draft.outgoing.bytes) ?? draft.preview {
+                        Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 220).frame(maxWidth: .infinity)
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .accessibilityHidden(true)
+                    }
+                    TextField("Describe this photo for people who cannot see it", text: $text, axis: .vertical)
+                        .font(Theme.body).lineLimit(3...8).focused($focused)
+                        .padding(12).background(Theme.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .onChange(of: text) { _, new in if new.count > Self.limit { text = String(new.prefix(Self.limit)) } }
+                        .accessibilityIdentifier("description-field")
+                    HStack {
+                        Text("Sent with the photo, end-to-end encrypted. Read aloud by VoiceOver.").font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                        Spacer()
+                        Text("\(text.count)/\(Self.limit)").font(Theme.caption.monospacedDigit()).foregroundStyle(Theme.textSecondary)
+                            .accessibilityLabel("\(text.count) of \(Self.limit) characters")
+                    }
+                }
+                .padding(16)
+            }
+            .sheetHeader("Description")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save(text.trimmingCharacters(in: .whitespacesAndNewlines)); dismiss() }
+                        .font(Theme.font(.body, weight: .semibold)).accessibilityIdentifier("description-save")
+                }
+            }
+            .background(Theme.canvas)
+        }
+        .presentationDetents([.large])
+        .onAppear { focused = true }
     }
 }

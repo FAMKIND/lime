@@ -998,6 +998,10 @@ const MIGRATIONS: &[&str] = &[
          need_posts INTEGER,
          at         INTEGER NOT NULL
      );",
+    // (LIME-130-3b) A photo's description (inside the encrypted message, from the sender) and a voice or video message's transcript (made on this phone
+    // on request, kept here and never sent; it goes with the row when the message is deleted).
+    "ALTER TABLE message_attachments ADD COLUMN alt TEXT;
+     ALTER TABLE message_attachments ADD COLUMN transcript TEXT;",
 ];
 
 /// The schema version this build writes.

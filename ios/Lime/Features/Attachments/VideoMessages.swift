@@ -137,6 +137,9 @@ struct VideoTile: View {
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .mediaTap { Task { await open() } }
         .accessibilityLabel("Video, \(VoiceFormat.clock(Double(item.durationMs ?? 0) / 1000))")
+        .accessibilityActions {
+            if item.downloaded, let messageID { Button("Show transcript") { Transcripts.shared.show(item, messageID: messageID, store: store) } }
+        }
         .accessibilityIdentifier("attachment-video-\(item.id)")
     }
 

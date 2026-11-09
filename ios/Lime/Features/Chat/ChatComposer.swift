@@ -20,6 +20,8 @@ struct ChatComposer: View {
     @State private var previewRunning = false
     @State private var waitingToSend = false
     @State private var drafts: [DraftAttachment] = []
+    /// The photo whose description is being written (LIME-130-3b).
+    @State private var describing: DraftAttachment?
     @State private var chooser: Chooser?
     @State private var tooLarge = false
     @State private var gifTooBig = false
@@ -62,7 +64,7 @@ struct ChatComposer: View {
                     onSendAttachments?([item], "")
                 }
             }
-            if !drafts.isEmpty { DraftStrip(drafts: drafts) { draft in drafts.removeAll { $0.id == draft.id } } }
+            if !drafts.isEmpty { DraftStrip(drafts: drafts, remove: { draft in drafts.removeAll { $0.id == draft.id } }, describe: { describing = $0 }) }
             if let previewDraft { previewCard(previewDraft) }
             if recorder.isRecording {
                 RecordingBar(recorder: recorder, dragX: dragX)
@@ -163,6 +165,11 @@ struct ChatComposer: View {
         .animation(.easeOut(duration: 0.2), value: model.showsEmojiKeyboard)
         .onDisappear { model.expanded = false }
         .sheet(item: $model.linkRequest) { request in LinkSheet(request: request, composer: model) }
+        .sheet(item: $describing) { draft in
+            PhotoDescriptionSheet(draft: draft) { text in
+                if let index = drafts.firstIndex(where: { $0.id == draft.id }) { drafts[index].outgoing.alt = text }
+            }
+        }
         .sheet(isPresented: $choosing) {
             AddToMessageSheet(
                 media: recent, room: max(0, AttachmentProcessing.maxPerMessage - drafts.count),

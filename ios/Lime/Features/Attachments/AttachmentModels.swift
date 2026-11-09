@@ -16,6 +16,10 @@ struct AttachmentItem: Identifiable, Hashable, Sendable {
     let thumb: Data
     /// A sharp cover frame for a video (LIME-152c); empty for older videos, which keep the blurred thumbnail.
     var poster = Data()
+    /// The sender's description of a photo (LIME-130-3b), empty when there is none; VoiceOver reads it and the viewer shows it.
+    var alt = ""
+    /// The transcript this phone made of a voice or video message (LIME-130-3b), empty until it is asked for. Never sent.
+    var transcript = ""
     var downloaded: Bool
     /// Removed from this phone on purpose ("Media removed"); it is not fetched again.
     var removed = false
@@ -43,7 +47,8 @@ struct AttachmentItem: Identifiable, Hashable, Sendable {
         return "\(kind) · \(AttachmentFormat.size(size))"
     }
 
-    init(id: String, mime: String, name: String, size: Int64, width: Int? = nil, height: Int? = nil, durationMs: Int? = nil, thumb: Data = Data(), downloaded: Bool = false) {
+    init(id: String, mime: String, name: String, size: Int64, width: Int? = nil, height: Int? = nil, durationMs: Int? = nil, thumb: Data = Data(), alt: String = "", downloaded: Bool = false) {
+        self.alt = alt
         self.id = id; self.mime = mime; self.name = name; self.size = size; self.width = width; self.height = height
         self.durationMs = durationMs; self.thumb = thumb; self.downloaded = downloaded
     }
@@ -53,6 +58,8 @@ struct AttachmentItem: Identifiable, Hashable, Sendable {
                   durationMs: info.durationMs.map(Int.init), thumb: info.thumb, downloaded: info.downloaded)
         removed = info.removed
         poster = info.poster
+        alt = info.alt
+        transcript = info.transcript
     }
 }
 
@@ -92,7 +99,8 @@ enum AttachmentFormat {
 /// A file waiting in the composer to be sent, with a picture to show.
 struct DraftAttachment: Identifiable {
     let id = UUID()
-    let outgoing: OutgoingAttachment
+    /// `outgoing.alt` is the photo's description, written in the composer (LIME-130-3b).
+    var outgoing: OutgoingAttachment
     let preview: UIImage?
 }
 

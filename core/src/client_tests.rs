@@ -2082,6 +2082,7 @@ fn pic(seed: u8, size: usize) -> crate::OutgoingAttachment {
         duration_ms: None,
         thumb: vec![seed; 300],
         poster: Vec::new(),
+        alt: String::new(),
     }
 }
 
@@ -2237,6 +2238,7 @@ fn a_videos_poster_travels_inside_the_message_the_budget_drops_the_last_ones_and
         duration_ms: Some(12_000),
         thumb: vec![seed; 400],
         poster: vec![seed; poster],
+        alt: String::new(),
     };
     let chat = format!("dm:{}", bob.user);
     // A poster over its bound is refused at the sender.
@@ -2305,6 +2307,7 @@ fn an_interrupted_download_resumes_with_only_the_missing_chunks_and_reports_prog
         duration_ms: Some(30_000),
         thumb: vec![9; 400],
         poster: Vec::new(),
+        alt: String::new(),
     };
     alice.store.send_attachments(format!("dm:{}", bob.user), "".into(), vec![video.clone()], None).unwrap();
     deliver(&alice, &transport);
@@ -2370,6 +2373,7 @@ fn an_upload_reports_progress_and_a_voice_note_carries_its_waveform_and_duration
         duration_ms: Some(23_500),
         thumb: (0..64u8).map(|i| i * 2).collect(),   // the waveform: one byte per bar
         poster: Vec::new(),
+        alt: String::new(),
     };
     let sent = alice.store.send_attachments(format!("dm:{}", bob.user), "".into(), vec![voice.clone()], None).unwrap();
     assert_eq!(sent.text, "");
@@ -5474,7 +5478,7 @@ fn a_post_with_a_photo_and_a_file_reaches_a_late_subscriber_who_downloads_both_w
     let photo: Vec<u8> = (0..2_500_000u32).map(|n| (n % 251) as u8).collect(); // more than two chunks
     let file = b"Permission slip, version 3".to_vec();
     let attachment = |bytes: Vec<u8>, name: &str, mime: &str| crate::OutgoingAttachment {
-        bytes, name: name.into(), mime: mime.into(), width: None, height: None, duration_ms: None, thumb: vec![], poster: vec![],
+        bytes, name: name.into(), mime: mime.into(), width: None, height: None, duration_ms: None, thumb: vec![], poster: vec![], alt: String::new(),
     };
     let post = alice
         .store
@@ -5624,7 +5628,7 @@ fn quick_posts_articles_and_recordings_keep_their_kind_and_the_rules_for_each_ho
     let publish_as = |kind: &str, title: &str, subtitle: &str, body: &str, files: Vec<crate::OutgoingAttachment>| {
         alice.store.publish_jam_post(jam.clone(), kind.into(), title.into(), subtitle.into(), body.into(), "free".into(), files, vec![])
     };
-    let clip = |mime: &str| crate::OutgoingAttachment { bytes: vec![7; 5000], name: "clip".into(), mime: mime.into(), width: None, height: None, duration_ms: Some(10_000), thumb: vec![], poster: vec![] };
+    let clip = |mime: &str| crate::OutgoingAttachment { bytes: vec![7; 5000], name: "clip".into(), mime: mime.into(), width: None, height: None, duration_ms: Some(10_000), thumb: vec![], poster: vec![], alt: String::new() };
     // The rules: an article needs a title; a quick post needs words or a file and has no title; a recording needs a video or voice clip.
     assert!(publish_as("article", "", "", "words", vec![]).is_err(), "an article needs a title");
     assert!(publish_as("quick", "", "", "", vec![]).is_err(), "a quick post needs something");
@@ -5672,7 +5676,7 @@ fn an_article_carries_its_photos_where_they_were_put_and_a_subtitle_has_a_limit(
     let (bob, _) = party(&server, "bob", 2);
     let jam = new_jam(&alice);
     join_jam(&alice, &bob, &jam, &transport);
-    let photo = |n: u8| crate::OutgoingAttachment { bytes: vec![n; 1_200_000], name: "Photo.jpg".into(), mime: "image/jpeg".into(), width: Some(2048), height: Some(1536), duration_ms: None, thumb: vec![9; 1800], poster: vec![] };
+    let photo = |n: u8| crate::OutgoingAttachment { bytes: vec![n; 1_200_000], name: "Photo.jpg".into(), mime: "image/jpeg".into(), width: Some(2048), height: Some(1536), duration_ms: None, thumb: vec![9; 1800], poster: vec![], alt: String::new() };
     let body = "Intro\n\n![First](attachment:0)\n\nMiddle\n\n![](attachment:1)\n\n![Last one](attachment:2)\n\nEnd";
     let id = alice.store.publish_jam_post(jam.clone(), "article".into(), "Fold, cut, compare".into(), "Photos in place".into(), body.into(), "free".into(), (1..=5).map(photo).collect(), vec![]).unwrap();
     catch_up(&alice, &[&bob], &transport);
@@ -5737,7 +5741,7 @@ fn an_accepted_co_host_of_a_video_podcast_shown_as_the_jam_reaches_the_writer_an
     let (carol, _) = party(&server, "carol", 3);
     let jam = new_jam(&alice);
     join_jam(&alice, &bob, &jam, &transport);
-    let video = crate::OutgoingAttachment { bytes: vec![7; 5_000], name: "Video.mp4".into(), mime: "video/mp4".into(), width: Some(720), height: Some(1280), duration_ms: Some(6_000), thumb: vec![7; 400], poster: vec![7; 2_000] };
+    let video = crate::OutgoingAttachment { bytes: vec![7; 5_000], name: "Video.mp4".into(), mime: "video/mp4".into(), width: Some(720), height: Some(1280), duration_ms: Some(6_000), thumb: vec![7; 400], poster: vec![7; 2_000], alt: String::new() };
     let post = alice
         .store
         .publish_jam_post_as(jam.clone(), "record".into(), "Sway".into(), String::new(), String::new(), "free".into(), vec![video], vec![carol.user.clone()], "jam".into())
@@ -7928,7 +7932,7 @@ fn a_bands_groups_show_to_members_an_open_one_is_joined_by_request_an_invite_onl
 const SERIES_ID: &str = "0194c3f0-aaaa-7000-8000-000000000001";
 
 fn series_part(writer: &Party, jam: &str, title: &str, part: u32, thumb: Vec<u8>) -> String {
-    let picture = crate::OutgoingAttachment { bytes: vec![7; 64], name: "cover.jpg".into(), mime: "image/jpeg".into(), width: Some(8), height: Some(8), duration_ms: None, thumb, poster: Vec::new() };
+    let picture = crate::OutgoingAttachment { bytes: vec![7; 64], name: "cover.jpg".into(), mime: "image/jpeg".into(), width: Some(8), height: Some(8), duration_ms: None, thumb, poster: Vec::new(), alt: String::new() };
     publish_with(writer, jam, title, "Words", vec![picture], options("subscribers", Some(series("Fractions", part, Some(2)))))
 }
 
@@ -8329,7 +8333,7 @@ fn ready_to_move() -> Move {
     sync(&alice, &transport);
     alice.store.create_jam("Fractions that stick".into(), "Short lessons".into(), vec![]).unwrap();
     let file: Vec<u8> = (0..600_000u32).map(|i| (i.wrapping_mul(2654435761) >> 13) as u8).collect();
-    alice.store.send_attachments("dm:bob".into(), "worksheet".into(), vec![crate::OutgoingAttachment { bytes: file, name: "w.pdf".into(), mime: "application/pdf".into(), width: None, height: None, duration_ms: None, thumb: vec![], poster: vec![] }], None).unwrap();
+    alice.store.send_attachments("dm:bob".into(), "worksheet".into(), vec![crate::OutgoingAttachment { bytes: file, name: "w.pdf".into(), mime: "application/pdf".into(), width: None, height: None, duration_ms: None, thumb: vec![], poster: vec![], alt: String::new() }], None).unwrap();
     let dir = tempfile::tempdir().unwrap();
     let dest = dir.path().join("accounts").join("alice").join("lime.db");
     let new = TransferNew::offer(alice.user.clone(), dest.to_string_lossy().into_owned()).unwrap();
@@ -8775,4 +8779,53 @@ fn a_subscriber_follows_the_new_writer_even_when_the_old_writers_own_announcemen
     settle(&[&alice, &bob, &carol, &dave], &transport);
     assert_eq!(dave.store.jam(jam.clone()).unwrap().unwrap().writer, "bob");
     assert!(jam_posts_of(&dave, &jam).contains(&"First post of the new publisher".to_string()));
+}
+
+// ---------------------------------------------------------------- LIME-130-3b: a photo's description, a voice message's transcript
+
+#[test]
+fn a_photos_description_travels_inside_the_message_survives_a_forward_and_a_transcript_stays_on_this_phone() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    befriend(&alice, &bob, &transport);
+    befriend(&alice, &carol, &transport);
+    let (to_bob, to_carol) = (format!("dm:{}", bob.user), format!("dm:{}", carol.user));
+    let described = crate::OutgoingAttachment { alt: "  A red kite over the school field  ".into(), ..pic(5, 3000) };
+    let plain = pic(6, 3000);
+    let long = crate::OutgoingAttachment { alt: "é".repeat(400), ..pic(7, 3000) };
+    let sent = alice.store.send_attachments(to_bob.clone(), "".into(), vec![described, plain, long], None).unwrap();
+    assert_eq!(sent.attachments[0].alt, "A red kite over the school field", "trimmed");
+    assert_eq!(sent.attachments[1].alt, "", "a photo without one has none");
+    assert_eq!(sent.attachments[2].alt.chars().count(), 250, "cut at 250 characters");
+    deliver(&alice, &transport);
+    assert_eq!(sync(&bob, &transport).received, 1);
+    let got = bob.store.list_messages(format!("dm:{}", alice.user)).unwrap().pop().unwrap();
+    assert_eq!(got.attachments[0].alt, "A red kite over the school field", "the recipient gets it");
+    assert_eq!(got.attachments[1].alt, "");
+    assert_eq!(got.attachments[2].alt.chars().count(), 250);
+
+    // What the server holds is only ciphertext: the description is nowhere in it.
+    let all: Vec<u8> = server.state.lock().unwrap().objects.values().flat_map(|v| v.clone()).collect();
+    assert!(!all.windows(8).any(|w| w == b"red kite"), "the description is not readable on the server");
+
+    // A forward keeps it.
+    let forwarded = alice.store.forward_messages(vec![sent.id.clone()], vec![to_carol.clone()]).unwrap();
+    assert_eq!(forwarded[0].attachments[0].alt, "A red kite over the school field");
+    deliver(&alice, &transport);
+    assert_eq!(sync(&carol, &transport).received, 1);
+    let at_carol = carol.store.list_messages(format!("dm:{}", alice.user)).unwrap().pop().unwrap();
+    assert_eq!(at_carol.attachments[0].alt, "A red kite over the school field");
+
+    // A transcript is kept here, with the message, and nobody else sees it.
+    let id = got.attachments[0].id.clone();
+    assert_eq!(got.attachments[0].transcript, "");
+    bob.store.set_attachment_transcript(got.id.clone(), id.clone(), "Hello class".into()).unwrap();
+    let again = bob.store.list_messages(format!("dm:{}", alice.user)).unwrap().pop().unwrap();
+    assert_eq!(again.attachments[0].transcript, "Hello class");
+    assert_eq!(alice.store.list_messages(to_bob.clone()).unwrap().pop().unwrap().attachments[0].transcript, "", "the sender's copy has none");
+    assert_eq!(bob.store.set_attachment_transcript(got.id.clone(), "no-such".into(), "x".into()), Err(crate::StoreError::NotFound));
+    bob.store.set_attachment_transcript(got.id.clone(), id, String::new()).unwrap();
+    assert_eq!(bob.store.list_messages(format!("dm:{}", alice.user)).unwrap().pop().unwrap().attachments[0].transcript, "", "an empty text clears it");
 }
