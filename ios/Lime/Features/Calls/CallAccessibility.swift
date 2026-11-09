@@ -63,3 +63,33 @@ extension View {
 
 /// Which control VoiceOver's focus goes to.
 enum CallFocus: Hashable { case first, mute }
+
+/// What a group call says aloud as people come and go (LIME-130-4b): "<Name> joined", "<Name> left", and who is speaking now, at most once every
+/// three seconds and only while VoiceOver runs. Pure: the manager feeds it the tiles after every change.
+struct GroupCallAnnouncer {
+    static let speakerGap: TimeInterval = 3
+    private var known: [String: String] = [:]
+    private var lastSpeaker: String?
+    private var lastSpoke: Date?
+
+    /// `active`: the call is up. Before that (my own join, the people already there) nothing is said, but they are remembered.
+    mutating func update(_ tiles: [GroupCallManager.Tile], active: Bool, now: Date, voiceOver: Bool) -> [String] {
+        var said: [String] = []
+        let current = Dictionary(tiles.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+        if active {
+            for tile in tiles where !tile.isMe && known[tile.id] == nil { said.append("\(tile.name) joined") }
+            for (id, name) in known.sorted(by: { $0.key < $1.key }) where current[id] == nil { said.append("\(name) left") }
+        }
+        known = current
+        if tiles.isEmpty { lastSpeaker = nil; lastSpoke = nil; return said }
+        guard active, voiceOver else { return said }
+        let speaker = tiles.first { $0.speaking && !$0.isMe }
+        if let speaker, speaker.id != lastSpeaker, lastSpoke.map({ now.timeIntervalSince($0) >= Self.speakerGap }) ?? true {
+            said.append("\(speaker.name) is speaking")
+            lastSpeaker = speaker.id; lastSpoke = now
+        } else if speaker == nil, lastSpeaker != nil, lastSpoke.map({ now.timeIntervalSince($0) >= Self.speakerGap }) ?? true {
+            lastSpeaker = nil   // silence: the next person to speak is news again
+        }
+        return said
+    }
+}

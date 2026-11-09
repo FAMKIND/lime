@@ -27,8 +27,8 @@ final class CallMiniPlayerUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(mute.frame.height, 44)
         XCTAssertEqual(mute.label, "Mute")
         mute.tap()
-        XCTAssertEqual(app.buttons["call-mini-mute"].label, "Unmute")
-        XCTAssertEqual(app.buttons["call-mini-mute"].value as? String, "Muted", "a value, not colour alone")
+        XCTAssertEqual(app.buttons["call-mini-mute"].label, "Mute", "the label is the action, whatever the state")
+        XCTAssertEqual(app.buttons["call-mini-mute"].value as? String, "On", "a value, not colour alone")
 
         bar.tap()
         XCTAssertTrue(app.buttons["call-end"].waitForExistence(timeout: 5), "back on the full call screen")
@@ -64,7 +64,7 @@ final class CallMiniPlayerUITests: XCTestCase {
         XCTAssertTrue(bar.waitForExistence(timeout: 5), "also inside the group's own chat")
         XCTAssertTrue(bar.label.contains("4 in call"), bar.label)
         app.buttons["call-mini-mute"].tap()
-        XCTAssertEqual(app.buttons["call-mini-mute"].label, "Unmute")
+        XCTAssertEqual(app.buttons["call-mini-mute"].value as? String, "On")
         bar.tap()
         XCTAssertTrue(app.buttons["Minimise"].waitForExistence(timeout: 5), "back on the full call screen")
     }

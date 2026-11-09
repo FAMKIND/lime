@@ -57,6 +57,7 @@ struct CallEmojiChip: View {
             }
             .foregroundStyle(.white.opacity(0.85))
             .padding(.horizontal, 10).frame(minHeight: 44)
+            .background(.black.opacity(CallScrim.text), in: Capsule())
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Waiting for everyone\u{2019}s keys")
             .accessibilityIdentifier("call-emoji-waiting")
@@ -72,6 +73,7 @@ struct CallEmojiChip: View {
                 }
                 .foregroundStyle(.white)
                 .padding(.horizontal, 10).frame(minHeight: 44)
+                .background(.black.opacity(CallScrim.text), in: Capsule())
                 .contentShape(Rectangle())
                 // A brief fade when the four change (none with Reduce Motion).
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: emoji.map(\.emoji))

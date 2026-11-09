@@ -78,9 +78,14 @@ struct CallRowView: View {
         return store.conversations.first { !$0.isGroup && $0.members.first?.id == call.peerID }?.members.first ?? Person(id: call.peerID, name: call.peerName, tone: 0)
     }
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     var body: some View {
         let call = group.first
         let missed = group.isMissedIncoming
+        // One VoiceOver (or Switch Control) stop per row: the row itself, with "Details" as an action; the picture and the round button
+        // duplicate it, so they are left to touch there (LIME-130-4b).
+        let oneStop = CallControlsPolicy.voiceOverRunning || CallControlsPolicy.switchControlRunning
         HStack(spacing: 12) {
             // The picture opens the details (nothing looks different); the rest of the row calls back.
             Button { openDetails(call) } label: {
@@ -93,22 +98,27 @@ struct CallRowView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("\(call.peerName), details")
+            .accessibilityHidden(oneStop)
             .accessibilityIdentifier("call-row-avatar")
             Button { callBack(call) } label: {
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 3) {
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        // At accessibility sizes the time goes under the name; the name wraps and is never cut.
+                        let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2)) : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
+                        layout {
                             Text(call.peerName + (group.count > 1 ? " (\(group.count))" : ""))
                                 .font(Theme.font(.body, weight: .semibold))
                                 .foregroundStyle(missed ? Theme.danger : Theme.text)
-                                .lineLimit(1)
+                                .fixedSize(horizontal: false, vertical: true)
                                 .accessibilityIdentifier("call-row-name")
-                            Spacer(minLength: 4)
+                            if !typeSize.isAccessibilitySize { Spacer(minLength: 4) }
                             Text(CallGrouping.timeLabel(call.date)).font(Theme.secondary).foregroundStyle(Theme.textSecondary)
                         }
                         HStack(spacing: 5) {
                             Image(systemName: call.outgoing ? "arrow.up.right" : "arrow.down.left").font(Theme.font(.caption))
                             Text(call.video ? "Video" : "Voice")
+                            // The word, not only the red name (WCAG 1.4.1).
+                            if missed { Text("\u{00B7} Missed").fontWeight(.semibold).accessibilityIdentifier("call-row-missed") }
                         }
                         .font(Theme.secondary).foregroundStyle(Theme.textSecondary)
                         if let note = call.outcome.silencedNote ?? (call.outcome == .unavailable ? "Unavailable" : nil) {
@@ -132,6 +142,7 @@ struct CallRowView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(call.video ? "Video call \(call.peerName)" : "Call \(call.peerName)")
+            .accessibilityHidden(oneStop)
             .accessibilityIdentifier("call-row-callback")
         }
         .padding(.horizontal, 16).padding(.vertical, 8)

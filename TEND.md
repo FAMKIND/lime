@@ -10539,10 +10539,46 @@ The 1:1 call screen's major accessibility findings (audit rows ~549–559, ~676)
 - Audit harness (iPhone 17, default pass; before → after): call-voice 12 → 13, call-video 14 → 15, call-group-incoming 8 → 8. The one extra on voice/video is "Contrast failed: 0:54", the timer on the new scrim over the avatar background; the audit cannot see the scrim, and the real ratio above is 5.0:1+. Output: `docs/qa-shots/130-4a/`.
 
 **Not done / flagged**
-- Not installed on any phone and not pushed (the brief says both; you said commit and stop). The gate needs a device.
+- (Superseded: installed and pushed afterwards, see the Installed line.)
 - On a voice call the control circles are now dark glass: their edges are less visible on the dark backdrop than before. Please look.
 - The emoji chip under the timer (shared with the group call) has no scrim; it was not in the list.
+
+- Installed (5a664de, Debug), pushed to `main` (`ba18786..5a664de`): iPhone 13 mini (`00008110-000651D23647801E`), iPad Pro 12.9-inch 5th gen (`00008103-001E699A2168801E`), Jean Chung's iPhone 12 mini (`00008101-000348EC0E51003A`). The first attempt failed on all three (error 4000, connection invalidated); the retry 20 s later took on all three.
 
 **Gate (you, 13 mini + iPad, VoiceOver on):** place a video call: after 10 s the controls are still reachable; toggling Mute says "Mute, on"; "Connected" and "Call ended" are spoken; open the details sheet at the largest text: it scrolls and nothing is cut off. Look at the round buttons on a bright picture.
 
 **For plot:** (1) there is no reconnecting state to announce; if one is wanted it is a core change. (2) Decide whether the voice call's dark-glass buttons need a visible edge. (3) 130-4b can reuse `callRoundBackground`/`callTextScrim`.
+
+## LIME-130-4b
+
+Group call, mini player, calls list, and the flashing/Reduce Motion survey (audit rows ~561–584, 556).
+
+**STOP, for plot (item 5, effects): the call effects ARE drawn into the sent video.** `CallEffects.perform` calls `AVCaptureDevice.performEffect(for:)`; the code's own doc says Apple draws the reaction "on this phone before the picture is encrypted and sent". So the receiver's Reduce Motion cannot turn it off, lime does not draw or time the animation (so there is no timeline to cap and no flash rate lime can measure or set), and a "still note instead" cannot be made on the receiving side. I changed nothing in the effects. Options for plot: (a) hide Reactions from the Effects menu when the *sender's* Reduce Motion is on (a sender-side rule only); (b) stop using Apple's reactions and draw lime's own effects locally from a message (a new feature, with its own flash cap); (c) keep as is and say so in the accessibility statement.
+
+**Emergency visuals (survey):** nothing flashes or pulses. `Features/Emergency/*` has no repeating animation; its only animation is an expand/collapse that already checks Reduce Motion (`EmergencyViews:305-308`); the rest are static fills and rings. The only `repeatForever` in the app is `JamSkeleton`, which checks Reduce Motion. Flash rate of anything lime draws: 0 per second. The pure rate-cap function and its unit test were therefore not written (nothing to cap).
+
+**What changed**
+1. **Group call announcements.** New `GroupCallAnnouncer` (pure; in `CallAccessibility.swift`) fed by `GroupCallManager.tiles`' `didSet`: "<Name> joined", "<Name> left" (only once the call is active, never for me, never for the people already there), and "<Name> is speaking" at most once every 3 s and only while VoiceOver runs. "Call ended" for a group call too (phase didSet). The tile value (Speaking, Muted) is unchanged: SwiftUI updates it.
+2. **Calls list.** A missed call shows "· Missed" in words (semibold) under the name; the name and time stack vertically at accessibility sizes and the name wraps (no `lineLimit(1)`); with VoiceOver or Switch Control running, the row is one stop (the picture and the round call button are hidden from them; "Details" stays an action, call-back is the default action). They stay for touch, so existing tests are unchanged. The chat call bubble ("Missed voice call") and the profile call row ("Missed") already said the word: confirmed, not touched.
+2b. **Scrims.** Tile name pill 0.55 → 0.6 black (now a rounded rectangle so it can wrap), "+N more" 0.4 → 0.6, the emoji chip (shared by 1:1 and group) and its "Waiting for keys" state got the 0.6 black capsule. **I did not use `callRoundBackground` for the group controls:** they sit on a solid dark background, not video, and dark glass (black 0.45) would be nearly invisible on it; they keep today's white 0.18 / white fills. No edge-ring decision had been made, so none was added.
+3. **Group minors.** At the last-resort size Leave is pinned outside the horizontal scroll; my tile has "Move to the other corner" (both layouts); the tile name wraps (up to 3 lines) instead of `minimumScaleFactor(0.7)` + `lineLimit(1)`.
+4. **Mini player.** The tuck tab's hit area is 44 pt wide (24 pt shows; the rest is transparent, into the screen); the mute button's label is always "Mute", the value is "On"/"Off" (+ selected), matching 4a; it says "Call minimised. Controls at the bottom of the screen", "Call controls hidden at the edge" / "Call controls shown"; the end of a call is said by the managers ("Call ended"). `CallMiniPlayerUITests` changed to the new label/value.
+
+**Verification**
+- `check-warnings.sh`: 0 in Lime's own sources; Release build (simulator) succeeds.
+- New `Access130fTests` (3): join/leave by name and nothing while the call comes up or for me; speaker at most once per 3 s, only with VoiceOver, never me. Pass, with `Access130eTests`, `GroupCallManagerTests`, `GroupCallLayoutTests`, `CallMiniPlayerTests` (72 unit tests, 0 failures).
+- UI (13 mini simulator): `CallMiniPlayerUITests` (5) and `CallsTabUITests` (19) pass. `GroupCallHeaderUITests`: 1 of 3 fails, `testThePillOpensThePeopleSheet…` at line 41 (cannot find "People"), the same failure recorded for 130-1 and before (ENDS in TEND at the 130 Phase 1 notes), not touched by this brief.
+- Audit harness (iPhone 17, default pass; before → after): calls-list 3 → 3, calls-list-many 3 → 3, call-group-4 20 → 19. Output `docs/qa-shots/130-4b/`.
+- No new UI tests for the colours, layout or the missed word (visual-change rule); the missed word is on screen as `call-row-missed` for the gate.
+
+**Not done / flagged**
+- Item 5's effects part: stopped, above. Nothing in `CallEffects` changed.
+- The row's "oneStop" is read when the row is drawn; if VoiceOver is turned on while the Calls tab is open, the row updates on its next redraw.
+- Incoming-group-banner minors (hints, grabber) and the PiP grid's 11 pt labels are in the audit's group table but not in this brief; untouched.
+- No test for the mini player's spoken lines (they are `Announce.say` calls); the gate covers them.
+
+**Installed (Debug, this commit's tree):** iPhone 13 mini (`00008110-000651D23647801E`), iPad Pro 12.9-inch 5th gen (`00008103-001E699A2168801E`), Jean Chung's iPhone 12 mini (`00008101-000348EC0E51003A`); all three took it on the first attempt.
+
+**Gate (you, VoiceOver on, two phones):** start a group call; have the iPad join and leave: both are spoken by name; the Calls tab at the largest text: no cut-off names, a missed call says "Missed" in words, and VoiceOver stops once per row; minimise a call: it says so, tuck and untuck are spoken, the tab is easy to hit; Mute reads "Mute, on/off". Effects: see the stop above, nothing to test.
+
+**For plot:** (1) **Decide the effects question** (options a/b/c above): the brief's receiver-side Reduce Motion rule cannot be met while Apple draws reactions into the video. (2) Emergency has nothing that flashes, so the "pulses become static" rule has nothing to apply to; confirm that matches your picture of Emergency. (3) The group controls keep their light glass (solid dark background); the voice-call edge-ring question from 4a is still open. (4) The Calls-list one-stop rule is for VoiceOver/Switch Control only, to keep Voice Control and the tests on the visible buttons.
