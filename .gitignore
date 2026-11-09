@@ -34,3 +34,12 @@ ios/Lime/Config/BackendConfig.generated.swift
 # LIME-289: the preview login is kept on the server only, but never let a copy into git
 infra/invite/preview-auth*
 infra/invite/*.hash
+
+# Android (the app is built by android/; the core .so and its Kotlin bindings are generated)
+android/.gradle/
+android/build/
+android/app/build/
+android/app/src/main/jniLibs/
+android/local.properties
+android/.kotlin/
+*.hprof

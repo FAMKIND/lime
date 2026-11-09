@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!-- UniFFI's generated bindings pick java.lang.ref.Cleaner only when not running on Android (they use an Android-safe cleaner there). -->
+    <issue id="NewApi">
+        <ignore path="**/generated/uniffi/**" />
+    </issue>
+</lint>

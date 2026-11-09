@@ -1,6 +1,6 @@
 # Android
 
-Lime's Android app is not started yet. This page records the plan, how to check that the shared core still builds for Android, and what is owed before the app can start.
+Lime's Android app lives in `android/` (Kotlin + Jetpack Compose, `com.limemessenger.lime`, minSdk 26) and runs LimeCore. This page records the plan, how to run the app, how to check that the shared core still builds for Android, and the logic still owed to the core.
 
 ## The plan
 
@@ -12,6 +12,21 @@ Kotlin and Jetpack Compose on top of **LimeCore** (the Rust core, `core/`), reac
 - media: CameraX and WebRTC;
 - keys: the Android Keystore;
 - the minimised call window: the system Picture in Picture.
+
+## Running the app
+
+```sh
+cd android
+./gradlew assembleDebug            # builds liblime_core.so + the Kotlin bindings first (android/build-core.sh), then the APK
+./gradlew installDebug             # onto the running emulator or phone
+./gradlew connectedDebugAndroidTest
+```
+
+- **JDK:** AGP 9 and Gradle 9.9 need a JDK 17–25; this Mac's system JDK is 27. A Temurin 21 sits in `~/.lime/jdk21` and `~/.gradle/gradle.properties` points `org.gradle.java.home` at it (machine-local; not in the repo).
+- **SDK:** `android/local.properties` (gitignored; see `local.properties.example`) names the SDK. compileSdk 37 (needed by the current Compose BOM), targetSdk 36, minSdk 26.
+- **Emulators:** AVDs `lime-api26` and `lime-api36` (arm64-v8a). `android/tools/emu.sh start <avd>` boots one headless; `emu.sh stop` shuts it down.
+- The first build compiles OpenSSL and the core for two ABIs (about 5 minutes); later builds reuse it.
+- Skeleton screenshots: `docs/design/android/`.
 
 ## Checking the core builds for Android
 
