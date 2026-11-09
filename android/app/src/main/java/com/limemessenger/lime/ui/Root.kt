@@ -134,7 +134,7 @@ private fun SignedIn(session: AccountSession) {
     } else {
         Shell(jam = { JamFeedScreen(jam, onOpen = { jamPost = it }) }, link = {
             ChatListScreen(
-                chats, myName = session.profile?.displayName.orEmpty(),
+                chats, myName = session.profile?.displayName.orEmpty(), myTone = com.limemessenger.lime.chats.AvatarTone.tone(session.userId.orEmpty()),
                 onOpen = { openId = it.id },
                 onProfile = { profileOpen = true },
                 onRequests = { requestsOpen = true },

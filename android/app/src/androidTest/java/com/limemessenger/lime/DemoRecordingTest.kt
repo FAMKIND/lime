@@ -56,26 +56,70 @@ class DemoRecordingTest {
         rule.waitUntil(30_000) { count("empty-title") > 0 || count("messages-list") > 0 }
         pause(); shot("3-chat-list-empty")
 
-        // Ada's first message to Ben (the new-chat screen is LIME-299; until then this goes through the core).
-        runBlocking { session.store!!.sendTextIdentified(session.transport!!, session.accessToken(), benId, "Hello Ben, are we still on for Friday?") }
-        val row = "conversation-row-dm:$benId"
-        rule.waitUntil(120_000) { count(row) > 0 }
-        pause(); shot("4-chat-list")
-        rule.onNodeWithTag(row).performClick()
+        // Ada starts a chat with Ben from New message (the real lookup on staging), then writes to him.
+        rule.onNodeWithTag("new-message-button", useUnmergedTree = true).performClick()
+        rule.waitUntil(10_000) { count("new-message-field") > 0 }
+        pause(800); rule.onNodeWithTag("new-message-field").performTextInput("ben_android")
+        pause(800); shot("4-new-message"); rule.onNodeWithTag("new-message-next").performClick()
+        rule.waitUntil(60_000) { count("lookup-result") > 0 }
+        pause(); shot("5-found")
+        rule.onNodeWithTag("lookup-result", useUnmergedTree = true).performClick()
         rule.waitUntil(30_000) { count("chat-title") > 0 }
-        pause()
-        rule.waitUntil(120_000) { count("message-text-" + messageIds().firstOrNull { it.isNotEmpty() }.orEmpty()) > 0 && descriptions().any { it.startsWith("Ben Android, ") } }
-        pause(); shot("5-chat")
+        pause(800)
+        say("Hello Ben, are we still on for Friday?")
+        waitEcho("""Ben here: got "Hello Ben, are we still on for Friday?"""")
+        pause(); shot("6-chat")
+        say("Can you cover my bus duty? **Thank you!**")
+        pause(600); shot("7-sent")
+        waitEcho("""Ben here: got "Can you cover my bus duty? Thank you!"""")
+        pause(); shot("8-echo")
 
-        rule.onNodeWithTag("composer-field").performTextInput("Can you cover my bus duty? **Thank you!**")
-        pause(1000); rule.onNodeWithTag("send-button").performClick()
-        pause(); shot("6-sent")
-        rule.waitUntil(120_000) { descriptions().any { it.contains("Ben here: got \"Can you cover my bus duty? Thank you!\"") } }
-        pause(); shot("7-echo")
-
+        // A photo with a description (the picker is a system screen, so it goes through the core), and Ben's photo back.
+        val picture = android.graphics.Bitmap.createBitmap(640, 400, android.graphics.Bitmap.Config.ARGB_8888).also {
+            android.graphics.Canvas(it).apply { drawColor(android.graphics.Color.rgb(163, 225, 138)); drawCircle(320f, 200f, 120f, android.graphics.Paint().apply { color = android.graphics.Color.rgb(9, 169, 80) }) }
+        }
+        val outgoing = com.limemessenger.lime.chats.AttachmentProcessing.photo(picture, "bulletin-board.jpg")!!.copy(alt = "A green circle on a light green background")
+        val core = session.store!!
+        core.sendAttachments("dm:$benId", "The new bulletin board", listOf(outgoing), null)
+        runBlocking { core.deliverQueued(session.transport!!, session.accessToken()) }
+        rule.waitUntil(120_000) { descriptions().any { it.contains("Photo: A green gradient fading to dark, from Ben") } }
+        pause(2500); shot("9-photos")
+        val bensPhoto = core.listMessages("dm:$benId").first { it.senderId != null && it.attachments.isNotEmpty() }.attachments.first()
+        rule.waitUntil(60_000) { count("photo-${bensPhoto.id}") > 0 }
+        rule.onNodeWithTag("photo-${bensPhoto.id}", useUnmergedTree = true).performClick()
+        pause(2000); shot("10-photo-viewer")
+        rule.onNodeWithTag("photo-close", useUnmergedTree = true).performClick()
+        pause(600)
+        rule.onNodeWithTag("chat-header", useUnmergedTree = true).performClick()
+        rule.waitUntil(30_000) { count("profile-username") > 0 }
+        pause(); shot("11-profile")
+        rule.onNodeWithTag("profile-back").performClick()
         rule.onNodeWithTag("chat-back").performClick()
-        pause(); shot("8-list-with-chat")
+        pause(); shot("12-list-with-chat")
+
+        // Settings, then the jam tab.
+        rule.onNodeWithTag("my-avatar", useUnmergedTree = true).performClick()
+        rule.waitUntil(10_000) { count("settings-profile") > 0 }
+        pause(); shot("13-settings")
+        rule.onNodeWithTag("settings-row-about", useUnmergedTree = true).performClick()
+        pause(600); rule.onNodeWithTag("preset-Happy to help", useUnmergedTree = true).performClick()
+        pause(600); shot("14-edit-about"); rule.onNodeWithTag("editor-save", useUnmergedTree = true).performClick()
+        rule.waitUntil(30_000) { count("field-editor") == 0 }
+        pause(); shot("15-settings-saved")
+        rule.onNodeWithTag("settings-close", useUnmergedTree = true).performClick()
+        rule.onNodeWithTag("tab-jam", useUnmergedTree = true).performClick()
+        rule.waitUntil(30_000) { count("jam-feed-empty") > 0 }
+        pause(); shot("16-jam")
+        rule.onNodeWithTag("tab-link", useUnmergedTree = true).performClick()
+        pause(600)
     }
+
+    private fun say(text: String) {
+        rule.onNodeWithTag("composer-field").performTextInput(text)
+        pause(900); rule.onNodeWithTag("send-button").performClick()
+    }
+
+    private fun waitEcho(echo: String) = rule.waitUntil(120_000) { descriptions().any { it.contains(echo) } }
 
     private fun messageIds(): List<String> = rule.onAllNodes(androidx.compose.ui.test.SemanticsMatcher("message") { it.config.contains(androidx.compose.ui.semantics.SemanticsProperties.TestTag) && it.config[androidx.compose.ui.semantics.SemanticsProperties.TestTag].startsWith("message-") && !it.config[androidx.compose.ui.semantics.SemanticsProperties.TestTag].startsWith("message-text") && !it.config[androidx.compose.ui.semantics.SemanticsProperties.TestTag].startsWith("message-time") })
         .fetchSemanticsNodes().map { it.config[androidx.compose.ui.semantics.SemanticsProperties.TestTag].removePrefix("message-") }

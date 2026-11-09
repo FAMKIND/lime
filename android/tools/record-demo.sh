@@ -6,7 +6,7 @@
 cd "$(dirname "$0")/.."
 export PATH=/opt/homebrew/share/android-commandlinetools/platform-tools:$PATH ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
 OUT="${1:-$HOME/Desktop/lime-android-prototype}"; AVD="${2:-lime-api36}"
-mkdir -p "$OUT"
+mkdir -p "$OUT"; rm -f "$OUT"/*.png
 tools/emu.sh start "$AVD" >/dev/null || exit 1
 adb shell settings put system font_scale 1.0; adb shell cmd uimode night no >/dev/null
 adb uninstall com.limemessenger.lime >/dev/null 2>&1
@@ -15,7 +15,7 @@ tools/staging-test-accounts.sh --push >/dev/null || exit 1
 tools/partner/run reset >/dev/null; tools/partner/run echo >/tmp/lime-partner.log 2>&1 &
 partner=$!
 adb shell rm -f /sdcard/lime-demo.mp4
-adb shell screenrecord --size 540x1200 --bit-rate 4000000 --time-limit 170 /sdcard/lime-demo.mp4 &
+adb shell screenrecord --size 540x1200 --bit-rate 4000000 --time-limit 175 /sdcard/lime-demo.mp4 &
 rec=$!
 sleep 2
 result="$(adb shell am instrument -w -e annotation com.limemessenger.lime.Staging -e class com.limemessenger.lime.DemoRecordingTest com.limemessenger.lime.test/androidx.test.runner.AndroidJUnitRunner)"
@@ -28,9 +28,9 @@ done
 # The signed-in app at the largest font, then in dark mode.
 adb shell settings put system font_scale 2.0
 adb shell am force-stop com.limemessenger.lime; adb shell am start -n com.limemessenger.lime/.MainActivity >/dev/null; sleep 12
-adb exec-out screencap -p > "$OUT/9-largest-font.png"
+adb exec-out screencap -p > "$OUT/17-largest-font.png"
 adb shell settings put system font_scale 1.0; adb shell cmd uimode night yes >/dev/null; sleep 5
-adb exec-out screencap -p > "$OUT/10-dark.png"
+adb exec-out screencap -p > "$OUT/18-dark.png"
 adb shell cmd uimode night no >/dev/null
 kill "$partner" 2>/dev/null; pkill -f "MainKt echo" 2>/dev/null
 tools/emu.sh stop

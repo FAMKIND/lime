@@ -143,7 +143,7 @@
     <string name="jam_empty">Subscribe to teachers from their profiles. Your posts show here too.</string>
     <string name="settings_title">Settings</string>
     <string name="settings_account">Account</string>
-    <string name="settings_about">About</string>
+    <string name="settings_about">About lime</string>
     <string name="settings_sign_out">Sign out</string>
     <string name="settings_remove_everything">Remove everything from this device</string>
     <string name="settings_sign_out_warning">Your chats stay on this device, locked, until you sign in again.</string>

@@ -69,6 +69,7 @@ fun ChatListScreen(
     model: ChatsModel,
     myName: String,
     onOpen: (ConversationSummary) -> Unit,
+    myTone: Int = 5,
     modifier: Modifier = Modifier,
     onProfile: () -> Unit = {},
     onRequests: () -> Unit = {},
@@ -81,7 +82,7 @@ fun ChatListScreen(
     var note by remember { mutableStateOf(false) }
     Box(modifier.fillMaxSize().background(colors.canvas)) {
     Column(Modifier.fillMaxSize()) {
-        Header(myName, onProfile)
+        Header(myName, myTone, onProfile)
         FilterRow(model)
         PullToRefreshBox(
             isRefreshing = refreshing,
@@ -113,7 +114,7 @@ fun ChatListScreen(
 }
 
 @Composable
-private fun Header(myName: String, onProfile: () -> Unit) {
+private fun Header(myName: String, myTone: Int, onProfile: () -> Unit) {
     val colors = Lime.colors
     Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(stringResource(R.string.app_name), color = colors.text, fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -121,7 +122,7 @@ private fun Header(myName: String, onProfile: () -> Unit) {
         Box(
             Modifier.size(48.dp).clickable(onClick = onProfile).semantics { contentDescription = "$profile, $myName"; role = Role.Button }.testTag("my-avatar"),
             contentAlignment = Alignment.Center,
-        ) { Avatar(initialsOf(myName), tone = 5, size = 36.dp) }
+        ) { Avatar(initialsOf(myName), tone = myTone, size = 36.dp) }
     }
 }
 
