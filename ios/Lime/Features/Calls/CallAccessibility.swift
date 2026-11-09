@@ -48,6 +48,8 @@ enum CallScrim {
     static let button = 0.45
     /// The ring around a lit (white) button: black at 0.6 on a white picture is 5.7:1.
     static let ring = 0.6
+    /// The faint white edge round an off (dark) button, so it shows on a dark backdrop too (the ring over a near-black backdrop is about 2.4:1, a decorative edge: the glyph carries the meaning).
+    static let offRing = 0.3
 }
 
 extension View {
@@ -56,7 +58,10 @@ extension View {
     func callRoundBackground(lit: Bool = false) -> some View {
         background {
             Circle().fill(lit ? Color.white : Color.black.opacity(CallScrim.button))
-                .overlay { if lit { Circle().strokeBorder(Color.black.opacity(CallScrim.ring), lineWidth: 1.5) } }
+                .overlay {
+                    if lit { Circle().strokeBorder(Color.black.opacity(CallScrim.ring), lineWidth: 1.5) }
+                    else { Circle().strokeBorder(Color.white.opacity(CallScrim.offRing), lineWidth: 1) }
+                }
         }
     }
 }

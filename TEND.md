@@ -10582,3 +10582,27 @@ Group call, mini player, calls list, and the flashing/Reduce Motion survey (audi
 **Gate (you, VoiceOver on, two phones):** start a group call; have the iPad join and leave: both are spoken by name; the Calls tab at the largest text: no cut-off names, a missed call says "Missed" in words, and VoiceOver stops once per row; minimise a call: it says so, tuck and untuck are spoken, the tab is easy to hit; Mute reads "Mute, on/off". Effects: see the stop above, nothing to test.
 
 **For plot:** (1) **Decide the effects question** (options a/b/c above): the brief's receiver-side Reduce Motion rule cannot be met while Apple draws reactions into the video. (2) Emergency has nothing that flashes, so the "pulses become static" rule has nothing to apply to; confirm that matches your picture of Emergency. (3) The group controls keep their light glass (solid dark background); the voice-call edge-ring question from 4a is still open. (4) The Calls-list one-stop rule is for VoiceOver/Switch Control only, to keep Voice Control and the tests on the visible buttons.
+
+## LIME-130-4c
+
+No flashing call effects; a visible edge on the off buttons (DESIGN-34 = A, and the edge ring; the user's decisions 2026-11-09).
+
+**What changed**
+1. **Fireworks and Lasers are gone** from `CallReaction` (cases, titles, symbols, types): six reactions remain (Hearts, Thumbs up, Thumbs down, Balloons, Confetti, Rain). Searched `ios/`, tests, `docs/`, `site/`: the only other references were `CallEffects280Tests` (count 8 → 6) and `Effects280UITests` (it tapped "Lasers"; now "Rain", and it asserts Fireworks and Lasers are absent). Nothing else offers them.
+2. **Reduce Motion.** `CallEffects.support(canReact:available:cameraOn:reduceMotion:)` returns no reactions when it is on; the Video Effects panel stays while the camera is on. `support(for:cameraOn:)` (now `@MainActor`) reads `UIAccessibility.isReduceMotionEnabled`; the demo path (`-lime-demo-effects`) follows the same rule. No notification is needed: `CallEffectsButton` already looks again every second, so switching the setting during a call changes the menu within a second.
+3. **Edge ring.** In `callRoundBackground` the off circle gets `strokeBorder(white 0.3, 1 pt)` (`CallScrim.offRing`), everywhere the helper is used (controls, Minimise, route, Effects). Computed: on the voice call's near-black backdrop the ring is about 2.4:1 against it (a decorative edge; the glyph carries the meaning); on a white frame the button's edge is still its 0.45-black fill, 3.4:1 (the ring adds little there, about 1.5:1 against the fill).
+4. **Docs.** No accessibility statement or calls doc lists the effects (`docs/` and `site/` only mention reactions to messages), so nothing was updated and nothing created. The line "Effects are drawn into your video by iOS; lime offers only ones that don't flash, and none when Reduce Motion is on." is ready for when a statement exists.
+
+**Verification**
+- `check-warnings.sh`: 0 in Lime's own sources (it first caught a main-actor warning in my first version; fixed by making the function `@MainActor`); Release build (simulator) succeeds.
+- `CallEffects280Tests` (5, two new: Fireworks/Lasers never offered even if the camera lists them; Reduce Motion gives no reactions, keeps the panel, camera off still gives nothing) + `CallTests` + `CallPolishTests` pass (54 unit tests); `Effects280UITests` (2) and `CallScreenUITests` (12) pass on the 13 mini simulator. No test for the ring (visual-change rule).
+
+**Not done / flagged**
+- This covers only *this* phone's setting: the sender's. A receiver with Reduce Motion on still sees whatever the sender sends (the remaining Apple reactions are not flashing ones, but they do move). Lime's own receiver-drawn effects are the later fix, as the brief says.
+- The group call's effects button uses the same menu, so it follows the same rules.
+
+**Installed (Debug, this commit's tree):** iPhone 13 mini (`00008110-000651D23647801E`), iPad Pro 12.9-inch 5th gen (`00008103-001E699A2168801E`), Jean Chung's iPhone 12 mini (`00008101-000348EC0E51003A`); all three first try.
+
+**Gate (you, 13 mini):** in a video call open Effects: no Fireworks, no Lasers; turn on Reduce Motion (Settings → Accessibility → Motion) and open Effects again (within a second): no reactions, Video Effects still there; on a voice call the round buttons have a faint edge.
+
+**For plot:** (1) The receiver's Reduce Motion is still not honoured for the four remaining moving reactions (Balloons, Confetti, Rain, Hearts and the thumbs); only lime's own receiver-drawn effects fix that. (2) There is no accessibility statement yet to hold the effects line; draft one with 130-5 or the launch docs if you want it public.

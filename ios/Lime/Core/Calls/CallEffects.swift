@@ -1,9 +1,11 @@
 import AVFoundation
 import SwiftUI
 
-/// The camera reactions Apple draws into the video (LIME-280). Each is played by the system on this phone before the picture is encrypted and sent.
+/// The camera reactions Apple draws into the video (LIME-280). Apple draws them into the picture that is sent, so the other person cannot turn them off and lime cannot
+/// cap their flashing: Fireworks and Lasers (the two that flash) are not offered, and none are while this phone's Reduce Motion is on (LIME-130-4c, DESIGN-34).
+/// Each is played by the system on this phone before the picture is encrypted and sent.
 enum CallReaction: String, CaseIterable, Identifiable {
-    case hearts, thumbsUp, thumbsDown, balloons, confetti, fireworks, rain, lasers
+    case hearts, thumbsUp, thumbsDown, balloons, confetti, rain
     var id: String { rawValue }
 
     var title: String {
@@ -13,9 +15,7 @@ enum CallReaction: String, CaseIterable, Identifiable {
         case .thumbsDown: "Thumbs down"
         case .balloons: "Balloons"
         case .confetti: "Confetti"
-        case .fireworks: "Fireworks"
         case .rain: "Rain"
-        case .lasers: "Lasers"
         }
     }
 
@@ -26,9 +26,7 @@ enum CallReaction: String, CaseIterable, Identifiable {
         case .thumbsDown: "hand.thumbsdown.fill"
         case .balloons: "balloon.fill"
         case .confetti: "party.popper.fill"
-        case .fireworks: "sparkles"
         case .rain: "cloud.rain.fill"
-        case .lasers: "wand.and.rays"
         }
     }
 
@@ -39,9 +37,7 @@ enum CallReaction: String, CaseIterable, Identifiable {
         case .thumbsDown: .thumbsDown
         case .balloons: .balloons
         case .confetti: .confetti
-        case .fireworks: .fireworks
         case .rain: .rain
-        case .lasers: .lasers
         }
     }
 }
@@ -57,18 +53,20 @@ struct EffectsSupport: Equatable {
 enum CallEffects {
     /// The menu's items from what the camera says: reactions only when it can play them (iOS turns them on for apps with the voice-over-IP mode, and the
     /// active format has to support them) and only the ones it lists; the Video Effects panel whenever the camera is on. Nothing when the camera is off.
-    static func support(canReact: Bool, available: Set<AVCaptureReactionType>, cameraOn: Bool) -> EffectsSupport {
+    static func support(canReact: Bool, available: Set<AVCaptureReactionType>, cameraOn: Bool, reduceMotion: Bool = false) -> EffectsSupport {
         guard cameraOn else { return .none }
-        let reactions = canReact ? CallReaction.allCases.filter { available.contains($0.type) } : []
+        let reactions = canReact && !reduceMotion ? CallReaction.allCases.filter { available.contains($0.type) } : []
         return EffectsSupport(reactions: reactions, videoEffectsPanel: true)
     }
 
-    static func support(for device: AVCaptureDevice?, cameraOn: Bool) -> EffectsSupport {
+    /// The menu looks again every second (`CallEffectsButton`), so turning Reduce Motion on or off during a call changes it within a second.
+    @MainActor static func support(for device: AVCaptureDevice?, cameraOn: Bool, reduceMotion: Bool? = nil) -> EffectsSupport {
+        let reduceMotion = reduceMotion ?? UIAccessibility.isReduceMotionEnabled
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("-lime-demo-effects") { return cameraOn ? EffectsSupport(reactions: CallReaction.allCases, videoEffectsPanel: true) : .none }
+        if ProcessInfo.processInfo.arguments.contains("-lime-demo-effects") { return cameraOn ? EffectsSupport(reactions: reduceMotion ? [] : CallReaction.allCases, videoEffectsPanel: true) : .none }
         #endif
         guard let device else { return .none }
-        return support(canReact: device.canPerformReactionEffects, available: device.availableReactionTypes, cameraOn: cameraOn)
+        return support(canReact: device.canPerformReactionEffects, available: device.availableReactionTypes, cameraOn: cameraOn, reduceMotion: reduceMotion)
     }
 
     static func perform(_ reaction: CallReaction, on device: AVCaptureDevice?) {
