@@ -1,0 +1,8 @@
+#!/bin/sh
+# android/tools/partner/run echo | send "<text>" | status   (builds on first use)
+HERE="$(cd "$(dirname "$0")" && pwd)"
+[ -f "$HERE/build/partner.jar" ] || sh "$HERE/build.sh" || exit 1
+JAVA="$HOME/.lime/jdk21/jdk-21.0.13+9/Contents/Home/bin/java"
+[ -x "$JAVA" ] || JAVA=java
+cd "$HERE/../../.."
+exec "$JAVA" --enable-native-access=ALL-UNNAMED -Djna.library.path="$HERE/build" -cp "$HERE/build/partner.jar:$HERE/../../../core/target/jna-5.14.0.jar" MainKt "$@"

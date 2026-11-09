@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -35,6 +36,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -69,6 +71,7 @@ fun ChatListScreen(
     onOpen: (ConversationSummary) -> Unit,
     modifier: Modifier = Modifier,
     onProfile: () -> Unit = {},
+    onRequests: () -> Unit = {},
     isMuted: (String) -> Boolean = { false },
 ) {
     val colors = Lime.colors
@@ -85,6 +88,7 @@ fun ChatListScreen(
         ) {
             LazyColumn(Modifier.fillMaxSize().testTag("messages-list")) {
                 model.problem?.let { problem -> item(key = "problem") { ProblemBanner(problem) } }
+                if (model.requests.isNotEmpty()) item(key = "requests") { RequestsRow(model.requests.size, onRequests) }
                 if (model.isLoaded && model.chats.isEmpty() && model.requests.isEmpty()) {
                     item(key = "empty") { EmptyChats(note) { note = true } }
                 } else if (model.chats.isNotEmpty() && model.shownChats.isEmpty()) {
@@ -144,6 +148,44 @@ private fun ProblemBanner(problem: ConnectionProblem) {
             .padding(14.dp).heightIn(min = 44.dp).testTag("problem-message"),
     )
 }
+
+/** "Requests": strangers' first messages wait here until you accept (iOS `RequestsRow`). */
+@Composable
+private fun RequestsRow(count: Int, onClick: () -> Unit) {
+    val colors = Lime.colors
+    val words = if (count == 1) stringResource(R.string.requests_one) else stringResource(R.string.requests_many, count)
+    val title = stringResource(R.string.requests_title)
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 72.dp).semantics(mergeDescendants = true) { role = Role.Button; contentDescription = "$title, $words" }
+            .clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp).testTag("requests-row"),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(Modifier.size(52.dp).background(colors.accent, CircleShape), contentAlignment = Alignment.Center) { Icon(Icons.Mail, null, tint = colors.accentInk) }
+        Column(Modifier.weight(1f)) {
+            Text(title, color = colors.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+            Text(words, color = colors.textSecondary, fontSize = 15.sp)
+        }
+        CountBadge(count)
+    }
+}
+
+/** The Requests list (iOS `RequestsView`): open one to read it, then Accept. */
+@Composable
+fun RequestsScreen(model: ChatsModel, onOpen: (ConversationSummary) -> Unit, onBack: () -> Unit) {
+    val colors = Lime.colors
+    androidx.compose.foundation.layout.Column(Modifier.fillMaxSize().background(colors.canvas).androidx_systemBars()) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 64.dp), verticalAlignment = Alignment.CenterVertically) {
+            androidx.compose.material3.IconButton(onClick = onBack, Modifier.size(56.dp).testTag("requests-back")) { Icon(Icons.Back, stringResource(R.string.chat_back), tint = colors.text) }
+            Text(stringResource(R.string.requests_title), color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.semantics { heading() })
+        }
+        LazyColumn(Modifier.testTag("requests-list")) {
+            item { Text(stringResource(R.string.requests_explainer), color = colors.textSecondary, fontSize = 15.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) }
+            items(model.requests, key = { it.id }) { c -> ConversationRow(c, false) { onOpen(c) } }
+        }
+    }
+}
+
+private fun Modifier.androidx_systemBars(): Modifier = this.then(Modifier.systemBarsPadding())
 
 @Composable
 private fun EmptyChats(showNote: Boolean, onCard: () -> Unit) {

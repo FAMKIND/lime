@@ -37,6 +37,13 @@ class ChatsModel(
         private set
     var unreadOnly by mutableStateOf(false)
 
+    /** Bumped every time the conversations are read again: an open chat reads its messages again when it changes. */
+    var revision by mutableStateOf(0)
+        private set
+
+    /** The open store, for the chat screens that read their own messages. */
+    fun core(): LimeStore? = store()
+
     private var syncing = false
     private var syncAgain = false
 
@@ -53,6 +60,7 @@ class ChatsModel(
         val core = store() ?: return
         try {
             conversations = withContext(Dispatchers.IO) { core.listConversations() }
+            revision++
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -92,6 +100,30 @@ class ChatsModel(
     }
 
     suspend fun pullToRefresh() = syncNow()
+
+    /** Sends what is queued (a message that failed is retried here). */
+    suspend fun deliverNow() {
+        val core = store() ?: return
+        val link = transport() ?: run { reload(); return }
+        try {
+            val bearer = try { token() } catch (e: CancellationException) { throw e } catch (e: Exception) { staleToken() }
+            withContext(Dispatchers.IO) { core.deliverQueued(link, bearer) }
+            problem = null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            // A key change is shown in the chat itself; everything else on Messages.
+            if (e !is uniffi.lime_core.StoreException.KeyMismatch) problem = ConnectionProblem.from(e)
+        }
+        reload()
+    }
+
+    /** "Accept" on a stranger's first message: it moves from Requests to the list. */
+    suspend fun acceptRequest(conversationId: String) {
+        val core = store() ?: return
+        withContext(Dispatchers.IO) { runCatching { core.acceptRequest(conversationId) } }
+        reload()
+    }
 
     /** Opening a chat reads it (iOS marks it read in `open`): the unread badge clears when the list is read again. */
     suspend fun markRead(conversationId: String) {

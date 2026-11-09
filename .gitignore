@@ -43,3 +43,6 @@ android/app/src/main/jniLibs/
 android/local.properties
 android/.kotlin/
 *.hprof
+
+# The partner (host-side test tool): its build output
+android/tools/partner/build/

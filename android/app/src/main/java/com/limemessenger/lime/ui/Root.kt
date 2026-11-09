@@ -20,6 +20,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.limemessenger.lime.chats.ChatsModel
 import com.limemessenger.lime.ui.chats.ChatListScreen
+import com.limemessenger.lime.ui.chats.RequestsScreen
+import com.limemessenger.lime.ui.chat.ChatScreen
+import com.limemessenger.lime.ui.chat.ThreadScreen
+import com.limemessenger.lime.chats.ChatModel
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -89,30 +93,31 @@ private fun SignedIn(session: AccountSession) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(chats) { lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { chats.runWhileForeground() } }
     var openId by rememberSaveable { mutableStateOf<String?>(null) }
+    var requestsOpen by rememberSaveable { mutableStateOf(false) }
+    var threadRoot by remember { mutableStateOf<uniffi.lime_core.MessageItem?>(null) }
     var profileOpen by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-    val opened = openId?.let { id -> chats.conversations.firstOrNull { it.id == id } }
-    BackHandler(enabled = openId != null) { openId = null }
-    if (opened != null) {
-        ChatPlaceholder(opened.title)
+    val chatModel = remember(openId) { openId?.let { ChatModel(it, chats) } }
+    BackHandler(enabled = threadRoot != null) { threadRoot = null }
+    BackHandler(enabled = threadRoot == null && openId != null) { openId = null }
+    BackHandler(enabled = openId == null && requestsOpen) { requestsOpen = false }
+    val root = threadRoot
+    if (chatModel != null && root != null) {
+        ThreadScreen(root, chatModel, onBack = { threadRoot = null })
+    } else if (chatModel != null) {
+        ChatScreen(chatModel, chats, onBack = { openId = null }, onOpenThread = { threadRoot = it })
+    } else if (requestsOpen) {
+        RequestsScreen(chats, onOpen = { openId = it.id }, onBack = { requestsOpen = false })
     } else {
         Shell(link = {
             ChatListScreen(
                 chats, myName = session.profile?.displayName.orEmpty(),
-                onOpen = { openId = it.id; scope.launch { chats.markRead(it.id) } },
+                onOpen = { openId = it.id },
                 onProfile = { profileOpen = true },
+                onRequests = { requestsOpen = true },
             )
         })
     }
     if (profileOpen) ProfileDialog(session, onDismiss = { profileOpen = false })
-}
-
-/** Stands in for the chat screen until LIME-298. */
-@Composable
-private fun ChatPlaceholder(title: String) {
-    Box(Modifier.fillMaxSize().background(Lime.colors.canvas).systemBarsPadding(), contentAlignment = Alignment.Center) {
-        Text(title, color = Lime.colors.text, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.testTag("chat-placeholder"))
-    }
 }
 
 /** Who is signed in, and a plain sign out (Settings has it in LIME-300; until then it lives here). */

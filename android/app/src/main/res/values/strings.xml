@@ -85,4 +85,32 @@
     <string name="chat_row_no_messages">No messages yet</string>
     <string name="my_profile">Your profile</string>
     <string name="chat_title_placeholder">Chat</string>
+
+    <!-- A chat (iOS ChatView.swift) -->
+    <string name="chat_message_hint">Message</string>
+    <string name="chat_send">Send</string>
+    <string name="chat_replying_to">Replying to %1$s</string>
+    <string name="chat_cancel_reply">Cancel reply</string>
+    <string name="chat_copy">Copy</string>
+    <string name="chat_reply">Reply</string>
+    <string name="chat_retry_action">Retry sending</string>
+    <string name="chat_resend_action">Resend</string>
+    <string name="chat_open_link">Open link %1$s</string>
+    <string name="chat_deleted">This message was deleted</string>
+    <string name="chat_deleted_run">%1$d messages deleted</string>
+    <string name="chat_reply_one">1 reply</string>
+    <string name="chat_reply_other">%1$d replies</string>
+    <string name="chat_state_sending">· Sending…</string>
+    <string name="chat_state_sent">· Sent</string>
+    <string name="chat_state_not_sent">· Not sent. Tap to retry</string>
+    <string name="chat_state_not_delivered">· Not delivered. Tap to resend</string>
+    <string name="chat_edited">· Edited</string>
+    <string name="chat_request_bar">%1$s isn\'t in your chats yet. Accept to reply.</string>
+    <string name="chat_accept">Accept</string>
+    <string name="chat_back">Back</string>
+    <string name="chat_thread_title">Replies</string>
+    <string name="requests_title">Requests</string>
+    <string name="requests_one">1 person wants to message you</string>
+    <string name="requests_many">%1$d people want to message you</string>
+    <string name="requests_explainer">People who aren\'t in your chats yet. Nothing is shared with them until you accept.</string>
 </resources>

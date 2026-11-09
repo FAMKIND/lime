@@ -9,12 +9,20 @@ for avd in lime-api36 lime-api26; do
   echo "== $avd"
   ./gradlew -q connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.limemessenger.lime.Staging "$@" || status=1
   if [ -z "$NO_STAGING" ]; then
-    # The staging tests: install, push Ada's and Ben's fresh sessions into the debug app, run only @Staging, then clean up.
+    # The staging tests: install, then for each test class push Ada's and Ben's FRESH sessions into the debug app (a test's sign-out ends
+    # its session on the server, so each class needs its own), start Ben (the host-side partner) with a fresh store (Ada's keys are new
+    # every time), run only that @Staging class, stop Ben, clean up.
     ./gradlew -q installDebug installDebugAndroidTest || status=1
-    tools/staging-test-accounts.sh --push || status=1
-    out="$(adb shell am instrument -w -e annotation com.limemessenger.lime.Staging com.limemessenger.lime.test/androidx.test.runner.AndroidJUnitRunner)"
-    echo "$out" | tail -4
-    echo "$out" | grep -q "^OK" || status=1
+    for cls in StagingSignInTest StagingChatTest; do
+      tools/staging-test-accounts.sh --push >/dev/null || status=1
+      tools/partner/run reset >/dev/null || status=1
+      tools/partner/run echo >/tmp/lime-partner.log 2>&1 &
+      partner=$!
+      out="$(adb shell am instrument -w -e annotation com.limemessenger.lime.Staging -e class com.limemessenger.lime.$cls com.limemessenger.lime.test/androidx.test.runner.AndroidJUnitRunner)"
+      echo "$cls: $(echo "$out" | grep -E '^(OK|FAILURES)' | head -1)"
+      echo "$out" | grep -q "^OK" || { status=1; echo "$out" | head -12; }
+      kill "$partner" 2>/dev/null; pkill -f "MainKt echo" 2>/dev/null
+    done
     adb uninstall com.limemessenger.lime >/dev/null 2>&1
     adb uninstall com.limemessenger.lime.test >/dev/null 2>&1
   fi
