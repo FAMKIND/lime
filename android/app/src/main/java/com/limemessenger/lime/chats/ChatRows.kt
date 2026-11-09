@@ -138,7 +138,7 @@ object MessageSpeech {
         val items = message.attachments
         val images = items.filter { it.mime.startsWith("image/") }
         val out = mutableListOf<String>()
-        if (images.size == 1) out += if (images[0].mime == "image/gif") "GIF" else "Photo" else if (images.size > 1) out += "${images.size} photos"
+        if (images.size == 1) out += if (images[0].mime == "image/gif") "GIF" else if (images[0].alt.isNotEmpty()) "Photo: ${images[0].alt}" else "Photo" else if (images.size > 1) out += "${images.size} photos"
         for (item in items.filter { !it.mime.startsWith("image/") }) out += when {
             item.mime.startsWith("audio/") -> "Voice message"
             item.mime.startsWith("video/") -> "Video"

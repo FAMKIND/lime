@@ -3,6 +3,7 @@
 //
 //   partner send "<text>"   send one message to Ada
 //   partner echo            run until stopped; accept Ada's first message and reply to each new message with: Ben here: got "<first 40 chars>"
+//   partner photo <file>    send a picture to Ada (the echo also sends one back whenever Ada sends a photo)
 //   partner status          print what Ben's store holds
 //   partner reset           forget Ben's store (do this whenever Ada signs in on a new emulator: her keys are new, and Ben pins the old ones)
 //
@@ -14,6 +15,7 @@ import java.net.URL
 import java.security.SecureRandom
 import uniffi.lime_core.HeaderPair
 import uniffi.lime_core.LimeStore
+import uniffi.lime_core.OutgoingAttachment
 import uniffi.lime_core.Transport
 import uniffi.lime_core.TransportException
 import uniffi.lime_core.TransportResponse
@@ -45,6 +47,18 @@ class Http(private val base: String, private val apiKey: String) : Transport {
         val r = request("POST", path, listOf(HeaderPair("content-type", "application/json")), json.toByteArray())
         return r.status.toInt() to r.body.decodeToString()
     }
+}
+
+/** A small generated JPEG for the echo to send back (so no picture file has to exist). */
+fun generatedPhoto(): OutgoingAttachment {
+    fun jpeg(w: Int, h: Int): ByteArray {
+        val image = java.awt.image.BufferedImage(w, h, java.awt.image.BufferedImage.TYPE_INT_RGB)
+        val g = image.createGraphics()
+        g.paint = java.awt.GradientPaint(0f, 0f, java.awt.Color(0x09, 0xa9, 0x50), w.toFloat(), h.toFloat(), java.awt.Color(0x13, 0x1b, 0x17))
+        g.fillRect(0, 0, w, h); g.dispose()
+        val out = java.io.ByteArrayOutputStream(); javax.imageio.ImageIO.write(image, "jpg", out); return out.toByteArray()
+    }
+    return OutgoingAttachment(jpeg(480, 300), "ben.jpg", "image/jpeg", 480u, 300u, null, jpeg(40, 25), ByteArray(0), "A green gradient fading to dark, from Ben")
 }
 
 private fun field(text: String, key: String): String? = Regex("\"$key\"\\s*:\\s*\"([^\"]*)\"").find(text)?.groupValues?.get(1)
@@ -118,6 +132,14 @@ fun main(args: Array<String>) {
             store.sendTextIdentified(http, freshToken(http, tokens), adaId, text)
             println("sent")
         }
+        "photo" -> {
+            val file = File(args.getOrNull(1) ?: error("usage: partner photo <file>"))
+            val mime = when (file.extension.lowercase()) { "png" -> "image/png"; "gif" -> "image/gif"; else -> "image/jpeg" }
+            store.startDm(adaId, "Ada")
+            store.sendAttachments(dm, args.getOrNull(2).orEmpty(), listOf(OutgoingAttachment(file.readBytes(), file.name, mime, null, null, null, ByteArray(0), ByteArray(0), "")), null)
+            store.deliverQueued(http, freshToken(http, tokens))
+            println("sent")
+        }
         "status" -> {
             store.sync(http, freshToken(http, tokens))
             val all = store.listConversations()
@@ -137,7 +159,15 @@ fun main(args: Array<String>) {
                     for (m in fresh) {
                         answered += m.id
                         val words = messagePlainText(m.text).replace("\n", " ").take(40)
-                        store.queueText(dm, "Ben here: got \"$words\"")
+                        val photos = m.attachments.filter { it.mime.startsWith("image/") }
+                        if (photos.isNotEmpty()) {
+                            // Prove the photo arrived whole: download it, decrypt it, and report how big it came out.
+                            val sizes = photos.map { p -> store.downloadAttachment(http, freshToken(http, tokens), p.id); store.attachmentData(p.id)?.size ?: -1 }
+                            store.queueText(dm, "Ben here: got ${photos.size} photo${if (photos.size == 1) "" else "s"} (${sizes.joinToString { "$it bytes" }})" + (if (words.isNotEmpty()) " and \"$words\"" else ""))
+                            store.sendAttachments(dm, "Ben's photo", listOf(generatedPhoto()), null)
+                        } else {
+                            store.queueText(dm, "Ben here: got \"$words\"")
+                        }
                         store.deliverQueued(http, freshToken(http, tokens))
                         println("replied to a message")
                     }

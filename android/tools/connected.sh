@@ -13,7 +13,9 @@ for avd in lime-api36 lime-api26; do
     # its session on the server, so each class needs its own), start Ben (the host-side partner) with a fresh store (Ada's keys are new
     # every time), run only that @Staging class, stop Ben, clean up.
     ./gradlew -q installDebug installDebugAndroidTest || status=1
-    for cls in StagingSignInTest StagingChatTest; do
+    # The server allows 10 device registrations per hour per account (staging's LIME_RATE_REGISTER_PER_HOUR), and every class registers Ada once, so
+    # only the chat test (it signs in too) runs by default; STAGING_CLASSES="StagingSignInTest StagingChatTest" runs both.
+    for cls in ${STAGING_CLASSES:-StagingChatTest}; do
       tools/staging-test-accounts.sh --push >/dev/null || status=1
       tools/partner/run reset >/dev/null || status=1
       tools/partner/run echo >/tmp/lime-partner.log 2>&1 &

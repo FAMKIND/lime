@@ -20,6 +20,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.limemessenger.lime.chats.ChatsModel
 import com.limemessenger.lime.ui.chats.ChatListScreen
+import com.limemessenger.lime.ui.chats.NewMessageScreen
 import com.limemessenger.lime.ui.chats.RequestsScreen
 import com.limemessenger.lime.ui.chat.ChatScreen
 import com.limemessenger.lime.ui.chat.ThreadScreen
@@ -94,17 +95,21 @@ private fun SignedIn(session: AccountSession) {
     LaunchedEffect(chats) { lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { chats.runWhileForeground() } }
     var openId by rememberSaveable { mutableStateOf<String?>(null) }
     var requestsOpen by rememberSaveable { mutableStateOf(false) }
+    var newMessageOpen by rememberSaveable { mutableStateOf(false) }
     var threadRoot by remember { mutableStateOf<uniffi.lime_core.MessageItem?>(null) }
     var profileOpen by remember { mutableStateOf(false) }
     val chatModel = remember(openId) { openId?.let { ChatModel(it, chats) } }
     BackHandler(enabled = threadRoot != null) { threadRoot = null }
     BackHandler(enabled = threadRoot == null && openId != null) { openId = null }
     BackHandler(enabled = openId == null && requestsOpen) { requestsOpen = false }
+    BackHandler(enabled = openId == null && newMessageOpen) { newMessageOpen = false }
     val root = threadRoot
     if (chatModel != null && root != null) {
         ThreadScreen(root, chatModel, onBack = { threadRoot = null })
     } else if (chatModel != null) {
         ChatScreen(chatModel, chats, onBack = { openId = null }, onOpenThread = { threadRoot = it })
+    } else if (newMessageOpen) {
+        NewMessageScreen(chats, onClose = { newMessageOpen = false }, onOpenChat = { newMessageOpen = false; openId = it })
     } else if (requestsOpen) {
         RequestsScreen(chats, onOpen = { openId = it.id }, onBack = { requestsOpen = false })
     } else {
@@ -114,6 +119,7 @@ private fun SignedIn(session: AccountSession) {
                 onOpen = { openId = it.id },
                 onProfile = { profileOpen = true },
                 onRequests = { requestsOpen = true },
+                onNewMessage = { newMessageOpen = true },
             )
         })
     }

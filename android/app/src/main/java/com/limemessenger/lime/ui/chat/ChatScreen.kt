@@ -3,7 +3,34 @@ package com.limemessenger.lime.ui.chat
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import com.limemessenger.lime.chats.AttachmentProcessing
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import uniffi.lime_core.AttachmentInfo
+import uniffi.lime_core.OutgoingAttachment
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -93,6 +120,8 @@ fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenTh
     val rows = remember(model.messages) { ChatRow.rows(model.messages) }
     val listState = rememberLazyListState()
     val lastOwnId = model.messages.lastOrNull { it.isOwn && it.state != DeliveryState.System }?.id
+    var viewer by remember { mutableStateOf<Pair<MessageItem, Int>?>(null) }
+    BackHandler(enabled = viewer != null) { viewer = null }
 
     // Read the messages again whenever the list was (a sync brought something), and mark the chat read while it is open.
     LaunchedEffect(chats.revision) { model.reload(); model.markRead() }
@@ -117,14 +146,17 @@ fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenTh
                         onRetry = { scope.launch { model.resend(row.item.id) } },
                         onReply = { model.replyingTo = row.item },
                         onOpenThread = { onOpenThread(row.item) },
+                        model = model,
+                        onOpenPhoto = { index -> viewer = row.item to index },
                     )
                 }
             }
         }
         model.banner?.let { Text(it, color = colors.danger, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).testTag("chat-banner")) }
         if (summary != null && summary.isRequest) RequestBar(summary.title) { scope.launch { chats.acceptRequest(summary.id) } }
-        else Composer(model) { text -> scope.launch { model.send(text) } }
+        else Composer(model) { text, photos -> scope.launch { if (photos.isNotEmpty()) model.sendPhotos(photos, text) else model.send(text) } }
     }
+    viewer?.let { (item, index) -> PhotoViewer(item.attachments.filter { it.mime.startsWith("image/") }, index, model, onClose = { viewer = null }) }
 }
 
 @Composable
@@ -170,7 +202,7 @@ private fun SystemLine(text: String) {
 @Composable
 private fun MessageBubble(
     item: MessageItem, summary: ConversationSummary?, showAvatar: Boolean, endsRun: Boolean, showState: Boolean, replyCount: Int,
-    onRetry: () -> Unit, onReply: () -> Unit, onOpenThread: () -> Unit,
+    onRetry: () -> Unit, onReply: () -> Unit, onOpenThread: () -> Unit, model: ChatModel, onOpenPhoto: (Int) -> Unit,
 ) {
     val colors = Lime.colors
     val context = LocalContext.current
@@ -184,10 +216,13 @@ private fun MessageBubble(
     val replyLabel = stringResource(R.string.chat_reply)
     val retryLabel = stringResource(if (item.state == DeliveryState.Undelivered) R.string.chat_resend_action else R.string.chat_retry_action)
     val failed = own && (item.state == DeliveryState.Failed || item.state == DeliveryState.Undelivered)
+    val photoLabel = stringResource(R.string.photo_open)
+    val photos = item.attachments.filter { it.mime.startsWith("image/") }
     val maxBubble = (LocalConfiguration.current.screenWidthDp * 0.78f).dp
     val actions = buildList {
         if (!item.deleted && plain.isNotEmpty()) add(CustomAccessibilityAction(copyLabel) { copy(context, plain); true })
         if (!item.deleted) add(CustomAccessibilityAction(replyLabel) { onReply(); true })
+        if (!item.deleted && photos.isNotEmpty()) add(CustomAccessibilityAction(photoLabel) { onOpenPhoto(0); true })
         if (failed) add(CustomAccessibilityAction(retryLabel) { onRetry(); true })
     }
     Row(
@@ -217,8 +252,9 @@ private fun MessageBubble(
                         if (item.deleted) {
                             Text(stringResource(R.string.chat_deleted), color = colors.textSecondary, fontSize = 16.sp, fontStyle = FontStyle.Italic)
                         } else {
+                            photos.forEachIndexed { index, photo -> PhotoThumb(photo, model) { onOpenPhoto(index) } }
                             if (item.text.isNotEmpty()) MessageText(item.text, color = if (own) colors.ownInk else colors.text, linkColor = if (own) colors.linkOwn else colors.link, modifier = Modifier.testTag("message-text-${item.id}"))
-                            AttachmentFormat.summary(item.attachments)?.let { Text(it, color = if (own) colors.ownInk else colors.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
+                            if (photos.size != item.attachments.size) AttachmentFormat.summary(item.attachments.filter { !it.mime.startsWith("image/") })?.let { Text(it, color = if (own) colors.ownInk else colors.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
                         }
                     }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -270,11 +306,31 @@ private fun RequestBar(title: String, onAccept: () -> Unit) {
     }
 }
 
-/** The composer: plain text tonight (no formatting toolbar), a reply bar when replying, and send = the one lime action. */
+/** A photo chosen for the next message, with a picture to show and its description. */
+private class DraftPhoto(var attachment: OutgoingAttachment, val preview: ImageBitmap)
+
+/** The composer: plain text, photos from the system Photo Picker, a reply bar when replying, and send = the one lime action. */
 @Composable
-private fun Composer(model: ChatModel, onSend: (String) -> Unit) {
+private fun Composer(model: ChatModel, onSend: (String, List<OutgoingAttachment>) -> Unit) {
     val colors = Lime.colors
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var text by rememberSaveable { mutableStateOf("") }
+    val drafts = remember { mutableStateListOf<DraftPhoto>() }
+    var describing by remember { mutableStateOf<DraftPhoto?>(null) }
+    var problem by remember { mutableStateOf<String?>(null) }
+    val tooLarge = stringResource(R.string.photo_too_large)
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(AttachmentProcessing.MAX_PER_MESSAGE)) { uris ->
+        scope.launch {
+            val made = withContext(Dispatchers.IO) {
+                uris.take(AttachmentProcessing.MAX_PER_MESSAGE - drafts.size).mapNotNull { uri ->
+                    AttachmentProcessing.photo(context.contentResolver, uri)?.let { att -> AttachmentProcessing.decodeForDisplay(att.bytes, 320)?.let { DraftPhoto(att, it.asImageBitmap()) } }
+                }
+            }
+            problem = if (made.size < uris.size) tooLarge else null
+            drafts.addAll(made)
+        }
+    }
     val reply = model.replyingTo
     Column(Modifier.fillMaxWidth().background(colors.canvas).padding(horizontal = 8.dp, vertical = 6.dp)) {
         if (reply != null) {
@@ -290,7 +346,37 @@ private fun Composer(model: ChatModel, onSend: (String) -> Unit) {
             }
             Spacer(Modifier.size(6.dp))
         }
-        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (drafts.isNotEmpty()) {
+            LazyRow(Modifier.fillMaxWidth().testTag("draft-photos"), horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 4.dp)) {
+                items(drafts.toList()) { draft ->
+                    val photo = stringResource(R.string.photo_label)
+                    val described = draft.attachment.alt.isNotEmpty()
+                    Box(Modifier.size(88.dp).semantics { contentDescription = if (described) "$photo, ${draft.attachment.alt}" else photo }) {
+                        Image(draft.preview, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)))
+                        // Alt: describe it for people who cannot see it (a 48 dp target, as iOS's "+ Alt" chip).
+                        Box(
+                            Modifier.align(Alignment.BottomStart).heightIn(min = 48.dp).widthIn(min = 48.dp)
+                                .semantics { role = Role.Button; contentDescription = if (described) "Edit description" else "Add description" }
+                                .clickable { describing = draft }.testTag("draft-describe"),
+                            contentAlignment = Alignment.BottomStart,
+                        ) {
+                            Text(
+                                if (described) stringResource(R.string.photo_alt_chip) else stringResource(R.string.photo_alt_chip_add), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(4.dp).background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
+                            )
+                        }
+                        IconButton(onClick = { drafts.remove(draft) }, Modifier.align(Alignment.TopEnd).size(48.dp).testTag("draft-remove")) {
+                            Icon(Icons.Close, contentDescription = stringResource(R.string.photo_remove), tint = Color.White, modifier = Modifier.background(Color.Black.copy(alpha = 0.6f), CircleShape).padding(4.dp))
+                        }
+                    }
+                }
+            }
+        }
+        problem?.let { Text(it, color = colors.danger, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 8.dp).testTag("photo-problem")) }
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            IconButton(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, Modifier.size(56.dp).testTag("attach-photo")) {
+                Icon(Icons.Photo, contentDescription = stringResource(R.string.photo_attach), tint = colors.text)
+            }
             OutlinedTextField(
                 value = text, onValueChange = { text = it }, modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("composer-field"),
                 placeholder = { Text(stringResource(R.string.chat_message_hint), color = colors.textSecondary) }, maxLines = 5,
@@ -300,15 +386,77 @@ private fun Composer(model: ChatModel, onSend: (String) -> Unit) {
                     focusedBorderColor = colors.text, unfocusedBorderColor = colors.hairline, cursorColor = colors.text,
                 ),
             )
-            val canSend = text.isNotBlank()
+            Spacer(Modifier.size(4.dp))
+            val canSend = text.isNotBlank() || drafts.isNotEmpty()
             val sendLabel = stringResource(R.string.chat_send)
             Box(
                 Modifier.size(56.dp).background(if (canSend) colors.accent else colors.pressed, CircleShape)
-                    .then(if (canSend) Modifier.clickable(role = Role.Button) { onSend(text); text = "" } else Modifier.semantics { role = Role.Button; disabled() })
+                    .then(if (canSend) Modifier.clickable(role = Role.Button) { onSend(text, drafts.map { it.attachment }); text = ""; drafts.clear() } else Modifier.semantics { role = Role.Button; disabled() })
                     .semantics { contentDescription = sendLabel }.testTag("send-button"),
                 contentAlignment = Alignment.Center,
             ) { Icon(Icons.Send, contentDescription = null, tint = if (canSend) colors.accentInk else colors.textSecondary) }
         }
+    }
+    describing?.let { draft ->
+        var alt by remember(draft) { mutableStateOf(draft.attachment.alt) }
+        AlertDialog(
+            onDismissRequest = { describing = null }, containerColor = colors.canvas,
+            title = { Text(stringResource(R.string.photo_description_title), color = colors.text) },
+            text = {
+                OutlinedTextField(
+                    value = alt, onValueChange = { alt = it.take(AttachmentProcessing.MAX_ALT_LENGTH) }, modifier = Modifier.fillMaxWidth().testTag("description-field"),
+                    placeholder = { Text(stringResource(R.string.photo_description_hint), color = colors.textSecondary) }, maxLines = 4,
+                )
+            },
+            confirmButton = {
+                TextButton({
+                    val at = drafts.indexOf(draft)
+                    if (at >= 0) drafts[at] = DraftPhoto(draft.attachment.copy(alt = alt.trim()), draft.preview)
+                    describing = null
+                }, Modifier.heightIn(min = 48.dp).testTag("description-save")) { Text(stringResource(R.string.photo_description_save), color = colors.text, fontWeight = FontWeight.SemiBold) }
+            },
+            dismissButton = { TextButton({ describing = null }, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.photo_description_cancel), color = colors.text) } },
+        )
+    }
+}
+
+/** A photo in a bubble: the tiny preview first, then the real picture (downloaded and decrypted when this phone does not have it yet). */
+@Composable
+private fun PhotoThumb(photo: AttachmentInfo, model: ChatModel, onOpen: () -> Unit) {
+    val colors = Lime.colors
+    LaunchedEffect(photo.id) { model.loadImage(photo) }
+    val bitmap = model.images[photo.id]
+    val ratio = if ((photo.width ?: 0u) > 0u && (photo.height ?: 0u) > 0u) (photo.width!!.toFloat() / photo.height!!.toFloat()).coerceIn(0.6f, 1.8f) else 1f
+    Box(Modifier.width(240.dp).aspectRatio(ratio).clip(RoundedCornerShape(14.dp)).background(colors.chip).clickable(onClick = onOpen).testTag("photo-${photo.id}")) {
+        if (bitmap != null) Image(bitmap, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+    }
+}
+
+/** A photo full screen: pinch to zoom, drag to pan, swipe between photos; its description is what TalkBack reads. Back or Close leaves. */
+@Composable
+private fun PhotoViewer(photos: List<AttachmentInfo>, start: Int, model: ChatModel, onClose: () -> Unit) {
+    if (photos.isEmpty()) return
+    val pager = rememberPagerState(initialPage = start.coerceIn(0, photos.lastIndex)) { photos.size }
+    val photoWord = stringResource(R.string.photo_label)
+    Box(Modifier.fillMaxSize().background(Color.Black).testTag("photo-viewer")) {
+        HorizontalPager(pager, Modifier.fillMaxSize()) { page ->
+            val photo = photos[page]
+            LaunchedEffect(photo.id) { model.loadImage(photo) }
+            var scale by remember { mutableStateOf(1f) }
+            var offset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+            val bitmap = model.images[photo.id]
+            Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTransformGestures { _, pan, zoom, _ -> scale = (scale * zoom).coerceIn(1f, 5f); offset = if (scale == 1f) androidx.compose.ui.geometry.Offset.Zero else offset + pan } }, contentAlignment = Alignment.Center) {
+                if (bitmap != null) Image(
+                    bitmap, contentDescription = photo.alt.ifEmpty { photoWord }, contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = scale; scaleY = scale; translationX = offset.x; translationY = offset.y },
+                )
+            }
+        }
+        IconButton(onClick = onClose, Modifier.align(Alignment.TopStart).systemBarsPadding().padding(8.dp).size(56.dp).testTag("photo-close")) {
+            Icon(Icons.Close, contentDescription = stringResource(R.string.photo_viewer_close), tint = Color.White)
+        }
+        val alt = photos[pager.currentPage].alt
+        if (alt.isNotEmpty()) Text(alt, color = Color.White, fontSize = 16.sp, modifier = Modifier.align(Alignment.BottomCenter).systemBarsPadding().background(Color.Black.copy(alpha = 0.6f)).padding(16.dp).fillMaxWidth())
     }
 }
 

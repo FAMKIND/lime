@@ -60,7 +60,12 @@ class StagingChatTest {
         rule.waitUntil(15_000) { count("use-test-account") > 0 }
         rule.onNodeWithTag("use-test-account").performClick()
         rule.onNodeWithTag("test-account-ada_android").performClick()
-        rule.waitUntil(60_000) { session.phase == Phase.SignedIn && session.deviceRegistered }
+        try {
+            rule.waitUntil(60_000) { session.phase == Phase.SignedIn && (session.deviceRegistered || session.problem != null) }
+        } catch (e: Throwable) {
+            throw AssertionError("sign-in stalled: phase=${session.phase} registered=${session.deviceRegistered} problem=${session.problem}", e)
+        }
+        assertEquals("registration problem: ${session.problem}", true, session.deviceRegistered)
 
         // Ada starts the chat as the new-chat screen will (LIME-299): her first message to Ben, through the core.
         val core = session.store!!
@@ -84,6 +89,26 @@ class StagingChatTest {
         val echo2 = """Ben here: got "Second message from the app""""
         rule.waitUntil(120_000) { descriptions().any { it.contains(echo2) } }
         assertTrue(descriptions().any { it.startsWith("Ben Android, ") })
+
+        // Photos: Ada sends one (with a description); Ben downloads and decrypts it, tells her how big it came out, and sends one back.
+        val picture = android.graphics.Bitmap.createBitmap(640, 400, android.graphics.Bitmap.Config.ARGB_8888).also { android.graphics.Canvas(it).drawColor(android.graphics.Color.rgb(9, 169, 80)) }
+        val outgoing = com.limemessenger.lime.chats.AttachmentProcessing.photo(picture, "ada.jpg")!!.copy(alt = "A green test picture from Ada")
+        val dmId = "dm:$benId"
+        core.sendAttachments(dmId, "A photo from Ada", listOf(outgoing), null)
+        runBlocking { core.deliverQueued(session.transport!!, session.accessToken()) }
+        rule.waitUntil(60_000) { descriptions().any { it.startsWith("You, A photo from Ada, Photo: A green test picture from Ada") } }
+        rule.waitUntil(120_000) { descriptions().any { it.startsWith("Ben Android, Ben here: got 1 photo (") && it.contains("and \"A photo from Ada\"") } }
+        // Ben's photo arrives with its description, which is what TalkBack reads; this phone downloads and decrypts it by itself.
+        rule.waitUntil(120_000) { descriptions().any { it.contains("Photo: A green gradient fading to dark, from Ben") } }
+        val bensPhoto = core.listMessages(dmId).first { it.senderId != null && it.attachments.isNotEmpty() }.attachments.first()
+        rule.waitUntil(60_000) { core.attachmentData(bensPhoto.id) != null }
+        assertTrue(core.attachmentData(bensPhoto.id)!!.size > 1000)
+        rule.waitUntil(30_000) { count("photo-${bensPhoto.id}") > 0 }
+        // Open it full screen and leave.
+        rule.onNodeWithTag("photo-${bensPhoto.id}", useUnmergedTree = true).performClick()
+        rule.waitUntil(10_000) { count("photo-viewer") > 0 }
+        rule.onNodeWithTag("photo-close", useUnmergedTree = true).performClick()
+        rule.waitUntil(10_000) { count("photo-viewer") == 0 }
 
         // Leave nothing behind: sign out on the server and remove this test's store.
         runBlocking { session.signOut(removingData = true) }

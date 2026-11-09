@@ -41,6 +41,10 @@ class ChatsModel(
     var revision by mutableStateOf(0)
         private set
 
+    /** The link and a bearer token for screens that talk to the backend themselves (a lookup, a photo download). */
+    fun transportOrNull(): HttpTransport? = transport()
+    suspend fun bearer(): String = try { token() } catch (e: CancellationException) { throw e } catch (e: Exception) { staleToken() }
+
     /** The open store, for the chat screens that read their own messages. */
     fun core(): LimeStore? = store()
 

@@ -72,13 +72,15 @@ fun ChatListScreen(
     modifier: Modifier = Modifier,
     onProfile: () -> Unit = {},
     onRequests: () -> Unit = {},
+    onNewMessage: () -> Unit = {},
     isMuted: (String) -> Boolean = { false },
 ) {
     val colors = Lime.colors
     val scope = rememberCoroutineScope()
     var refreshing by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf(false) }
-    Column(modifier.fillMaxSize().background(colors.canvas)) {
+    Box(modifier.fillMaxSize().background(colors.canvas)) {
+    Column(Modifier.fillMaxSize()) {
         Header(myName, onProfile)
         FilterRow(model)
         PullToRefreshBox(
@@ -90,7 +92,7 @@ fun ChatListScreen(
                 model.problem?.let { problem -> item(key = "problem") { ProblemBanner(problem) } }
                 if (model.requests.isNotEmpty()) item(key = "requests") { RequestsRow(model.requests.size, onRequests) }
                 if (model.isLoaded && model.chats.isEmpty() && model.requests.isEmpty()) {
-                    item(key = "empty") { EmptyChats(note) { note = true } }
+                    item(key = "empty") { EmptyChats(note, onNewMessage) { note = true } }
                 } else if (model.chats.isNotEmpty() && model.shownChats.isEmpty()) {
                     item(key = "filtered") { FilteredEmpty { model.unreadOnly = false } }
                 }
@@ -99,6 +101,14 @@ fun ChatListScreen(
                 }
             }
         }
+    }
+    // The one lime action on the list: a new message (iOS's floating plus).
+    val newLabel = stringResource(R.string.chats_card_new)
+    Box(
+        Modifier.align(Alignment.BottomEnd).padding(16.dp).size(56.dp).background(colors.accent, CircleShape)
+            .semantics { role = Role.Button; contentDescription = newLabel }.clickable(onClick = onNewMessage).testTag("new-message-button"),
+        contentAlignment = Alignment.Center,
+    ) { Icon(Icons.Compose, null, tint = colors.accentInk) }
     }
 }
 
@@ -188,15 +198,15 @@ fun RequestsScreen(model: ChatsModel, onOpen: (ConversationSummary) -> Unit, onB
 private fun Modifier.androidx_systemBars(): Modifier = this.then(Modifier.systemBarsPadding())
 
 @Composable
-private fun EmptyChats(showNote: Boolean, onCard: () -> Unit) {
+private fun EmptyChats(showNote: Boolean, onNewMessage: () -> Unit, onCard: () -> Unit) {
     val colors = Lime.colors
     Column(Modifier.fillMaxWidth().padding(top = 48.dp, start = 12.dp, end = 12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(stringResource(R.string.chats_empty_title), color = colors.text, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.testTag("empty-title"))
             Text(stringResource(R.string.chats_empty_subtitle), color = colors.textSecondary, fontSize = 16.sp)
         }
-        Card(Icons.Search, stringResource(R.string.chats_card_find), stringResource(R.string.chats_card_find_detail), "card-find", onCard)
-        Card(Icons.Compose, stringResource(R.string.chats_card_new), stringResource(R.string.chats_card_new_detail), "card-new-message", onCard)
+        Card(Icons.Search, stringResource(R.string.chats_card_find), stringResource(R.string.chats_card_find_detail), "card-find", onNewMessage)
+        Card(Icons.Compose, stringResource(R.string.chats_card_new), stringResource(R.string.chats_card_new_detail), "card-new-message", onNewMessage)
         Card(Icons.PersonAdd, stringResource(R.string.chats_card_invite), stringResource(R.string.chats_card_invite_detail), "card-invite", onCard)
         if (showNote) Text(stringResource(R.string.coming_soon_android), color = colors.textSecondary, fontSize = 15.sp, modifier = Modifier.testTag("coming-soon-note"))
     }

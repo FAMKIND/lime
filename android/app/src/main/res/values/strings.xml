@@ -113,4 +113,29 @@
     <string name="requests_one">1 person wants to message you</string>
     <string name="requests_many">%1$d people want to message you</string>
     <string name="requests_explainer">People who aren\'t in your chats yet. Nothing is shared with them until you accept.</string>
+
+    <!-- New message and photos (iOS NewMessageSheet.swift, AttachmentViews.swift) -->
+    <string name="new_message_title">New message</string>
+    <string name="new_message_field">Name, username or email</string>
+    <string name="new_message_hint">Find teachers by their username or email.</string>
+    <string name="new_message_next">Next</string>
+    <string name="new_message_close">Close</string>
+    <string name="new_message_yours">Your teachers</string>
+    <string name="lookup_searching">Searching…</string>
+    <string name="lookup_self">That\'s you. Try another teacher.</string>
+    <string name="lookup_none">No teacher found with that username or email.</string>
+    <string name="photo_attach">Add a photo</string>
+    <string name="photo_open">Open photo</string>
+    <string name="photo_label">Photo</string>
+    <string name="photo_remove">Remove photo</string>
+    <string name="photo_add_description">Add description</string>
+    <string name="photo_edit_description">Edit description</string>
+    <string name="photo_alt_chip_add">+ Alt</string>
+    <string name="photo_alt_chip">Alt</string>
+    <string name="photo_description_title">Describe this photo</string>
+    <string name="photo_description_hint">What is in it, for someone who can\'t see it</string>
+    <string name="photo_description_save">Save</string>
+    <string name="photo_description_cancel">Cancel</string>
+    <string name="photo_viewer_close">Close</string>
+    <string name="photo_too_large">That photo can\'t be sent.</string>
 </resources>

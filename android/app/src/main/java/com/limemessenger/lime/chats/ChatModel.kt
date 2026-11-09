@@ -1,14 +1,19 @@
 package com.limemessenger.lime.chats
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.limemessenger.lime.BuildConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import uniffi.lime_core.AttachmentInfo
 import uniffi.lime_core.ConversationSummary
 import uniffi.lime_core.MessageItem
+import uniffi.lime_core.OutgoingAttachment
 
 // ANDROID DEBT: twin of the open-chat parts of ios/Lime/App/ConversationStore.swift (sendNow, resend, the reply state); moves into LimeCore in LIME-133
 
@@ -22,6 +27,11 @@ class ChatModel(val conversationId: String, private val chats: ChatsModel, priva
     var replyingTo by mutableStateOf<MessageItem?>(null)
     var banner by mutableStateOf<String?>(null)
         private set
+
+    /** The picture to draw for each image attachment: its tiny preview at first, the real picture once this phone has it. */
+    val images = mutableStateMapOf<String, ImageBitmap>()
+    private val full = mutableSetOf<String>()
+    private val loading = mutableSetOf<String>()
 
     val summary: ConversationSummary? get() = chats.conversations.firstOrNull { it.id == conversationId }
 
@@ -81,4 +91,61 @@ class ChatModel(val conversationId: String, private val chats: ChatsModel, priva
     /** The replies of one thread (read-only tonight). */
     suspend fun thread(rootId: String): List<MessageItem> =
         withContext(Dispatchers.IO) { runCatching { chats.core()?.listThread(rootId) }.getOrNull().orEmpty() }
+
+    /** Sends photos (processed by [AttachmentProcessing]) with an optional caption, as a reply in a thread when one is being replied to. */
+    suspend fun sendPhotos(items: List<OutgoingAttachment>, caption: String) {
+        if (items.isEmpty()) return
+        val core = chats.core() ?: return
+        val root = replyingTo?.id
+        val queued = try {
+            withContext(Dispatchers.IO) { core.sendAttachments(conversationId, caption.trim(), items, root) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            banner = "Couldn’t queue the photo. Try again." + (if (BuildConfig.DEBUG) " (${e::class.simpleName})" else "")
+            return
+        }
+        replyingTo = null
+        banner = null
+        if (root == null) messages = messages + queued
+        chats.deliverNow()
+        reload()
+    }
+
+    /**
+     * The picture of an image attachment: the tiny preview straight away, then the real one, downloading and decrypting it first when this
+     * phone does not have it yet (iOS `image(for:)`; pictures download by themselves, files wait for a tap).
+     */
+    suspend fun loadImage(attachment: AttachmentInfo) {
+        val id = attachment.id
+        if (id in full || !loading.add(id)) return
+        try {
+            if (id !in images && attachment.thumb.isNotEmpty()) {
+                AttachmentProcessing.decodeForDisplay(attachment.thumb, 64)?.let { images[id] = it.asImageBitmap() }
+            }
+            val core = chats.core() ?: return
+            var data = withContext(Dispatchers.IO) { runCatching { core.attachmentData(id) }.getOrNull() }
+            if (data == null && !attachment.removed) {
+                val link = chats.transportOrNull() ?: return
+                val bearer = chats.bearer()
+                val fetched = withContext(Dispatchers.IO) { runCatching { core.downloadAttachment(link, bearer, id) }.isSuccess }
+                if (fetched) data = withContext(Dispatchers.IO) { runCatching { core.attachmentData(id) }.getOrNull() }
+            }
+            if (data != null) {
+                val bitmap = withContext(Dispatchers.Default) { AttachmentProcessing.decodeForDisplay(data, DISPLAY_EDGE) }
+                if (bitmap != null) { images[id] = bitmap.asImageBitmap(); full += id }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // The preview stays; it is tried again next time the chat opens.
+        } finally {
+            loading.remove(id)
+        }
+    }
+
+    companion object {
+        /** Pictures are decoded at most this big for the screen (the original stays in the store). */
+        const val DISPLAY_EDGE = 1600
+    }
 }
