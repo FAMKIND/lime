@@ -16,7 +16,6 @@ import com.limemessenger.lime.keys.SecureBlobStore
 import com.limemessenger.lime.net.BackendConfig
 import com.limemessenger.lime.net.HttpTransport
 import com.limemessenger.lime.storage.StorageBootstrap
-import com.limemessenger.lime.ui.LinkPlaceholder
 import com.limemessenger.lime.ui.Root
 import com.limemessenger.lime.ui.theme.LimeTheme
 import java.io.File
@@ -50,7 +49,7 @@ class StagingSignInTest {
         val session = AccountSession(
             LiveAuthService(HttpTransport(backend!!.url, backend.apiKey)), backend, StorageBootstrap(File(dir, "data"), secrets), secrets,
         )
-        rule.setContent { LimeTheme { Root(session) { LinkPlaceholder(session) } } }
+        rule.setContent { LimeTheme { Root(session) } }
         rule.waitUntil(15_000) { rule.onAllNodes(hasTestTag("use-test-account")).fetchSemanticsNodes().isNotEmpty() }
         rule.onNodeWithTag("use-test-account").performClick()
         rule.onNodeWithTag("test-account-ada_android").performClick()
@@ -60,7 +59,11 @@ class StagingSignInTest {
             throw AssertionError("phase=${session.phase} registered=${session.deviceRegistered} problem=${session.problem} user=${session.userId}", e)
         }
         assertEquals("registration problem: ${session.problem}", true, session.deviceRegistered)
-        rule.onNodeWithTag("signed-in-as").assertTextEquals("Signed in as Ada Android")
+        // The list loads from staging: for a fresh device on this account it is empty (the get-started cards) or holds whatever arrived.
+        rule.waitUntil(30_000) { rule.onAllNodes(hasTestTag("empty-title")).fetchSemanticsNodes().isNotEmpty() || rule.onAllNodes(hasTestTag("messages-list")).fetchSemanticsNodes().isNotEmpty() }
+        rule.waitUntil(10_000) { rule.onAllNodes(hasTestTag("my-avatar")).fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithTag("my-avatar").performClick()
+        rule.onNodeWithTag("signed-in-as").assertTextEquals("Ada Android")
         assertTrue(session.userId != null)
         assertEquals(null, session.problem)
         // Leave nothing behind: sign out on the server and remove this test's store.

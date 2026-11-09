@@ -63,7 +63,26 @@
     <string name="terms_checked">checked</string>
     <string name="terms_unchecked">not checked</string>
     <string name="terms_check_first">Check the box first</string>
-    <string name="signed_in_as">Signed in as %1$s</string>
     <string name="sign_out">Sign out</string>
     <string name="registering_device">Setting up this phone…</string>
+
+    <!-- Messages list (iOS MessagesView.swift) -->
+    <string name="chats_all">All</string>
+    <string name="chats_unread">Unread</string>
+    <string name="chats_empty_title">No chats yet</string>
+    <string name="chats_empty_subtitle">Get started</string>
+    <string name="chats_card_find">Find teachers</string>
+    <string name="chats_card_find_detail">Search by username or email</string>
+    <string name="chats_card_new">New message</string>
+    <string name="chats_card_new_detail">Message a teacher you know</string>
+    <string name="chats_card_invite">Invite a teacher</string>
+    <string name="chats_card_invite_detail">Bring a colleague to lime</string>
+    <string name="chats_no_unread">No unread chats</string>
+    <string name="chats_clear_filter">Show all chats</string>
+    <string name="chat_row_pinned">pinned</string>
+    <string name="chat_row_muted">muted</string>
+    <string name="chat_row_unread">%1$d unread</string>
+    <string name="chat_row_no_messages">No messages yet</string>
+    <string name="my_profile">Your profile</string>
+    <string name="chat_title_placeholder">Chat</string>
 </resources>

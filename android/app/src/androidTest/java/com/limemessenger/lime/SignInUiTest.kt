@@ -24,7 +24,6 @@ import com.limemessenger.lime.keys.KeyWrapper
 import com.limemessenger.lime.keys.KeystoreKey
 import com.limemessenger.lime.keys.SecureBlobStore
 import com.limemessenger.lime.storage.StorageBootstrap
-import com.limemessenger.lime.ui.LinkPlaceholder
 import com.limemessenger.lime.ui.Root
 import com.limemessenger.lime.ui.theme.LimeTheme
 import java.io.File
@@ -57,7 +56,7 @@ class SignInUiTest {
     private fun show(fontScale: Float = 1f) = rule.setContent {
         val d = LocalDensity.current
         CompositionLocalProvider(LocalDensity provides Density(d.density, fontScale)) {
-            LimeTheme { Root(session) { LinkPlaceholder(session) } }
+            LimeTheme { Root(session) }
         }
     }
 
@@ -93,9 +92,10 @@ class SignInUiTest {
         rule.waitUntil(5_000) { rule.onAllNodesWithTagCount("code-field") > 0 }
         tag("onboarding-subtitle").assertTextContains("a•••@example.invalid", substring = true)
         type("code-field", "123456"); next()
-        rule.waitUntil(10_000) { rule.onAllNodesWithTagCount("signed-in-as") > 0 }
-        tag("signed-in-as").assertTextEquals("Signed in as Ada Fake")
+        rule.waitUntil(10_000) { rule.onAllNodesWithTagCount("my-avatar") > 0 }
         assertEquals(Phase.SignedIn, session.phase)
+        tag("my-avatar").performClick()
+        tag("signed-in-as").assertTextEquals("Ada Fake")
         tag("sign-out").performClick()
         rule.waitUntil(5_000) { rule.onAllNodesWithTagCount("welcome-continue") > 0 }
         assertTrue(auth.calls.contains("signOut"))
@@ -144,8 +144,9 @@ class SignInUiTest {
         next()
         rule.waitUntil(5_000) { rule.onAllNodesWithTagCount("name-field") > 0 }
         type("name-field", "New Teacher"); next()
-        rule.waitUntil(10_000) { rule.onAllNodesWithTagCount("signed-in-as") > 0 }
-        tag("signed-in-as").assertTextEquals("Signed in as New Teacher")
+        rule.waitUntil(10_000) { rule.onAllNodesWithTagCount("my-avatar") > 0 }
+        tag("my-avatar").performClick()
+        tag("signed-in-as").assertTextEquals("New Teacher")
         assertEquals("New Teacher", session.profile?.displayName)
     }
 
