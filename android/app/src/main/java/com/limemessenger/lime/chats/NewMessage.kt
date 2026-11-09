@@ -112,3 +112,11 @@ suspend fun ChatsModel.startChat(userId: String, displayName: String): String? {
     deliverNow()
     return id
 }
+
+/** A person's public profile from the server (null when they have none yet). */
+suspend fun ChatsModel.profileOf(userId: String): uniffi.lime_core.PublicProfile? {
+    val core = core() ?: return null
+    val link = transportOrNull() ?: return null
+    val bearer = bearer()
+    return withContext(Dispatchers.IO) { core.fetchProfile(link, bearer, userId) }
+}

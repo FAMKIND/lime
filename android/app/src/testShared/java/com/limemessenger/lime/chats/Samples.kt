@@ -3,6 +3,8 @@ package com.limemessenger.lime.chats
 import uniffi.lime_core.AttachmentInfo
 import uniffi.lime_core.ConversationSummary
 import uniffi.lime_core.MemberInfo
+import uniffi.lime_core.JamInfo
+import uniffi.lime_core.JamPostInfo
 import uniffi.lime_core.MessageItem
 import uniffi.lime_core.ReactionActivity
 
@@ -25,4 +27,12 @@ object Samples {
     ) = ConversationSummary(
         activityAt, reaction, id, title, group, pinned, unread.toUInt(), request, false, last, members, null, false, null, null, null, marked, lastIsReply,
     )
+
+    fun jam(id: String = "jam1", title: String = "Bell Ringer", mine: Boolean = false, status: String = "active") =
+        JamInfo(id, "grp:$id", "writer1", title, "", emptyList(), emptyList(), mine, status, false, false, null, null, 0u, 0u, 1_000L)
+
+    fun jamPost(
+        id: String, jamId: String = "jam1", author: String = "writer1", at: Long = 1_000L, kind: String = "quick", title: String = "", subtitle: String = "",
+        plain: String = "A short post", markdown: String = plain, coauthors: List<String> = emptyList(), displayAs: String = "person", state: String = "ready", editedAt: Long = 0L,
+    ) = JamPostInfo(id, jamId, author, "free", kind, title, subtitle, markdown, plain, "[]", at, coauthors, displayAs, editedAt, "subscribers", null, emptyList(), state)
 }

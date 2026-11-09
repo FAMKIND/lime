@@ -39,8 +39,8 @@ import uniffi.lime_core.parseMessageMarkdown
  * long-press and the TalkBack actions sit on the bubble, so a tap on text does nothing else.
  */
 @Composable
-fun MessageText(text: String, color: Color, linkColor: Color, modifier: Modifier = Modifier, fontSize: Float = 16f) {
-    val blocks = androidx.compose.runtime.remember(text) { parseMessageMarkdown(text) }
+fun MessageText(text: String, color: Color, linkColor: Color, modifier: Modifier = Modifier, fontSize: Float = 16f, post: Boolean = false) {
+    val blocks = androidx.compose.runtime.remember(text, post) { if (post) uniffi.lime_core.parsePostMarkdown(text) else parseMessageMarkdown(text) }
     val colors = Lime.colors
     Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         for (block in blocks) when (block) {

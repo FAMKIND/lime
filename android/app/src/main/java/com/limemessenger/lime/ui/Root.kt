@@ -21,6 +21,11 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.limemessenger.lime.chats.ChatsModel
 import com.limemessenger.lime.ui.chats.ChatListScreen
 import com.limemessenger.lime.ui.chats.NewMessageScreen
+import com.limemessenger.lime.jam.JamModel
+import com.limemessenger.lime.ui.jam.JamFeedScreen
+import com.limemessenger.lime.ui.jam.JamReaderScreen
+import com.limemessenger.lime.ui.profile.PersonProfileScreen
+import com.limemessenger.lime.ui.settings.SettingsScreen
 import com.limemessenger.lime.ui.chats.RequestsScreen
 import com.limemessenger.lime.ui.chat.ChatScreen
 import com.limemessenger.lime.ui.chat.ThreadScreen
@@ -83,6 +88,7 @@ private fun SignedOut(session: AccountSession, onTermsAgreed: () -> Unit) {
 }
 
 /** Signed in: the tabs, with the Messages list on the link tab, kept fresh while the app is in front. A chat opens over the tabs (LIME-298 draws it). */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun SignedIn(session: AccountSession) {
     val chats = remember(session) {
@@ -97,23 +103,36 @@ private fun SignedIn(session: AccountSession) {
     var requestsOpen by rememberSaveable { mutableStateOf(false) }
     var newMessageOpen by rememberSaveable { mutableStateOf(false) }
     var threadRoot by remember { mutableStateOf<uniffi.lime_core.MessageItem?>(null) }
-    var profileOpen by remember { mutableStateOf(false) }
+    var profileOpen by rememberSaveable { mutableStateOf(false) }
+    var personProfile by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var jamPost by remember { mutableStateOf<uniffi.lime_core.JamPostInfo?>(null) }
+    val jam = remember(session) { JamModel(store = { session.store }, nameOf = { id -> if (id == session.userId) session.profile?.displayName else chats.conversations.firstNotNullOfOrNull { c -> c.members.firstOrNull { it.id == id }?.name } }) }
     val chatModel = remember(openId) { openId?.let { ChatModel(it, chats) } }
+    BackHandler(enabled = jamPost != null) { jamPost = null }
+    BackHandler(enabled = personProfile != null) { personProfile = null }
     BackHandler(enabled = threadRoot != null) { threadRoot = null }
     BackHandler(enabled = threadRoot == null && openId != null) { openId = null }
     BackHandler(enabled = openId == null && requestsOpen) { requestsOpen = false }
     BackHandler(enabled = openId == null && newMessageOpen) { newMessageOpen = false }
     val root = threadRoot
-    if (chatModel != null && root != null) {
+    val postOpen = jamPost
+    val person = personProfile
+    if (profileOpen) {
+        SettingsScreen(session, onClose = { profileOpen = false })
+    } else if (person != null) {
+        PersonProfileScreen(person.first, person.second, chats, onBack = { personProfile = null })
+    } else if (postOpen != null) {
+        JamReaderScreen(postOpen, jam, onBack = { jamPost = null })
+    } else if (chatModel != null && root != null) {
         ThreadScreen(root, chatModel, onBack = { threadRoot = null })
     } else if (chatModel != null) {
-        ChatScreen(chatModel, chats, onBack = { openId = null }, onOpenThread = { threadRoot = it })
+        ChatScreen(chatModel, chats, onBack = { openId = null }, onOpenThread = { threadRoot = it }, onOpenProfile = { id, name -> personProfile = id to name })
     } else if (newMessageOpen) {
         NewMessageScreen(chats, onClose = { newMessageOpen = false }, onOpenChat = { newMessageOpen = false; openId = it })
     } else if (requestsOpen) {
         RequestsScreen(chats, onOpen = { openId = it.id }, onBack = { requestsOpen = false })
     } else {
-        Shell(link = {
+        Shell(jam = { JamFeedScreen(jam, onOpen = { jamPost = it }) }, link = {
             ChatListScreen(
                 chats, myName = session.profile?.displayName.orEmpty(),
                 onOpen = { openId = it.id },
@@ -123,30 +142,4 @@ private fun SignedIn(session: AccountSession) {
             )
         })
     }
-    if (profileOpen) ProfileDialog(session, onDismiss = { profileOpen = false })
-}
-
-/** Who is signed in, and a plain sign out (Settings has it in LIME-300; until then it lives here). */
-@Composable
-private fun ProfileDialog(session: AccountSession, onDismiss: () -> Unit) {
-    val scope = rememberCoroutineScope()
-    val colors = Lime.colors
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = colors.canvas,
-        title = { Text(session.profile?.displayName.orEmpty(), color = colors.text, modifier = Modifier.testTag("signed-in-as")) },
-        text = {
-            if (!session.deviceRegistered) {
-                Text(session.problem?.message ?: stringResource(R.string.registering_device), color = colors.textSecondary, modifier = Modifier.testTag("device-status"))
-            }
-        },
-        confirmButton = {
-            TextButton({ onDismiss(); scope.launch { session.signOut() } }, Modifier.heightIn(min = 48.dp).testTag("sign-out")) {
-                Text(stringResource(R.string.sign_out), color = colors.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-            }
-        },
-        dismissButton = {
-            TextButton(onDismiss, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.action_back), color = colors.text, fontSize = 16.sp) }
-        },
-    )
 }

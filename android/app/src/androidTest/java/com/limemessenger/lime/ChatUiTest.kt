@@ -77,7 +77,7 @@ class ChatUiTest {
 
     @Test fun theHeaderAndTheMessagesAreShown() {
         show(chat)
-        rule.onNodeWithTag("chat-title").assertIsDisplayed()
+        inner("chat-title").assertIsDisplayed()
         val first = chat.messages.first()
         rule.onNodeWithTag("message-${first.id}").assertExists()
         rule.waitUntil(5_000) { count("day-separator") > 0 }

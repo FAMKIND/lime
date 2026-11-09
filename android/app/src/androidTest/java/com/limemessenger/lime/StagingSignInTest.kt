@@ -63,7 +63,7 @@ class StagingSignInTest {
         rule.waitUntil(30_000) { rule.onAllNodes(hasTestTag("empty-title")).fetchSemanticsNodes().isNotEmpty() || rule.onAllNodes(hasTestTag("messages-list")).fetchSemanticsNodes().isNotEmpty() }
         rule.waitUntil(10_000) { rule.onAllNodes(hasTestTag("my-avatar")).fetchSemanticsNodes().isNotEmpty() }
         rule.onNodeWithTag("my-avatar").performClick()
-        rule.onNodeWithTag("signed-in-as").assertTextEquals("Ada Android")
+        rule.onNodeWithTag("settings-name", useUnmergedTree = true).assertTextEquals("Ada Android")
         assertTrue(session.userId != null)
         assertEquals(null, session.problem)
         // Leave nothing behind: sign out on the server and remove this test's store.

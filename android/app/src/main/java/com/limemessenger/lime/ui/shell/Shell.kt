@@ -18,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -32,7 +33,7 @@ enum class Tab(val label: Int, val icon: ImageVector) {
 
 /** The signed-in shell: link · call · jam as a bottom bar (as iOS). Call and jam say "Coming soon on Android" until built. */
 @Composable
-fun Shell(link: @Composable () -> Unit, modifier: Modifier = Modifier) {
+fun Shell(link: @Composable () -> Unit, modifier: Modifier = Modifier, jam: (@Composable () -> Unit)? = null) {
     var tab by rememberSaveable { mutableStateOf(Tab.Link) }
     val colors = Lime.colors
     Scaffold(
@@ -42,6 +43,7 @@ fun Shell(link: @Composable () -> Unit, modifier: Modifier = Modifier) {
             NavigationBar(containerColor = colors.surface) {
                 Tab.entries.forEach { entry ->
                     NavigationBarItem(
+                        modifier = Modifier.testTag("tab-${entry.name.lowercase()}"),
                         selected = tab == entry,
                         onClick = { tab = entry },
                         icon = { Icon(entry.icon, contentDescription = null) },
@@ -59,7 +61,8 @@ fun Shell(link: @Composable () -> Unit, modifier: Modifier = Modifier) {
         Box(Modifier.fillMaxSize().padding(padding)) {
             when (tab) {
                 Tab.Link -> link()
-                Tab.Call, Tab.Jam -> ComingSoon()
+                Tab.Jam -> if (jam != null) jam() else ComingSoon()
+                Tab.Call -> ComingSoon()
             }
         }
     }

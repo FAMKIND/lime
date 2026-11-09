@@ -7,6 +7,7 @@ class FakeAuthService : AuthService {
     var failNext: AuthError? = null
     var profile: Profile? = Profile("Ada Fake", "ada_fake")
     var correctCode = "123456"
+    var lastDraft: ProfileDraft? = null
     var correctPassword = "correct horse"
 
     private fun tokens(tag: String = "t") = AuthTokens("access-$tag", "refresh-$tag", System.currentTimeMillis() + 3_600_000, "user-1")
@@ -44,8 +45,8 @@ class FakeAuthService : AuthService {
     }
 
     override suspend fun saveProfile(draft: ProfileDraft, tokens: AuthTokens): Profile {
-        calls += "saveProfile:${draft.displayName}:${draft.username}:${draft.school}"; maybeFail()
-        return Profile(draft.displayName, draft.username, draft.school).also { profile = it }
+        calls += "saveProfile:${draft.displayName}:${draft.username}:${draft.school}"; lastDraft = draft; maybeFail()
+        return Profile(draft.displayName, draft.username, draft.school, draft.aboutEmoji, draft.aboutText, draft.hideFromSearch ?: false).also { profile = it }
     }
 
     override suspend fun loadProfile(tokens: AuthTokens): Profile? { calls += "loadProfile"; return profile }

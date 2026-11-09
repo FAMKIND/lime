@@ -7,6 +7,8 @@ status=0
 for avd in lime-api36 lime-api26; do
   tools/emu.sh start $avd >/dev/null
   echo "== $avd"
+  # A leftover install from a manual run would stop Gradle's own install ("already exists").
+  adb uninstall com.limemessenger.lime >/dev/null 2>&1; adb uninstall com.limemessenger.lime.test >/dev/null 2>&1
   ./gradlew -q connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.limemessenger.lime.Staging "$@" || status=1
   if [ -z "$NO_STAGING" ]; then
     # The staging tests: install, then for each test class push Ada's and Ben's FRESH sessions into the debug app (a test's sign-out ends

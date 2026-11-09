@@ -95,8 +95,9 @@ class SignInUiTest {
         rule.waitUntil(10_000) { rule.onAllNodesWithTagCount("my-avatar") > 0 }
         assertEquals(Phase.SignedIn, session.phase)
         tag("my-avatar").performClick()
-        tag("signed-in-as").assertTextEquals("Ada Fake")
-        tag("sign-out").performClick()
+        rule.onNodeWithTag("settings-name", useUnmergedTree = true).assertTextEquals("Ada Fake")
+        tag("settings-sign-out").performClick()
+        tag("sign-out-confirm").performClick()
         rule.waitUntil(5_000) { rule.onAllNodesWithTagCount("welcome-continue") > 0 }
         assertTrue(auth.calls.contains("signOut"))
         assertEquals(Phase.SignedOut, session.phase)
@@ -146,7 +147,7 @@ class SignInUiTest {
         type("name-field", "New Teacher"); next()
         rule.waitUntil(10_000) { rule.onAllNodesWithTagCount("my-avatar") > 0 }
         tag("my-avatar").performClick()
-        tag("signed-in-as").assertTextEquals("New Teacher")
+        rule.onNodeWithTag("settings-name", useUnmergedTree = true).assertTextEquals("New Teacher")
         assertEquals("New Teacher", session.profile?.displayName)
     }
 

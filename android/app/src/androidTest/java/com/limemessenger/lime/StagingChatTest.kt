@@ -1,6 +1,7 @@
 package com.limemessenger.lime
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -77,7 +78,7 @@ class StagingChatTest {
         rule.waitUntil(120_000) { count(row) > 0 }
         rule.onNodeWithTag(row).performClick()
         rule.waitUntil(30_000) { count("chat-title") > 0 }
-        rule.onNodeWithTag("chat-title").assertIsDisplayed()
+        rule.onNodeWithTag("chat-title", useUnmergedTree = true).assertIsDisplayed()
         val echo1 = """Ben here: got "Hello Ben""""
         rule.waitUntil(120_000) { descriptions().any { it.contains(echo1) } }
 
@@ -110,8 +111,35 @@ class StagingChatTest {
         rule.onNodeWithTag("photo-close", useUnmergedTree = true).performClick()
         rule.waitUntil(10_000) { count("photo-viewer") == 0 }
 
-        // Leave nothing behind: sign out on the server and remove this test's store.
-        runBlocking { session.signOut(removingData = true) }
+        // Ben's profile, from the chat's header (a real `profile-get` on staging), then back.
+        rule.onNodeWithTag("chat-header", useUnmergedTree = true).performClick()
+        rule.waitUntil(30_000) { count("profile-username") > 0 }
+        rule.onNodeWithTag("profile-name", useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithTag("profile-username", useUnmergedTree = true).assertTextEquals("@ben_android")
+        rule.onNodeWithTag("profile-back").performClick()
+        rule.waitUntil(10_000) { count("chat-title") > 0 }
+        rule.onNodeWithTag("chat-back").performClick()
+
+        // The jam tab: Ada follows nobody, so it says how to get posts; then back to the link tab.
+        rule.waitUntil(10_000) { count("tab-jam") > 0 }
+        rule.onNodeWithTag("tab-jam", useUnmergedTree = true).performClick()
+        rule.waitUntil(30_000) { count("jam-feed-empty") > 0 }
+        rule.onNodeWithTag("jam-feed-empty", useUnmergedTree = true).assertTextEquals("Subscribe to teachers from their profiles. Your posts show here too.")
+        rule.onNodeWithTag("tab-link", useUnmergedTree = true).performClick()
+
+        // Settings: my About changes through the real `profile-set`, then Sign out says what it does and signs out on the server.
+        rule.waitUntil(10_000) { count("my-avatar") > 0 }
+        rule.onNodeWithTag("my-avatar", useUnmergedTree = true).performClick()
+        rule.waitUntil(10_000) { count("settings-profile") > 0 }
+        rule.onNodeWithTag("settings-row-about", useUnmergedTree = true).performClick()
+        rule.onNodeWithTag("preset-Planning lessons", useUnmergedTree = true).performClick()
+        rule.onNodeWithTag("editor-save", useUnmergedTree = true).performClick()
+        rule.waitUntil(30_000) { session.profile?.about == "📚 Planning lessons" }
+        rule.waitUntil(10_000) { count("field-editor") == 0 }
+        rule.onNodeWithTag("settings-about-line", useUnmergedTree = true).assertTextEquals("📚 Planning lessons")
+        rule.onNodeWithTag("settings-sign-out", useUnmergedTree = true).performClick()
+        rule.onNodeWithTag("sign-out-confirm", useUnmergedTree = true).performClick()
+        rule.waitUntil(30_000) { session.phase == Phase.SignedOut }
         assertEquals(Phase.SignedOut, session.phase)
     }
 

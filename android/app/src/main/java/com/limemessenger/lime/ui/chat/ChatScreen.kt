@@ -113,7 +113,7 @@ import uniffi.lime_core.messagePlainText
 
 /** A chat (iOS's `ChatView`): the header, the messages, and the composer (or Accept for a stranger's first message). The system back gesture closes it. */
 @Composable
-fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenThread: (MessageItem) -> Unit = {}, modifier: Modifier = Modifier) {
+fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenThread: (MessageItem) -> Unit = {}, modifier: Modifier = Modifier, onOpenProfile: (String, String) -> Unit = { _, _ -> }) {
     val colors = Lime.colors
     val scope = rememberCoroutineScope()
     val summary = model.summary
@@ -129,7 +129,7 @@ fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenTh
     LaunchedEffect(rows.lastOrNull()?.id) { if (rows.isNotEmpty()) listState.scrollToItem(rows.lastIndex) }
 
     Column(modifier.fillMaxSize().background(colors.canvas).systemBarsPadding().imePadding()) {
-        Header(summary, onBack)
+        Header(summary, onBack) { m -> onOpenProfile(m.id, m.name) }
         LazyColumn(Modifier.weight(1f).fillMaxWidth().testTag("chat-messages"), state = listState, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp)) {
             items(rows, key = { it.id }) { row ->
                 when (row) {
@@ -160,21 +160,30 @@ fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenTh
 }
 
 @Composable
-private fun Header(summary: ConversationSummary?, onBack: () -> Unit) {
+private fun Header(summary: ConversationSummary?, onBack: () -> Unit, onProfile: (uniffi.lime_core.MemberInfo) -> Unit) {
     val colors = Lime.colors
     val first = summary?.members?.firstOrNull()
     Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onBack, Modifier.size(56.dp).testTag("chat-back")) {
             Icon(Icons.Back, contentDescription = stringResource(R.string.chat_back), tint = colors.text)
         }
-        if (summary != null) {
-            if (!summary.isGroup && first != null) Avatar(first.initials.ifEmpty { initialsOf(first.name) }, first.tone.toInt(), 36.dp)
-            else Avatar(initialsOf(summary.title), 0, 36.dp, emoji = summary.groupEmoji)
+        // In a one-to-one chat the avatar and the name open the person's profile.
+        val opensProfile = summary != null && !summary.isGroup && first != null
+        Row(
+            Modifier.weight(1f).heightIn(min = 48.dp)
+                .then(if (opensProfile) Modifier.semantics(mergeDescendants = true) { role = Role.Button }.clickable { onProfile(first!!) } else Modifier)
+                .testTag("chat-header"),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (summary != null) {
+                if (!summary.isGroup && first != null) Avatar(first.initials.ifEmpty { initialsOf(first.name) }, first.tone.toInt(), 36.dp)
+                else Avatar(initialsOf(summary.title), 0, 36.dp, emoji = summary.groupEmoji)
+            }
+            Text(
+                summary?.title.orEmpty(), color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                modifier = Modifier.padding(start = 12.dp).weight(1f).semantics { heading() }.testTag("chat-title"),
+            )
         }
-        Text(
-            summary?.title.orEmpty(), color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
-            modifier = Modifier.padding(start = 12.dp).weight(1f).semantics { heading() }.testTag("chat-title"),
-        )
     }
 }
 

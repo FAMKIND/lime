@@ -190,6 +190,15 @@ class AccountSession(
 
     // Profile
 
+    /** Saves the whole profile (an editor changes one field and sends all of them). Throws the server's reason, e.g. `AuthError.UsernameTaken`. */
+    suspend fun updateProfile(draft: ProfileDraft) {
+        val service = auth ?: throw AuthError.Network
+        val current = tokens ?: throw AuthError.NotVerified
+        accessToken()
+        val saved = service.saveProfile(draft, tokens ?: current)
+        updateProfile(saved.copy(maskedEmail = saved.maskedEmail ?: profile?.maskedEmail))
+    }
+
     private fun updateProfile(value: Profile) {
         profile = value
         secrets.write(PROFILE, value.toJson().toByteArray())
