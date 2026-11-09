@@ -127,6 +127,8 @@ struct ConfirmationSheet: View {
     @Bindable var model: OnboardingModel
 
     var body: some View {
+        // It scrolls and can open to full height, so at the largest text "Yes" and "Edit" are reachable (LIME-130-5b).
+        ScrollView {
         VStack(spacing: 20) {
             if let confirmation = model.confirmation {
                 VStack(spacing: 8) {
@@ -165,8 +167,10 @@ struct ConfirmationSheet: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity)
+        }
+        .scrollBounceBehavior(.basedOnSize)
         .limeBackground()
-        .presentationDetents([.height(320)])
+        .presentationDetents([.height(320), .large])
     }
 }
 
@@ -402,23 +406,30 @@ struct TermsUpdatedSheet: View {
     @State private var opened: URL?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("The terms changed")
-                .font(Theme.font(.title2, weight: .bold))
-                .accessibilityAddTraits(.isHeader)
-            Text("Please read the Terms and Privacy, then agree to keep using lime.")
-                .font(Theme.body).foregroundStyle(Theme.textSecondary)
-            HStack(spacing: 20) {
-                Button("Terms") { opened = URL(string: TermsAcceptance.termsURL) }.accessibilityIdentifier("terms-updated-terms")
-                Button("Privacy") { opened = URL(string: TermsAcceptance.privacyURL) }
+        // The text scrolls; "I agree" stays pinned under it, so it is always reachable (LIME-130-5b).
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("The terms changed")
+                    .font(Theme.font(.title2, weight: .bold))
+                    .accessibilityAddTraits(.isHeader)
+                Text("Please read the Terms and Privacy, then agree to keep using lime.")
+                    .font(Theme.body).foregroundStyle(Theme.textSecondary)
+                HStack(spacing: 20) {
+                    Button("Terms") { opened = URL(string: TermsAcceptance.termsURL) }.accessibilityIdentifier("terms-updated-terms")
+                    Button("Privacy") { opened = URL(string: TermsAcceptance.privacyURL) }
+                }
+                .font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).underline().frame(minHeight: 44)
             }
-            .font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).underline().frame(minHeight: 44)
-            Spacer()
-            PrimaryButton(title: "I agree", identifier: "terms-updated-agree", action: onAgree)
+            .padding(24)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(24)
+        .scrollBounceBehavior(.basedOnSize)
+        .safeAreaInset(edge: .bottom) {
+            PrimaryButton(title: "I agree", identifier: "terms-updated-agree", action: onAgree)
+                .padding(.horizontal, 24).padding(.vertical, 12)
+        }
         .interactiveDismissDisabled()
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
         .sheet(item: $opened) { url in SafariSheet(url: url).ignoresSafeArea() }
     }
 }

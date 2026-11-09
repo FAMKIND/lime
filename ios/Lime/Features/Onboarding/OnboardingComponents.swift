@@ -53,6 +53,7 @@ struct OnboardingScaffold<Content: View>: View {
                             .accessibilityIdentifier("onboarding-subtitle")
                     }
                     content
+                        .environment(\.fieldProblem, errorMessage ?? "")
                     if let errorMessage {
                         Text(errorMessage)
                             .font(Theme.secondary)
@@ -72,6 +73,15 @@ struct OnboardingScaffold<Content: View>: View {
     }
 }
 
+private struct FieldProblemKey: EnvironmentKey { static let defaultValue = "" }
+extension EnvironmentValues {
+    /// The error the screen shows, so each of its fields reads it as its hint (WCAG 3.3.1, LIME-130-5b).
+    var fieldProblem: String {
+        get { self[FieldProblemKey.self] }
+        set { self[FieldProblemKey.self] = newValue }
+    }
+}
+
 /// A one-line text field in Lime's look.
 struct OnboardingField: View {
     let label: String
@@ -83,15 +93,25 @@ struct OnboardingField: View {
     var keyboard: UIKeyboardType = .default
     var submit: SubmitLabel = .next
     var onSubmit: () -> Void = {}
+    @Environment(\.fieldProblem) private var problem
+
+    /// What the field reads after its name: what is wrong, else the example the placeholder shows.
+    var hint: String { Self.hint(problem: problem, prompt: prompt, isSecure: isSecure) }
+    static func hint(problem: String, prompt: String, isSecure: Bool) -> String {
+        if !problem.isEmpty { return problem }
+        return isSecure || prompt.isEmpty ? "" : "For example, \(prompt)"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            // The visible name is the field's own name (VoiceOver and Voice Control), so it is not read twice.
             Text(label)
                 .font(Theme.font(.caption, weight: .medium))
                 .foregroundStyle(Theme.textSecondary)
+                .accessibilityHidden(true)
             if isSecure {
                 // Hidden by default, with an eye to see what you typed (LIME-202).
-                RevealablePassword(prompt: prompt, text: $text, identifier: identifier, contentType: contentType, submit: submit, onSubmit: onSubmit)
+                RevealablePassword(prompt: prompt, text: $text, identifier: identifier, contentType: contentType, submit: submit, onSubmit: onSubmit, problem: problem, label: label)
             } else {
                 TextField(prompt, text: $text)
                     .keyboardType(keyboard)
@@ -107,6 +127,8 @@ struct OnboardingField: View {
                     .frame(minHeight: 52)
                     .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 0.5))
+                    .accessibilityLabel(label)
+                    .accessibilityHint(hint)
                     .accessibilityIdentifier(identifier)
             }
         }
@@ -127,6 +149,8 @@ struct RevealablePassword: View {
     var minHeight: CGFloat = 52
     /// What is wrong with this field, read with it (WCAG 3.3.1); empty when nothing is.
     var problem = ""
+    /// The field's name when the prompt is only an example (onboarding's "Password"); nil keeps the prompt as the name.
+    var label: String?
     @State private var shown = false
     @FocusState private var focused: Bool
 
@@ -148,6 +172,7 @@ struct RevealablePassword: View {
             .onSubmit(onSubmit)
             .font(Theme.body)
             .foregroundStyle(Theme.text)
+            .accessibilityLabel(label ?? prompt)
             .accessibilityHint(problem)
             .accessibilityIdentifier(identifier)
             Button {
