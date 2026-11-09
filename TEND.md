@@ -10518,3 +10518,31 @@ Photo descriptions and on-device transcripts in chat (audit rows for alt text an
 | 5. Reopen the chat: the transcript is still there; delete the message: it goes | not needed | receiver | on | off | open |
 
 **For plot:** (1) 130-3b is committed but not signed off; it needs your two-device gate, and the transcript has never run on real speech. (2) The no-network proof is lime's own process only; if you want more, check with airplane mode on a phone (step 4). (3) lime never downloads a speech model, so on a phone without the language's on-device model a transcript says "not available"; say if you would rather offer a download with a clear prompt. (4) The viewer ⋯ item is not built (the viewer has no ⋯). (5) 183b gains `ChatOpensUITests.testBackFromAThreadKeepsThePlaceInTheChat` and `Review273UITests.testAWriterOfABandSendsAnArticleForReviewInsteadOfPublishing`; the second one fails in the main tree and passes in a clean worktree, so check `Local.xcconfig`/`BackendConfig.generated.swift` against it. (6) Release was built for the simulator only.
+
+## LIME-130-4a
+
+The 1:1 call screen's major accessibility findings (audit rows ~549–559, ~676). Fixes only.
+
+**Survey:** the audit's findings were all still present as described (`CallView`, `CallHeaderViews`, `CallEffects`); the blocker, Accept/red contrast and red-button text were already 130-1/130-2 (confirmed, not touched).
+
+**What changed**
+1. **Control state.** Mute, Camera and Speaker now carry a value ("On"/"Off") and `.isSelected`; the icons change shape (`mic`/`mic.slash`, `video`/`video.slash`, `speaker.wave.2`/`speaker`), labels stay the action names. The start-Video button (Voice call) is one-way, so it has no value.
+2. **Announcements** (new `CallAnnouncements`, spoken from `CallManager`/`CallRoute` so "Call ended" is heard after the screen is gone): Calling…, Ringing…, Connecting…, Connected, Call ended, the route toast, the "phone may be off" hint, "camera paused", the Do Not Disturb / work-hours note. Incoming is not spoken (iOS's own call screen does). `remoteMuted` is unchanged (no double speech). **There is no reconnecting phase in `CallManager`, so nothing to announce there.**
+3. **Scrim.** Name pill 0.35→0.6 black (shared with the group call); status/timer, hint, "camera paused" and the "Muted" chip got the same 0.6 black capsule (`callTextScrim`); hint text 0.7→0.9 white. Computed on a white frame: white on 60% black = #666 → 5.7:1; the hint at 0.9 white → 5.0:1.
+4. **Round buttons.** Off = black 0.45 fill (white glyph on #8C8C8C over white = 3.4:1, and the edge is 3.4:1 too); lit = white with a 1.5 pt black 0.6 ring (5.7:1). Applied to the controls, the Minimise circle, the route button and the Effects button. These are calculated, not measured from a rendered white frame (the demo has no video).
+5. **Sheets.** The person and emoji sheets scroll and have `.large`; the emoji glyph scales with text size (`@ScaledMetric`), and a row of four that no longer fits becomes 2×2.
+6. **Minors.** Self-view handle: `isButton` + action "Move to the other corner" (next corner); animations check Reduce Motion; the route picker is `isButton`; with VoiceOver/Switch Control on, focus starts on the first control (Video on a voice call, Camera on a video call, Flip camera in landscape; the Effects menu, when present, comes before Camera in order and is not the focus target).
+
+**Verification**
+- `check-warnings.sh`: 0 in Lime's own sources (simulator and device); Release build (simulator) succeeds.
+- New `Access130eTests` (4) and `CallTests.testTheRealManagerSpeaksEachPhaseAndTheEnd` pass; `CallTests`, `CallPolishTests` pass (53); `CallScreenUITests` + `Access130UITests` pass (18) on the 13 mini simulator. No new UI tests for the colours (visual-change rule). No UI test for "Mute, on" or the announcement probe was added; the unit tests cover the wording and values.
+- Audit harness (iPhone 17, default pass; before → after): call-voice 12 → 13, call-video 14 → 15, call-group-incoming 8 → 8. The one extra on voice/video is "Contrast failed: 0:54", the timer on the new scrim over the avatar background; the audit cannot see the scrim, and the real ratio above is 5.0:1+. Output: `docs/qa-shots/130-4a/`.
+
+**Not done / flagged**
+- Not installed on any phone and not pushed (the brief says both; you said commit and stop). The gate needs a device.
+- On a voice call the control circles are now dark glass: their edges are less visible on the dark backdrop than before. Please look.
+- The emoji chip under the timer (shared with the group call) has no scrim; it was not in the list.
+
+**Gate (you, 13 mini + iPad, VoiceOver on):** place a video call: after 10 s the controls are still reachable; toggling Mute says "Mute, on"; "Connected" and "Call ended" are spoken; open the details sheet at the largest text: it scrolls and nothing is cut off. Look at the round buttons on a bright picture.
+
+**For plot:** (1) there is no reconnecting state to announce; if one is wanted it is a core change. (2) Decide whether the voice call's dark-glass buttons need a visible edge. (3) 130-4b can reuse `callRoundBackground`/`callTextScrim`.

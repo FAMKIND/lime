@@ -115,7 +115,7 @@ struct CallEffectsButton: View {
                     }
                 } label: {
                     Image(systemName: "sparkles").font(.system(size: size * 0.4)).foregroundStyle(.white)
-                        .frame(width: size, height: size).background(Color.white.opacity(0.2), in: Circle())
+                        .frame(width: size, height: size).callRoundBackground()
                 }
                 .accessibilityLabel("Effects").accessibilityHint("Reactions and video effects")
                 .accessibilityIdentifier(id)

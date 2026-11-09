@@ -125,6 +125,17 @@ final class CallTests: XCTestCase {
         CallEventInfo(op: op, callID: id, peerID: "jean", peerName: "Jean", payload: payload)
     }
 
+    func testTheRealManagerSpeaksEachPhaseAndTheEnd() async {
+        Announce.said = []
+        let m = manager()
+        _ = await m.start(peerID: "jean", name: "Jean", video: false)
+        await m.handle(event("call.ringing", id: m.currentID))
+        await m.handle(event("call.answer", id: m.currentID, payload: ["sdp": "x"]))
+        await m.end()
+        XCTAssertEqual(Announce.said.filter { ["Calling\u{2026}", "Ringing\u{2026}", "Connecting\u{2026}", "Call ended"].contains($0) },
+                       ["Calling\u{2026}", "Ringing\u{2026}", "Connecting\u{2026}", "Call ended"], "\(Announce.said)")
+    }
+
     func testOutgoingCallRingsThenConnectsAndLogsDuration() async {
         let m = manager()
         let started = await m.start(peerID: "jean", name: "Jean", video: false)
