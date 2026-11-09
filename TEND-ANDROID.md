@@ -1,5 +1,12 @@
 # TEND-ANDROID.md
 
+> ## Prototype ready (LIME-298 landed, 2026-11-09 09:10)
+> 1. **Open it:** `cd ~/Sites/lime-android/android && ./gradlew installDebug` with an emulator running (Android Studio's Device Manager, or `$ANDROID_HOME/emulator/emulator -avd lime-api36`). Logs in with the **"Use a test account"** button on the first screen (debug builds only; run `android/tools/staging-test-accounts.sh --push` first).
+> 2. **The partner (Ben):** in a terminal run `android/tools/partner/run reset` (once per fresh sign-in of Ada) then `android/tools/partner/run echo`. Ben accepts Ada's first message and answers every message with `Ben here: got "<first 40 chars>"`. `run send "<text>"` sends Ben's own message.
+> 3. **What works end to end on staging:** sign in (test account), the chat list, open a chat, send and receive end-to-end-encrypted text (bold, replies, retry), the Sending/Sent states, light and dark, the largest font. Not yet: new chat, photos (299), profile and settings (300), calls, push, Bluetooth, jam.
+> 4. **First clip and screenshots:** `~/Desktop/lime-android-prototype/` (`*-walkthrough.mp4`, `1-…10-*.png`; re-make them with `android/tools/record-demo.sh`).
+> 5. **Proof:** `android/tools/connected.sh` runs every test on API 26 and API 36 including the real Ada ↔ Ben exchange (`StagingChatTest`). Details per brief below; decisions for you under each "Choices made".
+
 The record for tend-Android (branch `android`). One `## LIME-29x` per brief. PLOT.md and TEND.md are never edited here.
 
 ## LIME-293 — the Android debt inventory (docs/android.md)

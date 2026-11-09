@@ -259,16 +259,32 @@ fun ConversationRow(conversation: ConversationSummary, muted: Boolean, onClick: 
         if (!conversation.isGroup && first != null) Avatar(first.initials.ifEmpty { initialsOf(first.name) }, first.tone.toInt(), 52.dp)
         else Avatar(initialsOf(conversation.title), 0, 52.dp, emoji = conversation.groupEmoji)
         Column(Modifier.weight(1f).clearAndSetSemantics { }, verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            // At the large text sizes the time goes under the name instead of squeezing it (as iOS does at the accessibility sizes).
+            val large = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
+            val title: @Composable (Modifier) -> Unit = { m ->
                 Text(
                     conversation.title, color = colors.text, fontSize = 17.sp, fontWeight = if (unread) FontWeight.Bold else FontWeight.SemiBold,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false).testTag("row-title-${conversation.id}"),
+                    maxLines = if (large) 3 else 1, overflow = TextOverflow.Ellipsis, modifier = m.testTag("row-title-${conversation.id}"),
                 )
+            }
+            val marks: @Composable () -> Unit = {
                 label?.let { Text(it, color = colors.textSecondary, fontSize = 12.sp, modifier = Modifier.background(colors.surface, RoundedCornerShape(8.dp)).padding(horizontal = 6.dp, vertical = 2.dp)) }
                 if (muted) Icon(Icons.Muted, null, tint = colors.textSecondary, modifier = Modifier.size(14.dp).testTag("muted-${conversation.id}"))
                 if (conversation.isPinned) Icon(Icons.Pinned, null, tint = colors.textSecondary, modifier = Modifier.size(14.dp).testTag("pinned-${conversation.id}"))
-                Spacer(Modifier.weight(1f))
-                Text(time, color = colors.textSecondary, fontSize = 14.sp, maxLines = 1, modifier = Modifier.testTag("row-time-${conversation.id}"))
+            }
+            val timeText: @Composable () -> Unit = { Text(time, color = colors.textSecondary, fontSize = 14.sp, maxLines = 1, modifier = Modifier.testTag("row-time-${conversation.id}")) }
+            if (large) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    title(Modifier)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) { marks(); timeText() }
+                }
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    title(Modifier.weight(1f, fill = false))
+                    marks()
+                    Spacer(Modifier.weight(1f))
+                    timeText()
+                }
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Column(Modifier.weight(1f)) {

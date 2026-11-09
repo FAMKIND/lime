@@ -13,9 +13,9 @@
     <!-- Onboarding: the words are iOS's (OnboardingScreens.swift) -->
     <string name="welcome_headline">Connect All Teachers</string>
     <string name="welcome_subtitle">A secure messenger made for teachers.</string>
-    <string name="welcome_agree_prefix">By continuing, you agree to lime\'s </string>
+    <string name="welcome_agree_prefix">"By continuing, you agree to lime's "</string>
     <string name="welcome_terms">Terms</string>
-    <string name="welcome_and"> and </string>
+    <string name="welcome_and">" and "</string>
     <string name="welcome_privacy">Privacy Policy</string>
     <string name="welcome_period">.</string>
     <string name="action_continue">Continue</string>

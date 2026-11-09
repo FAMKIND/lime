@@ -36,8 +36,11 @@ fun Avatar(initials: String, tone: Int, size: Dp = 52.dp, emoji: String? = null,
         modifier.size(size).background(if (emoji != null) colors.surface else colors.avatar(tone), CircleShape).clearAndSetSemantics { },
         contentAlignment = Alignment.Center,
     ) {
-        val fontSize = (size.value * 0.5f).sp
-        if (emoji != null) Text(emoji, fontSize = fontSize)
-        else Text(initials, color = androidx.compose.ui.graphics.Color(0xFF131B17), fontSize = (size.value * 0.38f).sp, fontWeight = FontWeight.SemiBold)
+        // The glyphs are sized from the circle (dp converted to sp), not from the font setting, so they never spill out of it at the largest text size.
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val emojiSize = with(density) { (size * 0.5f).toSp() }
+        val initialsSize = with(density) { (size * 0.38f).toSp() }
+        if (emoji != null) Text(emoji, fontSize = emojiSize)
+        else Text(initials, color = androidx.compose.ui.graphics.Color(0xFF131B17), fontSize = initialsSize, fontWeight = FontWeight.SemiBold, maxLines = 1)
     }
 }
