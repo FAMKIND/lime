@@ -221,15 +221,26 @@ struct SettingsRowLabel: View {
     var value: String? = nil
     var showsDivider = true
     var destructive = false
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 14) {
                 Image(systemName: symbol).font(.system(size: 20)).frame(width: 28)
                     .foregroundStyle(destructive ? Theme.danger : Theme.text)
-                Text(title).font(Theme.body).foregroundStyle(destructive ? Theme.danger : Theme.text)
-                Spacer(minLength: 8)
-                if let value { Text(value).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(1) }
+                // At accessibility sizes the value goes under the title and wraps; at other sizes it sits beside it on one line (LIME-130-5a).
+                let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2)) : AnyLayout(HStackLayout(spacing: 8))
+                layout {
+                    Text(title).font(Theme.body).foregroundStyle(destructive ? Theme.danger : Theme.text)
+                        .fixedSize(horizontal: false, vertical: typeSize.isAccessibilitySize)
+                    if !typeSize.isAccessibilitySize { Spacer(minLength: 0) }
+                    if let value {
+                        Text(value).font(Theme.secondary).foregroundStyle(Theme.textSecondary)
+                            .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
+                            .fixedSize(horizontal: false, vertical: typeSize.isAccessibilitySize)
+                    }
+                }
+                if typeSize.isAccessibilitySize { Spacer(minLength: 0) }
                 Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.textSecondary.opacity(0.7))
                     .opacity(destructive ? 0 : 1)
             }

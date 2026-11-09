@@ -53,6 +53,8 @@ struct AddSoundSheet: View {
     @State private var length = 1.0
     @State private var name = ""
     @State private var problem: String?
+    @State private var previewing = false
+    @State private var previewTask: Task<Void, Never>?
 
     private var maxLength: Double { min(kind.maxSeconds, max(total - start, 0.1)) }
 
@@ -72,12 +74,15 @@ struct AddSoundSheet: View {
                         SettingsCard {
                             VStack(alignment: .leading, spacing: 10) {
                                 HStack { Text("Start").font(Theme.body); Spacer(); Text(format(start)).font(Theme.body.monospacedDigit()).foregroundStyle(Theme.textSecondary) }
-                                Slider(value: $start, in: 0...max(total - 0.1, 0.1)) { _ in clamp() }.accessibilityIdentifier("sound-start")
+                                Slider(value: $start, in: 0...max(total - 0.1, 0.1)) { _ in clamp() }
+                                    .accessibilityLabel("Start").accessibilityValue(Self.spoken(start)).accessibilityIdentifier("sound-start")
                                 HStack { Text("Length").font(Theme.body); Spacer(); Text(format(length)).font(Theme.body.monospacedDigit()).foregroundStyle(Theme.textSecondary) }
-                                Slider(value: $length, in: 0.1...max(maxLength, 0.2)).accessibilityIdentifier("sound-length")
-                                Button { if let source { SoundPreview.shared.play(source, from: start, for: length) } } label: {
-                                    Label("Preview", systemImage: "play.fill").font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text)
+                                Slider(value: $length, in: 0.1...max(maxLength, 0.2))
+                                    .accessibilityLabel("Length").accessibilityValue(Self.spoken(length)).accessibilityIdentifier("sound-length")
+                                Button { togglePreview() } label: {
+                                    Label(previewing ? "Stop" : "Preview", systemImage: previewing ? "stop.fill" : "play.fill").font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text)
                                 }
+                                .accessibilityLabel(previewing ? "Stop preview" : "Play preview")
                                 .accessibilityIdentifier("sound-preview")
                             }
                             .padding(18)
@@ -104,6 +109,19 @@ struct AddSoundSheet: View {
             guard case .success(let url) = result else { return }
             load(url)
         }
+    }
+
+    /// "1.5 seconds" for the sliders' values.
+    static func spoken(_ seconds: Double) -> String { String(format: "%.1f seconds", seconds) }
+
+    private func togglePreview() {
+        previewTask?.cancel()
+        if previewing { SoundPreview.shared.stop(); previewing = false; return }
+        guard let source else { return }
+        SoundPreview.shared.play(source, from: start, for: length)
+        previewing = true
+        let seconds = length
+        previewTask = Task { try? await Task.sleep(for: .seconds(seconds)); if !Task.isCancelled { previewing = false } }
     }
 
     private func load(_ url: URL) {

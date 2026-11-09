@@ -408,8 +408,9 @@ struct GroupDetailsView: View {
             if cells.isEmpty { empty("No photos or videos yet.") } else {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 3), spacing: 4) {
                     ForEach(cells, id: \.1.id) { message, item in
-                        MediaCell(item: item)
-                            .onTapGesture { store.attachmentViewer = AttachmentViewerRequest(items: [item], index: 0, messageID: message.id, conversationID: target.conversationID) }
+                        SharedMediaButton(message: message, item: item, conversationID: target.conversationID) {
+                            store.attachmentViewer = AttachmentViewerRequest(items: [item], index: 0, messageID: message.id, conversationID: target.conversationID)
+                        }
                     }
                 }
                 .accessibilityIdentifier("group-shared-media")
@@ -452,7 +453,7 @@ struct GroupDetailsView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel([member.name, roleWord].compactMap { $0 }.joined(separator: ", "))
+            .accessibilityLabel(GroupMemberLabel.text(name: member.name, role: roleWord, keyNotAccepted: !member.isMe && keyChangePending(member)))
             .accessibilityIdentifier("group-member-open-\(member.userId)")
             if member.canRemove || canMakeAdmin {
                 Menu {
@@ -513,5 +514,13 @@ struct RenameGroupSheet: View {
         .limeBackground()
         .presentationDetents([.medium])
         .onAppear { focused = true }
+    }
+}
+
+
+/// What VoiceOver reads for a member row; the warning is part of it (LIME-130-5a), not only an icon.
+enum GroupMemberLabel {
+    static func text(name: String, role: String?, keyNotAccepted: Bool) -> String {
+        [name, role, keyNotAccepted ? "new security key not accepted" : nil].compactMap { $0 }.joined(separator: ", ")
     }
 }

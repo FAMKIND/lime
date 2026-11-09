@@ -10606,3 +10606,38 @@ No flashing call effects; a visible edge on the off buttons (DESIGN-34 = A, and 
 **Gate (you, 13 mini):** in a video call open Effects: no Fireworks, no Lasers; turn on Reduce Motion (Settings → Accessibility → Motion) and open Effects again (within a second): no reactions, Video Effects still there; on a voice call the round buttons have a faint edge.
 
 **For plot:** (1) The receiver's Reduce Motion is still not honoured for the four remaining moving reactions (Balloons, Confetti, Rain, Hearts and the thumbs); only lime's own receiver-drawn effects fix that. (2) There is no accessibility statement yet to hold the effects line; draft one with 130-5 or the launch docs if you want it public.
+
+## LIME-130-5a
+
+Settings, profile and groups: the 13 majors (audit rows 341, 342, 344, 609, 612–618, 634, 635). Fixes only.
+
+**Survey:** line numbers had drifted a few lines; every row was still present except parts of 613 (130-2 had already added `announcesWhenShown` on the error and "Your password was changed", and the hint on the code field).
+
+**What changed, by row**
+- **341, 634** (media cells, three places: group details, the profile, "See all"): a new `SharedMediaButton` is a real `Button` with `.isImage`, reading "Photo from <name>, <date>" / "Video, 0:12, from <name>, <date>" ("you" for my own), then the photo's description when it has one (130-3b). One pure `SharedItemLabel` holds the wording.
+- **635** (links and files): one element each. Link: title, site, date, `.isLink` and a double-tap action that opens it. File: name, size, date. **A file row has no tap action today, so I did not add `.isButton` (it would promise something that doesn't happen).**
+- **342:** the member row's label now ends ", new security key not accepted" (`GroupMemberLabel`).
+- **344, 615** (both crops): `cropAccessibility` gives the frame the label "Photo position", the zoom as its value ("Zoom 150 percent"), swipe up/down to zoom in half steps (1×–6×), and the actions Move up/down/left/right (10% of the frame, clamped by the existing limit). The gestures are unchanged.
+- **609:** at accessibility sizes a settings row's title and value stack, the value wraps; otherwise as before (value on one line beside the title).
+- **612:** the busy spinner is labelled "Working" and announced; a problem is announced. **The visibility title ("Who can see my background") is moved above its choices as the section's header and is a heading** (closest to iOS Settings).
+- **613:** the busy spinner on the primary button is labelled "Working"; on the passwords step the error is now the hint of each password field (the code step already had it). `RevealablePassword` gained an optional `problem`.
+- **614:** Blocked: the button is "Unblock <name>", 44 pt, "<name> unblocked" is spoken, and with VoiceOver or Switch Control on the row is one element ("<name>, blocked") with "Unblock <name>" as its action. For touch the button stays.
+- **616:** "Unmute <chat name>", 44 pt, "<chat> unmuted" spoken. **617:** the explainer sheet scrolls and has `.large`.
+- **618:** the sliders are "Start" and "Length" with values in seconds ("1.5 seconds"); Preview is Play/Stop, labelled by state, and returns to Play when the clip ends.
+
+**Verification**
+- `check-warnings.sh`: 0 in Lime's own sources; Release build (simulator) succeeds.
+- New `Access130gTests` (5): photo/video/file/link labels, the member label, the crop step and zoom maths. Pass.
+- UI (13 mini simulator): `ProfileUITests`, `Profile217/225/226bUITests` (30) and `LimeUITestsSettings` Blocked + Change password, `LimeUITestsSearchAndNotifications` (15) pass. No new UI tests (visual-change rule; the VoiceOver wording is pure and unit-tested).
+- Audit harness (iPhone 17, default; before → after): group-details 16 → 16, profile-sam 16 → 16, settings 1 → 1, settings-account 2 → 1. Apple's audit does not read custom labels or actions, so these rows could not move it; the evidence for them is the unit tests and your gate. Output `docs/qa-shots/130-5a/`.
+
+**Not done / flagged**
+- The "one stop" rows (Blocked here, the Calls list in 4b) read VoiceOver/Switch Control when the row is drawn; turning VoiceOver on while the screen is open updates on the next redraw.
+- Voice Control users on Blocked: the row is one element with a named action, and the visible button is hidden from them while VoiceOver runs; with VoiceOver off the button works as before.
+- Not touched: onboarding, Emergency, QR/Report, the shell (130-5b); "Verify in person" without a camera (DESIGN-35).
+
+**Installed (Debug, this commit's tree):** iPhone 13 mini (`00008110-000651D23647801E`), iPad Pro 12.9-inch 5th gen (`00008103-001E699A2168801E`), Jean Chung's iPhone 12 mini (`00008101-000348EC0E51003A`). The iPad and Jean's phone needed a second try.
+
+**Gate (you, 13 mini, VoiceOver on):** Settings at the largest text: values wrap, nothing cut off; Blocked: "Unblock <name>"; a profile's shared photo reads who sent it and when; the profile photo crop: swipe up/down zooms, the actions menu moves it.
+
+**For plot:** (1) Apple's audit can't see these fixes: only your VoiceOver pass or the `-lime-ax-probe` can; consider probe checks in 130-m for the new custom actions. (2) File rows are not openable today; if "open a shared file" is wanted it is a feature, then it gets `.isButton`. (3) The two "one stop when VoiceOver runs" rows could use a live VoiceOver-status observer; harmless today.

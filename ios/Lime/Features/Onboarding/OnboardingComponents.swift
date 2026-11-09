@@ -125,6 +125,8 @@ struct RevealablePassword: View {
     var submit: SubmitLabel = .done
     var onSubmit: () -> Void = {}
     var minHeight: CGFloat = 52
+    /// What is wrong with this field, read with it (WCAG 3.3.1); empty when nothing is.
+    var problem = ""
     @State private var shown = false
     @FocusState private var focused: Bool
 
@@ -146,6 +148,7 @@ struct RevealablePassword: View {
             .onSubmit(onSubmit)
             .font(Theme.body)
             .foregroundStyle(Theme.text)
+            .accessibilityHint(problem)
             .accessibilityIdentifier(identifier)
             Button {
                 let had = focused

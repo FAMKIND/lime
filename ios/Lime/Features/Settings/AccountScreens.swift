@@ -91,9 +91,9 @@ struct ChangePasswordScreen: View {
             switch model.step {
             case .passwords:
                 VStack(spacing: 12) {
-                    secure("Current password", $model.current, id: "pw-current", type: .password)
-                    secure("New password", $model.newPassword, id: "pw-new", type: .newPassword)
-                    secure("Confirm new password", $model.confirmation, id: "pw-confirm", type: .newPassword)
+                    secure("Current password", $model.current, id: "pw-current", type: .password, problem: model.errorMessage ?? "")
+                    secure("New password", $model.newPassword, id: "pw-new", type: .newPassword, problem: model.errorMessage ?? "")
+                    secure("Confirm new password", $model.confirmation, id: "pw-confirm", type: .newPassword, problem: model.errorMessage ?? "")
                 }
                 SettingsFootnote(text: model.hint)
                 if let message = model.errorMessage { error(message) }
@@ -127,8 +127,8 @@ struct ChangePasswordScreen: View {
         }
     }
 
-    private func secure(_ label: String, _ text: Binding<String>, id: String, type: UITextContentType) -> some View {
-        RevealablePassword(prompt: label, text: text, identifier: id, contentType: type, submit: .done, minHeight: 56)
+    private func secure(_ label: String, _ text: Binding<String>, id: String, type: UITextContentType, problem: String = "") -> some View {
+        RevealablePassword(prompt: label, text: text, identifier: id, contentType: type, submit: .done, minHeight: 56, problem: problem)
     }
 
     private func error(_ message: String) -> some View {
@@ -140,7 +140,7 @@ struct ChangePasswordScreen: View {
     private func primary(_ title: String, enabled: Bool, busy: Bool, id: String, action: @escaping @MainActor () async -> Void) -> some View {
         Button { Task { await action() } } label: {
             HStack {
-                if busy { ProgressView().tint(Theme.accentInk) }
+                if busy { ProgressView().tint(Theme.accentInk).accessibilityLabel("Working") }
                 Text(title).font(Theme.title)
             }
             .foregroundStyle(Theme.accentInk.opacity(enabled ? 1 : 0.5))
@@ -278,22 +278,29 @@ struct BlockedScreen: View {
                     SettingsCard {
                         ForEach(blocked, id: \.conversationId) { person in
                             VStack(spacing: 0) {
+                                let oneStop = CallControlsPolicy.voiceOverRunning || CallControlsPolicy.switchControlRunning
+                                let unblock: () -> Void = {
+                                    Task {
+                                        await store.unblock(person.conversationId)
+                                        self.blocked = await store.blockedPeople()
+                                        Announce.say("\(person.name) unblocked")
+                                    }
+                                }
                                 HStack(spacing: 14) {
                                     AvatarView(person: Person(id: String(person.conversationId.dropFirst(3)), name: person.name), size: 44)
-                                    Text(person.name).font(Theme.body).foregroundStyle(Theme.text).lineLimit(1)
+                                    Text(person.name).font(Theme.body).foregroundStyle(Theme.text).fixedSize(horizontal: false, vertical: true)
                                     Spacer(minLength: 8)
-                                    Button("Unblock") {
-                                        Task {
-                                            await store.unblock(person.conversationId)
-                                            self.blocked = await store.blockedPeople()
-                                        }
-                                    }
+                                    Button("Unblock") { unblock() }
                                     .font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.accentInk)
-                                    .padding(.horizontal, 14).frame(minHeight: 36)
+                                    .padding(.horizontal, 14).frame(minHeight: 44)
                                     .background(Theme.accent, in: Capsule())
+                                    .accessibilityLabel("Unblock \(person.name)")
+                                    .accessibilityHidden(oneStop)
                                     .accessibilityIdentifier("unblock-\(person.conversationId)")
                                 }
                                 .padding(.horizontal, 18).frame(minHeight: 66)
+                                // With VoiceOver or Switch Control the row is one stop and "Unblock" is its action (LIME-130-5a).
+                                .modifier(BlockedRowStop(active: oneStop, name: person.name, unblock: unblock))
                                 if person.conversationId != blocked.last?.conversationId { Divider().overlay(Theme.hairline).padding(.leading, 76) }
                             }
                         }
@@ -530,5 +537,19 @@ struct ThemeTile: View {
             .padding(10)
         }
         .accessibilityHidden(true)
+    }
+}
+
+
+/// The Blocked row as one element: "<name>, blocked", with Unblock as its action.
+private struct BlockedRowStop: ViewModifier {
+    let active: Bool
+    let name: String
+    let unblock: () -> Void
+    func body(content: Content) -> some View {
+        if active {
+            content.accessibilityElement(children: .ignore).accessibilityLabel("\(name), blocked")
+                .accessibilityAction(named: "Unblock \(name)") { unblock() }
+        } else { content }
     }
 }

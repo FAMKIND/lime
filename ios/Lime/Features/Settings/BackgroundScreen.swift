@@ -41,14 +41,16 @@ struct BackgroundScreen: View {
                     row("trash", "Remove Background", id: "background-remove", destructive: true) { remove() }
                 }
             }
-            if busy { ProgressView().padding(.top, 4).accessibilityIdentifier("background-busy") }
+            if busy { ProgressView().padding(.top, 4).accessibilityLabel("Working").accessibilityIdentifier("background-busy").announcesWhenShown("Working") }
+            if let problem { Color.clear.frame(height: 0).accessibilityHidden(true).announcesWhenShown(problem) }
             SettingsFootnote(text: problem ?? "It fills the top of your profile and fades out behind the tabs. A video plays silently on a loop (up to 10 seconds, no sound). It's shrunk on this iPhone, and location and camera details are never uploaded.")
+            // The section's title comes before its choices, as in iOS Settings, and is a heading (LIME-130-5a).
+            SettingsFootnote(text: "Who can see my background").accessibilityAddTraits(.isHeader)
             SettingsCard {
                 visibilityChoice(.everyone, "Everyone on lime", detail: "Any signed-in teacher who sees your profile can see it. lime's servers keep a copy of the picture.", id: "background-vis-everyone")
                 Divider().overlay(Theme.hairline).padding(.leading, 18)
                 visibilityChoice(.contacts, "Only my contacts (encrypted)", detail: "Teachers you message see it. It's encrypted; everyone else sees none.", id: "background-vis-contacts")
             }
-            SettingsFootnote(text: "Who can see my background")
             ProfileColourCard()
         }
         .task {
@@ -252,7 +254,7 @@ struct BackgroundCropScreen: View {
                             offset = clamped(offset, viewport)
                         }
                     ))
-                    .accessibilityLabel("Background frame").accessibilityHint("Drag and pinch to choose how it is cropped")
+                    .cropAccessibility(label: "Photo position", scale: $scale, offset: $offset, frame: viewport, clamp: { clamped($0, viewport) })
                     .accessibilityIdentifier("background-crop-area")
                 Text("Drag and pinch. The bright frame is the top of your profile on this phone.").font(Theme.secondary).foregroundStyle(Theme.textSecondary).padding(.top, 20)
                 Spacer(minLength: 0)

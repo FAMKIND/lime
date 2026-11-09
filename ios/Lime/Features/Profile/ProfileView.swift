@@ -789,8 +789,9 @@ struct ProfileView: View {
             sharedHeader("Media", count: media.count, key: .media)
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 3), spacing: 4) {
                 ForEach(Array(media.flatMap { m in m.attachments.filter { $0.kind == .image || $0.kind == .video }.map { (m, $0) } }.prefix(9)), id: \.1.id) { message, item in
-                    MediaCell(item: item)
-                        .onTapGesture { store.attachmentViewer = AttachmentViewerRequest(items: [item], index: 0, messageID: message.id, conversationID: route.sharedConversation) }
+                    SharedMediaButton(message: message, item: item, conversationID: route.sharedConversation) {
+                        store.attachmentViewer = AttachmentViewerRequest(items: [item], index: 0, messageID: message.id, conversationID: route.sharedConversation)
+                    }
                 }
             }
             .accessibilityIdentifier("profile-media")
@@ -913,6 +914,9 @@ struct FileRow: View {
             if let size = file?.size { Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file)).font(Theme.caption).foregroundStyle(Theme.textSecondary) }
         }
         .padding(.horizontal, 18).frame(minHeight: 56)
+        // One element: the name, the size and the date (LIME-130-5a).
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(SharedItemLabel.file(name: file?.name ?? "File", size: file?.size, dateText: message.date.formatted(date: .abbreviated, time: .omitted)))
     }
 }
 
@@ -932,8 +936,15 @@ struct LinkRow: View {
         }
         .padding(.horizontal, 18).frame(minHeight: 56)
         .contentShape(Rectangle())
-        .onTapGesture { if let link = URL(string: url) { UIApplication.shared.open(link) } }
+        .onTapGesture { openLink() }
+        // One link: its title, its site and the date; double-tap opens it (LIME-130-5a).
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(SharedItemLabel.link(title: message.linkPreview?.title ?? url, host: SharedItemLabel.host(of: url), dateText: message.date.formatted(date: .abbreviated, time: .omitted)))
+        .accessibilityAddTraits(.isLink)
+        .accessibilityAction { openLink() }
     }
+
+    private func openLink() { if let link = URL(string: url) { UIApplication.shared.open(link) } }
 }
 
 /// "See all": one kind of shared thing in full.
@@ -949,8 +960,9 @@ struct SharedListView: View {
                 case .media:
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 3), spacing: 4) {
                         ForEach(Array(items.flatMap { m in m.attachments.filter { $0.kind == .image || $0.kind == .video }.map { (m, $0) } }), id: \.1.id) { message, item in
-                            MediaCell(item: item)
-                                .onTapGesture { store.attachmentViewer = AttachmentViewerRequest(items: [item], index: 0, messageID: message.id, conversationID: route.conversationID) }
+                            SharedMediaButton(message: message, item: item, conversationID: route.conversationID) {
+                                store.attachmentViewer = AttachmentViewerRequest(items: [item], index: 0, messageID: message.id, conversationID: route.conversationID)
+                            }
                         }
                     }.padding(.horizontal, 16)
                 case .files: ForEach(items) { FileRow(message: $0) }
