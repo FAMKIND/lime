@@ -375,6 +375,10 @@ struct CustomizeScreen: View {
             }
             SettingsFootnote(text: "Mode, accent colour, background, font and text size, with a preview. Kept on this iPhone.")
             SettingsCard {
+                SettingsRow(symbol: "app", title: "App icon", value: AppIconChoice.choice(forIconName: UIApplication.shared.alternateIconName).title, route: .appIcon, id: "settings-app-icon", showsDivider: false)
+            }
+            SettingsFootnote(text: "Pick the icon lime has on your Home Screen. Kept on this iPhone.")
+            SettingsCard {
                 ForEach(MentionStyle.allCases) { option in
                     Button { mentionStyle = option.rawValue } label: {
                         VStack(spacing: 0) {
