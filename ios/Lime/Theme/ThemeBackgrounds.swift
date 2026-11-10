@@ -169,7 +169,7 @@ private struct LivingBackground: View {
             : HeroPalette.tonePalette(store.accent)
         ZStack {
             AmbientBackground(palette: palette)
-            Color(theme.canvas).opacity(colorScheme == .dark ? 0.72 : 0.80)
+            Color(theme.canvas).opacity(LivingVeil.opacity(dark: colorScheme == .dark))
         }
     }
 }

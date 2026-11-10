@@ -127,19 +127,47 @@ struct ResolvedTheme: Equatable {
     /// Red for text and icons (an error, "Delete", "Missed"): 4.5:1 (7:1 with Increase Contrast) on the canvas, the surface and the bubble (LIME-130-2).
     var danger: UIColor
 
-    /// Every pairing the app draws text in meets WCAG AA (7:1 for the main text with Increase Contrast).
-    func passes(increaseContrast: Bool = false) -> Bool {
+    /// One foreground drawn on one background, and the least ratio it needs.
+    struct Pair { let name: String; let foreground: UIColor; let background: UIColor; let minimum: Double
+        var ratio: Double { ContrastGuard.ratio(foreground, background) } }
+
+    /// Every pairing the app draws text in (LIME-130-7: each foreground against **every** background it sits on). `extra` are further backgrounds the
+    /// same text can land on (the Living background's veil over the lightest and the darkest photo).
+    func pairs(increaseContrast: Bool = false, extra: [UIColor] = []) -> [Pair] {
         let main = increaseContrast ? ContrastGuard.enhanced : ContrastGuard.text
-        return ContrastGuard.ratio(text, canvas) >= main && ContrastGuard.ratio(text, surface) >= main
-            && ContrastGuard.ratio(secondary, canvas) >= ContrastGuard.text && ContrastGuard.ratio(secondary, surface) >= ContrastGuard.text
-            && ContrastGuard.ratio(secondary, bubble) >= ContrastGuard.text && ContrastGuard.ratio(ownSecondary, own) >= ContrastGuard.text
-            && ContrastGuard.ratio(accentInk, accent) >= ContrastGuard.text
-            // The bubble pairs: their text, a link inside, mine (fixed colours), and the hints of empty fields.
-            && ContrastGuard.ratio(text, bubble) >= main && ContrastGuard.ratio(link, bubble) >= ContrastGuard.text
-            && ContrastGuard.ratio(placeholder, canvas) >= ContrastGuard.text && ContrastGuard.ratio(placeholderLarge, canvas) >= ContrastGuard.large
-            // My bubble, a link in it, and the reaction pill (277d, 1e525).
-            && ContrastGuard.ratio(ownInk, own) >= ContrastGuard.text && ContrastGuard.ratio(linkOwn, own) >= ContrastGuard.text
-            && ContrastGuard.ratio(text, chip) >= ContrastGuard.text && ContrastGuard.ratio(text, chipMine) >= ContrastGuard.text
+        let t = ContrastGuard.text, large = ContrastGuard.large
+        var out: [Pair] = []
+        let fields: [(String, UIColor)] = [("canvas", canvas), ("surface", surface), ("bubble", bubble)] + extra.enumerated().map { ("living\($0.offset)", $0.element) }
+        for (name, bg) in fields {
+            out.append(Pair(name: "text on \(name)", foreground: text, background: bg, minimum: main))
+            out.append(Pair(name: "secondary on \(name)", foreground: secondary, background: bg, minimum: t))
+            out.append(Pair(name: "link on \(name)", foreground: link, background: bg, minimum: t))
+            out.append(Pair(name: "placeholder on \(name)", foreground: placeholder, background: bg, minimum: t))
+            out.append(Pair(name: "large placeholder on \(name)", foreground: placeholderLarge, background: bg, minimum: large))
+        }
+        for (name, bg) in [("chip", chip), ("chipMine", chipMine)] {
+            out.append(Pair(name: "text on \(name)", foreground: text, background: bg, minimum: t))
+            out.append(Pair(name: "secondary on \(name)", foreground: secondary, background: bg, minimum: t))
+        }
+        out.append(Pair(name: "accentInk on accent", foreground: accentInk, background: accent, minimum: t))
+        out.append(Pair(name: "ownInk on own", foreground: ownInk, background: own, minimum: t))
+        out.append(Pair(name: "ownSecondary on own", foreground: ownSecondary, background: own, minimum: t))
+        out.append(Pair(name: "linkOwn on own", foreground: linkOwn, background: own, minimum: t))
+        return out
+    }
+
+    /// Every pairing the app draws text in meets WCAG AA (7:1 for the main text with Increase Contrast).
+    func passes(increaseContrast: Bool = false) -> Bool { pairs(increaseContrast: increaseContrast).allSatisfy { $0.ratio >= $0.minimum } }
+}
+
+/// The Living background's veil: the canvas over the photo's colours at this opacity. Dark is stronger (0.72 left secondary text at 2.5:1 on a white
+/// photo; LIME-130-7).
+enum LivingVeil {
+    static func opacity(dark: Bool) -> Double { dark ? 0.85 : 0.80 }
+    /// What the veil can look like over the lightest and the darkest photo, for the guard.
+    static func extremes(canvas: UIColor, dark: Bool) -> [UIColor] {
+        let clear = 1 - opacity(dark: dark)
+        return [ContrastGuard.blend(canvas, .white, clear), ContrastGuard.blend(canvas, .black, clear)]
     }
 }
 
@@ -155,14 +183,19 @@ enum ThemeResolver {
         let base = background.base(dark: darkMode)
         let canvas = UIColor(hex: base.canvas), surface = UIColor(hex: base.surface)
         let bubble = UIColor(hex: base.bubble ?? (darkMode ? 0x3D4441 : 0xFFFEFE))
-        let on = [canvas, surface]
+        // Living draws text over a photo's colours under a veil: the lightest and the darkest photo are backgrounds too.
+        let on = [canvas, surface] + (background == .living ? LivingVeil.extremes(canvas: canvas, dark: darkMode) : [])
         let text = ContrastGuard.nudge(UIColor(hex: base.text), against: on + [bubble], minimum: increaseContrast ? ContrastGuard.enhanced : ContrastGuard.text)
-        let secondary = ContrastGuard.nudge(UIColor(hex: base.secondary), against: on + [bubble], minimum: increaseContrast ? ContrastGuard.enhanced : ContrastGuard.text)
+        // The reaction pill: lime's own two fills on Plain, a faint tint of the text colour over the surface elsewhere. (Worked out before the
+        // secondary text, which is drawn on them too.)
+        let chip = background == .plain ? UIColor(hex: darkMode ? 0x1B241F : 0xF1EFE8) : ContrastGuard.blend(surface, text, 0.07)
+        let chipMine = background == .plain ? UIColor(hex: darkMode ? 0x1F2823 : 0xECEAE0) : ContrastGuard.blend(surface, text, 0.14)
+        let secondary = ContrastGuard.nudge(UIColor(hex: base.secondary), against: on + [bubble, chip, chipMine], minimum: increaseContrast ? ContrastGuard.enhanced : ContrastGuard.text)
         var hairline = UIColor(hex: base.hairline)
         if increaseContrast { hairline = ContrastGuard.nudge(hairline, against: [canvas], minimum: ContrastGuard.large) }
-        let link = ContrastGuard.nudge(UIColor(hex: darkMode ? 0x8ECF73 : 0x1B7A3A), against: [bubble, canvas], minimum: ContrastGuard.text)
-        let placeholder = ContrastGuard.nudge(UIColor(hex: darkMode ? 0x8C857E : 0x6E665E), against: [canvas], minimum: ContrastGuard.text)
-        let placeholderLarge = ContrastGuard.nudge(UIColor(hex: darkMode ? 0x6F6962 : 0x8E867E), against: [canvas], minimum: ContrastGuard.large)
+        let link = ContrastGuard.nudge(UIColor(hex: darkMode ? 0x8ECF73 : 0x1B7A3A), against: on + [bubble], minimum: ContrastGuard.text)
+        let placeholder = ContrastGuard.nudge(UIColor(hex: darkMode ? 0x8C857E : 0x6E665E), against: on + [bubble], minimum: ContrastGuard.text)
+        let placeholderLarge = ContrastGuard.nudge(UIColor(hex: darkMode ? 0x6F6962 : 0x8E867E), against: on + [bubble], minimum: ContrastGuard.large)
         let accentFill = UIColor(hex: LimeColours.accentHex[((accent % 8) + 8) % 8])
         // My bubble follows the accent: lime is lime's own pastel, the others the tone's pastel (a touch lighter in light mode); the ink is whichever reads.
         let tone = ((accent % 8) + 8) % 8
@@ -171,9 +204,6 @@ enum ThemeResolver {
         let ownInk = ContrastGuard.ink(on: own)
         let ownSecondary = ContrastGuard.nudge(ContrastGuard.blend(ownInk, own, 0.3), against: [own], minimum: increaseContrast ? ContrastGuard.enhanced : ContrastGuard.text)
         let linkOwn = ContrastGuard.nudge(UIColor(hex: darkMode ? 0x0A5524 : 0x1F6B2E), against: [own], minimum: ContrastGuard.text)
-        // The reaction pill: lime's own two fills on Plain, a faint tint of the text colour over the surface elsewhere.
-        let chip = background == .plain ? UIColor(hex: darkMode ? 0x1B241F : 0xF1EFE8) : ContrastGuard.blend(surface, text, 0.07)
-        let chipMine = background == .plain ? UIColor(hex: darkMode ? 0x1F2823 : 0xECEAE0) : ContrastGuard.blend(surface, text, 0.14)
         let danger = ContrastGuard.nudge(UIColor(hex: darkMode ? Theme.dangerHex.dark : Theme.dangerHex.light), against: on + [bubble],
                                          minimum: increaseContrast ? ContrastGuard.enhanced : ContrastGuard.text)
         let made = ResolvedTheme(canvas: canvas, surface: surface, text: text, secondary: secondary, hairline: hairline, accent: accentFill, accentInk: ContrastGuard.ink(on: accentFill),
