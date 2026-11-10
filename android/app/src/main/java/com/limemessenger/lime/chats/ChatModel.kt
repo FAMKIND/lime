@@ -18,7 +18,7 @@ import uniffi.lime_core.OutgoingAttachment
 // ANDROID DEBT: twin of the open-chat parts of ios/Lime/App/ConversationStore.swift (sendNow, resend, the reply state); moves into LimeCore in LIME-133
 
 /** One open chat: its messages from the core, sending (plain text; replies hang from a root), retrying, and marking it read. */
-class ChatModel(val conversationId: String, private val chats: ChatsModel, private val accountSignedIn: Boolean = true) {
+class ChatModel(val conversationId: String, val chats: ChatsModel, private val accountSignedIn: Boolean = true) {
     var messages by mutableStateOf<List<MessageItem>>(emptyList())
         private set
     /** Replies per root message (thread summaries), for the "N replies" row. */
@@ -142,6 +142,17 @@ class ChatModel(val conversationId: String, private val chats: ChatsModel, priva
         } finally {
             loading.remove(id)
         }
+    }
+
+    /** Runs a core change on this chat (a reaction, an edit, a delete, a forward), then reads everything again and sends what was queued. False when the core refused. */
+    internal suspend fun mutate(block: (uniffi.lime_core.LimeStore) -> Unit): Boolean {
+        val core = chats.core() ?: return false
+        val ok = withContext(Dispatchers.IO) { runCatching { block(core) }.isSuccess }
+        chats.reload()
+        reload()
+        chats.deliverNow()
+        reload()
+        return ok
     }
 
     companion object {

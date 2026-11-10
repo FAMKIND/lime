@@ -4,7 +4,7 @@
 cd "$(dirname "$0")/.."
 export PATH=/opt/homebrew/share/android-commandlinetools/platform-tools:$PATH ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
 status=0
-for avd in lime-api36 lime-api26; do
+for avd in ${AVDS:-lime-api36 lime-api26}; do
   tools/emu.sh start $avd >/dev/null
   echo "== $avd"
   # A leftover install from a manual run would stop Gradle's own install ("already exists").
@@ -18,7 +18,7 @@ for avd in lime-api36 lime-api26; do
     ./gradlew -q installDebug installDebugAndroidTest || status=1
     # The server allows 10 device registrations per hour per account (staging's LIME_RATE_REGISTER_PER_HOUR), and every class registers Ada once, so
     # only the chat and groups tests run by default (LIME-303); STAGING_CLASSES="StagingSignInTest StagingChatTest" runs both.
-    for cls in ${STAGING_CLASSES:-StagingChatTest StagingGroupsTest}; do
+    for cls in ${STAGING_CLASSES:-StagingChatTest StagingGroupsTest StagingActionsTest}; do
       tools/staging-test-accounts.sh --push >/dev/null || status=1
       tools/partner/run reset >/dev/null || status=1
       case "$cls" in
@@ -29,6 +29,11 @@ for avd in lime-api36 lime-api26; do
           partner=$!
           tools/partner/run group-echo --as cleo >/tmp/lime-partner-cleo.log 2>&1 &
           partner2=$! ;;
+        StagingActionsTest*)
+          # Message actions (LIME-304): Ben reacts to every message and prints what Ada edits and deletes.
+          tools/partner/run actions-echo >/tmp/lime-partner.log 2>&1 &
+          partner=$!
+          partner2= ;;
         *)
           tools/partner/run echo >/tmp/lime-partner.log 2>&1 &
           partner=$!
@@ -41,7 +46,11 @@ for avd in lime-api36 lime-api26; do
       # (Ada's leave is delivered in the test's last second: give the partner up to 40 s to poll it.)
       case "$cls" in StagingGroupsTest*) for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -qi "system: .*left" /tmp/lime-partner.log && break; sleep 2; done ;; esac
       case "$cls" in StagingGroupsTest*) grep -qi "system: .*left" /tmp/lime-partner.log || { status=1; echo "$cls: the partner never saw Ada leave"; } ;; esac
-      kill "$partner" $partner2 2>/dev/null; pkill -f "MainKt echo" 2>/dev/null; pkill -f "MainKt group-echo" 2>/dev/null
+      case "$cls" in StagingActionsTest*)
+        for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q "^deleted: Delete me" /tmp/lime-partner.log && break; sleep 2; done
+        grep -q "^edited: Hello Ben (edited)" /tmp/lime-partner.log || { status=1; echo "$cls: the partner never saw the edit"; }
+        grep -q "^deleted: Delete me" /tmp/lime-partner.log || { status=1; echo "$cls: the partner never saw the delete"; } ;; esac
+      kill "$partner" $partner2 2>/dev/null; pkill -f "MainKt echo" 2>/dev/null; pkill -f "MainKt actions-echo" 2>/dev/null; pkill -f "MainKt group-echo" 2>/dev/null
     done
     adb uninstall com.limemessenger.lime >/dev/null 2>&1
     adb uninstall com.limemessenger.lime.test >/dev/null 2>&1

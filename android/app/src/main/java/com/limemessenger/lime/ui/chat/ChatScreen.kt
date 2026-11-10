@@ -95,6 +95,12 @@ import com.limemessenger.lime.R
 import com.limemessenger.lime.chats.AttachmentFormat
 import com.limemessenger.lime.chats.ChatModel
 import com.limemessenger.lime.chats.removeChat
+import androidx.compose.ui.semantics.selected
+import com.limemessenger.lime.chats.react
+import com.limemessenger.lime.chats.edit
+import com.limemessenger.lime.chats.delete
+import com.limemessenger.lime.chats.forward
+import com.limemessenger.lime.chats.forwardTargets
 import com.limemessenger.lime.chats.ChatRow
 import com.limemessenger.lime.chats.ChatsModel
 import com.limemessenger.lime.chats.DeliveryState
@@ -123,6 +129,26 @@ fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenTh
     val lastOwnId = model.messages.lastOrNull { it.isOwn && it.state != DeliveryState.System }?.id
     var viewer by remember { mutableStateOf<Pair<MessageItem, Int>?>(null) }
     BackHandler(enabled = viewer != null) { viewer = null }
+    // Message actions (LIME-304): the menu, the edit dialog, the delete confirmation, the forward picker, and Select mode.
+    var menuFor by remember { mutableStateOf<MessageItem?>(null) }
+    var editing by remember { mutableStateOf<MessageItem?>(null) }
+    var deleting by remember { mutableStateOf<List<MessageItem>>(emptyList()) }
+    var forwarding by remember { mutableStateOf<List<String>?>(null) }
+    var selection by remember { mutableStateOf<Set<String>?>(null) }
+    BackHandler(enabled = selection != null && viewer == null) { selection = null }
+    val context = LocalContext.current
+    fun perform(action: uniffi.lime_core.MessageAction, item: MessageItem) {
+        menuFor = null
+        when (action) {
+            uniffi.lime_core.MessageAction.REPLY -> model.replyingTo = item
+            uniffi.lime_core.MessageAction.COPY -> copy(context, messagePlainText(item.text))
+            uniffi.lime_core.MessageAction.FORWARD -> forwarding = listOf(item.id)
+            uniffi.lime_core.MessageAction.EDIT -> editing = item
+            uniffi.lime_core.MessageAction.SELECT -> selection = setOf(item.id)
+            uniffi.lime_core.MessageAction.DELETE -> deleting = listOf(item)
+            else -> {}
+        }
+    }
 
     // Read the messages again whenever the list was (a sync brought something), and mark the chat read while it is open.
     LaunchedEffect(chats.revision) { model.reload(); model.markRead() }
@@ -130,7 +156,10 @@ fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenTh
     LaunchedEffect(rows.lastOrNull()?.id) { if (rows.isNotEmpty()) listState.scrollToItem(rows.lastIndex) }
 
     Column(modifier.fillMaxSize().background(colors.canvas).systemBarsPadding().imePadding()) {
-        Header(summary, chats.myName, chats.myTone, onBack, onOpenGroup) { m -> onOpenProfile(m.id, m.name) }
+        val chosen = selection
+        if (chosen != null) SelectionBar(chosen.size, onCancel = { selection = null },
+            onForward = { forwarding = chosen.toList() }, onDelete = { deleting = model.messages.filter { it.id in chosen } })
+        else Header(summary, chats.myName, chats.myTone, onBack, onOpenGroup) { m -> onOpenProfile(m.id, m.name) }
         LazyColumn(Modifier.weight(1f).fillMaxWidth().testTag("chat-messages"), state = listState, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp)) {
             items(rows, key = { it.id }) { row ->
                 when (row) {
@@ -149,6 +178,11 @@ fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenTh
                         onOpenThread = { onOpenThread(row.item) },
                         model = model,
                         onOpenPhoto = { index -> viewer = row.item to index },
+                        selecting = selection != null, selected = selection?.contains(row.item.id) == true,
+                        onToggleSelect = { selection = selection?.let { if (row.item.id in it) it - row.item.id else it + row.item.id } },
+                        onOpenMenu = { menuFor = row.item },
+                        onPerform = { action -> perform(action, row.item) },
+                        onReact = { emoji -> scope.launch { model.react(row.item, emoji) } },
                     )
                 }
             }
@@ -156,9 +190,38 @@ fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenTh
         model.banner?.let { Text(it, color = colors.danger, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).testTag("chat-banner")) }
         if (summary != null && summary.isRequest) RequestBar(summary.title) { scope.launch { chats.acceptRequest(summary.id) } }
         else if (summary?.groupEnded != null) EndedBar(summary.groupEnded == "left") { scope.launch { chats.removeChat(summary.id); onBack() } }
-        else Composer(model) { text, photos -> scope.launch { if (photos.isNotEmpty()) model.sendPhotos(photos, text) else model.send(text) } }
+        else if (selection == null) Composer(model) { text, photos -> scope.launch { if (photos.isNotEmpty()) model.sendPhotos(photos, text) else model.send(text) } }
     }
     viewer?.let { (item, index) -> PhotoViewer(item.attachments.filter { it.mime.startsWith("image/") }, index, model, onClose = { viewer = null }) }
+    menuFor?.let { item ->
+        MessageActionsSheet(item, uniffi.lime_core.messageActions(item, false, System.currentTimeMillis()),
+            onReact = { emoji -> menuFor = null; scope.launch { model.react(item, emoji) } }, onAction = { perform(it, item) }, onDismiss = { menuFor = null })
+    }
+    editing?.let { item ->
+        EditMessageDialog(item.text, allowBlank = item.attachments.isNotEmpty(),
+            onSave = { text -> editing = null; scope.launch { model.edit(item, text) } }, onCancel = { editing = null })
+    }
+    if (deleting.isNotEmpty()) {
+        val now = System.currentTimeMillis()
+        DeleteMessagesDialog(deleting.size, everyoneAllowed = deleting.all { uniffi.lime_core.canDeleteForEveryone(it, now) },
+            onDelete = { everyone -> val ids = deleting.map { it.id }; deleting = emptyList(); selection = null; scope.launch { model.delete(ids, everyone) } }, onCancel = { deleting = emptyList() })
+    }
+    forwarding?.let { ids ->
+        ForwardSheet(chats.forwardTargets, chats.myName, chats.myTone,
+            onSend = { to -> forwarding = null; selection = null; scope.launch { model.forward(ids, to) } }, onDismiss = { forwarding = null })
+    }
+}
+
+/** Select mode's bar: how many are selected, Forward and Delete for them, and a way out (as iOS's selection bar). */
+@Composable
+private fun SelectionBar(count: Int, onCancel: () -> Unit, onForward: () -> Unit, onDelete: () -> Unit) {
+    val colors = Lime.colors
+    Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onCancel, Modifier.size(56.dp).testTag("select-cancel")) { Icon(Icons.Close, stringResource(R.string.message_select_cancel), tint = colors.text) }
+        Text(stringResource(R.string.message_selected_count, count), color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).semantics { heading() }.testTag("select-count"))
+        TextButton(onClick = onForward, enabled = count > 0, modifier = Modifier.heightIn(min = 48.dp).testTag("select-forward")) { Text(stringResource(R.string.message_action_forward), color = colors.text, fontSize = 16.sp) }
+        TextButton(onClick = onDelete, enabled = count > 0, modifier = Modifier.heightIn(min = 48.dp).testTag("select-delete")) { Text(stringResource(R.string.message_action_delete), color = colors.danger, fontSize = 16.sp) }
+    }
 }
 
 @Composable
@@ -218,6 +281,7 @@ private fun SystemLine(text: String) {
 private fun MessageBubble(
     item: MessageItem, summary: ConversationSummary?, showAvatar: Boolean, endsRun: Boolean, showState: Boolean, replyCount: Int,
     onRetry: () -> Unit, onReply: () -> Unit, onOpenThread: () -> Unit, model: ChatModel, onOpenPhoto: (Int) -> Unit,
+    selecting: Boolean, selected: Boolean, onToggleSelect: () -> Unit, onOpenMenu: () -> Unit, onPerform: (uniffi.lime_core.MessageAction) -> Unit, onReact: (String) -> Unit,
 ) {
     val colors = Lime.colors
     val context = LocalContext.current
@@ -225,7 +289,7 @@ private fun MessageBubble(
     val sender = summary?.members?.firstOrNull { it.id == item.senderId }
     val isGroup = summary?.isGroup == true
     val label = MessageSpeech.label(item, sender?.name, replyCount, plainText = ::messagePlainText)
-    var menu by remember { mutableStateOf(false) }
+    val plan = remember(item) { uniffi.lime_core.messageActions(item, false, System.currentTimeMillis()) }
     val plain = remember(item.text) { messagePlainText(item.text) }
     val copyLabel = stringResource(R.string.chat_copy)
     val replyLabel = stringResource(R.string.chat_reply)
@@ -235,15 +299,30 @@ private fun MessageBubble(
     val photos = item.attachments.filter { it.mime.startsWith("image/") }
     val maxBubble = (LocalConfiguration.current.screenWidthDp * 0.78f).dp
     val actions = buildList {
-        if (!item.deleted && plain.isNotEmpty()) add(CustomAccessibilityAction(copyLabel) { copy(context, plain); true })
-        if (!item.deleted) add(CustomAccessibilityAction(replyLabel) { onReply(); true })
+        // The same actions as the long-press menu, by name, for TalkBack and Switch Access (never a gesture-only menu).
+        shownActions(plan).forEach { action ->
+            val title = actionTitleText(action)
+            when (action) {
+                uniffi.lime_core.MessageAction.REACT -> add(CustomAccessibilityAction(title) { onOpenMenu(); true })
+                uniffi.lime_core.MessageAction.COPY -> if (plain.isNotEmpty()) add(CustomAccessibilityAction(title) { copy(context, plain); true })
+                uniffi.lime_core.MessageAction.REPLY -> add(CustomAccessibilityAction(title) { onReply(); true })
+                else -> add(CustomAccessibilityAction(title) { onPerform(action); true })
+            }
+        }
         if (!item.deleted && photos.isNotEmpty()) add(CustomAccessibilityAction(photoLabel) { onOpenPhoto(0); true })
         if (failed) add(CustomAccessibilityAction(retryLabel) { onRetry(); true })
     }
     Row(
         Modifier.fillMaxWidth().padding(vertical = 2.dp),
         horizontalArrangement = if (own) Arrangement.End else Arrangement.Start,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (selecting) {
+            val toggleWords = stringResource(R.string.message_select_toggle)
+            Box(Modifier.size(48.dp).semantics { contentDescription = toggleWords; role = Role.Checkbox; this.selected = selected }.clickable(onClick = onToggleSelect).testTag("select-${item.id}"), contentAlignment = Alignment.Center) {
+                Icon(if (selected) Icons.CheckedBox else Icons.UncheckedBox, null, tint = if (selected) colors.text else colors.textSecondary, modifier = Modifier.size(24.dp))
+            }
+        }
         if (!own) {
             if (showAvatar && sender != null) Avatar(sender.initials.ifEmpty { initialsOf(sender.name) }, sender.tone.toInt(), 32.dp)
             else Spacer(Modifier.size(32.dp))
@@ -260,7 +339,7 @@ private fun MessageBubble(
                     Column(
                         Modifier.widthIn(max = maxBubble)
                             .then(if (item.deleted) Modifier.border(0.8.dp, colors.bubbleEdge, bubbleShape) else if (own) Modifier.background(colors.own, bubbleShape) else Modifier.background(colors.bubbleOther, bubbleShape).border(0.8.dp, colors.bubbleEdge, bubbleShape))
-                            .combinedClickable(onClick = {}, onLongClick = { menu = true }, onClickLabel = null)
+                            .combinedClickable(onClick = { if (selecting) onToggleSelect() }, onLongClick = { if (!selecting) onOpenMenu() }, onClickLabel = null)
                             .padding(horizontal = 14.dp, vertical = 10.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
@@ -272,14 +351,10 @@ private fun MessageBubble(
                             if (photos.size != item.attachments.size) AttachmentFormat.summary(item.attachments.filter { !it.mime.startsWith("image/") })?.let { Text(it, color = if (own) colors.ownInk else colors.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
                         }
                     }
-                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                        if (!item.deleted && plain.isNotEmpty()) DropdownMenuItem(text = { Text(copyLabel) }, onClick = { menu = false; copy(context, plain) }, modifier = Modifier.testTag("action-copy"))
-                        if (!item.deleted) DropdownMenuItem(text = { Text(replyLabel) }, onClick = { menu = false; onReply() }, modifier = Modifier.testTag("action-reply"))
-                        if (failed) DropdownMenuItem(text = { Text(retryLabel) }, onClick = { menu = false; onRetry() })
-                    }
                 }
                 if (!item.deleted && (endsRun || showState || item.edited)) Footer(item, showState, onRetry)
             }
+            ReactionChips(item, onReact)
             if (replyCount > 0 && !item.deleted) {
                 val words = if (replyCount == 1) stringResource(R.string.chat_reply_one) else stringResource(R.string.chat_reply_other, replyCount)
                 Box(Modifier.heightIn(min = 48.dp).clickable(onClick = onOpenThread).padding(horizontal = 4.dp), contentAlignment = Alignment.CenterStart) {
@@ -514,3 +589,7 @@ private fun EndedBar(left: Boolean, onRemove: () -> Unit) {
         TextButton(onClick = onRemove, Modifier.heightIn(min = 48.dp).testTag("group-ended-remove")) { Text(stringResource(R.string.group_ended_remove), color = colors.danger, fontSize = 17.sp, fontWeight = FontWeight.SemiBold) }
     }
 }
+
+/** The words of an action for a custom accessibility action (the same words as the menu rows). */
+@Composable
+private fun actionTitleText(action: uniffi.lime_core.MessageAction): String = actionTitle(action)

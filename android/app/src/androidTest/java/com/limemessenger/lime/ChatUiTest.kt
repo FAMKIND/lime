@@ -90,11 +90,11 @@ class ChatUiTest {
         val theirs = chat.messages.first { it.senderId != null }
         val d = description("message-${theirs.id}")
         assertTrue(d, d.startsWith("Autumn Reyes, ") && d.contains(uniffi.lime_core.messagePlainText(theirs.text)))
-        // Copy and Reply are TalkBack custom actions of that same element.
+        // The message actions (LIME-304: the core's list for someone else's sent message, minus Report) are TalkBack custom actions of that same element.
         val actions = rule.onNodeWithTag("message-${theirs.id}").fetchSemanticsNode().config[SemanticsProperties.Role]
         assertNotNull(actions)
         val custom = rule.onNodeWithTag("message-${theirs.id}").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsActions.CustomActions]
-        assertEquals(listOf("Copy", "Reply"), custom.map { it.label })
+        assertEquals(listOf("React", "Reply", "Forward", "Copy", "Select", "Delete"), custom.map { it.label })
     }
 
     @Test fun sendingShowsTheMessageWithItsStateAndClearsTheField() {

@@ -5,6 +5,7 @@
 //   partner echo            run until stopped; accept Ada's first message and reply to each new message with: Ben here: got "<first 40 chars>"
 //   partner photo <file>    send a picture to Ada (the echo also sends one back whenever Ada sends a photo)
 //   partner status          print what Ben's store holds
+//   partner actions-echo    like echo, and also reacts 👍 to every new message and prints "edited: …" / "deleted: …" when Ada edits or deletes one (LIME-304)
 //   partner group-echo      like echo, for every GROUP: accept invitations and answer each new message from someone else with: Ben here: got "<first 40 chars>"
 //   partner accept          accept every pending chat request and group invitation once, then stop
 //   --as ben|cleo           (anywhere on the line) who this partner is; Cleo has her own store under ~/.lime/android-partner/cleo/
@@ -156,7 +157,10 @@ fun main(args: Array<String>) {
             val all = store.listConversations()
             println("conversations: ${all.size}; with Ada: ${all.any { it.id == dm }}")
         }
-        "echo" -> {
+        "echo", "actions-echo" -> {
+            // `actions-echo` (LIME-304) also reacts 👍 to each new message and prints "edited: …" / "deleted: …" when Ada changes one.
+            val actions = command == "actions-echo"
+            val seen = mutableMapOf<String, String>()
             // Everything already in the chat is history: only messages that arrive from now on are answered.
             val answered = mutableSetOf<String>()
             runCatching { store.sync(http, freshToken(http, tokens)) }
@@ -179,8 +183,17 @@ fun main(args: Array<String>) {
                         } else {
                             store.queueText(dm, "$personaName here: got \"$words\"")
                         }
+                        if (actions) { store.react(dm, m.id, "👍", true); seen[m.id] = m.text }
                         store.deliverQueued(http, freshToken(http, tokens))
                         println("replied to a message")
+                    }
+                    if (actions) {
+                        val now = store.listMessages(dm).associateBy { it.id }
+                        for ((id, was) in seen.toMap()) {
+                            val m = now[id] ?: continue
+                            if (m.deleted && was != "\u0000deleted") { seen[id] = "\u0000deleted"; println("deleted: ${messagePlainText(was).replace("\n", " ").take(40)}") }
+                            else if (!m.deleted && m.text != was && was != "\u0000deleted") { seen[id] = m.text; println("edited: ${messagePlainText(m.text).replace("\n", " ").take(40)}") }
+                        }
                     }
                 } catch (e: uniffi.lime_core.StoreException.KeyMismatch) {
                     System.err.println("echo: Ada's keys changed (a new emulator or a fresh sign-in): stop, run `partner reset`, and start echo again")
