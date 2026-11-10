@@ -45,6 +45,7 @@ struct CoEditFiles {
 /// remote author's changes come back and are drawn without moving the caret. Nothing here is a view.
 @MainActor
 final class CoEditSession {
+    @ObservationIgnored fileprivate var announcer = EditingAnnouncer()
     let draftID: String
     private let store: ConversationStore
     private var pending: Task<Void, Never>?
@@ -592,6 +593,22 @@ extension CoEditSession {
         if !event.patches.isEmpty { applyRemote() }   // their words first, then their caret
         peers.receive(from: event.fromUser, presence: event.presence)
         redrawCursors()
+        announceRemote(event.fromUser)
+    }
+
+    /// VoiceOver hears "Jean is editing the third paragraph" when someone else's edit or caret is in a paragraph other than mine: at most once every 5 s for
+    /// each person, and only while VoiceOver runs (LIME-130-6c).
+    fileprivate func announceRemote(_ user: String) {
+        guard CallControlsPolicy.voiceOverRunning, let view = composer?.textView,
+              let peer = peers.peers.first(where: { $0.person.id == user }), let presence = peer.presence,
+              presence.field.isEmpty || presence.field == "body" else { return }
+        let slots = CoEditMap.slots(blocks: store.coeditBlocks(draftID), in: view.textStorage)
+        guard let theirs = slots.first(where: { $0.id == presence.blockId }) else { return }
+        let caret = view.selectedRange.location
+        if let mine = slots.first(where: { NSLocationInRange(caret, $0.range) || caret == NSMaxRange($0.range) }), mine.id == theirs.id { return }
+        guard announcer.shouldSay(person: user) else { return }
+        let first = peer.person.name.split(separator: " ").first.map(String.init) ?? peer.person.name
+        Announce.say("\(first) is editing \(CoEditMap.ordinalWords(theirs.ordinal))")
     }
 
     /// "Jean is editing the third paragraph" (spoken) and "Jean is editing\u{2026}" (shown).

@@ -93,6 +93,9 @@ struct JamOrgsSection: View {
     @Environment(ConversationStore.self) private var store
     @ScaledMetric(relativeTo: .body) private var rowHeight: CGFloat = 84
     @State private var action: OrgAction?
+    @Environment(\.dynamicTypeSize) private var typeSize
+    private var big: Bool { typeSize.isAccessibilitySize }
+    private var lines: Int? { big ? nil : 1 }
 
     var body: some View {
         List {
@@ -113,8 +116,9 @@ struct JamOrgsSection: View {
                     }
             }
         }
-        .listStyle(.plain).scrollDisabled(true).scrollContentBackground(.hidden)
-        .frame(height: rowHeight * CGFloat(max(orgs.count, 1)))
+        .listStyle(.plain).scrollDisabled(!big).scrollContentBackground(.hidden)
+        // At accessibility sizes the lines wrap and the list scrolls inside a capped height (LIME-130-6c).
+        .frame(height: big ? min(rowHeight * CGFloat(max(orgs.count, 1)), 560) : rowHeight * CGFloat(max(orgs.count, 1)))
         .padding(.horizontal, -16)
         .orgActions($action)
     }
@@ -135,10 +139,10 @@ struct JamOrgsSection: View {
                 HStack(spacing: 12) {
                     BylineAvatar(people: authors, jam: org.title, jamId: org.jamId, size: 52).frame(width: 60, height: 56, alignment: .leading)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(org.title).font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
-                        Text(store.isMemberOnlyBand(org.jamId) ? "Only you see this" : names).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(1)
-                        if !org.about.isEmpty { Text(org.about).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1) }
-                        Text(org.subscriberCount == 1 ? "1 subscriber" : "\(org.subscriberCount) subscribers").font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                        Text(org.title).font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(lines)
+                        Text(store.isMemberOnlyBand(org.jamId) ? "Only you see this" : names).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(lines)
+                        if !org.about.isEmpty { Text(org.about).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(lines) }
+                        Text(org.subscriberCount == 1 ? "1 subscriber" : "\(org.subscriberCount) subscribers").font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(lines)
                     }
                     Spacer(minLength: 0)
                 }
@@ -417,7 +421,7 @@ struct OrgProfileView: View {
                         }
                     }
                     .padding(.top, 12).padding(.bottom, 14)   // room for the writers' circles that hang below the tile
-                Text(page.title).font(Theme.font(.title2, weight: .semibold)).foregroundStyle(.white).multilineTextAlignment(.center)
+                Text(page.title).font(Theme.font(.title2, weight: .semibold)).foregroundStyle(.white).multilineTextAlignment(.center).coverTextScrim()
                     .accessibilityAddTraits(.isHeader).accessibilityIdentifier("profile-jam-row")
                 Text(authors.map(\.name).joined(separator: ", ")).font(Theme.secondary).foregroundStyle(.white).multilineTextAlignment(.center).coverTextScrim()
                     .accessibilityIdentifier("org-authors")
@@ -506,7 +510,7 @@ struct OrgProfileView: View {
             }
             SettingsFootnote(text: "Everyone you credit on a post as \(page.title) shows here.")
             SettingsCard {
-                Toggle(isOn: Binding(get: { page.hasCommunity }, set: { on in Task { _ = await store.setCommunity(page.jamId, on: on) } })) {
+                Toggle(isOn: Binding(get: { page.hasCommunity }, set: { on in Task { if await store.setCommunity(page.jamId, on: on) == false { store.showBanner("Couldn\u{2019}t change the community chat. Try again.") } } })) {
                     Text("Community chat").font(Theme.body).foregroundStyle(Theme.text)
                 }
                 .tint(Theme.accent).padding(.horizontal, 18).frame(minHeight: 58)

@@ -41,6 +41,9 @@ struct BeforePublishScreen: View {
     private var needsPrivacy: Bool { audience == "everyone" && hasMedia && savedAudience != "everyone" }
     private var showsAudience: Bool { membersOption || store.openPostsEnabled || audience == "everyone" || savedAudience == "everyone" }
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+    private var lines: Int? { typeSize.isAccessibilitySize ? nil : 2 }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -56,8 +59,8 @@ struct BeforePublishScreen: View {
                     }
                     .frame(width: 72, height: 72).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)).accessibilityHidden(true).accessibilityIdentifier("before-thumbnail")
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(summary.isEmpty ? "Your post" : summary).font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(2).multilineTextAlignment(.leading)
-                        if !subtitle.isEmpty { Text(subtitle).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(2) }
+                        Text(summary.isEmpty ? "Your post" : summary).font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(lines).multilineTextAlignment(.leading)
+                        if !subtitle.isEmpty { Text(subtitle).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(lines) }
                     }
                     Spacer(minLength: 0)
                 }
@@ -68,7 +71,7 @@ struct BeforePublishScreen: View {
                     if kind != .post { row("Series", id: "before-series") { SeriesChip(series: $series) } }
                 }
                 if needsPrivacy { StudentPrivacyBlock(pictures: pictures, confirmed: $confirmed) }
-                if let problem { Text(problem).font(Theme.secondary).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("before-problem") }
+                if let problem { Text(problem).font(Theme.secondary).foregroundStyle(Theme.danger).fixedSize(horizontal: false, vertical: true).announcesWhenShown(problem).accessibilityIdentifier("before-problem") }
               }
               // While it goes out, everything else is dimmed and cannot be tapped (the button shows the spinner).
               .opacity(working ? 0.5 : 1).allowsHitTesting(!working).animation(.easeOut(duration: 0.2), value: working)
@@ -81,7 +84,9 @@ struct BeforePublishScreen: View {
                     .frame(maxWidth: .infinity, minHeight: 50).background(Theme.accent.opacity(canGo || working ? 1 : 0.4), in: Capsule())
                 }
                 .buttonStyle(.plain).disabled(!canGo)
-                .accessibilityLabel(working ? workingTitle : buttonTitle).accessibilityIdentifier(buttonID)
+                .accessibilityLabel(working ? workingTitle : buttonTitle)
+                .accessibilityHint(needsPrivacy && !confirmed && !working ? "Confirm the people in your pictures first" : "")
+                .accessibilityIdentifier(buttonID)
             }
             .padding(20)
         }
@@ -98,14 +103,24 @@ struct BeforePublishScreen: View {
 
     private func row<Content: View>(_ label: String, id: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(spacing: 0) {
+            // The label and its chip are one element, "Audience, Subscribers", that opens the chip (LIME-130-6c).
             HStack {
                 Text(label).font(Theme.body).foregroundStyle(Theme.text)
                 Spacer(minLength: 12)
                 content()
             }
             .frame(minHeight: 52)
+            // One stop with VoiceOver or Switch Control; for touch (and UI tests) the chip keeps its own element.
+            .modifier(RowStop(active: CallControlsPolicy.voiceOverRunning || CallControlsPolicy.switchControlRunning))
             Divider().overlay(Theme.hairline)
         }
         .accessibilityElement(children: .contain).accessibilityIdentifier(id)
+    }
+}
+
+private struct RowStop: ViewModifier {
+    let active: Bool
+    func body(content: Content) -> some View {
+        if active { content.accessibilityElement(children: .combine) } else { content }
     }
 }

@@ -219,6 +219,8 @@ struct OrgGroupsTab: View {
         .padding(.horizontal, 18).frame(minHeight: 60)
         .accessibilityElement(children: .contain)
         .task(id: state) { if state == "asked" { await store.refreshOrgGroupJoin(jamID, group: group.conversationId) } }
+        // The state replaces the button in place: say it, and leave focus on the row (LIME-130-6c).
+        .onChange(of: state) { _, new in if let words = JoinSpeech.words(state: new, name: group.name) { Announce.say(words) } }
     }
 }
 
@@ -289,9 +291,10 @@ struct NewBandGroupSheet: View {
     private func create() {
         making = true
         Task {
-            _ = await store.createOrgGroup(jamID, name: cleaned, emoji: nil, open: open, members: Array(chosen))
+            let made = await store.createOrgGroup(jamID, name: cleaned, emoji: nil, open: open, members: Array(chosen))
             making = false
-            dismiss()
+            if made == nil { store.showBanner("Couldn\u{2019}t make the group. Try again.") }   // spoken, and the sheet stays
+            else { dismiss() }
         }
     }
 }
@@ -332,5 +335,6 @@ struct JoinBandSheet: View {
         .limeBackground()
         .presentationDetents([.medium])
         .task(id: state) { if state == "asked" { await store.refreshOrgJoinState(invite.jamId) } }
+        .onChange(of: state) { _, new in if let words = JoinSpeech.words(state: new, name: name) { Announce.say(words) } }
     }
 }

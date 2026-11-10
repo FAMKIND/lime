@@ -247,7 +247,7 @@ struct JamComposeSheet: View {
                     if hasClip { clipsRow }
                     captionsRow
                     ZStack(alignment: .topLeading) {
-                        RichComposerField(model: composer, selfSizing: true)
+                        RichComposerField(model: composer, selfSizing: true, label: "Body", hint: "What\u{2019}s on your mind?")
                             .onAppear { composer.hasText = false; composer.isPost = true }
                         if !composer.hasText {
                             Text("What\u{2019}s on your mind?").font(Theme.body).foregroundStyle(Theme.placeholder)
@@ -273,7 +273,7 @@ struct JamComposeSheet: View {
             captionsRow
             GeometryReader { geo in
                 ZStack(alignment: .topLeading) {
-                    RichComposerField(model: composer, maxHeight: geo.size.height, fills: true)
+                    RichComposerField(model: composer, maxHeight: geo.size.height, fills: true, label: "Body", hint: "What\u{2019}s on your mind?")
                         .onAppear { composer.hasText = false; composer.isPost = true }
                     if !composer.hasText {
                         Text("What\u{2019}s on your mind?").font(Theme.body).foregroundStyle(Theme.placeholder)
@@ -297,7 +297,7 @@ struct JamComposeSheet: View {
                 if hasClip { clipsRow }
                 captionsRow
                 ZStack(alignment: .topLeading) {
-                    RichComposerField(model: composer, selfSizing: true)
+                    RichComposerField(model: composer, selfSizing: true, label: "Body", hint: "Start writing an article\u{2026}")
                         .onAppear { composer.hasText = false; composer.isPost = true }
                     if !composer.hasText {
                         Text("Start writing an article\u{2026}").font(Theme.body).foregroundStyle(Theme.placeholder)

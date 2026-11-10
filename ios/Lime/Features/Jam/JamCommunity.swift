@@ -35,6 +35,8 @@ struct CommunityJoinRow: View {
     var body: some View {
         if let jam = store.jamSubscriptions.first(where: { $0.jamId == jamID && $0.status == "active" }), jam.community {
             let first = store.teacherName(jam.writer).split(separator: " ").first.map(String.init) ?? "the writer"
+            let communityName = "\(first)\u{2019}s community"
+            Group {
             switch jam.communityState {
             case nil:
                 Button { Task { await store.joinCommunity(jamID) } } label: {
@@ -53,6 +55,8 @@ struct CommunityJoinRow: View {
             default:
                 Text("The community is full.").font(Theme.secondary).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("community-full")
             }
+            }
+            .onChange(of: jam.communityState) { _, new in if let words = JoinSpeech.words(state: new, name: communityName) { Announce.say(words) } }
         }
     }
 }
