@@ -30,6 +30,10 @@ import com.limemessenger.lime.ui.chats.RequestsScreen
 import com.limemessenger.lime.ui.chat.ChatScreen
 import com.limemessenger.lime.ui.chat.ThreadScreen
 import com.limemessenger.lime.chats.ChatModel
+import com.limemessenger.lime.chats.GroupModel
+import com.limemessenger.lime.ui.chats.GroupDetailsScreen
+import com.limemessenger.lime.ui.chats.GroupNameScreen
+import com.limemessenger.lime.ui.chats.GroupPickerScreen
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -95,6 +99,7 @@ private fun SignedIn(session: AccountSession) {
         ChatsModel(
             store = { session.store }, transport = { session.transport }, token = { session.accessToken() },
             staleToken = { session.lastAccessToken() }, registrar = { session.registerDevice(); Unit }, isRegistered = { session.deviceRegistered },
+            me = { session.profile?.displayName.orEmpty() to com.limemessenger.lime.chats.AvatarTone.tone(session.userId.orEmpty()) },
         )
     }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -102,16 +107,24 @@ private fun SignedIn(session: AccountSession) {
     var openId by rememberSaveable { mutableStateOf<String?>(null) }
     var requestsOpen by rememberSaveable { mutableStateOf(false) }
     var newMessageOpen by rememberSaveable { mutableStateOf(false) }
+    // New group: null, the picker ("pick"), or the name step with the people chosen. A group's details open over its chat.
+    var groupStep by remember { mutableStateOf<List<String>?>(null) }
+    var groupPicking by rememberSaveable { mutableStateOf(false) }
+    var groupInfoOpen by rememberSaveable { mutableStateOf(false) }
     var threadRoot by remember { mutableStateOf<uniffi.lime_core.MessageItem?>(null) }
     var profileOpen by rememberSaveable { mutableStateOf(false) }
     var personProfile by remember { mutableStateOf<Pair<String, String>?>(null) }
     var jamPost by remember { mutableStateOf<uniffi.lime_core.JamPostInfo?>(null) }
     val jam = remember(session) { JamModel(store = { session.store }, nameOf = { id -> if (id == session.userId) session.profile?.displayName else chats.conversations.firstNotNullOfOrNull { c -> c.members.firstOrNull { it.id == id }?.name } }) }
     val chatModel = remember(openId) { openId?.let { ChatModel(it, chats) } }
+    val groupModel = remember(openId) { openId?.let { GroupModel(chats, it) } }
     BackHandler(enabled = jamPost != null) { jamPost = null }
     BackHandler(enabled = personProfile != null) { personProfile = null }
     BackHandler(enabled = threadRoot != null) { threadRoot = null }
-    BackHandler(enabled = threadRoot == null && openId != null) { openId = null }
+    BackHandler(enabled = groupInfoOpen) { groupInfoOpen = false }
+    BackHandler(enabled = groupStep != null) { groupStep = null }
+    BackHandler(enabled = groupStep == null && groupPicking) { groupPicking = false }
+    BackHandler(enabled = threadRoot == null && !groupInfoOpen && openId != null) { openId = null }
     BackHandler(enabled = openId == null && requestsOpen) { requestsOpen = false }
     BackHandler(enabled = openId == null && newMessageOpen) { newMessageOpen = false }
     val root = threadRoot
@@ -123,12 +136,18 @@ private fun SignedIn(session: AccountSession) {
         PersonProfileScreen(person.first, person.second, chats, onBack = { personProfile = null })
     } else if (postOpen != null) {
         JamReaderScreen(postOpen, jam, onBack = { jamPost = null })
+    } else if (chatModel != null && groupModel != null && groupInfoOpen) {
+        GroupDetailsScreen(chats, groupModel, chats.myName, chats.myTone, onBack = { groupInfoOpen = false }, onLeft = { groupInfoOpen = false; openId = null })
     } else if (chatModel != null && root != null) {
         ThreadScreen(root, chatModel, onBack = { threadRoot = null })
     } else if (chatModel != null) {
-        ChatScreen(chatModel, chats, onBack = { openId = null }, onOpenThread = { threadRoot = it }, onOpenProfile = { id, name -> personProfile = id to name })
+        ChatScreen(chatModel, chats, onBack = { openId = null }, onOpenThread = { threadRoot = it }, onOpenProfile = { id, name -> personProfile = id to name }, onOpenGroup = { groupInfoOpen = true })
+    } else if (groupStep != null) {
+        GroupNameScreen(chats, groupStep!!, onBack = { groupStep = null }, onCreated = { groupStep = null; groupPicking = false; newMessageOpen = false; openId = it })
+    } else if (groupPicking) {
+        GroupPickerScreen(chats, existing = emptyList(), adding = false, onBack = { groupPicking = false }, onNext = { groupStep = it })
     } else if (newMessageOpen) {
-        NewMessageScreen(chats, onClose = { newMessageOpen = false }, onOpenChat = { newMessageOpen = false; openId = it })
+        NewMessageScreen(chats, onClose = { newMessageOpen = false }, onOpenChat = { newMessageOpen = false; openId = it }, onNewGroup = { groupPicking = true })
     } else if (requestsOpen) {
         RequestsScreen(chats, onOpen = { openId = it.id }, onBack = { requestsOpen = false })
     } else {

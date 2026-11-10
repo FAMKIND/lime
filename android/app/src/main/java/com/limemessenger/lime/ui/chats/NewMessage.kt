@@ -72,6 +72,7 @@ fun NewMessageScreen(
     model: ChatsModel, onClose: () -> Unit, onOpenChat: (String) -> Unit,
     find: suspend (String) -> FoundUser? = { model.find(it) },
     startChat: suspend (String, String) -> String? = { id, name -> model.startChat(id, name) },
+    onNewGroup: (() -> Unit)? = null,
 ) {
     val colors = Lime.colors
     val scope = rememberCoroutineScope()
@@ -114,6 +115,15 @@ fun NewMessageScreen(
             }
         }
         LazyColumn(Modifier.weight(1f).testTag("known-teachers")) {
+            if (onNewGroup != null) item(key = "new-group") {
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 64.dp).semantics(mergeDescendants = true) { role = Role.Button }.clickable(onClick = onNewGroup).padding(horizontal = 16.dp, vertical = 8.dp).testTag("new-group"),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Box(Modifier.size(44.dp).background(colors.surface, androidx.compose.foundation.shape.CircleShape), contentAlignment = Alignment.Center) { Icon(Icons.People, null, tint = colors.text) }
+                    Text(stringResource(R.string.group_new), color = colors.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
             sections.forEach { (letter, teachers) ->
                 item(key = "h-$letter") { Text(letter, color = colors.textSecondary, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp).semantics { heading() }) }
                 items(teachers, key = { it.id }) { teacher -> KnownRow(teacher) { scope.launch { startChat(teacher.id, teacher.name)?.let(onOpenChat) } } }

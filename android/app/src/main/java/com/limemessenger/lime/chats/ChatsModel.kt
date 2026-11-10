@@ -28,7 +28,12 @@ class ChatsModel(
     /** Registers this device again when it is not linked (a phone that started offline). */
     private val registrar: suspend () -> Unit = {},
     private val isRegistered: () -> Boolean = { true },
+    /** My name and avatar tone, for a group's picture (it draws me among the circles). */
+    private val me: () -> Pair<String, Int> = { "" to 0 },
 ) {
+    val myName: String get() = me().first
+    val myTone: Int get() = me().second
+
     var conversations by mutableStateOf<List<ConversationSummary>>(emptyList())
         private set
     var isLoaded by mutableStateOf(false)

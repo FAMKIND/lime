@@ -1,15 +1,16 @@
 #!/bin/sh
-# Debug tooling, never shipped. Makes (or reuses) the two throwaway STAGING accounts the Android run uses:
+# Debug tooling, never shipped. Makes (or reuses) the three throwaway STAGING accounts the Android run uses:
 #   android-a@example.invalid  "Ada Android"  @ada_android
 #   android-b@example.invalid  "Ben Android"  @ben_android
+#   android-c@example.invalid  "Cleo Android" @cleo_android   (LIME-303: the third person of a group)
 # and writes their fresh sessions to ~/.lime/android-test-accounts.json (chmod 600, outside the repo).
 #
-#   staging-test-accounts.sh            create/reuse both, sign each in fresh, mark the session verified, write the file
-#   staging-test-accounts.sh --push     the same, then push Ada's and Ben's tokens (no passwords) to the emulator's debug app
-#   staging-test-accounts.sh --delete   delete both accounts and the file
+#   staging-test-accounts.sh            create/reuse all three, sign each in fresh, mark the session verified, write the file
+#   staging-test-accounts.sh --push     the same, then push the three accounts' tokens (no passwords) to the emulator's debug app
+#   staging-test-accounts.sh --delete   delete all three accounts and the file
 #
 # The keys are read exactly as core/run-integration.sh staging reads them: into this process's memory only, never printed or
-# written. It touches nothing on staging except these two accounts (and their profile rows).
+# written. It touches nothing on staging except these three accounts (and their profile rows).
 set -e
 PATH="/opt/homebrew/bin:/opt/homebrew/share/android-commandlinetools/platform-tools:$PATH"
 ENV_FILE="$HOME/.lime/staging.env"
@@ -37,6 +38,7 @@ FILE = os.path.expanduser("~/.lime/android-test-accounts.json")
 ACCOUNTS = {
     "a": {"email": "android-a@example.invalid", "display_name": "Ada Android", "username": "ada_android"},
     "b": {"email": "android-b@example.invalid", "display_name": "Ben Android", "username": "ben_android"},
+    "c": {"email": "android-c@example.invalid", "display_name": "Cleo Android", "username": "cleo_android"},
 }
 
 def call(method, path, body=None, key=None, headers=None, ok=(200, 201, 204)):
@@ -111,7 +113,7 @@ def push(out):
     subprocess.run(["adb", "shell", f"run-as com.limemessenger.lime sh -c 'mkdir -p files && cp {tmp} files/test-accounts.json'"], check=True)
     subprocess.run(["adb", "shell", f"rm {tmp}"], check=True)
     os.remove(local)
-    print("pushed Ada and Ben (tokens only) to the emulator's debug app")
+    print("pushed Ada, Ben and Cleo (tokens only) to the emulator's debug app")
 
 if mode == "--delete": delete_all()
 elif mode in ("ensure", "--push"):

@@ -55,6 +55,7 @@ import com.limemessenger.lime.chats.isUnread
 import com.limemessenger.lime.chats.unreadCount
 import com.limemessenger.lime.auth.ConnectionProblem
 import com.limemessenger.lime.ui.common.Avatar
+import com.limemessenger.lime.ui.common.GroupAvatar
 import com.limemessenger.lime.ui.common.initialsOf
 import com.limemessenger.lime.ui.shell.Icons
 import com.limemessenger.lime.ui.theme.Lime
@@ -98,7 +99,7 @@ fun ChatListScreen(
                     item(key = "filtered") { FilteredEmpty { model.unreadOnly = false } }
                 }
                 items(model.shownChats, key = { it.id }) { conversation ->
-                    ConversationRow(conversation, isMuted(conversation.id)) { onOpen(conversation) }
+                    ConversationRow(conversation, isMuted(conversation.id), myName, myTone) { onOpen(conversation) }
                 }
             }
         }
@@ -242,7 +243,7 @@ private fun FilteredEmpty(onClear: () -> Unit) {
 
 /** One conversation: avatar, name (bold when unread), pinned/muted marks, time, the preview (two lines), the unread count. One TalkBack stop. */
 @Composable
-fun ConversationRow(conversation: ConversationSummary, muted: Boolean, onClick: () -> Unit) {
+fun ConversationRow(conversation: ConversationSummary, muted: Boolean, myName: String = "", myTone: Int = 0, onClick: () -> Unit) {
     val colors = Lime.colors
     val preview = ListPreview.make(conversation, plainText = ::messagePlainText)
     val time = MessageFormat.listTime(if (conversation.activityAt > 0) conversation.activityAt else conversation.lastMessage?.sentAt)
@@ -268,7 +269,7 @@ fun ConversationRow(conversation: ConversationSummary, muted: Boolean, onClick: 
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         if (!conversation.isGroup && first != null) Avatar(first.initials.ifEmpty { initialsOf(first.name) }, first.tone.toInt(), 52.dp)
-        else Avatar(initialsOf(conversation.title), 0, 52.dp, emoji = conversation.groupEmoji)
+        else GroupAvatar(conversation, myName, myTone, 52.dp)
         Column(Modifier.weight(1f).clearAndSetSemantics { }, verticalArrangement = Arrangement.spacedBy(3.dp)) {
             // At the large text sizes the time goes under the name instead of squeezing it (as iOS does at the accessibility sizes).
             val large = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f

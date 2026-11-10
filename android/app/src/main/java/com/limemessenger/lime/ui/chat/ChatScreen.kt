@@ -94,6 +94,7 @@ import androidx.compose.ui.unit.sp
 import com.limemessenger.lime.R
 import com.limemessenger.lime.chats.AttachmentFormat
 import com.limemessenger.lime.chats.ChatModel
+import com.limemessenger.lime.chats.removeChat
 import com.limemessenger.lime.chats.ChatRow
 import com.limemessenger.lime.chats.ChatsModel
 import com.limemessenger.lime.chats.DeliveryState
@@ -113,7 +114,7 @@ import uniffi.lime_core.messagePlainText
 
 /** A chat (iOS's `ChatView`): the header, the messages, and the composer (or Accept for a stranger's first message). The system back gesture closes it. */
 @Composable
-fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenThread: (MessageItem) -> Unit = {}, modifier: Modifier = Modifier, onOpenProfile: (String, String) -> Unit = { _, _ -> }) {
+fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenThread: (MessageItem) -> Unit = {}, modifier: Modifier = Modifier, onOpenProfile: (String, String) -> Unit = { _, _ -> }, onOpenGroup: () -> Unit = {}) {
     val colors = Lime.colors
     val scope = rememberCoroutineScope()
     val summary = model.summary
@@ -129,7 +130,7 @@ fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenTh
     LaunchedEffect(rows.lastOrNull()?.id) { if (rows.isNotEmpty()) listState.scrollToItem(rows.lastIndex) }
 
     Column(modifier.fillMaxSize().background(colors.canvas).systemBarsPadding().imePadding()) {
-        Header(summary, onBack) { m -> onOpenProfile(m.id, m.name) }
+        Header(summary, chats.myName, chats.myTone, onBack, onOpenGroup) { m -> onOpenProfile(m.id, m.name) }
         LazyColumn(Modifier.weight(1f).fillMaxWidth().testTag("chat-messages"), state = listState, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp)) {
             items(rows, key = { it.id }) { row ->
                 when (row) {
@@ -154,13 +155,14 @@ fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenTh
         }
         model.banner?.let { Text(it, color = colors.danger, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).testTag("chat-banner")) }
         if (summary != null && summary.isRequest) RequestBar(summary.title) { scope.launch { chats.acceptRequest(summary.id) } }
+        else if (summary?.groupEnded != null) EndedBar(summary.groupEnded == "left") { scope.launch { chats.removeChat(summary.id); onBack() } }
         else Composer(model) { text, photos -> scope.launch { if (photos.isNotEmpty()) model.sendPhotos(photos, text) else model.send(text) } }
     }
     viewer?.let { (item, index) -> PhotoViewer(item.attachments.filter { it.mime.startsWith("image/") }, index, model, onClose = { viewer = null }) }
 }
 
 @Composable
-private fun Header(summary: ConversationSummary?, onBack: () -> Unit, onProfile: (uniffi.lime_core.MemberInfo) -> Unit) {
+private fun Header(summary: ConversationSummary?, myName: String, myTone: Int, onBack: () -> Unit, onGroup: () -> Unit, onProfile: (uniffi.lime_core.MemberInfo) -> Unit) {
     val colors = Lime.colors
     val first = summary?.members?.firstOrNull()
     Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -169,15 +171,19 @@ private fun Header(summary: ConversationSummary?, onBack: () -> Unit, onProfile:
         }
         // In a one-to-one chat the avatar and the name open the person's profile.
         val opensProfile = summary != null && !summary.isGroup && first != null
+        // In a group they open the group's details (not once it has ended: nothing there can change).
+        val opensGroup = summary != null && summary.isGroup && !summary.isRequest && summary.groupEnded == null
+        val groupLabel = stringResource(R.string.group_info_open)
         Row(
             Modifier.weight(1f).heightIn(min = 48.dp)
                 .then(if (opensProfile) Modifier.semantics(mergeDescendants = true) { role = Role.Button }.clickable { onProfile(first!!) } else Modifier)
+                .then(if (opensGroup) Modifier.semantics(mergeDescendants = true) { role = Role.Button; contentDescription = "${summary!!.title}, $groupLabel" }.clickable(onClick = onGroup) else Modifier)
                 .testTag("chat-header"),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (summary != null) {
                 if (!summary.isGroup && first != null) Avatar(first.initials.ifEmpty { initialsOf(first.name) }, first.tone.toInt(), 36.dp)
-                else Avatar(initialsOf(summary.title), 0, 36.dp, emoji = summary.groupEmoji)
+                else com.limemessenger.lime.ui.common.GroupAvatar(summary, myName, myTone, 36.dp)
             }
             Text(
                 summary?.title.orEmpty(), color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
@@ -496,5 +502,15 @@ fun ThreadScreen(root: MessageItem, model: ChatModel, onBack: () -> Unit) {
                 }
             }
         }
+    }
+}
+
+/** A group that ended is read-only: "You left this group." or "This group was deleted.", with Remove from my list (as iOS's `endedBar`). */
+@Composable
+private fun EndedBar(left: Boolean, onRemove: () -> Unit) {
+    val colors = Lime.colors
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).background(colors.surface, RoundedCornerShape(22.dp)).padding(horizontal = 20.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(stringResource(if (left) R.string.group_ended_left else R.string.group_ended_deleted), color = colors.textSecondary, fontSize = 15.sp, modifier = Modifier.testTag("group-ended-note"))
+        TextButton(onClick = onRemove, Modifier.heightIn(min = 48.dp).testTag("group-ended-remove")) { Text(stringResource(R.string.group_ended_remove), color = colors.danger, fontSize = 17.sp, fontWeight = FontWeight.SemiBold) }
     }
 }

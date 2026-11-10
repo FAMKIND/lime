@@ -5,6 +5,9 @@
 //   partner echo            run until stopped; accept Ada's first message and reply to each new message with: Ben here: got "<first 40 chars>"
 //   partner photo <file>    send a picture to Ada (the echo also sends one back whenever Ada sends a photo)
 //   partner status          print what Ben's store holds
+//   partner group-echo      like echo, for every GROUP: accept invitations and answer each new message from someone else with: Ben here: got "<first 40 chars>"
+//   partner accept          accept every pending chat request and group invitation once, then stop
+//   --as ben|cleo           (anywhere on the line) who this partner is; Cleo has her own store under ~/.lime/android-partner/cleo/
 //   partner reset           forget Ben's store (do this whenever Ada signs in on a new emulator: her keys are new, and Ben pins the old ones)
 //
 // Ben's sessions come from ~/.lime/android-test-accounts.json (android/tools/staging-test-accounts.sh); his own store and key live in
@@ -22,9 +25,14 @@ import uniffi.lime_core.TransportResponse
 import uniffi.lime_core.messagePlainText
 
 private val home = File(System.getProperty("user.home"), ".lime")
-private val dir = File(home, "android-partner").also { it.mkdirs() }
 private val accountsFile = File(home, "android-test-accounts.json")
-private val sessionFile = File(dir, "session.json")
+
+/** Who this partner is: `--as ben` (the default; the store lives in android-partner/) or `--as cleo` (android-partner/cleo/). */
+private var persona = "ben"
+private val account get() = if (persona == "cleo") "c" else "b"
+private val personaName get() = if (persona == "cleo") "Cleo" else "Ben"
+private val dir get() = (if (persona == "cleo") File(home, "android-partner/cleo") else File(home, "android-partner")).also { it.mkdirs() }
+private val sessionFile get() = File(dir, "session.json")
 
 class Http(private val base: String, private val apiKey: String) : Transport {
     override fun request(method: String, path: String, headers: List<HeaderPair>, body: ByteArray): TransportResponse {
@@ -74,7 +82,7 @@ fun loadAccounts(): Triple<String, Tokens, String> {   // (api url, Ben's tokens
     require(accountsFile.exists()) { "Run android/tools/staging-test-accounts.sh first." }
     val text = accountsFile.readText()
     val api = field(text, "api_url")!!
-    val ben = section(text, "b")
+    val ben = section(text, account)
     val ada = section(text, "a")
     val fromFile = Tokens(field(ben, "access_token")!!, field(ben, "refresh_token")!!, number(ben, "expires_at")!!, field(ben, "user_id")!!)
     // A newer accounts file (the script ran again: new sessions) wins over the partner's own refreshed session.
@@ -111,10 +119,13 @@ fun openStore(): LimeStore {
 }
 
 fun main(args: Array<String>) {
+    val asIndex = args.indexOf("--as")
+    if (asIndex >= 0) persona = args.getOrNull(asIndex + 1)?.lowercase()?.takeIf { it == "ben" || it == "cleo" } ?: error("usage: --as ben|cleo")
+    val args = if (asIndex >= 0) args.filterIndexed { i, _ -> i != asIndex && i != asIndex + 1 }.toTypedArray() else args
     val command = args.firstOrNull() ?: run { System.err.println("usage: partner send \"<text>\" | echo | status | reset"); return }
     if (command == "reset") {
         dir.listFiles()?.filter { it.name.startsWith("lime.db") }?.forEach { it.delete() }
-        println("reset: Ben's store is forgotten (a new device registers on the next command)")
+        println("reset: $personaName's store is forgotten (a new device registers on the next command)")
         return
     }
     val (api, tokens, adaId) = loadAccounts()
@@ -150,7 +161,7 @@ fun main(args: Array<String>) {
             val answered = mutableSetOf<String>()
             runCatching { store.sync(http, freshToken(http, tokens)) }
             runCatching { store.listMessages(dm) }.getOrNull()?.forEach { answered += it.id }
-            println("echo: listening as Ben (Ctrl-C to stop)")
+            println("echo: listening as $personaName (Ctrl-C to stop)")
             while (true) {
                 try {
                     store.sync(http, freshToken(http, tokens))
@@ -163,10 +174,10 @@ fun main(args: Array<String>) {
                         if (photos.isNotEmpty()) {
                             // Prove the photo arrived whole: download it, decrypt it, and report how big it came out.
                             val sizes = photos.map { p -> store.downloadAttachment(http, freshToken(http, tokens), p.id); store.attachmentData(p.id)?.size ?: -1 }
-                            store.queueText(dm, "Ben here: got ${photos.size} photo${if (photos.size == 1) "" else "s"} (${sizes.joinToString { "$it bytes" }})" + (if (words.isNotEmpty()) " and \"$words\"" else ""))
+                            store.queueText(dm, "$personaName here: got ${photos.size} photo${if (photos.size == 1) "" else "s"} (${sizes.joinToString { "$it bytes" }})" + (if (words.isNotEmpty()) " and \"$words\"" else ""))
                             store.sendAttachments(dm, "Ben's photo", listOf(generatedPhoto()), null)
                         } else {
-                            store.queueText(dm, "Ben here: got \"$words\"")
+                            store.queueText(dm, "$personaName here: got \"$words\"")
                         }
                         store.deliverQueued(http, freshToken(http, tokens))
                         println("replied to a message")
@@ -175,6 +186,41 @@ fun main(args: Array<String>) {
                     System.err.println("echo: Ada's keys changed (a new emulator or a fresh sign-in): stop, run `partner reset`, and start echo again")
                 } catch (e: Exception) {
                     System.err.println("echo: ${e::class.simpleName} (will retry)")
+                }
+                Thread.sleep(2000)
+            }
+        }
+        "accept" -> {
+            store.sync(http, freshToken(http, tokens))
+            val pending = store.listConversations().filter { it.requestState == "pending" }
+            for (c in pending) store.acceptRequest(c.id)
+            store.deliverQueued(http, freshToken(http, tokens))
+            println("accepted ${pending.size}")
+        }
+        "group-echo" -> {
+            // Every message already in a group is history; only what arrives from now on is answered (and own messages never are).
+            val answered = mutableSetOf<String>()
+            runCatching { store.sync(http, freshToken(http, tokens)) }
+            for (c in runCatching { store.listConversations() }.getOrDefault(emptyList()).filter { it.isGroup }) runCatching { store.listMessages(c.id) }.getOrNull()?.forEach { answered += it.id }
+            println("group-echo: listening as $personaName (Ctrl-C to stop)")
+            while (true) {
+                try {
+                    store.sync(http, freshToken(http, tokens))
+                    for (c in store.listConversations().filter { it.requestState == "pending" }) { store.acceptRequest(c.id); println("accepted an invitation") }
+                    for (c in store.listConversations().filter { it.isGroup && it.requestState != "pending" }) {
+                        // A group's own lines ("Ada left", "Ada renamed the group to …") are only printed, for the test run to check.
+                        for (m in store.listMessages(c.id).filter { it.localState == "system" && it.id !in answered }) { answered += m.id; println("system: ${m.text}") }
+                        val fresh = store.listMessages(c.id).filter { it.senderId != null && it.id !in answered && it.localState != "system" }
+                        for (m in fresh) {
+                            answered += m.id
+                            val words = messagePlainText(m.text).replace("\n", " ").take(40)
+                            store.queueText(c.id, "$personaName here: got \"$words\"")
+                            store.deliverQueued(http, freshToken(http, tokens))
+                            println("replied in a group")
+                        }
+                    }
+                } catch (e: Exception) {
+                    System.err.println("group-echo: ${e::class.simpleName} (will retry)")
                 }
                 Thread.sleep(2000)
             }
