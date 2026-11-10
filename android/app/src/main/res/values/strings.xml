@@ -334,4 +334,17 @@
     <string name="appearance_background_heading">Background</string>
     <string name="appearance_note">Colours are checked so text stays readable on every combination. Your choice stays on this phone.</string>
     <string name="appearance_reset">Back to lime\u2019s own look</string>
+    <string name="voice_record">Record a voice message</string>
+    <string name="voice_recording">Recording, %1$s</string>
+    <string name="voice_slide_hint">Slide up to lock, left to cancel</string>
+    <string name="voice_speed">Speed %1$s times</string>
+    <string name="voice_mic_denied">lime needs the microphone to record a voice message. You can allow it in your phone\u2019s settings.</string>
+    <string name="voice_mic_unavailable">The microphone isn\u2019t available right now.</string>
+    <string name="file_attach">Attach a file</string>
+    <string name="file_unreadable">That file couldn\u2019t be read.</string>
+    <string name="file_card_words">File: %1$s, %2$s</string>
+    <string name="file_tap">%1$s \u00b7 Tap to download</string>
+    <string name="file_saved">%1$s \u00b7 On this phone</string>
+    <string name="file_downloading">Downloading\u2026</string>
+    <string name="file_removed">Media removed</string>
 </resources>

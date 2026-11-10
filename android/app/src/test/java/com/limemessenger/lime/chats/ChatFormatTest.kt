@@ -46,7 +46,7 @@ class ChatFormatTest {
         assertEquals("Photo", AttachmentFormat.summary(listOf(photo)))
         assertEquals("3 Photos", AttachmentFormat.summary(listOf(photo, photo, photo)))
         assertEquals("Video", AttachmentFormat.summary(listOf(attachment("video/mp4"))))
-        assertEquals("Voice message (0:12)", AttachmentFormat.summary(listOf(attachment("audio/mp4", durationMs = 12_400))))
+        // ("Voice message (0:12)" uses the core's voice_clock now: a JVM test cannot load the native library; VoiceFilesUiTest checks it.)
         assertEquals("Voice message", AttachmentFormat.summary(listOf(attachment("audio/mp4"))))
         assertEquals("Plan.pdf", AttachmentFormat.summary(listOf(attachment("application/pdf", "Plan.pdf"))))
         assertEquals("File", AttachmentFormat.summary(listOf(attachment("application/pdf"))))

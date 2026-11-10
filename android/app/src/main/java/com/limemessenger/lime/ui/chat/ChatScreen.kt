@@ -95,6 +95,8 @@ import com.limemessenger.lime.R
 import com.limemessenger.lime.chats.AttachmentFormat
 import com.limemessenger.lime.chats.ChatModel
 import com.limemessenger.lime.chats.removeChat
+import com.limemessenger.lime.chats.VoiceRecorder
+import kotlinx.coroutines.delay
 import androidx.compose.ui.semantics.selected
 import com.limemessenger.lime.chats.react
 import com.limemessenger.lime.chats.edit
@@ -137,6 +139,14 @@ fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenTh
     var selection by remember { mutableStateOf<Set<String>?>(null) }
     BackHandler(enabled = selection != null && viewer == null) { selection = null }
     val context = LocalContext.current
+    // Voice messages (LIME-308): one player for the chat; the next voice message of the chat plays on by itself; bytes are looked up by attachment id.
+    val voice = remember { com.limemessenger.lime.chats.VoicePlayer(context.applicationContext) }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { voice.stop() } }
+    val voiceNext: (String) -> String? = { id ->
+        val all = model.messages.filter { !it.deleted }.flatMap { m -> m.attachments.filter { it.mime.startsWith("audio/") } }
+        all.getOrNull(all.indexOfFirst { it.id == id } + 1)?.id
+    }
+    val voiceData: suspend (String) -> ByteArray? = { id -> model.messages.flatMap { it.attachments }.firstOrNull { it.id == id }?.let { model.attachmentBytes(it) } }
     fun perform(action: uniffi.lime_core.MessageAction, item: MessageItem) {
         menuFor = null
         when (action) {
@@ -189,6 +199,7 @@ fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenTh
                         onOpenMenu = { menuFor = row.item },
                         onPerform = { action -> perform(action, row.item) },
                         onReact = { emoji -> scope.launch { model.react(row.item, emoji) } },
+                        voice = voice, voiceNext = voiceNext, voiceData = voiceData,
                     )
                 }
             }
@@ -288,9 +299,11 @@ private fun MessageBubble(
     item: MessageItem, summary: ConversationSummary?, showAvatar: Boolean, endsRun: Boolean, showState: Boolean, replyCount: Int,
     onRetry: () -> Unit, onReply: () -> Unit, onOpenThread: () -> Unit, model: ChatModel, onOpenPhoto: (Int) -> Unit,
     selecting: Boolean, selected: Boolean, onToggleSelect: () -> Unit, onOpenMenu: () -> Unit, onPerform: (uniffi.lime_core.MessageAction) -> Unit, onReact: (String) -> Unit,
+    voice: com.limemessenger.lime.chats.VoicePlayer, voiceNext: (String) -> String?, voiceData: suspend (String) -> ByteArray?,
 ) {
     val colors = Lime.colors
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val own = item.isOwn
     val sender = summary?.members?.firstOrNull { it.id == item.senderId }
     val isGroup = summary?.isGroup == true
@@ -316,6 +329,14 @@ private fun MessageBubble(
             }
         }
         if (!item.deleted && photos.isNotEmpty()) add(CustomAccessibilityAction(photoLabel) { onOpenPhoto(0); true })
+        // A voice message plays from its custom actions too (one TalkBack stop per message): play or pause, the speed, and skipping 10 seconds.
+        item.attachments.firstOrNull { it.mime.startsWith("audio/") && !item.deleted }?.let { audio ->
+            val playing = voice.isCurrent(audio.id) && voice.isPlaying
+            add(CustomAccessibilityAction(if (playing) "Pause" else "Play") { scope.launch { voice.toggle(audio.id, voiceNext, voiceData) }; true })
+            add(CustomAccessibilityAction("Change speed") { voice.cycleSpeed(); true })
+            add(CustomAccessibilityAction("Skip forward 10 seconds") { voice.skip(10.0); true })
+            add(CustomAccessibilityAction("Skip back 10 seconds") { voice.skip(-10.0); true })
+        }
         if (failed) add(CustomAccessibilityAction(retryLabel) { onRetry(); true })
     }
     Row(
@@ -354,7 +375,11 @@ private fun MessageBubble(
                         } else {
                             photos.forEachIndexed { index, photo -> PhotoThumb(photo, model) { onOpenPhoto(index) } }
                             if (item.text.isNotEmpty()) MessageText(item.text, color = if (own) colors.ownInk else colors.text, linkColor = if (own) colors.linkOwn else colors.link, modifier = Modifier.testTag("message-text-${item.id}"))
-                            if (photos.size != item.attachments.size) AttachmentFormat.summary(item.attachments.filter { !it.mime.startsWith("image/") })?.let { Text(it, color = if (own) colors.ownInk else colors.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
+                            item.attachments.filter { !it.mime.startsWith("image/") }.forEach { a ->
+                                val ink = if (own) colors.ownInk else colors.text
+                                if (a.mime.startsWith("audio/")) com.limemessenger.lime.ui.chat.VoiceCard(a, voice, voiceNext, voiceData, ink)
+                                else com.limemessenger.lime.ui.chat.FileCard(a, model, ink)
+                            }
                         }
                     }
                 }
@@ -427,6 +452,34 @@ private fun Composer(model: ChatModel, onSend: (String, List<OutgoingAttachment>
             drafts.addAll(made)
         }
     }
+    // Voice messages and files (LIME-308).
+    val capture = LocalVoiceCapture.current
+    val recorder = remember { VoiceRecorder(capture(context.applicationContext)) }
+    val micDenied = stringResource(R.string.voice_mic_denied)
+    val micUnavailable = stringResource(R.string.voice_mic_unavailable)
+    val unreadable = stringResource(R.string.file_unreadable)
+    val fileTitle = uniffi.lime_core.fileTooLargeWords()
+    var micAllowedNow by remember { mutableStateOf(androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) }
+    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> micAllowedNow = granted; if (!granted) problem = micDenied }
+    val finishVoice: () -> Unit = { recorder.finish()?.let { note -> scope.launch { model.sendVoice(note) } } }
+    LaunchedEffect(recorder.isRecording) {
+        while (recorder.isRecording) {
+            recorder.tick()
+            if (recorder.elapsedMs >= recorder.limitMs) finishVoice()   // the longest a voice message can be
+            delay(50)
+        }
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { recorder.cancel() } }
+    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            val picked = withContext(Dispatchers.IO) { readPickedFile(context, uri) }
+            when (picked) {
+                is PickedFile.TooLarge -> problem = fileTitle.joinToString(" ")
+                is PickedFile.Unreadable -> problem = unreadable
+                is PickedFile.Ok -> { problem = null; model.sendPhotos(listOf(picked.attachment), "", "file") }
+            }
+        }
+    }
     val reply = model.replyingTo
     Column(Modifier.fillMaxWidth().background(colors.canvas).padding(horizontal = 8.dp, vertical = 6.dp)) {
         if (reply != null) {
@@ -470,27 +523,43 @@ private fun Composer(model: ChatModel, onSend: (String, List<OutgoingAttachment>
         }
         problem?.let { Text(it, color = colors.danger, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 8.dp).testTag("photo-problem")) }
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            IconButton(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, Modifier.size(56.dp).testTag("attach-photo")) {
-                Icon(Icons.Photo, contentDescription = stringResource(R.string.photo_attach), tint = colors.text)
+            if (recorder.isRecording) RecordingBar(recorder, onSend = finishVoice, onCancel = { recorder.cancel() }, modifier = Modifier.weight(1f)) else {
+                IconButton(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, Modifier.size(56.dp).testTag("attach-photo")) {
+                    Icon(Icons.Photo, contentDescription = stringResource(R.string.photo_attach), tint = colors.text)
+                }
+                OutlinedTextField(
+                    value = text, onValueChange = { text = it }, modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("composer-field"),
+                    placeholder = { Text(stringResource(R.string.chat_message_hint), color = colors.textSecondary) }, maxLines = 5,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default), shape = RoundedCornerShape(24.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = colors.text, unfocusedTextColor = colors.text, focusedContainerColor = colors.surface, unfocusedContainerColor = colors.surface,
+                        focusedBorderColor = colors.text, unfocusedBorderColor = colors.hairline, cursorColor = colors.text,
+                    ),
+                )
+                IconButton(onClick = { filePicker.launch(arrayOf("*/*")) }, Modifier.size(56.dp).testTag("attach-file")) {
+                    Icon(Icons.Attach, contentDescription = stringResource(R.string.file_attach), tint = colors.text)
+                }
             }
-            OutlinedTextField(
-                value = text, onValueChange = { text = it }, modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("composer-field"),
-                placeholder = { Text(stringResource(R.string.chat_message_hint), color = colors.textSecondary) }, maxLines = 5,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default), shape = RoundedCornerShape(24.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = colors.text, unfocusedTextColor = colors.text, focusedContainerColor = colors.surface, unfocusedContainerColor = colors.surface,
-                    focusedBorderColor = colors.text, unfocusedBorderColor = colors.hairline, cursorColor = colors.text,
-                ),
-            )
             Spacer(Modifier.size(4.dp))
             val canSend = text.isNotBlank() || drafts.isNotEmpty()
             val sendLabel = stringResource(R.string.chat_send)
-            Box(
-                Modifier.size(56.dp).background(if (canSend) colors.accent else colors.pressed, CircleShape)
-                    .then(if (canSend) Modifier.clickable(role = Role.Button) { onSend(text, drafts.map { it.attachment }); text = ""; drafts.clear() } else Modifier.semantics { role = Role.Button; disabled() })
-                    .semantics { contentDescription = sendLabel }.testTag("send-button"),
-                contentAlignment = Alignment.Center,
-            ) { Icon(Icons.Send, contentDescription = null, tint = if (canSend) colors.accentInk else colors.textSecondary) }
+            if (canSend) {
+                Box(
+                    Modifier.size(56.dp).background(if (canSend) colors.accent else colors.pressed, CircleShape)
+                        .then(if (canSend) Modifier.clickable(role = Role.Button) { onSend(text, drafts.map { it.attachment }); text = ""; drafts.clear() } else Modifier.semantics { role = Role.Button; disabled() })
+                        .semantics { contentDescription = sendLabel }.testTag("send-button"),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.Send, contentDescription = null, tint = if (canSend) colors.accentInk else colors.textSecondary) }
+            } else if (recorder.phase != VoiceRecorder.Phase.Locked) {
+                MicButton(
+                    onPress = {
+                        if (!micAllowedNow) { micPermission.launch(android.Manifest.permission.RECORD_AUDIO); false }
+                        else { val ok = recorder.start(); if (!ok) problem = micUnavailable; ok }
+                    },
+                    onRelease = { if (recorder.isRecording) finishVoice() }, onLock = { recorder.lock() }, onCancel = { recorder.cancel() },
+                    onHandsFree = { if (!micAllowedNow) micPermission.launch(android.Manifest.permission.RECORD_AUDIO) else if (!recorder.start()) problem = micUnavailable else recorder.lock() },
+                )
+            }
         }
     }
     describing?.let { draft ->
@@ -599,3 +668,42 @@ private fun EndedBar(left: Boolean, onRemove: () -> Unit) {
 /** The words of an action for a custom accessibility action (the same words as the menu rows). */
 @Composable
 private fun actionTitleText(action: uniffi.lime_core.MessageAction): String = actionTitle(action)
+
+/** A file picked from the system's file picker, checked against the limits. */
+private sealed class PickedFile {
+    data class Ok(val attachment: OutgoingAttachment) : PickedFile()
+    object TooLarge : PickedFile()
+    object Unreadable : PickedFile()
+}
+
+/** Reads a picked file (no storage permission: the picker hands over this one file): its size is checked against the core's limit before it is read. A picture is sent as a picture. */
+private fun readPickedFile(context: Context, uri: android.net.Uri): PickedFile {
+    val resolver = context.contentResolver
+    var name = "File"; var size = -1L
+    resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME, android.provider.OpenableColumns.SIZE), null, null, null)?.use { c ->
+        if (c.moveToFirst()) { c.getString(0)?.let { name = it }; if (!c.isNull(1)) size = c.getLong(1) }
+    }
+    if (size >= 0 && uniffi.lime_core.checkFileSize(size.toULong()) == uniffi.lime_core.FileCheck.TOO_LARGE) return PickedFile.TooLarge
+    val mime = resolver.getType(uri) ?: "application/octet-stream"
+    if (mime.startsWith("image/") && mime != "image/gif") AttachmentProcessing.photo(resolver, uri)?.let { return PickedFile.Ok(it.copy(name = name)) }
+    val limit = uniffi.lime_core.attachmentLimits().maxFileBytes.toLong()
+    val bytes = try { resolver.openInputStream(uri)?.use { readUpTo(it, (limit + 1).toInt()) } } catch (e: Exception) { null } ?: return PickedFile.Unreadable
+    return when (uniffi.lime_core.checkFileSize(bytes.size.toULong())) {
+        uniffi.lime_core.FileCheck.TOO_LARGE -> PickedFile.TooLarge
+        uniffi.lime_core.FileCheck.EMPTY -> PickedFile.Unreadable
+        else -> PickedFile.Ok(OutgoingAttachment(bytes, name, mime, null, null, null, ByteArray(0), ByteArray(0), ""))
+    }
+}
+
+/** At most `limit` bytes of a stream (`readNBytes` needs API 33). */
+private fun readUpTo(stream: java.io.InputStream, limit: Int): ByteArray {
+    val out = java.io.ByteArrayOutputStream()
+    val buffer = ByteArray(64 * 1024)
+    var total = 0
+    while (total < limit) {
+        val n = stream.read(buffer, 0, minOf(buffer.size, limit - total))
+        if (n < 0) break
+        out.write(buffer, 0, n); total += n
+    }
+    return out.toByteArray()
+}

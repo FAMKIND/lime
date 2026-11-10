@@ -48,10 +48,8 @@ object AttachmentFormat {
     private fun isVideo(a: AttachmentInfo) = a.mime.startsWith("video/")
     private fun isAudio(a: AttachmentInfo) = a.mime.startsWith("audio/")
 
-    fun voiceClock(seconds: Double): String {
-        val total = seconds.toInt()
-        return "%d:%02d".format(total / 60, total % 60)
-    }
+    /** "0:07", "1:23" (the core's rule, `voice_clock`). */
+    fun voiceClock(seconds: Double): String = uniffi.lime_core.voiceClock(seconds)
 
     fun summary(items: List<AttachmentInfo>): String? {
         val first = items.firstOrNull() ?: return null

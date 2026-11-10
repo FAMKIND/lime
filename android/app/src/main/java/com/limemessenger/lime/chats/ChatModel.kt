@@ -97,8 +97,12 @@ class ChatModel(
         withContext(Dispatchers.IO) { runCatching { chats.core()?.listThread(rootId) }.getOrNull().orEmpty() }
 
     /** Sends photos (processed by [AttachmentProcessing]) with an optional caption, as a reply in a thread when one is being replied to. */
-    suspend fun sendPhotos(items: List<OutgoingAttachment>, caption: String) {
+    /** Tests: sees what the composer hands over instead of the core queueing it (a test store has no account to send from); true = taken. */
+    var outgoingHook: ((List<OutgoingAttachment>, String) -> Boolean)? = null
+
+    suspend fun sendPhotos(items: List<OutgoingAttachment>, caption: String, what: String = "photo") {
         if (items.isEmpty()) return
+        if (outgoingHook?.invoke(items, caption) == true) return
         val core = chats.core() ?: return
         val root = replyingTo?.id
         val queued = try {
@@ -106,7 +110,7 @@ class ChatModel(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            banner = "Couldn’t queue the photo. Try again." + (if (BuildConfig.DEBUG) " (${e::class.simpleName})" else "")
+            banner = "Couldn’t queue the $what. Try again." + (if (BuildConfig.DEBUG) " (${e::class.simpleName})" else "")
             return
         }
         replyingTo = null
@@ -147,6 +151,25 @@ class ChatModel(
         } finally {
             loading.remove(id)
         }
+    }
+
+    /** Sends a recorded voice message: an m4a with its length, and its 64 loudness bars in the preview slot (as iOS). */
+    suspend fun sendVoice(note: VoiceNote) = sendPhotos(
+        listOf(OutgoingAttachment(note.bytes, "Voice message.m4a", "audio/mp4", null, null, note.durationMs.toUInt(), note.waveform, ByteArray(0), "")), "", "voice message",
+    )
+
+    /** The decrypted bytes of a file or voice message: what this phone has, else downloaded now (voice always; a tap for the rest). Null when it cannot be had. */
+    suspend fun attachmentBytes(attachment: AttachmentInfo): ByteArray? {
+        val core = chats.core() ?: return null
+        var data = withContext(Dispatchers.IO) { runCatching { core.attachmentData(attachment.id) }.getOrNull() }
+        if (data == null && !attachment.removed) {
+            val link = chats.transportOrNull() ?: return null
+            val bearer = chats.bearer()
+            val fetched = withContext(Dispatchers.IO) { runCatching { core.downloadAttachment(link, bearer, attachment.id) }.isSuccess }
+            if (fetched) data = withContext(Dispatchers.IO) { runCatching { core.attachmentData(attachment.id) }.getOrNull() }
+        }
+        reload()
+        return data
     }
 
     /** Runs a core change on this chat (a reaction, an edit, a delete, a forward), then reads everything again and sends what was queued. False when the core refused. */

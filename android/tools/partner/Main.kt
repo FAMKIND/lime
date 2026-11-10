@@ -4,6 +4,8 @@
 //   partner send "<text>"   send one message to Ada
 //   partner echo            run until stopped; accept Ada's first message and reply to each new message with: Ben here: got "<first 40 chars>"
 //   partner photo <file>    send a picture to Ada (the echo also sends one back whenever Ada sends a photo)
+//   partner voice [file]    send a voice message to Ada (a generated one-second tone when no file is given); the echo answers a voice message with its length and sends one back
+//   partner file <file>     send a file to Ada; the echo answers a file with its name and the bytes it downloaded
 //   partner status          print what Ben's store holds
 //   partner actions-echo    like echo, and also reacts 👍 to every new message and prints "edited: …" / "deleted: …" when Ada edits or deletes one (LIME-304)
 //   partner group-echo      like echo, for every GROUP: accept invitations and answer each new message from someone else with: Ben here: got "<first 40 chars>"
@@ -68,6 +70,29 @@ fun generatedPhoto(): OutgoingAttachment {
         val out = java.io.ByteArrayOutputStream(); javax.imageio.ImageIO.write(image, "jpg", out); return out.toByteArray()
     }
     return OutgoingAttachment(jpeg(480, 300), "ben.jpg", "image/jpeg", 480u, 300u, null, jpeg(40, 25), ByteArray(0), "A green gradient fading to dark, from Ben")
+}
+
+/** One second of a 440 Hz tone as a WAV (16-bit mono, 22.05 kHz): a voice message Ada's phone can play, with its 64 loudness bars. */
+fun generatedVoice(): OutgoingAttachment {
+    val rate = 22_050
+    val samples = rate
+    val pcm = java.io.ByteArrayOutputStream()
+    for (i in 0 until samples) {
+        val v = (Math.sin(2 * Math.PI * 440.0 * i / rate) * 0.4 * Short.MAX_VALUE).toInt().toShort()
+        pcm.write(v.toInt() and 0xFF); pcm.write((v.toInt() shr 8) and 0xFF)
+    }
+    val data = pcm.toByteArray()
+    fun le(n: Int, bytes: Int) = ByteArray(bytes) { ((n shr (8 * it)) and 0xFF).toByte() }
+    val header = "RIFF".toByteArray() + le(36 + data.size, 4) + "WAVEfmt ".toByteArray() + le(16, 4) + le(1, 2) + le(1, 2) + le(rate, 4) + le(rate * 2, 4) + le(2, 2) + le(16, 2) + "data".toByteArray() + le(data.size, 4)
+    val bars = ByteArray(64) { (100 + 100 * Math.abs(Math.sin(it / 5.0))).toInt().toByte() }
+    return OutgoingAttachment(header + data, "Ben's voice.wav", "audio/wav", null, null, 1000u, bars, ByteArray(0), "")
+}
+
+private fun clock(ms: Long): String { val s = (ms + 500) / 1000; return "%d:%02d".format(s / 60, s % 60) }
+
+private fun mimeOf(file: File) = when (file.extension.lowercase()) {
+    "png" -> "image/png"; "gif" -> "image/gif"; "jpg", "jpeg" -> "image/jpeg"; "m4a" -> "audio/mp4"; "wav" -> "audio/wav"; "pdf" -> "application/pdf"; "txt" -> "text/plain"
+    else -> "application/octet-stream"
 }
 
 private fun field(text: String, key: String): String? = Regex("\"$key\"\\s*:\\s*\"([^\"]*)\"").find(text)?.groupValues?.get(1)
@@ -152,6 +177,21 @@ fun main(args: Array<String>) {
             store.deliverQueued(http, freshToken(http, tokens))
             println("sent")
         }
+        "voice" -> {
+            val file = args.getOrNull(1)?.let { File(it) }
+            val note = if (file == null) generatedVoice() else OutgoingAttachment(file.readBytes(), file.name, mimeOf(file), null, null, args.getOrNull(2)?.toUIntOrNull() ?: 1000u, ByteArray(64) { 128.toByte() }, ByteArray(0), "")
+            store.startDm(adaId, "Ada")
+            store.sendAttachments(dm, "", listOf(note), null)
+            store.deliverQueued(http, freshToken(http, tokens))
+            println("sent")
+        }
+        "file" -> {
+            val file = File(args.getOrNull(1) ?: error("usage: partner file <file>"))
+            store.startDm(adaId, "Ada")
+            store.sendAttachments(dm, "", listOf(OutgoingAttachment(file.readBytes(), file.name, mimeOf(file), null, null, null, ByteArray(0), ByteArray(0), "")), null)
+            store.deliverQueued(http, freshToken(http, tokens))
+            println("sent")
+        }
         "status" -> {
             store.sync(http, freshToken(http, tokens))
             val all = store.listConversations()
@@ -180,6 +220,16 @@ fun main(args: Array<String>) {
                             val sizes = photos.map { p -> store.downloadAttachment(http, freshToken(http, tokens), p.id); store.attachmentData(p.id)?.size ?: -1 }
                             store.queueText(dm, "$personaName here: got ${photos.size} photo${if (photos.size == 1) "" else "s"} (${sizes.joinToString { "$it bytes" }})" + (if (words.isNotEmpty()) " and \"$words\"" else ""))
                             store.sendAttachments(dm, "Ben's photo", listOf(generatedPhoto()), null)
+                        } else if (m.attachments.any { it.mime.startsWith("audio/") }) {
+                            // Prove the voice message arrived whole, say how long it is, and answer with one of our own.
+                            val v = m.attachments.first { it.mime.startsWith("audio/") }
+                            store.downloadAttachment(http, freshToken(http, tokens), v.id)
+                            store.queueText(dm, "$personaName here: got a voice message (${clock((v.durationMs ?: 0u).toLong())}, ${store.attachmentData(v.id)?.size ?: -1} bytes)")
+                            store.sendAttachments(dm, "", listOf(generatedVoice()), null)
+                        } else if (m.attachments.isNotEmpty()) {
+                            val f = m.attachments.first()
+                            store.downloadAttachment(http, freshToken(http, tokens), f.id)
+                            store.queueText(dm, "$personaName here: got a file \"${f.name}\" (${store.attachmentData(f.id)?.size ?: -1} bytes)")
                         } else {
                             store.queueText(dm, "$personaName here: got \"$words\"")
                         }
@@ -211,16 +261,18 @@ fun main(args: Array<String>) {
             println("accepted ${pending.size}")
         }
         "group-echo" -> {
+            // `--direct` also answers one-to-one chats (the night-2 recording uses one partner process each for Ben and Cleo).
+            val answerDirect = "--direct" in args
             // Every message already in a group is history; only what arrives from now on is answered (and own messages never are).
             val answered = mutableSetOf<String>()
             runCatching { store.sync(http, freshToken(http, tokens)) }
-            for (c in runCatching { store.listConversations() }.getOrDefault(emptyList()).filter { it.isGroup }) runCatching { store.listMessages(c.id) }.getOrNull()?.forEach { answered += it.id }
+            for (c in runCatching { store.listConversations() }.getOrDefault(emptyList()).filter { it.isGroup || answerDirect }) runCatching { store.listMessages(c.id) }.getOrNull()?.forEach { answered += it.id }
             println("group-echo: listening as $personaName (Ctrl-C to stop)")
             while (true) {
                 try {
                     store.sync(http, freshToken(http, tokens))
                     for (c in store.listConversations().filter { it.requestState == "pending" }) { store.acceptRequest(c.id); println("accepted an invitation") }
-                    for (c in store.listConversations().filter { it.isGroup && it.requestState != "pending" }) {
+                    for (c in store.listConversations().filter { it.requestState != "pending" && (it.isGroup || answerDirect) }) {
                         // A group's own lines ("Ada left", "Ada renamed the group to …") are only printed, for the test run to check.
                         for (m in store.listMessages(c.id).filter { it.localState == "system" && it.id !in answered }) { answered += m.id; println("system: ${m.text}") }
                         val fresh = store.listMessages(c.id).filter { it.senderId != null && it.id !in answered && it.localState != "system" }

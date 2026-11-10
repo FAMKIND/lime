@@ -99,7 +99,8 @@ class ChatUiTest {
 
     @Test fun sendingShowsTheMessageWithItsStateAndClearsTheField() {
         show(dm); val chat = dm
-        rule.onNodeWithTag("send-button").assertIsNotEnabled()
+        // With nothing typed the microphone is where Send will be (as iOS); typing swaps it for Send.
+        assertEquals(0, count("send-button")); assertEquals(1, count("voice-mic"))
         send("See you at the meeting")
         rule.waitUntil(5_000) { chat.banner != null || chat.messages.any { it.text == "See you at the meeting" } }
         assertEquals(null, chat.banner)
@@ -108,7 +109,7 @@ class ChatUiTest {
         rule.waitUntil(5_000) { count("delivery-sent") > 0 }
         assertTrue(description("message-${mine.id}").startsWith("You, See you at the meeting, "))
         assertTrue(description("message-${mine.id}").endsWith("sent"))
-        rule.onNodeWithTag("send-button").assertIsNotEnabled()   // the field is empty again
+        rule.waitUntil(5_000) { count("send-button") == 0 && count("voice-mic") == 1 }   // the field is empty again: the microphone is back
     }
 
     @Test fun formattedTextIsDrawnAndReadAsPlainWords() {
