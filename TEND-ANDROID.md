@@ -153,3 +153,10 @@ For plot:
 - Kotlin twins added: FieldEditorModel/AboutPreset, JamModel/JamDates/byline. 
 - Choices made (the user to confirm): Settings is a flat screen, not iOS's grouped rows with sub-screens (Privacy, Storage, Devices, … are not built); the profile edit is a row per field (iOS also edits in place on the profile hero: LIME-225); the emoji field for About is a one-emoji text field plus the presets (no emoji keyboard forcing); Remove everything is included because it is a Sign-out sibling on iOS; jam posts show only when `state == "ready"`; the jam feed has no filters/segments (All, Articles, Podcasts, Drafts, Discover), no hide/save, no comments or likes.
 - Not exercised: a real followed jam with posts (Ada follows nobody on staging and subscribing needs the jam's writer; the card and reader are tested on built records); the Settings → links opening a browser; the avatar and name in another person's profile at large font.
+
+## LIME-302 — bring `android` and `main` together (Android night 2, 2026-11-09)
+
+Landed: `git merge main` into `android` was clean (merge commit `d990eb5`; main was at `1751b5e`, 18 commits ahead of the merge base, 50 files changed there, none in `android/`). Survey first: everything `android` changed outside `android/` was in the allowed list (`.gitignore`, `TEND-ANDROID.md`, `docs/android*.md`, `docs/design/android/`, `docs/screens/*.android.md`); no file was changed on both sides.
+Green check on the merged tree: `./gradlew assembleDebug testDebugUnitTest lintDebug` OK; `cargo test --workspace` 428 + 36 + 12 passed, 0 failed; `./core/check-android.sh` OK; `./core/build-ios.sh` OK (the xcframework builds from the merged core; it writes only gitignored files). Instrumented tests were not re-run for the merge (no Android code changed; they run in every later brief).
+Main: fast-forwarded locally in `~/Sites/lime` (`git merge --ff-only android`). **`main` was not pushed.**
+For plot: nothing needed from you. The `timeout` command does not exist on this Mac (my first green script used it): use none.
