@@ -2,8 +2,9 @@ import LocalAuthentication
 import SwiftUI
 import UIKit
 
+// LIME-133b: replaced by the core type LockDelay; delete this copy then.
 /// How long lime may be away before it asks again (LIME-269).
-enum LockDelay: Int, CaseIterable, Identifiable {
+enum AppLockDelay: Int, CaseIterable, Identifiable {
     case immediately = 0, oneMinute = 60, fifteenMinutes = 900, oneHour = 3600
     var id: Int { rawValue }
     var title: String {
@@ -72,8 +73,8 @@ final class AppLock {
     private(set) var isCovered = false
 
     var isEnabled: Bool { defaults.bool(forKey: Self.enabledKey) }
-    var delay: LockDelay {
-        get { LockDelay(rawValue: defaults.integer(forKey: Self.delayKey)) ?? .immediately }
+    var delay: AppLockDelay {
+        get { AppLockDelay(rawValue: defaults.integer(forKey: Self.delayKey)) ?? .immediately }
         set { defaults.set(newValue.rawValue, forKey: Self.delayKey) }
     }
 
@@ -84,7 +85,7 @@ final class AppLock {
     }
 
     /// Whether being away for `elapsed` seconds calls for the lock.
-    static func shouldLock(elapsed: TimeInterval, delay: LockDelay) -> Bool { elapsed >= TimeInterval(delay.rawValue) }
+    static func shouldLock(elapsed: TimeInterval, delay: AppLockDelay) -> Bool { elapsed >= TimeInterval(delay.rawValue) }
 
     /// Turning it on asks the system once (so Face ID's permission appears here and a phone with no passcode says so) and only then switches on.
     func turnOn() async -> Bool {

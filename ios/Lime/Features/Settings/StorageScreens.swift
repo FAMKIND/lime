@@ -5,9 +5,9 @@ struct StorageScreen: View {
     @Environment(ConversationStore.self) private var store
     @State private var summary = ConversationStore.StorageSummary()
     @State private var loaded = false
-    @AppStorage(MediaSettings.keepKey) private var keep = KeepMedia.forever.rawValue
-    @AppStorage(MediaSettings.photosKey) private var photos = AutoDownload.wifiAndMobile.rawValue
-    @AppStorage(MediaSettings.videoFilesKey) private var videoFiles = AutoDownload.wifiOnly.rawValue
+    @AppStorage(MediaSettings.keepKey) private var keep = AppKeepMedia.forever.rawValue
+    @AppStorage(MediaSettings.photosKey) private var photos = AppAutoDownload.wifiAndMobile.rawValue
+    @AppStorage(MediaSettings.videoFilesKey) private var videoFiles = AppAutoDownload.wifiOnly.rawValue
 
     var body: some View {
         SettingsPage(title: "Storage") {
@@ -22,8 +22,8 @@ struct StorageScreen: View {
 
             SettingsFootnote(text: "Keep media")
             SettingsCard {
-                ForEach(KeepMedia.allCases) { option in
-                    choice(option.title, selected: keep == option.rawValue, id: "keep-\(option.rawValue)", last: option == KeepMedia.allCases.last) {
+                ForEach(AppKeepMedia.allCases) { option in
+                    choice(option.title, selected: keep == option.rawValue, id: "keep-\(option.rawValue)", last: option == AppKeepMedia.allCases.last) {
                         keep = option.rawValue
                         Task { await store.applyKeepMedia(); summary = await store.storageSummary() }
                     }
@@ -33,14 +33,14 @@ struct StorageScreen: View {
 
             SettingsFootnote(text: "Download photos automatically")
             SettingsCard {
-                ForEach(AutoDownload.allCases) { option in
-                    choice(option.title, selected: photos == option.rawValue, id: "auto-photos-\(option.rawValue)", last: option == AutoDownload.allCases.last) { photos = option.rawValue }
+                ForEach(AppAutoDownload.allCases) { option in
+                    choice(option.title, selected: photos == option.rawValue, id: "auto-photos-\(option.rawValue)", last: option == AppAutoDownload.allCases.last) { photos = option.rawValue }
                 }
             }
             SettingsFootnote(text: "Download videos and files automatically")
             SettingsCard {
-                ForEach(AutoDownload.allCases) { option in
-                    choice(option.title, selected: videoFiles == option.rawValue, id: "auto-videofiles-\(option.rawValue)", last: option == AutoDownload.allCases.last) { videoFiles = option.rawValue }
+                ForEach(AppAutoDownload.allCases) { option in
+                    choice(option.title, selected: videoFiles == option.rawValue, id: "auto-videofiles-\(option.rawValue)", last: option == AppAutoDownload.allCases.last) { videoFiles = option.rawValue }
                 }
             }
             SettingsFootnote(text: "Voice messages always download. What is not downloaded shows its size and how long it stays available; tap it to download.")

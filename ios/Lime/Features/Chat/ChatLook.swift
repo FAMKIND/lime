@@ -108,7 +108,7 @@ final class ChatLooks: @unchecked Sendable {
             var look = ChatLook()
             look.bubbleTone = Int(arguments[at + 1]); look.bubbleDeep = arguments[at + 2] == "deep"
             let id = arguments[at + 3]
-            if ThemeBackground(rawValue: id) != nil { look.wallpaper = .background(id) } else if ChatLook.presets.contains(where: { $0.id == id }) { look.wallpaper = .preset(id) }
+            if AppThemeBackground(rawValue: id) != nil { look.wallpaper = .background(id) } else if ChatLook.presets.contains(where: { $0.id == id }) { look.wallpaper = .preset(id) }
             chats["dm:sam"] = look
         }
         #endif
@@ -227,7 +227,7 @@ struct WallpaperLayer: View {
         case .none:
             ThemeBackgroundView()
         case .background(let raw):
-            ThemeBackgroundView(override: ThemeBackground(rawValue: raw))
+            ThemeBackgroundView(override: AppThemeBackground(rawValue: raw))
         case .preset(let id):
             PresetWallpaper(id: id)
         case .photo:

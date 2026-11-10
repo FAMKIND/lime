@@ -1,9 +1,10 @@
 import Foundation
 import Observation
 
+// LIME-133b: replaced by the core type NotificationPreview; delete this copy then.
 /// What a notification shows (N2 = A: the name and the message by default; the words are decrypted
 /// on this phone, never by a server).
-enum NotificationPreview: String, CaseIterable, Identifiable, Sendable {
+enum AppNotificationPreview: String, CaseIterable, Identifiable, Sendable {
     case nameAndMessage, nameOnly, hidden
 
     var id: String { rawValue }
@@ -114,8 +115,9 @@ enum CallRingtone {
     static let callKitSoundName = SoundFiles.ring
 }
 
+// LIME-133b: replaced by the core type MuteDuration; delete this copy then.
 /// How long a chat stays muted.
-enum MuteDuration: String, CaseIterable, Identifiable, Sendable {
+enum AppMuteDuration: String, CaseIterable, Identifiable, Sendable {
     case hour, eightHours, week, always
 
     var id: String { rawValue }
@@ -144,7 +146,7 @@ enum MuteDuration: String, CaseIterable, Identifiable, Sendable {
 @Observable
 final class NotificationSettings {
     var enabled: Bool { didSet { defaults.set(enabled, forKey: Keys.enabled) } }
-    var preview: NotificationPreview { didSet { defaults.set(preview.rawValue, forKey: Keys.preview) } }
+    var preview: AppNotificationPreview { didSet { defaults.set(preview.rawValue, forKey: Keys.preview) } }
     var sound: NotificationSound { didSet { defaults.set(sound.rawValue, forKey: Keys.sound) } }
     var callSound: CallSound { didSet { defaults.set(callSound.rawValue, forKey: Keys.callSound) } }
     /// "Not now" was chosen on the explainer: do not ask again by itself (Settings still offers it).
@@ -174,7 +176,7 @@ final class NotificationSettings {
             defaults.set(true, forKey: Keys.soundMigrated)
         }
         enabled = defaults.object(forKey: Keys.enabled) as? Bool ?? true
-        preview = defaults.string(forKey: Keys.preview).flatMap(NotificationPreview.init) ?? .nameAndMessage
+        preview = defaults.string(forKey: Keys.preview).flatMap(AppNotificationPreview.init) ?? .nameAndMessage
         sound = defaults.string(forKey: Keys.sound).flatMap(NotificationSound.init) ?? .limeChime
         callSound = defaults.string(forKey: Keys.callSound).flatMap(CallSound.init) ?? .limeSteelpan
         explainerDismissed = defaults.bool(forKey: Keys.dismissed)
@@ -185,7 +187,7 @@ final class NotificationSettings {
     /// Reads everything again from the defaults (a move to a new phone has just written them: LIME-272c).
     func reloadFromDefaults() {
         enabled = defaults.object(forKey: Keys.enabled) as? Bool ?? true
-        preview = defaults.string(forKey: Keys.preview).flatMap(NotificationPreview.init) ?? .nameAndMessage
+        preview = defaults.string(forKey: Keys.preview).flatMap(AppNotificationPreview.init) ?? .nameAndMessage
         sound = defaults.string(forKey: Keys.sound).flatMap(NotificationSound.init) ?? .limeChime
         callSound = defaults.string(forKey: Keys.callSound).flatMap(CallSound.init) ?? .limeSteelpan
         explainerDismissed = defaults.bool(forKey: Keys.dismissed)
@@ -193,7 +195,7 @@ final class NotificationSettings {
         muted = stored.mapValues { Date(timeIntervalSince1970: $0) }
     }
 
-    func mute(_ conversationID: String, for duration: MuteDuration, now: Date = Date()) {
+    func mute(_ conversationID: String, for duration: AppMuteDuration, now: Date = Date()) {
         muted[conversationID] = duration.end(from: now)
     }
 

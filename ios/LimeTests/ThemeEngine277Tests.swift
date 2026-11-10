@@ -13,12 +13,12 @@ final class ThemeEngine277Tests: XCTestCase {
             Theme.avatarUIColor(5, dark: dark).getRed(&r, green: &g, blue: &b, alpha: nil)
             XCTAssertTrue(g > r && g > b, "lime green, not periwinkle (dark: \(dark))")
         }
-        XCTAssertEqual(ThemeBackground.allCases.count, 8)
+        XCTAssertEqual(AppThemeBackground.allCases.count, 8)
     }
 
     func testEveryAccentOnEveryBackgroundInBothModesReadsAtAA() {
         for accent in 0..<8 {
-            for background in ThemeBackground.allCases {
+            for background in AppThemeBackground.allCases {
                 for dark in [false, true] {
                     for increase in [false, true] {
                         let theme = ThemeResolver.resolve(accent: accent, background: background, dark: dark, increaseContrast: increase)
@@ -52,7 +52,7 @@ final class ThemeEngine277Tests: XCTestCase {
     /// 277g: the pairs the first guard did not cover. Every one passes for every accent, background, mode and Increase Contrast.
     func testTheBubblePairsLinksAndPlaceholdersPassOnEveryBackground() {
         let ownInk = UIColor(hex: 0x131B17)
-        for background in ThemeBackground.allCases {
+        for background in AppThemeBackground.allCases {
             for dark in [false, true] {
                 for increase in [false, true] {
                     let t = ThemeResolver.resolve(accent: 5, background: background, dark: dark, increaseContrast: increase)
@@ -86,7 +86,7 @@ final class ThemeEngine277Tests: XCTestCase {
     }
 
     func testChalkboardIsDarkInBothModesAndTheChoiceIsKeptPerAccount() {
-        XCTAssertTrue(ThemeBackground.chalkboard.forcesDark)
+        XCTAssertTrue(AppThemeBackground.chalkboard.forcesDark)
         XCTAssertEqual(ThemeResolver.resolve(accent: 5, background: .chalkboard, dark: false), ThemeResolver.resolve(accent: 5, background: .chalkboard, dark: true))
         let suite = UserDefaults(suiteName: "lime.theme.test.\(UUID().uuidString)")!
         let store = ThemeStore()
@@ -110,7 +110,7 @@ final class ThemeEngine277Tests: XCTestCase {
 final class ChatLook277dTests: XCTestCase {
     func testMyBubbleFollowsTheAccentAndEveryPairReadsOnEveryBackground() {
         for accent in 0..<8 {
-            for background in ThemeBackground.allCases {
+            for background in AppThemeBackground.allCases {
                 for dark in [false, true] {
                     let t = ThemeResolver.resolve(accent: accent, background: background, dark: dark)
                     XCTAssertGreaterThanOrEqual(ContrastGuard.ratio(t.ownInk, t.own), 4.5, "my text: \(LimeColours.name(accent)), dark \(dark)")

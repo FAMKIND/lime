@@ -139,7 +139,7 @@ struct JamDraftsList: View {
                 if store.draftSelecting {
                     Image(systemName: selected ? "checkmark.circle.fill" : "circle").font(.system(size: 22)).foregroundStyle(selected ? Theme.text : Theme.textSecondary).accessibilityHidden(true)
                 }
-                GroupCircles(plan: GroupAvatarPlan.make(others: others, me: row.authors[0]), size: 52, ringed: Set(row.live.map(\.id)))
+                GroupCircles(plan: AppGroupAvatarPlan.make(others: others, me: row.authors[0]), size: 52, ringed: Set(row.live.map(\.id)))
                     .frame(width: 56, height: 56).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {

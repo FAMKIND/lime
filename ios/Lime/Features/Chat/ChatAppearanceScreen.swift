@@ -76,7 +76,7 @@ struct ChatAppearanceScreen: View {
             if let problem { Text(problem).font(Theme.caption).foregroundStyle(Theme.textSecondary) }
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 80), spacing: 12), count: 3), spacing: 14) {
                 thumb("Default", id: "default", wallpaper: .none)
-                ForEach(ThemeBackground.allCases) { kind in thumb(kind.title, id: kind.rawValue, wallpaper: .background(kind.rawValue)) }
+                ForEach(AppThemeBackground.allCases) { kind in thumb(kind.title, id: kind.rawValue, wallpaper: .background(kind.rawValue)) }
                 ForEach(ChatLook.presets, id: \.id) { preset in thumb(preset.name, id: preset.id, wallpaper: .preset(preset.id)) }
             }
         }

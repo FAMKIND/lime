@@ -66,7 +66,7 @@ struct GroupDetailsView: View {
         .task { await refresh() }
         .accessibilityIdentifier("group-details-page")
         .confirmSheet("Mute \(name)", isPresented: $confirmingMute) {
-            ForEach(MuteDuration.allCases) { duration in
+            ForEach(AppMuteDuration.allCases) { duration in
                 Button(duration.title) { notifications.settings.mute(target.conversationID, for: duration) }
                     .accessibilityIdentifier("mute-\(duration.rawValue)")
             }

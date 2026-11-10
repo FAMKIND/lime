@@ -94,13 +94,13 @@ struct ConversationAvatar: View {
     @ViewBuilder
     private var plan: some View {
         let me = store?.meProvider() ?? SampleData.me
-        GroupCircles(plan: GroupAvatarPlan.make(others: conversation.members, me: me), size: size)
+        GroupCircles(plan: AppGroupAvatarPlan.make(others: conversation.members, me: me), size: size)
     }
 }
 
-/// A group's circles (LIME-150, 152b), drawn from a `GroupAvatarPlan`: link's group pictures and, since LIME-215, a post's authors.
+/// A group's circles (LIME-150, 152b), drawn from a `AppGroupAvatarPlan`: link's group pictures and, since LIME-215, a post's authors.
 struct GroupCircles: View {
-    let plan: GroupAvatarPlan
+    let plan: AppGroupAvatarPlan
     var size: CGFloat = 52
     /// People drawn with a lime ring (the ones writing in a draft right now, LIME-237).
     var ringed: Set<String> = []
@@ -121,7 +121,7 @@ struct GroupCircles: View {
     }
 
     private func circles(_ items: [Item]) -> some View {
-        let spots = GroupAvatarPlan.spots(circles: items.count)
+        let spots = AppGroupAvatarPlan.spots(circles: items.count)
         let d = size * spots.diameter
         return ZStack {
             ForEach(Array(items.enumerated()), id: \.offset) { index, item in
@@ -134,7 +134,7 @@ struct GroupCircles: View {
                             .overlay(Text("+\(extra)").font(.system(size: d * 0.38, weight: .medium)).foregroundStyle(Theme.text))
                     }
                 }
-                .overlay(Circle().strokeBorder(Theme.canvas, lineWidth: GroupAvatarPlan.ringWidth(side: size)))
+                .overlay(Circle().strokeBorder(Theme.canvas, lineWidth: AppGroupAvatarPlan.ringWidth(side: size)))
                 .offset(x: size * at.x, y: size * at.y)
             }
         }

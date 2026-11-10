@@ -85,7 +85,7 @@ final class NotificationTests: XCTestCase {
         XCTAssertEqual(settings.activeMutes(now: now.addingTimeInterval(9 * 86_400)).map(\.conversationID), ["d"])
         settings.unmute("d")
         XCTAssertFalse(settings.isMuted("d", now: now))
-        XCTAssertEqual(MuteDuration.allCases.map(\.title), ["For 1 hour", "For 8 hours", "For 1 week", "Always"])
+        XCTAssertEqual(AppMuteDuration.allCases.map(\.title), ["For 1 hour", "For 8 hours", "For 1 week", "Always"])
     }
 
     // MARK: How an arrival is announced
@@ -147,7 +147,7 @@ final class NotificationTests: XCTestCase {
     }
 
     func testARequestNeverShowsItsWordsWhateverThePreview() {
-        for preview in NotificationPreview.allCases {
+        for preview in AppNotificationPreview.allCases {
             let content = NotificationPolicy.content(for: message(text: "secret words", request: true), preview: preview, sound: true)
             XCTAssertFalse(content.body.contains("secret"), "\(preview)")
             XCTAssertEqual(content.body, "Wants to message you")

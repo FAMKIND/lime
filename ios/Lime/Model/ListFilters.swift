@@ -1,8 +1,9 @@
 import Foundation
 
+// LIME-133b: replaced by the core type ChatFilter; delete this copy then.
 /// The filters on the link list (LIME-124): what kind of chat, pinned, muted, a private label. All that are on apply together, and
 /// with the All | Unread segment.
-struct ChatFilter: Equatable {
+struct AppChatFilter: Equatable {
     enum Kind: Equatable { case direct, group }
     var kind: Kind?
     var pinned = false

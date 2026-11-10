@@ -8,18 +8,18 @@ final class CallPolishTests: XCTestCase {
     private let me = Person(id: "me", name: "Me M")
 
     func testAPairIsTwoOverlappingCirclesTheOtherPersonInFrontAndMeBehind() {
-        let plan = GroupAvatarPlan.make(others: people(1), me: me)
+        let plan = AppGroupAvatarPlan.make(others: people(1), me: me)
         XCTAssertEqual(plan, .pair(front: people(1)[0], back: me))
     }
 
     func testThreeOrFourInAllIsTheClusterOfEveryoneWithMeLast() {
-        XCTAssertEqual(GroupAvatarPlan.make(others: people(2), me: me), .triangle(people(2) + [me]))
-        XCTAssertEqual(GroupAvatarPlan.make(others: people(3), me: me), .ring(shown: people(3) + [me], extra: 0))
+        XCTAssertEqual(AppGroupAvatarPlan.make(others: people(2), me: me), .triangle(people(2) + [me]))
+        XCTAssertEqual(AppGroupAvatarPlan.make(others: people(3), me: me), .ring(shown: people(3) + [me], extra: 0))
     }
 
     func testMoreThanFourShowsThreeAndAPlusNThatCountsMe() {
-        XCTAssertEqual(GroupAvatarPlan.make(others: people(4), me: me), .ring(shown: Array(people(4).prefix(3)), extra: 2))
-        XCTAssertEqual(GroupAvatarPlan.make(others: people(7), me: me), .ring(shown: Array(people(7).prefix(3)), extra: 5))
+        XCTAssertEqual(AppGroupAvatarPlan.make(others: people(4), me: me), .ring(shown: Array(people(4).prefix(3)), extra: 2))
+        XCTAssertEqual(AppGroupAvatarPlan.make(others: people(7), me: me), .ring(shown: Array(people(7).prefix(3)), extra: 5))
     }
 
     func testTheUIKitTwinDrawsThePair() {

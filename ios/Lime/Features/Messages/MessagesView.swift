@@ -158,7 +158,7 @@ struct MessagesView: View {
                 Toggle("Pinned", isOn: $store.chatFilter.pinned)
                 Toggle("Muted", isOn: $store.chatFilter.muted)
             }
-            let labels = ChatFilter.labels(in: store.chats)
+            let labels = AppChatFilter.labels(in: store.chats)
             if !labels.isEmpty {
                 Menu("By label") {
                     ForEach(labels, id: \.self) { label in
@@ -170,7 +170,7 @@ struct MessagesView: View {
                 Label(store.requests.isEmpty ? "Requests" : "Requests (\(store.requests.count))", systemImage: "envelope")
             }
             if store.chatFilter.isOn {
-                Button("Clear filters", role: .destructive) { store.chatFilter = ChatFilter() }
+                Button("Clear filters", role: .destructive) { store.chatFilter = AppChatFilter() }
             }
         }
     }
@@ -193,7 +193,7 @@ struct MessagesView: View {
                     EmptyChatsView(onNewMessage: { showNewMessage = true }, onFind: { store.path.append(MessagesRoute.search) }, onInvite: { inviting = true })
                 } else if !store.chats.isEmpty && shownChats.isEmpty {
                     FilteredEmpty(text: store.chatUnreadOnly && !store.chatFilter.isOn ? "No unread chats" : "No chats match") {
-                        store.chatFilter = ChatFilter(); store.chatUnreadOnly = false
+                        store.chatFilter = AppChatFilter(); store.chatUnreadOnly = false
                     }
                 }
             }
@@ -260,7 +260,7 @@ struct MessagesView: View {
         .refreshable { await store.pullToRefresh() }
         .animation(.snappy, value: shownChats.map(\.id))
         .confirmSheet(muteTitle, isPresented: Binding(get: { muting != nil }, set: { if !$0 { muting = nil } })) {
-            ForEach(MuteDuration.allCases) { duration in
+            ForEach(AppMuteDuration.allCases) { duration in
                 Button(duration.title) {
                     if let id = muting { notifications.settings.mute(id, for: duration) }
                     muting = nil

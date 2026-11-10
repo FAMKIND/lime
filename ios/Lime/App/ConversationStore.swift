@@ -175,7 +175,7 @@ final class ConversationStore {
     var callFilter = CallFilter()
     /// The link list's All | Unread segment and its filters.
     var chatUnreadOnly = false
-    var chatFilter = ChatFilter()
+    var chatFilter = AppChatFilter()
     /// The jam tab's search screen is showing.
     var jamSearching = false
     /// Counts re-taps of a tab (a tap on the tab already showing): the section pops to its root, then scrolls to the top.

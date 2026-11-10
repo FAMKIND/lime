@@ -182,7 +182,7 @@ struct PrivacyScreen: View {
                         Text("Ask").font(Theme.body).foregroundStyle(Theme.text)
                         Spacer()
                         Picker("Ask", selection: Binding(get: { lockDelay }, set: { lockDelay = $0; AppLock.shared.delay = $0 })) {
-                            ForEach(LockDelay.allCases) { Text($0.title).tag($0) }
+                            ForEach(AppLockDelay.allCases) { Text($0.title).tag($0) }
                         }
                         .labelsHidden().tint(Theme.textSecondary)
                         .accessibilityIdentifier("privacy-lock-delay")
@@ -525,7 +525,7 @@ struct AcknowledgementsScreen: View {
 
 /// A small sample of one background, drawn with the same code as the real one.
 struct ThemeTile: View {
-    let kind: ThemeBackground
+    let kind: AppThemeBackground
     let dark: Bool
 
     var body: some View {

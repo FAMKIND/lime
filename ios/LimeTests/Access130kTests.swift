@@ -7,7 +7,7 @@ final class Access130kTests: XCTestCase {
         var worst: (ratio: Double, label: String)?
         var failures: [String] = []
         var count = 0
-        for background in ThemeBackground.allCases {
+        for background in AppThemeBackground.allCases {
             for accent in 0..<8 {
                 for dark in [false, true] {
                     for increase in [false, true] {

@@ -73,7 +73,7 @@ final class Access130Tests: XCTestCase {
     }
 
     func testTheMenuOrderIsTheDocumentedOne() {
-        let all = MessageAction.allCases.map(\.title)
+        let all = AppMessageAction.allCases.map(\.title)
         XCTAssertEqual(all, ["React", "Reply", "Forward", "Edit", "Copy", "Save to my GIFs", "Select", "Report", "Delete"])
         let gif = AttachmentItem(id: "g", mime: "image/gif", name: "a.gif", size: 10)
         let list = plan(message(own: false, text: "Fun", attachments: [gif]))

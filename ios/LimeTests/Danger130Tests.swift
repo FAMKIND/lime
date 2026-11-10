@@ -6,7 +6,7 @@ import XCTest
 final class Danger130Tests: XCTestCase {
     private func report() -> String {
         var lines: [String] = []
-        for background in ThemeBackground.allCases {
+        for background in AppThemeBackground.allCases {
             for dark in [false, true] {
                 for ic in [false, true] {
                     let t = ThemeResolver.resolve(accent: LimeColours.lime, background: background, dark: dark, increaseContrast: ic)
@@ -18,7 +18,7 @@ final class Danger130Tests: XCTestCase {
     }
 
     func testDangerTextHas4Point5OnCanvasSurfaceAndBubbleEverywhere() {
-        for background in ThemeBackground.allCases {
+        for background in AppThemeBackground.allCases {
             for dark in [false, true] {
                 let t = ThemeResolver.resolve(accent: LimeColours.lime, background: background, dark: dark, increaseContrast: false)
                 for (name, bg) in [("canvas", t.canvas), ("surface", t.surface), ("bubble", t.bubble)] {
@@ -29,7 +29,7 @@ final class Danger130Tests: XCTestCase {
     }
 
     func testWithIncreaseContrastDangerTextHasSevenToOne() {
-        for background in ThemeBackground.allCases {
+        for background in AppThemeBackground.allCases {
             for dark in [false, true] {
                 let t = ThemeResolver.resolve(accent: LimeColours.lime, background: background, dark: dark, increaseContrast: true)
                 for (name, bg) in [("canvas", t.canvas), ("surface", t.surface), ("bubble", t.bubble)] {

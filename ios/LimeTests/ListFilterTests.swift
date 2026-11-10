@@ -18,29 +18,29 @@ final class ListFilterTests: XCTestCase {
 
     func testEachFilterNarrowsTheListAndNoneShowsEverything() {
         let none = { (_: String) in false }
-        XCTAssertEqual(ChatFilter().apply(chats, unreadOnly: false, isMuted: none).map(\.id), ["a", "b", "g1", "g2", "c"])
-        XCTAssertEqual(ChatFilter(kind: .direct).apply(chats, unreadOnly: false, isMuted: none).map(\.id), ["a", "b", "c"])
-        XCTAssertEqual(ChatFilter(kind: .group).apply(chats, unreadOnly: false, isMuted: none).map(\.id), ["g1", "g2"])
-        XCTAssertEqual(ChatFilter(pinned: true).apply(chats, unreadOnly: false, isMuted: none).map(\.id), ["a", "g1"])
-        XCTAssertEqual(ChatFilter(muted: true).apply(chats, unreadOnly: false, isMuted: { $0 == "b" || $0 == "g2" }).map(\.id), ["b", "g2"])
-        XCTAssertEqual(ChatFilter(label: "Grade 5").apply(chats, unreadOnly: false, isMuted: none).map(\.id), ["b"])
-        XCTAssertEqual(ChatFilter().apply(chats, unreadOnly: true, isMuted: none).map(\.id), ["a", "g2"], "Unread = chats with something unread")
+        XCTAssertEqual(AppChatFilter().apply(chats, unreadOnly: false, isMuted: none).map(\.id), ["a", "b", "g1", "g2", "c"])
+        XCTAssertEqual(AppChatFilter(kind: .direct).apply(chats, unreadOnly: false, isMuted: none).map(\.id), ["a", "b", "c"])
+        XCTAssertEqual(AppChatFilter(kind: .group).apply(chats, unreadOnly: false, isMuted: none).map(\.id), ["g1", "g2"])
+        XCTAssertEqual(AppChatFilter(pinned: true).apply(chats, unreadOnly: false, isMuted: none).map(\.id), ["a", "g1"])
+        XCTAssertEqual(AppChatFilter(muted: true).apply(chats, unreadOnly: false, isMuted: { $0 == "b" || $0 == "g2" }).map(\.id), ["b", "g2"])
+        XCTAssertEqual(AppChatFilter(label: "Grade 5").apply(chats, unreadOnly: false, isMuted: none).map(\.id), ["b"])
+        XCTAssertEqual(AppChatFilter().apply(chats, unreadOnly: true, isMuted: none).map(\.id), ["a", "g2"], "Unread = chats with something unread")
     }
 
     func testFiltersCombineWithAndAndTheCountIsHowManyAreOn() {
         let none = { (_: String) in false }
-        let both = ChatFilter(kind: .group, pinned: true)
+        let both = AppChatFilter(kind: .group, pinned: true)
         XCTAssertEqual(both.apply(chats, unreadOnly: false, isMuted: none).map(\.id), ["g1"], "Groups and Pinned: only pinned groups")
         XCTAssertEqual(both.activeCount, 2)
-        XCTAssertEqual(ChatFilter(kind: .direct, pinned: true).apply(chats, unreadOnly: true, isMuted: none).map(\.id), ["a"], "with the Unread segment too")
-        XCTAssertEqual(ChatFilter(kind: .direct, pinned: true, muted: true, label: "x").activeCount, 4)
-        XCTAssertEqual(ChatFilter().activeCount, 0)
-        XCTAssertFalse(ChatFilter().isOn)
+        XCTAssertEqual(AppChatFilter(kind: .direct, pinned: true).apply(chats, unreadOnly: true, isMuted: none).map(\.id), ["a"], "with the Unread segment too")
+        XCTAssertEqual(AppChatFilter(kind: .direct, pinned: true, muted: true, label: "x").activeCount, 4)
+        XCTAssertEqual(AppChatFilter().activeCount, 0)
+        XCTAssertFalse(AppChatFilter().isOn)
     }
 
     func testLabelsInUseAreTheSortedPrivateLabelsOfDirectChats() {
-        XCTAssertEqual(ChatFilter.labels(in: chats), ["Grade 4", "Grade 5"])
-        XCTAssertEqual(ChatFilter.labels(in: [chat("x")]), [])
+        XCTAssertEqual(AppChatFilter.labels(in: chats), ["Grade 4", "Grade 5"])
+        XCTAssertEqual(AppChatFilter.labels(in: [chat("x")]), [])
     }
 
     private func call(_ id: String, video: Bool, outgoing: Bool, _ outcome: CallOutcome = .completed) -> CallRecord {

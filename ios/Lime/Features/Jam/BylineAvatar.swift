@@ -62,7 +62,7 @@ struct BylineAvatar: View {
                 .frame(width: size, height: size)
             } else if people.count > 1, let writer = people.first {
                 // Co-authors, drawn the way link draws a group's picture (LIME-215).
-                GroupCircles(plan: GroupAvatarPlan.make(others: Array(people.dropFirst()), me: writer), size: size)
+                GroupCircles(plan: AppGroupAvatarPlan.make(others: Array(people.dropFirst()), me: writer), size: size)
             } else if let person = people.first {
                 AvatarView(person: person, size: size)
             } else {

@@ -5,7 +5,7 @@ import UIKit
 /// screens and pushed pages; cards, rows and bars keep the theme's surface on top. Reduce Transparency draws the plain paper only.
 struct ThemeBackgroundView: View {
     /// A chat's own choice of one of the eight (LIME-277d); nil is the global one.
-    var override: ThemeBackground? = nil
+    var override: AppThemeBackground? = nil
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -35,8 +35,8 @@ struct ThemeBackgroundView: View {
 
 /// A pattern alone, for the small samples in the picker (Living shows its tone gradient).
 struct ThemeBackgroundSample: View {
-    let kind: ThemeBackground
-    let theme: ResolvedTheme
+    let kind: AppThemeBackground
+    let theme: AppResolvedTheme
     var body: some View {
         switch kind {
         case .plain: Color.clear
@@ -48,8 +48,8 @@ struct ThemeBackgroundSample: View {
 
 /// The drawn patterns, one `Canvas` each.
 private struct PatternCanvas: View {
-    let kind: ThemeBackground
-    let theme: ResolvedTheme
+    let kind: AppThemeBackground
+    let theme: AppResolvedTheme
 
     var body: some View {
         Canvas(rendersAsynchronously: false) { context, size in
@@ -158,7 +158,7 @@ private struct PatternCanvas: View {
 /// Living (261/261b): the ambient colours from your own photo, or from your colour when you have none, drifting slowly (still with Reduce Motion) under a veil
 /// of the canvas so text stays readable.
 private struct LivingBackground: View {
-    let theme: ResolvedTheme
+    let theme: AppResolvedTheme
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {

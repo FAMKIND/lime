@@ -30,8 +30,9 @@ final class MessageActionsState {
     var reporting: ReportTarget?
 }
 
+// LIME-133b: replaced by the core type MessageAction; delete this copy then.
 /// One thing a message's menu can do (LIME-130-1). The long-press menu and VoiceOver's actions are both built from `MessageActionPlan`, so they cannot drift.
-enum MessageAction: String, CaseIterable, Sendable {
+enum AppMessageAction: String, CaseIterable, Sendable {
     case react = "React", reply = "Reply", forward = "Forward", edit = "Edit", copy = "Copy", saveGIF = "Save to my GIFs", select = "Select", report = "Report", delete = "Delete"
     var title: String { rawValue }
     var symbol: String {
@@ -65,9 +66,9 @@ enum MessageAction: String, CaseIterable, Sendable {
 
 /// Which actions a message offers, in the menu's order: the reaction row first, then Reply, Forward, Edit, Copy, Save to my GIFs, Select, Report, Delete.
 enum MessageActionPlan {
-    static func actions(for message: Message, inThread: Bool, now: Date = Date()) -> [MessageAction] {
+    static func actions(for message: Message, inThread: Bool, now: Date = Date()) -> [AppMessageAction] {
         let settled = !message.state.isInFlight && message.state != .failed
-        var list: [MessageAction] = []
+        var list: [AppMessageAction] = []
         if !message.deleted && settled { list.append(.react) }
         if !message.deleted, !inThread, settled { list.append(.reply) }
         if !message.deleted, message.call == nil, message.emergency == nil { list.append(.forward) }
@@ -91,7 +92,7 @@ enum MessageActionPlan {
 /// Runs a message action (set by the screen's `MessageActionsHost`, read by each bubble).
 struct MessageActionPerformer: Equatable {
     let inThread: Bool
-    let perform: (MessageAction, Message) -> Void
+    let perform: (AppMessageAction, Message) -> Void
     static func == (lhs: MessageActionPerformer, rhs: MessageActionPerformer) -> Bool { lhs.inThread == rhs.inThread }
 }
 
@@ -221,7 +222,7 @@ struct MessageActionsHost: ViewModifier {
     }
 
     /// Runs an action (a menu row, or an accessibility action: one path for both).
-    private func perform(_ action: MessageAction, on message: Message) {
+    private func perform(_ action: AppMessageAction, on message: Message) {
         state.menu = nil
         switch action {
         case .react: state.picking = message

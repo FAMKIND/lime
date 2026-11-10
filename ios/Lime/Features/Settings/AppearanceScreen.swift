@@ -93,7 +93,7 @@ private struct AccentDot: View {
 
 /// A tiny thumbnail of a background, for a row's right-hand side.
 private struct MiniBackground: View {
-    let kind: ThemeBackground
+    let kind: AppThemeBackground
     @Environment(\.colorScheme) private var scheme
     var body: some View {
         let theme = ThemeResolver.resolve(accent: ThemeStore.shared.accent, background: kind, dark: scheme == .dark)
@@ -228,7 +228,7 @@ private struct BackgroundPage: View {
         SettingsPage(title: "Background") {
             AppearancePreview()
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 80), spacing: 12), count: 3), spacing: 14) {
-                ForEach(ThemeBackground.allCases) { kind in
+                ForEach(AppThemeBackground.allCases) { kind in
                     let on = store.background == kind
                     Button { store.background = kind } label: {
                         VStack(spacing: 6) {

@@ -27,8 +27,8 @@ struct NotificationsScreen: View {
             if settings.enabled {
                 SettingsFootnote(text: "Preview")
                 SettingsCard {
-                    ForEach(NotificationPreview.allCases) { option in
-                        choice(option.title, selected: settings.preview == option, id: "preview-\(option.rawValue)", last: option == NotificationPreview.allCases.last) {
+                    ForEach(AppNotificationPreview.allCases) { option in
+                        choice(option.title, selected: settings.preview == option, id: "preview-\(option.rawValue)", last: option == AppNotificationPreview.allCases.last) {
                             settings.preview = option
                         }
                     }

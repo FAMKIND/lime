@@ -1,5 +1,6 @@
 import Foundation
 
+// LIME-133b: replaced by the core type GroupAvatarPlan; delete this copy then.
 /// What a group's picture (no group photo, no emoji) draws (LIME-150 item 11, LIME-152b): the other members **and you**, others first, you last,
 /// as overlapping circles inside the one avatar circle, each with a thin outline ring so every face reads where circles overlap.
 /// - **two people in all (you and one other):** two circles, the other person in front, you behind;
@@ -7,13 +8,13 @@ import Foundation
 /// - **four in all:** a circle of circles (one at each of top, right, bottom and left, overlapping a little);
 /// - **more:** the first three others and a "+N" for the rest (N counts you), laid out as the four.
 /// Pure, so the SwiftUI avatar and the UIKit twin (`PiPGroupAvatarView`) follow one rule; the numbers are in `docs/screens/group-avatar.md`.
-enum GroupAvatarPlan: Equatable {
+enum AppGroupAvatarPlan: Equatable {
     case pair(front: Person, back: Person)
     case triangle([Person])
     case ring(shown: [Person], extra: Int)
     case single(Person)
 
-    static func make(others: [Person], me: Person) -> GroupAvatarPlan {
+    static func make(others: [Person], me: Person) -> AppGroupAvatarPlan {
         switch others.count {
         case 0: return .single(me)
         case 1: return .pair(front: others[0], back: me)

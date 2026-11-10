@@ -16,8 +16,9 @@ enum LimeColours {
     static func name(_ tone: Int) -> String { names[((tone % 8) + 8) % 8] }
 }
 
+// LIME-133b: replaced by the core type ThemeBackground; delete this copy then.
 /// The eight backgrounds.
-enum ThemeBackground: String, CaseIterable, Identifiable {
+enum AppThemeBackground: String, CaseIterable, Identifiable {
     case plain, paper, dots, lined, graph, chalkboard, bulletin, living
 
     var id: String { rawValue }
@@ -115,8 +116,9 @@ enum ContrastGuard {
     }
 }
 
+// LIME-133b: replaced by the core type ResolvedTheme; delete this copy then.
 /// A theme worked out for one accent, background and mode.
-struct ResolvedTheme: Equatable {
+struct AppResolvedTheme: Equatable {
     var canvas: UIColor, surface: UIColor, text: UIColor, secondary: UIColor, hairline: UIColor, accent: UIColor, accentInk: UIColor
     /// The other person's bubble (text on it is `text`), its edge, links in it, and the hints of empty fields (LIME-277g).
     var bubble: UIColor, bubbleEdge: UIColor, link: UIColor, placeholder: UIColor, placeholderLarge: UIColor
@@ -172,10 +174,10 @@ enum LivingVeil {
 }
 
 enum ThemeResolver {
-    nonisolated(unsafe) private static var cache: [String: ResolvedTheme] = [:]
+    nonisolated(unsafe) private static var cache: [String: AppResolvedTheme] = [:]
     private static let lock = NSLock()
 
-    static func resolve(accent: Int, background: ThemeBackground, dark: Bool, increaseContrast: Bool = false) -> ResolvedTheme {
+    static func resolve(accent: Int, background: AppThemeBackground, dark: Bool, increaseContrast: Bool = false) -> AppResolvedTheme {
         let darkMode = background.forcesDark || dark
         let key = "\(accent)|\(background.rawValue)|\(darkMode)|\(increaseContrast)"
         lock.lock(); defer { lock.unlock() }
@@ -206,7 +208,7 @@ enum ThemeResolver {
         let linkOwn = ContrastGuard.nudge(UIColor(hex: darkMode ? 0x0A5524 : 0x1F6B2E), against: [own], minimum: ContrastGuard.text)
         let danger = ContrastGuard.nudge(UIColor(hex: darkMode ? Theme.dangerHex.dark : Theme.dangerHex.light), against: on + [bubble],
                                          minimum: increaseContrast ? ContrastGuard.enhanced : ContrastGuard.text)
-        let made = ResolvedTheme(canvas: canvas, surface: surface, text: text, secondary: secondary, hairline: hairline, accent: accentFill, accentInk: ContrastGuard.ink(on: accentFill),
+        let made = AppResolvedTheme(canvas: canvas, surface: surface, text: text, secondary: secondary, hairline: hairline, accent: accentFill, accentInk: ContrastGuard.ink(on: accentFill),
                             bubble: bubble, bubbleEdge: UIColor(hex: base.bubbleEdge ?? (darkMode ? 0x3D4441 : 0xDDDDD9)), link: link, placeholder: placeholder, placeholderLarge: placeholderLarge,
                             own: own, ownInk: ownInk, linkOwn: linkOwn, chip: chip, chipMine: chipMine, ownSecondary: ownSecondary, danger: danger)
         cache[key] = made
@@ -221,7 +223,7 @@ final class ThemeStore: @unchecked Sendable {
 
     /// The tone index of the accent (5 = lime, the default).
     var accent = LimeColours.lime { didSet { save() } }
-    var background = ThemeBackground.plain { didSet { save() } }
+    var background = AppThemeBackground.plain { didSet { save() } }
 
     /// My own picture, for the Living background's colours (set by the app when it has one).
     var livingPhoto: UIImage?
@@ -238,12 +240,12 @@ final class ThemeStore: @unchecked Sendable {
         guard account != nil else { accent = LimeColours.lime; background = .plain; return }
         let stored = defaults.object(forKey: key("accent")) as? Int
         accent = stored.map { min(7, max(0, $0)) } ?? LimeColours.lime
-        background = defaults.string(forKey: key("background")).flatMap(ThemeBackground.init(rawValue:)) ?? .plain
+        background = defaults.string(forKey: key("background")).flatMap(AppThemeBackground.init(rawValue:)) ?? .plain
         #if DEBUG
         // Screenshots and UI tests: `-lime-theme-accent 3 -lime-theme-background chalkboard`.
         let arguments = ProcessInfo.processInfo.arguments
         if let at = arguments.firstIndex(of: "-lime-theme-accent"), at + 1 < arguments.count, let value = Int(arguments[at + 1]) { accent = min(7, max(0, value)) }
-        if let at = arguments.firstIndex(of: "-lime-theme-background"), at + 1 < arguments.count, let value = ThemeBackground(rawValue: arguments[at + 1]) { background = value }
+        if let at = arguments.firstIndex(of: "-lime-theme-background"), at + 1 < arguments.count, let value = AppThemeBackground(rawValue: arguments[at + 1]) { background = value }
         #endif
     }
 
@@ -256,7 +258,7 @@ final class ThemeStore: @unchecked Sendable {
     func reset() { accent = LimeColours.lime; background = .plain }
 
     /// The theme for a trait collection, read when a colour is drawn.
-    func resolved(dark: Bool, increaseContrast: Bool) -> ResolvedTheme {
+    func resolved(dark: Bool, increaseContrast: Bool) -> AppResolvedTheme {
         ThemeResolver.resolve(accent: accent, background: background, dark: dark, increaseContrast: increaseContrast)
     }
 

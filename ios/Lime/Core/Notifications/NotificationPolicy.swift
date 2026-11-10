@@ -79,7 +79,7 @@ enum NotificationPolicy {
 
     /// The words of a banner or notification for the person's preview choice. A request never shows its
     /// words, whatever the choice (nobody has accepted that person yet).
-    static func content(for message: IncomingMessage, preview: NotificationPreview, sound: Bool) -> NotificationContent {
+    static func content(for message: IncomingMessage, preview: AppNotificationPreview, sound: Bool) -> NotificationContent {
         if let card = message.emergency, !message.isRequest {
             let words = EmergencyCopy.notification(card: card, senderName: message.senderName)
             return NotificationContent(title: words.title, body: words.body, threadIdentifier: message.conversationID, conversationID: message.conversationID,

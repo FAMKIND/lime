@@ -6,7 +6,7 @@ import XCTest
 final class Access130cTests: XCTestCase {
     // 1. Captions on bubbles: 4.5:1 (7:1 with Increase Contrast for the main text) in every theme, light and dark.
     func testSecondaryTextReadsOnTheOtherBubbleAndMyCaptionsOnMyBubbleInEveryTheme() {
-        for background in ThemeBackground.allCases {
+        for background in AppThemeBackground.allCases {
             for accent in 0..<8 {
                 for dark in [false, true] {
                     for ic in [false, true] {

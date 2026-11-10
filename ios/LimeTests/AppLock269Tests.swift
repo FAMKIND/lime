@@ -9,7 +9,7 @@ private struct Answer: LockAuthenticator {
 /// LIME-269: the lock's rules (the system's Face ID is faked).
 @MainActor
 final class AppLock269Tests: XCTestCase {
-    private func lock(ok: Bool = true, enabled: Bool = true, delay: LockDelay = .immediately) -> AppLock {
+    private func lock(ok: Bool = true, enabled: Bool = true, delay: AppLockDelay = .immediately) -> AppLock {
         let defaults = UserDefaults(suiteName: "lock-\(UUID().uuidString)")!
         defaults.set(enabled, forKey: AppLock.enabledKey)
         defaults.set(delay.rawValue, forKey: AppLock.delayKey)

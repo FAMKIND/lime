@@ -403,7 +403,7 @@ final class PiPGroupAvatarView: UIView {
             circle.clipsToBounds = false
             if let me {
                 // The picture includes me (LIME-150): the same plan as the chat's avatar.
-                switch GroupAvatarPlan.make(others: people, me: me) {
+                switch AppGroupAvatarPlan.make(others: people, me: me) {
                 case .single(let person): addMember(person)
                 case .pair(let front, let back): addMember(back); addMember(front)
                 case .triangle(let people): for person in people { addMember(person) }
@@ -470,13 +470,13 @@ final class PiPGroupAvatarView: UIView {
         emojiLabel.frame = circle.bounds
         emojiLabel.font = .systemFont(ofSize: side * 0.5)
         // The same plan as the chat's avatar: overlapping circles with thin rings.
-        let spots = GroupAvatarPlan.spots(circles: members.count)
+        let spots = AppGroupAvatarPlan.spots(circles: members.count)
         let d = side * spots.diameter
         for (index, member) in members.enumerated() {
             let at = spots.centres[min(index, spots.centres.count - 1)]
             member.circle.frame = CGRect(x: side / 2 + side * at.x - d / 2, y: side / 2 + side * at.y - d / 2, width: d, height: d)
             member.circle.layer.cornerRadius = d / 2
-            member.circle.layer.borderWidth = members.count > 1 ? GroupAvatarPlan.ringWidth(side: side) : 0
+            member.circle.layer.borderWidth = members.count > 1 ? AppGroupAvatarPlan.ringWidth(side: side) : 0
             member.circle.layer.borderColor = UIColor(white: 0.08, alpha: 1).cgColor
             member.photo?.frame = member.circle.bounds
             member.label?.frame = member.circle.bounds

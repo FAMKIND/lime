@@ -246,7 +246,7 @@ struct ProfileView: View {
         .sheet(isPresented: $verifying) { NavigationStack { ScanQRScreen(closeSheet: { verifying = false }) }.presentationDetents([.large]) }
         .sheet(isPresented: $showStorage) { NavigationStack { ChatMediaScreen(conversationID: "dm:\(route.userID)") }.presentationDetents([.large]) }
         .confirmSheet("Mute \(displayName)", isPresented: $confirmingMute) {
-            ForEach(MuteDuration.allCases) { duration in
+            ForEach(AppMuteDuration.allCases) { duration in
                 Button(duration.title) { notifications.settings.mute("dm:\(route.userID)", for: duration) }
                     .accessibilityIdentifier("mute-\(duration.rawValue)")
             }

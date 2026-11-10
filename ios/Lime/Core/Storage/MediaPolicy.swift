@@ -1,8 +1,9 @@
 import Foundation
 import Network
 
+// LIME-133b: replaced by the core type AutoDownload; delete this copy then.
 /// Automatic download choices (Settings → Storage).
-enum AutoDownload: String, CaseIterable, Identifiable, Sendable {
+enum AppAutoDownload: String, CaseIterable, Identifiable, Sendable {
     case wifiAndMobile, wifiOnly, never
     var id: String { rawValue }
     var title: String {
@@ -14,8 +15,9 @@ enum AutoDownload: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+// LIME-133b: replaced by the core type KeepMedia; delete this copy then.
 /// How long to keep received media on this phone ("Keep media").
-enum KeepMedia: String, CaseIterable, Identifiable, Sendable {
+enum AppKeepMedia: String, CaseIterable, Identifiable, Sendable {
     case forever, year, month
     var id: String { rawValue }
     var title: String {
@@ -41,9 +43,9 @@ enum MediaSettings {
     static let videoFilesKey = "lime.autoDownload.videoFiles"
     static let keepKey = "lime.keepMedia"
 
-    static var photos: AutoDownload { AutoDownload(rawValue: UserDefaults.standard.string(forKey: photosKey) ?? "") ?? .wifiAndMobile }
-    static var videoFiles: AutoDownload { AutoDownload(rawValue: UserDefaults.standard.string(forKey: videoFilesKey) ?? "") ?? .wifiOnly }
-    static var keep: KeepMedia { KeepMedia(rawValue: UserDefaults.standard.string(forKey: keepKey) ?? "") ?? .forever }
+    static var photos: AppAutoDownload { AppAutoDownload(rawValue: UserDefaults.standard.string(forKey: photosKey) ?? "") ?? .wifiAndMobile }
+    static var videoFiles: AppAutoDownload { AppAutoDownload(rawValue: UserDefaults.standard.string(forKey: videoFilesKey) ?? "") ?? .wifiOnly }
+    static var keep: AppKeepMedia { AppKeepMedia(rawValue: UserDefaults.standard.string(forKey: keepKey) ?? "") ?? .forever }
 }
 
 /// Free space and the kind of network, read when a download is about to start. Tests inject both with launch arguments
@@ -95,7 +97,7 @@ final class StorageGuard {
     /// May Lime fetch this by itself? (Voice always, within the low-storage rule; pictures and the rest by the settings.)
     func mayAutoDownload(_ item: AttachmentItem) -> Bool {
         if isLow { return false }
-        let setting: AutoDownload
+        let setting: AppAutoDownload
         switch item.kind {
         case .audio: return true
         case .image: setting = MediaSettings.photos
