@@ -1,6 +1,57 @@
 # TEND-ANDROID.md
 
-## Prototype notes (LIME-301, the end of the run, 2026-11-09 ~10:20)
+## Prototype notes, night 2 (LIME-309, 2026-11-10 ~02:30)
+
+**What you have now:** everything of night 1 plus **groups, message actions, the full chat list controls and search, account settings, Appearance, and voice messages and files**, each proved on staging with the partner (Ben, and Cleo for groups) on **two headless emulators (API 26 and API 36)**. `main` was fast-forwarded to `android` first (LIME-302, **not pushed**: `git -C ~/Sites/lime push origin main` is yours to do after your check); the `android` branch is pushed. Nothing has run on a real phone yet.
+
+**Watch/see:** `~/Desktop/lime-android-night2/` — `0228-night2.mp4` (the whole night-2 walk-through, about 3 minutes, API 36) and 12 screenshots: `1-list`, `2-new-group`, `3-group-chat` (Ben and Cleo both answer), `4-message-menu` (the six reactions and the actions), `5-reaction-and-edit`, `6-recording` (a voice message being recorded), `7-row-actions` (pin, mute, label…), `8-search`, `9-appearance` (Blue on Paper), `10-privacy` (Lock lime), `11-largest-font`, `12-dark`. Re-make them with `android/tools/record-night2.sh` (and night 1's with `record-demo.sh`; needs the emulator, `~/.lime/staging.env`, and about 4 minutes).
+
+**How to play (10 minutes):**
+1. Start an emulator; `android/tools/staging-test-accounts.sh --push` (creates/reuses **Ada, Ben and Cleo**; pushes fresh sessions; staging only, these three accounts only); `cd android && ./gradlew installDebug`; open **lime** → **Use a test account → Ada Android**.
+2. In **two** terminals: `android/tools/partner/run reset && android/tools/partner/run group-echo --direct` and `android/tools/partner/run reset --as cleo && android/tools/partner/run group-echo --direct --as cleo` (each accepts invitations and answers every message from someone else, in groups and in one-to-one chats, with `<Name> here: got "…"`). For Ben's reactions, voice messages and file replies use `run actions-echo` (reacts 👍, prints edits and deletes) or `run echo` (also answers photos, voice messages and files) instead.
+3. Pencil → search `ben_android` → say hello; same for `cleo_android`. Pencil → **New group** → pick both → Next → name it → Create. Write to the group.
+4. Long-press a message: the six reactions, Reply, Forward, Edit (yours), Copy, Select, Delete. Long-press a chat in the list (or swipe it): Pin, Mute (how long), Mark read/unread, Label, Delete. The magnifier searches chats and messages; **Filter** next to All | Unread.
+5. Your avatar → Settings: **Appearance** (colours and backgrounds), **Privacy → Lock lime** (set a screen lock first: `adb shell locksettings set-pin 1234`), **Notifications**, **Storage**, **Change password** (a real change needs the emailed code: try it on a throwaway account only).
+6. In a chat: **hold the microphone** to record (slide up to lock, left to cancel); the paperclip sends a file.
+**Proof:** `android/tools/connected.sh` runs every instrumented test on both emulators and then the staging classes, one at a time with the right partners (`StagingChatTest`, `StagingGroupsTest`, `StagingActionsTest`, `StagingListTest`, `StagingVoiceFilesTest`; `STAGING_ONLY=1` skips the plain pass, `AVDS=lime-api36` runs one emulator, `STAGING_CLASSES="…"` picks classes). Staging allows **10 device registrations per hour per account** and every staging class registers Ada once: do not run it more than twice an hour. Counts at the end of the night: 65 JVM unit tests, 65 instrumented tests (8 of them staging), and `cargo test --workspace` 469 + 36 + 12.
+
+**What landed, per brief (commits on `android`):**
+| Brief | What | Commit |
+|---|---|---|
+| 302 | `main` merged into `android` (clean), main fast-forwarded locally, not pushed | `d990eb5`, `726eef3` |
+| 303 | groups: new group, details (rename, add, remove, leave), ended groups, group pictures; Cleo; the partner's `--as`, `group-echo`, `accept` | `87c3886` |
+| 304 | message actions: six reactions and chips, edit, delete (me/everyone), forward, select; TalkBack custom actions | `b2fc8d7` |
+| 305 | chat list: swipe and long-press actions, pin, mute, label, read/unread, delete, filters, search | `f2c924d` |
+| 306 | settings: change password, notifications (+ foreground banner), storage, Lock lime (`BiometricPrompt`, `FLAG_SECURE`) | `fe88ebb` |
+| 307 | Appearance: light/dark, eight colours, eight backgrounds, the contrast guard (the engine's rules in core) | `32866bc` |
+| 308 | voice messages (hold/lock/cancel, card, speed) and files (picker, card) | `f60c90c` |
+| 309 | this recording and these notes | (the commit that carries this block) |
+
+**Core rules added (iOS to adopt in LIME-133b; each is a NEW core file with Rust tests copied from the Swift cases; iOS keeps its Swift until then):**
+- `client/group_rules.rs` — group avatar plan and spots (`GroupAvatarPlan.swift`; `CallPolishTests`)
+- `client/message_rules.rs` — `can_edit`, `can_delete_for_everyone`, `message_actions` (the menu), `quick_reactions` (`Models.swift`, `MessageActions.swift`; `MessageActionsTests`, `CallBubbleTests`)
+- `client/list_rules.rs` — unread count, mute durations/ends/active mutes, `ChatFilter` (`Models.swift`, `NotificationSettings.swift`, `ListFilters.swift`; `ListFilterTests`, `NotificationTests`)
+- `client/settings_rules.rs` — app lock delay (`should_lock`, `hides_notification_text`), media policy (`may_auto_download`, keep media), notification words (`AppLock.swift`, `MediaPolicy.swift`, `NotificationPolicy.swift`; `AppLock269Tests`, `NotificationTests`)
+- `client/theme_rules.rs` — the accents, backgrounds, `resolve_theme`, the contrast guard (`ThemeEngine.swift`; `ThemeEngine277Tests`)
+- `client/attachment_rules.rs` — voice waveform/clock/position/speeds, file limits and words (`VoiceMessages.swift`, `AttachmentModels.swift`; `VoiceVideoTests`)
+Only registration lines in `core/src/client.rs` touch an existing core file. `core/Cargo.toml` is untouched. `build-ios.sh` builds on the merged tree.
+
+**Kotlin twins still on Android (LIME-133 to move; headed `// ANDROID DEBT`):** the auth service and models (`LiveAuthService`, `AuthModels`, `AuthService`, now with the password-change calls), `OnboardingModel`/`PasswordChecks`, `ChangePasswordModel`, `ConnectionProblem`, `TermsAcceptance`, `AccountSession`, `ProfileEditor`, the sync/reload parts of `ChatsModel`, the open-chat parts of `ChatModel`, `ChatRows`/`DeliveryState`/`MessageSpeech`, `ChatFormat` (`MessageFormat`, `AttachmentFormat.summary`/`symbol`, `ListPreview`, `OfflineCopy`, `AvatarTone`), `NewMessage` (the lookup, known teachers), `AttachmentProcessing`, `ArrivalBanner` (which message gets a banner), and the jam feed models. Deleted this night: the unread twins (now core calls) and the voice clock.
+
+**Not built (the next weeks):** calls (1:1 and group), push (FCM vs UnifiedPush is its own decision), Bluetooth mesh (needs real phones), jam writing / co-editing / bands, GIFs and stickers, moderation (Report, Block), emergency, account deletion (a critical design: yours first), move to a new phone, the group photo/cover/colour and the hero, Pin a message, Save-to-my-GIFs, video messages and transcripts, per-chat looks and the backgrounds' patterns, notification and call **sounds**, an in-app text size (Android's own Font size is honoured), jam search and the People lookup inside search.
+
+**Choices made for you to confirm (each is written under its brief):** leaving a group keeps it as an ended read-only chat with "Remove from my list" (as iOS and core do); mute is kept in the app's preferences, not "core settings" (the core has no settings store; adding one is a migration in an existing core file); swipe-left opens the actions sheet instead of revealing buttons; the long-press menu is a bottom sheet, not iOS's lifted bubble; text size follows the system; the microphone replaces Send while the field is empty (as iOS); Appearance sits in Settings (Android has no Customize screen yet) and is per phone, not per account; the lock uses `BIOMETRIC_WEAK | DEVICE_CREDENTIAL` through `androidx.biometric` 1.1.0 (so `MainActivity` is a `FragmentActivity`); `ACCESS_NETWORK_STATE` (a normal permission) and `RECORD_AUDIO` (asked at the first press of the microphone) are the only permissions added.
+
+**Known failures / things to watch:**
+- No known failing test. Flakes seen and fixed (each in its brief): the "Delete me" step of `StagingActionsTest` once on API 36 (typing right after the Edit dialog), a test assuming Ben's chat was read; three older tests tapped rows that moved below the fold on the small API 26 screen after Settings grew (they scroll first now).
+- The two partners must not answer each other's echoes (they did, once, in the first recording take: fixed, they now ignore messages that start with `<Name> here: `).
+- **Staging rate limit:** 10 device registrations per hour per account; the night stayed under it by spacing runs.
+- **iOS moved while I worked** (tend-iOS was paused, but `main` already had the contrast-guard fix `90262c9` when I merged): the theme port is of the merged `ThemeEngine.swift`. If iOS changes the engine again before LIME-133b, `theme_rules.rs` must follow.
+- Lint: 0 errors; warnings as before plus a few new unused-resource and deprecation notes.
+- Not run: TalkBack on a device (only semantics: one stop per message/row/card, custom actions for every action, labels, 48 dp targets, 200% font); **real hardware**; the real emailed code (sign-up, password change); a real `BiometricPrompt` with a fingerprint (the lock was tested with a fake authenticator and a fake clock; **try Lock lime on the emulator with a PIN**); the `FLAG_SECURE` recent-apps picture; the foreground banner on screen (its words and rules are tested); the group-call, push and mesh paths (not built).
+- Small visual notes from the recording: the three-circle group picture's initials are partly covered where circles overlap at 52 dp; the Settings About row and long values wrap at 200% (checked, not clipped).
+
+## Prototype notes, night 1 (LIME-301, 2026-11-09 ~10:20) — kept for the record; night 2's are above
 
 **What you have:** an Android app (`android/`, Kotlin + Jetpack Compose, `com.limemessenger.lime`, minSdk 26, running LimeCore) that signs in to **staging**, lists chats, and exchanges end-to-end-encrypted text and photos with a partner "phone", plus new chat, profile and settings basics and a read-only jam tab. Everything below ran on **two headless emulators (API 26 and API 36)**; nothing has run on a real phone yet. Branch `android` (pushed, never merged; main untouched).
 
@@ -218,3 +269,9 @@ Not built (as briefed or out of reach): voice transcripts, video messages, the p
 Not exercised: the microphone on a real phone (the emulators have one, `MediaRecorder` works there; quality unknown), playing through a phone's speaker or earpiece, a recording interrupted by a call or going to the background, TalkBack on a device, the system permission dialog by hand (the tests grant it).
 Choices made (the user to confirm): the microphone button replaces Send while the field is empty (iOS's composer does the same); the loudness bars travel in the attachment's preview slot (that is what iOS does); the speed button shows only while a message plays; Ben's reply voice message is a WAV (the partner is a JVM tool: no AAC encoder), which Android plays fine; a recording shows no "slide to cancel" arrow animation.
 For plot: nothing needed.
+
+## LIME-309 — the recording and the notes (Android night 2, last)
+
+Landed: `android/tools/record-night2.sh` (installs, pushes the three accounts, starts Ben and Cleo with `group-echo --direct`, films `Night2RecordingTest` with `screenrecord`, then the largest-font and dark screenshots) and `Night2RecordingTest` (the scripted walk-through: a group with Ben and Cleo, a reaction and an edit, a voice message with the real microphone, pin and search, Appearance, Privacy), the partner's `group-echo --direct` (also answers one-to-one chats) with the rule that it never answers another partner's echo (the first take showed Ben and Cleo answering each other: 22 unread in the group; the second take is clean), and the `## Prototype notes, night 2` block at the top of this file. The clip and 12 screenshots are in `~/Desktop/lime-android-night2/` (outside the repo). `lime-api36`, headless; the take passed.
+Not exercised: a real phone, TalkBack, Lock lime with a real screen lock (the film shows the Privacy screen; the lock itself is tested with fakes).
+For plot: decisions to confirm are under "Choices made for you to confirm" at the top. `main` is fast-forwarded locally and not pushed.

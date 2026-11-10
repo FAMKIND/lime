@@ -275,7 +275,8 @@ fun main(args: Array<String>) {
                     for (c in store.listConversations().filter { it.requestState != "pending" && (it.isGroup || answerDirect) }) {
                         // A group's own lines ("Ada left", "Ada renamed the group to …") are only printed, for the test run to check.
                         for (m in store.listMessages(c.id).filter { it.localState == "system" && it.id !in answered }) { answered += m.id; println("system: ${m.text}") }
-                        val fresh = store.listMessages(c.id).filter { it.senderId != null && it.id !in answered && it.localState != "system" }
+                        // (Never answer another partner's echo: Ben and Cleo would answer each other for ever.)
+                        val fresh = store.listMessages(c.id).filter { it.senderId != null && it.id !in answered && it.localState != "system" && !Regex("^(Ben|Cleo) here: ").containsMatchIn(messagePlainText(it.text)) }
                         for (m in fresh) {
                             answered += m.id
                             val words = messagePlainText(m.text).replace("\n", " ").take(40)
