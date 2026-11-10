@@ -113,41 +113,49 @@ struct JamArticleCover: View {
     /// Opening a post marks it read: the dot goes.
     @AppStorage(JamRead.key) private var readList: String = ""
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     var body: some View {
         let writer = store.teacher(post.author)
-        ZStack(alignment: .bottomLeading) {
-            CoverArt(image: image, person: writer, org: store.orgName(post), orgId: post.jamId)
-            if JamRead.isUnread(post, me: store.meProvider().id) {
-                VStack { HStack { Circle().fill(.white).frame(width: 12, height: 12).overlay(Circle().stroke(.black.opacity(0.35), lineWidth: 1)).padding(14).accessibilityElement().accessibilityLabel("Unread").accessibilityIdentifier("jam-unread-\(post.postId)"); Spacer() }; Spacer() }
+        let big = typeSize.isAccessibilitySize
+        let size = JamMedia.size(ratio: JamMedia.coverRatio, column: JamMedia.column, screenHeight: JamMedia.windowHeight)
+        let unread = JamRead.isUnread(post, me: store.meProvider().id)
+        // The words are the content and the picture is its background, so at accessibility sizes the card grows with the text instead of clipping it
+        // (LIME-130-6a). At the usual sizes the words are shorter than the frame and it is the same height as before.
+        VStack(alignment: .leading, spacing: 4) {
+            if big && unread { Text("New").font(Theme.font(.caption, weight: .bold)).foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 2).background(.black.opacity(0.55), in: Capsule()) }
+            Spacer(minLength: 0)
+            Text(post.title).font(Theme.font(.title3, weight: .bold)).foregroundStyle(.white).lineLimit(big ? nil : 3).multilineTextAlignment(.leading)
+                .accessibilityIdentifier("jam-article-card-title")
+            if !post.subtitle.isEmpty {
+                Text(post.subtitle).font(Theme.font(.subheadline)).foregroundStyle(.white.opacity(0.95)).lineLimit(big ? nil : 2).multilineTextAlignment(.leading)
+                    .accessibilityIdentifier("jam-article-card-subtitle")
             }
-            // A stronger scrim from the bottom (LIME-215) so the title and subtitle keep their contrast on a white sky.
-            LinearGradient(stops: [.init(color: .clear, location: 0.15), .init(color: .black.opacity(0.62), location: 0.5), .init(color: .black.opacity(0.9), location: 1)], startPoint: .top, endPoint: .bottom)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(post.title).font(Theme.font(.title3, weight: .bold)).foregroundStyle(.white).lineLimit(3).multilineTextAlignment(.leading)
-                    .accessibilityIdentifier("jam-article-card-title")
-                if !post.subtitle.isEmpty {
-                    Text(post.subtitle).font(Theme.font(.subheadline)).foregroundStyle(.white.opacity(0.95)).lineLimit(2).multilineTextAlignment(.leading)
-                        .accessibilityIdentifier("jam-article-card-subtitle")
-                }
-                // Part of a series: inside the card, under the subtitle (LIME-243).
-                if post.series != nil { SeriesTag(post: post, onScrim: true) }
-            }
-            .padding(.leading, 16).padding(.trailing, 64).padding(.bottom, 16)
-            HStack {
-                Spacer()
-                VStack {
-                    Spacer()
-                    Button { JamSaved.toggle(post.postId); saved = JamSaved.contains(post.postId) } label: {
-                        Image(systemName: saved ? "bookmark.fill" : "bookmark").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white).frame(width: 40, height: 40).background(.black.opacity(0.45), in: Circle()).frame(width: 44, height: 44)
-                    }
-                    .accessibilityLabel(saved ? "Saved" : "Save").accessibilityHint("Saves it on this phone to read later").accessibilityIdentifier("jam-article-save-\(post.postId)")
-                    .padding(.trailing, 6).padding(.bottom, 6)
-                }
+            // Part of a series: inside the card, under the subtitle (LIME-243).
+            if post.series != nil { SeriesTag(post: post, onScrim: true) }
+        }
+        .padding(.leading, 16).padding(.trailing, 64).padding(.bottom, 16).padding(.top, big ? 60 : 0)
+        .frame(width: size.width, alignment: .leading)
+        .frame(minHeight: size.height, alignment: .bottomLeading)
+        .background {
+            ZStack(alignment: .bottomLeading) {
+                CoverArt(image: image, person: writer, org: store.orgName(post), orgId: post.jamId)
+                // A stronger scrim from the bottom (LIME-215) so the title and subtitle keep their contrast on a white sky.
+                LinearGradient(stops: [.init(color: .clear, location: 0.15), .init(color: .black.opacity(0.62), location: 0.5), .init(color: .black.opacity(0.9), location: 1)], startPoint: .top, endPoint: .bottom)
             }
         }
-        // Taller since the subtitle joined the title (LIME-215b): two thirds of a portrait (4:5) photo's height at the same width, about width x 0.83.
-        .frame(width: JamMedia.size(ratio: JamMedia.coverRatio, column: JamMedia.column, screenHeight: JamMedia.windowHeight).width,
-               height: JamMedia.size(ratio: JamMedia.coverRatio, column: JamMedia.column, screenHeight: JamMedia.windowHeight).height)
+        .overlay(alignment: .topLeading) {
+            if unread && !big {
+                Circle().fill(.white).frame(width: 12, height: 12).overlay(Circle().stroke(.black.opacity(0.35), lineWidth: 1)).padding(14).accessibilityElement().accessibilityLabel("Unread").accessibilityIdentifier("jam-unread-\(post.postId)")
+            }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            Button { JamSaved.toggle(post.postId); saved = JamSaved.contains(post.postId) } label: {
+                Image(systemName: saved ? "bookmark.fill" : "bookmark").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white).frame(width: 40, height: 40).background(.black.opacity(0.45), in: Circle()).frame(width: 44, height: 44)
+            }
+            .accessibilityLabel(saved ? "Saved" : "Save").accessibilityHint("Saves it on this phone to read later").accessibilityIdentifier("jam-article-save-\(post.postId)")
+            .padding(.trailing, 6).padding(.bottom, 6)
+        }
         .jamMediaClip()
         .accessibilityElement(children: .contain)
         .task(id: store.jamAttachments(post.postId).map(\.attachmentId)) {
@@ -210,6 +218,9 @@ struct JamArticlePage: View {
     @State private var offset: CGFloat = 0
     @State private var lastOffset: CGFloat = 0
     @State private var barHidden = false
+    /// Hidden for the eye only when scrolling down; with VoiceOver or Switch Control the bars stay (they need them in reach), and while typing the pill goes
+    /// from the screen and from VoiceOver together (LIME-130-6a).
+    private var barsGone: Bool { barHidden && !PlayerControls.keepsVisible }
     @State private var showingDates = false
     @State private var confirmingUnsubscribe = false
     /// Where the head (title, byline) ends in the scroll view: the title pill comes in once it is above the bar.
@@ -256,17 +267,20 @@ struct JamArticlePage: View {
             // The actions slide down with the bar as you read, and come back as you scroll up (LIME-188z); they stay in the accessibility tree.
             if let post {
                 JamActionPill(share: { sharing = true }, postID: post.postId, comment: { scrollTarget = "comments" }).padding(.horizontal, 48).padding(.bottom, 6).accessibilityIdentifier("jam-article-pill-\(post.postId)")
-                    .offset(y: (barHidden || typing) && !reduceMotion ? 120 : 0)
-                    .opacity(barHidden || typing ? 0 : 1)
-                    .allowsHitTesting(!(barHidden || typing))
+                    .offset(y: (barsGone || typing) && !reduceMotion ? 120 : 0)
+                    .opacity(barsGone || typing ? 0 : 1)
+                    .allowsHitTesting(!(barsGone || typing))
+                    .accessibilityHidden(barsGone || typing)
                     .animation(reduceMotion ? .linear(duration: 0.15) : .easeOut(duration: 0.2), value: barHidden)
             }
         }
         // ...and the dock goes with them.
-        .toolbar(barHidden ? .hidden : .automatic, for: .tabBar)
+        .toolbar(barsGone ? .hidden : .automatic, for: .tabBar)
         .animation(.easeOut(duration: 0.2), value: barHidden)
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
+        // The system back is hidden for the glass Back, so the two-finger "Z" goes back from here (LIME-130-6a).
+        .accessibilityAction(.escape) { dismiss() }
         .onAppear { store.refreshJams() }
         .confirmationDialog("Unsubscribe from \(post.map { store.jamTitle($0.jamId) } ?? "this jam")?", isPresented: $confirmingUnsubscribe, titleVisibility: .visible) {
             Button("Unsubscribe", role: .destructive) { if let post { Task { await store.unsubscribe(post.jamId) } } }.accessibilityIdentifier("jam-article-unsubscribe-confirm")
@@ -420,8 +434,9 @@ struct JamArticlePage: View {
             circle("ellipsis", label: "More", id: "jam-article-more") { options = true }
         }
         .padding(.horizontal, 16).padding(.top, 6)
-        .offset(y: barHidden && !reduceMotion ? -90 : 0)
-        .opacity(barHidden ? 0 : 1)
+        .offset(y: barsGone && !reduceMotion ? -90 : 0)
+        .opacity(barsGone ? 0 : 1)
+        .accessibilityHidden(barsGone)
         .animation(reduceMotion ? .linear(duration: 0.15) : .easeOut(duration: 0.2), value: barHidden)
         .animation(.easeOut(duration: 0.2), value: showsPill)
     }
@@ -698,7 +713,7 @@ struct ReaderOptionsSheet: View {
         .sheet(isPresented: $sharing) { JamShareSheet(post: post) }
         .reportSheet($reporting)
         .confirmationDialog("Delete this post?", isPresented: $confirmingDelete, titleVisibility: .visible) {
-            Button("Delete post", role: .destructive) { Task { _ = await store.deleteJamPost(post.postId); dismiss(); deleted() } }.accessibilityIdentifier("options-delete-confirm")
+            Button("Delete post", role: .destructive) { Task { if await store.deleteJamPost(post.postId) { dismiss(); deleted() } else { store.showBanner("Couldn\u{2019}t delete the post. Try again.") } } }.accessibilityIdentifier("options-delete-confirm")
             Button("Cancel", role: .cancel) {}
         } message: { Text("It goes from your subscribers' phones too.") }
         .onAppear { saved = JamSaved.contains(post.postId) }

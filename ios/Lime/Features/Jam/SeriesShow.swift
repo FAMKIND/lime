@@ -130,13 +130,13 @@ struct SeriesPage: View {
                 }
                 if let description = meta?.description, !description.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(description).font(Theme.body).foregroundStyle(.white.opacity(0.92)).lineLimit(more ? nil : 2).accessibilityIdentifier("series-description")
+                        Text(description).font(Theme.body).foregroundStyle(.white).lineLimit(more ? nil : 2).coverTextScrim().accessibilityIdentifier("series-description")
                         if !more { Button("MORE") { more = true }.font(Theme.font(.footnote, weight: .bold)).foregroundStyle(.white).frame(minHeight: 44, alignment: .leading).accessibilityIdentifier("series-more-text") }
                     }
                 }
-                Text(metaLine(creator: creator, parts: parts)).font(Theme.secondary).foregroundStyle(.white.opacity(0.8)).accessibilityIdentifier("series-meta")
+                Text(metaLine(creator: creator, parts: parts)).font(Theme.secondary).foregroundStyle(.white).coverTextScrim().accessibilityIdentifier("series-meta")
                 // Read marks among the parts this page lists, never more than them (LIME-260c; the declared total is not mixed in).
-                Text("\(min(readCount, parts.count)) of \(parts.count) read").font(Theme.secondary).foregroundStyle(.white.opacity(0.8)).accessibilityIdentifier("series-progress")
+                Text("\(min(readCount, parts.count)) of \(parts.count) read").font(Theme.secondary).foregroundStyle(.white).coverTextScrim().accessibilityIdentifier("series-progress")
             }
             .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 24)
             .frame(maxWidth: .infinity, alignment: .leading)

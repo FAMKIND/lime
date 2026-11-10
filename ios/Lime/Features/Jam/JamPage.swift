@@ -199,6 +199,8 @@ struct JamPostCard: View {
     /// A long quick post is cut at 8 lines; "more" opens it here.
     @State private var expanded = false
     @State private var cut = false
+    /// Redraws the card (and what VoiceOver reads) when Save changes.
+    @AppStorage(JamSaved.key) private var savedList = ""
 
     var body: some View {
         let writer = store.teacher(post.author)
@@ -230,6 +232,7 @@ struct JamPostCard: View {
             if post.state == "ready", post.kind != "article" { JamAttachmentsView(postID: post.postId, compact: true) }
             actions
         }
+        .modifier(oneStop(writer))
         .padding(.horizontal, 20).padding(.vertical, 14)
         .overlay(alignment: .topTrailing) {
             HStack(spacing: 0) {
@@ -242,6 +245,29 @@ struct JamPostCard: View {
             .padding(.trailing, 8).padding(.top, 8)
         }
         }
+    }
+
+    /// The card as one stop for VoiceOver and Switch Control (LIME-130-6a).
+    private func oneStop(_ writer: Person) -> JamCardStop {
+        let counts = store.jamCounts(post.postId)
+        let saved = JamSaved.contains(post.postId)
+        let asJam = post.displayAs == "jam"
+        let author = asJam ? store.jamTitle(post.jamId) : writer.name
+        let isArticle = post.kind == "article"
+        let label = JamCardSpeech.label(
+            author: author, time: JamDates.text(post.created),
+            unread: isArticle && JamRead.isUnread(post, me: store.meProvider().id),
+            title: post.title, subtitle: post.kind == "quick" ? "" : post.subtitle, text: post.plain,
+            series: post.series.map { "\($0.partLabel) of the series \($0.title)" },
+            saved: saved, likes: Int(counts.likes), liked: counts.likedByMe, comments: Int(counts.comments))
+        return JamCardStop(
+            active: CallControlsPolicy.voiceOverRunning || CallControlsPolicy.switchControlRunning,
+            label: label, hint: isArticle ? "Opens the article" : "Opens the post",
+            open: { openPost() }, like: { _ in store.jamToggleLike(post.postId) }, liked: counts.likedByMe,
+            comment: { if style == .videoPodcast { openPlayerWithComments() } else { openPost(toComments: true) } },
+            save: { _ in JamSaved.toggle(post.postId) }, saved: saved,
+            author: { openWriter(writer) },
+            series: post.series.map { series in { store.jamPath.append(SeriesRoute(seriesID: series.id)) } })
     }
 
     /// The row every card starts with (a post, an article, a video podcast): the byline avatar, the name or org, one detail line. **Taps (LIME-215):**

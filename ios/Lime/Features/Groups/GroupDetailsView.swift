@@ -261,7 +261,7 @@ struct GroupDetailsView: View {
                     .padding(.top, 12).padding(.bottom, 6)
                 Text(name).font(Theme.font(.title2, weight: .semibold)).foregroundStyle(.white).multilineTextAlignment(.center)
                     .accessibilityAddTraits(.isHeader).accessibilityIdentifier("group-details-name")
-                Text(count == 1 ? "1 member" : "\(count) members").font(Theme.secondary).foregroundStyle(.white.opacity(0.92))
+                Text(count == 1 ? "1 member" : "\(count) members").font(Theme.secondary).foregroundStyle(.white).coverTextScrim()
                     .accessibilityIdentifier("group-details-count")
             }
             .padding(.top, HeroShape.avatarTopPadding(screen: screen, inset: inset, avatar: 104) - 12)

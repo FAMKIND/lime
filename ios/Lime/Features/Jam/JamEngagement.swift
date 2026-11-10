@@ -71,6 +71,10 @@ struct JamEngagementSection: View {
     @State private var sending = false
     @State private var reporting: ReportTarget?
     @FocusState private var focused: Bool
+    /// A send that did not go: spoken, kept in view with Retry (LIME-130-6a).
+    @State private var sendFailed = false
+    /// VoiceOver moves to the comment just posted.
+    @AccessibilityFocusState private var focusedComment: String?
 
     var body: some View {
         let counts = store.jamCounts(post.postId)
@@ -123,7 +127,7 @@ struct JamEngagementSection: View {
             if let replyingTo {
                 HStack {
                     Text("Replying to \(store.teacherName(replyingTo.author))").font(Theme.caption).foregroundStyle(soft)
-                    Button { self.replyingTo = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(soft) }.accessibilityLabel("Cancel reply").accessibilityIdentifier("jam-reply-cancel")
+                    Button { self.replyingTo = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(soft).frame(width: 44, height: 44).contentShape(Rectangle()) }.accessibilityLabel("Cancel reply").accessibilityIdentifier("jam-reply-cancel")
                 }
             }
             HStack(alignment: .bottom, spacing: 8) {
@@ -138,6 +142,14 @@ struct JamEngagementSection: View {
                 }
                 .disabled(!ready).accessibilityLabel("Send comment").accessibilityIdentifier("jam-comment-send")
             }
+            if sendFailed {
+                HStack {
+                    Text("Couldn\u{2019}t post your comment.").font(Theme.secondary).foregroundStyle(dark ? Color(UIColor(hex: Theme.dangerHex.dark)) : Theme.danger)
+                        .announcesWhenShown("Couldn\u{2019}t post your comment.").accessibilityIdentifier("jam-comment-failed")
+                    Button("Retry") { send() }.font(Theme.secondary.weight(.semibold)).foregroundStyle(ink).frame(minWidth: 44, minHeight: 44)
+                        .accessibilityIdentifier("jam-comment-retry")
+                }
+            }
         }
     }
 
@@ -145,8 +157,16 @@ struct JamEngagementSection: View {
         let words = text
         let parent = replyingTo?.commentId
         sending = true
+        sendFailed = false
+        let before = Set(store.jamComments(post.postId).map(\.commentId))
         Task {
-            if await store.jamComment(post.postId, text: words, parent: parent) { text = ""; replyingTo = nil; focused = false }
+            if await store.jamComment(post.postId, text: words, parent: parent) {
+                text = ""; replyingTo = nil; focused = false
+                Announce.say("Comment posted")
+                // The new comment is the one of mine that was not there before; VoiceOver goes to it.
+                try? await Task.sleep(for: .milliseconds(300))
+                focusedComment = store.jamComments(post.postId).first { $0.mine && !before.contains($0.commentId) }?.commentId
+            } else { sendFailed = true }
             sending = false
         }
     }
@@ -170,6 +190,7 @@ struct JamEngagementSection: View {
                 }
                 .accessibilityElement(children: .combine)
                 Text(comment.text).font(Theme.body).foregroundStyle(ink).fixedSize(horizontal: false, vertical: true)
+                    .accessibilityFocused($focusedComment, equals: comment.commentId)
                 if pending {
                     Text(stale ? "Not delivered yet" : "Waiting for \(writer)\u{2019}s phone").font(Theme.caption).foregroundStyle(soft).accessibilityIdentifier("jam-comment-pending")
                 } else {

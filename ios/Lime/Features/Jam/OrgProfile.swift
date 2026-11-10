@@ -419,10 +419,10 @@ struct OrgProfileView: View {
                     .padding(.top, 12).padding(.bottom, 14)   // room for the writers' circles that hang below the tile
                 Text(page.title).font(Theme.font(.title2, weight: .semibold)).foregroundStyle(.white).multilineTextAlignment(.center)
                     .accessibilityAddTraits(.isHeader).accessibilityIdentifier("profile-jam-row")
-                Text(authors.map(\.name).joined(separator: ", ")).font(Theme.secondary).foregroundStyle(.white.opacity(0.92)).multilineTextAlignment(.center)
+                Text(authors.map(\.name).joined(separator: ", ")).font(Theme.secondary).foregroundStyle(.white).multilineTextAlignment(.center).coverTextScrim()
                     .accessibilityIdentifier("org-authors")
                 if !page.topics.isEmpty {
-                    Text(page.topics.joined(separator: " \u{00B7} ")).font(Theme.secondary).foregroundStyle(.white.opacity(0.92)).multilineTextAlignment(.center)
+                    Text(page.topics.joined(separator: " \u{00B7} ")).font(Theme.secondary).foregroundStyle(.white).multilineTextAlignment(.center).coverTextScrim()
                 }
                 subscribersLine
                 if !isMe { subscribePill.padding(.top, 4) }
@@ -454,11 +454,11 @@ struct OrgProfileView: View {
         let text = page.subscriberCount == 1 ? "1 subscriber" : "\(page.subscriberCount) subscribers"
         if isMe {
             Button { action = .subscribers(page) } label: {
-                Text(text).font(Theme.secondary).foregroundStyle(.white.opacity(0.92)).frame(minHeight: 44)
+                Text(text).font(Theme.secondary).foregroundStyle(.white).coverTextScrim().frame(minHeight: 44)
             }
             .buttonStyle(.plain).accessibilityLabel(text).accessibilityHint("Opens the list").accessibilityIdentifier("profile-jam-subscribers")
         } else {
-            Text(text).font(Theme.secondary).foregroundStyle(.white.opacity(0.92)).accessibilityIdentifier("profile-jam-subscribers")
+            Text(text).font(Theme.secondary).foregroundStyle(.white).coverTextScrim().accessibilityIdentifier("profile-jam-subscribers")
         }
     }
 
