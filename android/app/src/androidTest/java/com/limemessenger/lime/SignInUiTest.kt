@@ -12,6 +12,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.Density
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -96,7 +97,7 @@ class SignInUiTest {
         assertEquals(Phase.SignedIn, session.phase)
         tag("my-avatar").performClick()
         rule.onNodeWithTag("settings-name", useUnmergedTree = true).assertTextEquals("Ada Fake")
-        tag("settings-sign-out").performClick()
+        tag("settings-sign-out").performScrollTo().performClick()
         tag("sign-out-confirm").performClick()
         rule.waitUntil(5_000) { rule.onAllNodesWithTagCount("welcome-continue") > 0 }
         assertTrue(auth.calls.contains("signOut"))

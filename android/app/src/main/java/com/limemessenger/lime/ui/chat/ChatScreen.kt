@@ -94,6 +94,15 @@ import androidx.compose.ui.unit.sp
 import com.limemessenger.lime.R
 import com.limemessenger.lime.chats.AttachmentFormat
 import com.limemessenger.lime.chats.ChatModel
+import com.limemessenger.lime.chats.removeChat
+import com.limemessenger.lime.chats.VoiceRecorder
+import kotlinx.coroutines.delay
+import androidx.compose.ui.semantics.selected
+import com.limemessenger.lime.chats.react
+import com.limemessenger.lime.chats.edit
+import com.limemessenger.lime.chats.delete
+import com.limemessenger.lime.chats.forward
+import com.limemessenger.lime.chats.forwardTargets
 import com.limemessenger.lime.chats.ChatRow
 import com.limemessenger.lime.chats.ChatsModel
 import com.limemessenger.lime.chats.DeliveryState
@@ -113,7 +122,7 @@ import uniffi.lime_core.messagePlainText
 
 /** A chat (iOS's `ChatView`): the header, the messages, and the composer (or Accept for a stranger's first message). The system back gesture closes it. */
 @Composable
-fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenThread: (MessageItem) -> Unit = {}, modifier: Modifier = Modifier, onOpenProfile: (String, String) -> Unit = { _, _ -> }) {
+fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenThread: (MessageItem) -> Unit = {}, modifier: Modifier = Modifier, onOpenProfile: (String, String) -> Unit = { _, _ -> }, onOpenGroup: () -> Unit = {}, focusMessageId: String? = null) {
     val colors = Lime.colors
     val scope = rememberCoroutineScope()
     val summary = model.summary
@@ -122,14 +131,51 @@ fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenTh
     val lastOwnId = model.messages.lastOrNull { it.isOwn && it.state != DeliveryState.System }?.id
     var viewer by remember { mutableStateOf<Pair<MessageItem, Int>?>(null) }
     BackHandler(enabled = viewer != null) { viewer = null }
+    // Message actions (LIME-304): the menu, the edit dialog, the delete confirmation, the forward picker, and Select mode.
+    var menuFor by remember { mutableStateOf<MessageItem?>(null) }
+    var editing by remember { mutableStateOf<MessageItem?>(null) }
+    var deleting by remember { mutableStateOf<List<MessageItem>>(emptyList()) }
+    var forwarding by remember { mutableStateOf<List<String>?>(null) }
+    var selection by remember { mutableStateOf<Set<String>?>(null) }
+    BackHandler(enabled = selection != null && viewer == null) { selection = null }
+    val context = LocalContext.current
+    // Voice messages (LIME-308): one player for the chat; the next voice message of the chat plays on by itself; bytes are looked up by attachment id.
+    val voice = remember { com.limemessenger.lime.chats.VoicePlayer(context.applicationContext) }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { voice.stop() } }
+    val voiceNext: (String) -> String? = { id ->
+        val all = model.messages.filter { !it.deleted }.flatMap { m -> m.attachments.filter { it.mime.startsWith("audio/") } }
+        all.getOrNull(all.indexOfFirst { it.id == id } + 1)?.id
+    }
+    val voiceData: suspend (String) -> ByteArray? = { id -> model.messages.flatMap { it.attachments }.firstOrNull { it.id == id }?.let { model.attachmentBytes(it) } }
+    fun perform(action: uniffi.lime_core.MessageAction, item: MessageItem) {
+        menuFor = null
+        when (action) {
+            uniffi.lime_core.MessageAction.REPLY -> model.replyingTo = item
+            uniffi.lime_core.MessageAction.COPY -> copy(context, messagePlainText(item.text))
+            uniffi.lime_core.MessageAction.FORWARD -> forwarding = listOf(item.id)
+            uniffi.lime_core.MessageAction.EDIT -> editing = item
+            uniffi.lime_core.MessageAction.SELECT -> selection = setOf(item.id)
+            uniffi.lime_core.MessageAction.DELETE -> deleting = listOf(item)
+            else -> {}
+        }
+    }
 
     // Read the messages again whenever the list was (a sync brought something), and mark the chat read while it is open.
     LaunchedEffect(chats.revision) { model.reload(); model.markRead() }
     // The newest message is in view on open and when something arrives or is sent.
-    LaunchedEffect(rows.lastOrNull()?.id) { if (rows.isNotEmpty()) listState.scrollToItem(rows.lastIndex) }
+    // (A search result opens the chat at its message instead.)
+    var focused by remember { mutableStateOf(false) }
+    LaunchedEffect(rows.lastOrNull()?.id, focusMessageId) {
+        if (rows.isEmpty()) return@LaunchedEffect
+        val target = if (focusMessageId != null) rows.indexOfFirst { it.id == focusMessageId } else -1
+        if (target >= 0 && !focused) { listState.scrollToItem(target); focused = true } else if (target < 0 || focused) { if (focusMessageId == null || focused) listState.scrollToItem(rows.lastIndex) }
+    }
 
     Column(modifier.fillMaxSize().background(colors.canvas).systemBarsPadding().imePadding()) {
-        Header(summary, onBack) { m -> onOpenProfile(m.id, m.name) }
+        val chosen = selection
+        if (chosen != null) SelectionBar(chosen.size, onCancel = { selection = null },
+            onForward = { forwarding = chosen.toList() }, onDelete = { deleting = model.messages.filter { it.id in chosen } })
+        else Header(summary, chats.myName, chats.myTone, onBack, onOpenGroup) { m -> onOpenProfile(m.id, m.name) }
         LazyColumn(Modifier.weight(1f).fillMaxWidth().testTag("chat-messages"), state = listState, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp)) {
             items(rows, key = { it.id }) { row ->
                 when (row) {
@@ -148,19 +194,55 @@ fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenTh
                         onOpenThread = { onOpenThread(row.item) },
                         model = model,
                         onOpenPhoto = { index -> viewer = row.item to index },
+                        selecting = selection != null, selected = selection?.contains(row.item.id) == true,
+                        onToggleSelect = { selection = selection?.let { if (row.item.id in it) it - row.item.id else it + row.item.id } },
+                        onOpenMenu = { menuFor = row.item },
+                        onPerform = { action -> perform(action, row.item) },
+                        onReact = { emoji -> scope.launch { model.react(row.item, emoji) } },
+                        voice = voice, voiceNext = voiceNext, voiceData = voiceData,
                     )
                 }
             }
         }
         model.banner?.let { Text(it, color = colors.danger, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).testTag("chat-banner")) }
         if (summary != null && summary.isRequest) RequestBar(summary.title) { scope.launch { chats.acceptRequest(summary.id) } }
-        else Composer(model) { text, photos -> scope.launch { if (photos.isNotEmpty()) model.sendPhotos(photos, text) else model.send(text) } }
+        else if (summary?.groupEnded != null) EndedBar(summary.groupEnded == "left") { scope.launch { chats.removeChat(summary.id); onBack() } }
+        else if (selection == null) Composer(model) { text, photos -> scope.launch { if (photos.isNotEmpty()) model.sendPhotos(photos, text) else model.send(text) } }
     }
     viewer?.let { (item, index) -> PhotoViewer(item.attachments.filter { it.mime.startsWith("image/") }, index, model, onClose = { viewer = null }) }
+    menuFor?.let { item ->
+        MessageActionsSheet(item, uniffi.lime_core.messageActions(item, false, System.currentTimeMillis()),
+            onReact = { emoji -> menuFor = null; scope.launch { model.react(item, emoji) } }, onAction = { perform(it, item) }, onDismiss = { menuFor = null })
+    }
+    editing?.let { item ->
+        EditMessageDialog(item.text, allowBlank = item.attachments.isNotEmpty(),
+            onSave = { text -> editing = null; scope.launch { model.edit(item, text) } }, onCancel = { editing = null })
+    }
+    if (deleting.isNotEmpty()) {
+        val now = System.currentTimeMillis()
+        DeleteMessagesDialog(deleting.size, everyoneAllowed = deleting.all { uniffi.lime_core.canDeleteForEveryone(it, now) },
+            onDelete = { everyone -> val ids = deleting.map { it.id }; deleting = emptyList(); selection = null; scope.launch { model.delete(ids, everyone) } }, onCancel = { deleting = emptyList() })
+    }
+    forwarding?.let { ids ->
+        ForwardSheet(chats.forwardTargets, chats.myName, chats.myTone,
+            onSend = { to -> forwarding = null; selection = null; scope.launch { model.forward(ids, to) } }, onDismiss = { forwarding = null })
+    }
+}
+
+/** Select mode's bar: how many are selected, Forward and Delete for them, and a way out (as iOS's selection bar). */
+@Composable
+private fun SelectionBar(count: Int, onCancel: () -> Unit, onForward: () -> Unit, onDelete: () -> Unit) {
+    val colors = Lime.colors
+    Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onCancel, Modifier.size(56.dp).testTag("select-cancel")) { Icon(Icons.Close, stringResource(R.string.message_select_cancel), tint = colors.text) }
+        Text(stringResource(R.string.message_selected_count, count), color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).semantics { heading() }.testTag("select-count"))
+        TextButton(onClick = onForward, enabled = count > 0, modifier = Modifier.heightIn(min = 48.dp).testTag("select-forward")) { Text(stringResource(R.string.message_action_forward), color = colors.text, fontSize = 16.sp) }
+        TextButton(onClick = onDelete, enabled = count > 0, modifier = Modifier.heightIn(min = 48.dp).testTag("select-delete")) { Text(stringResource(R.string.message_action_delete), color = colors.danger, fontSize = 16.sp) }
+    }
 }
 
 @Composable
-private fun Header(summary: ConversationSummary?, onBack: () -> Unit, onProfile: (uniffi.lime_core.MemberInfo) -> Unit) {
+private fun Header(summary: ConversationSummary?, myName: String, myTone: Int, onBack: () -> Unit, onGroup: () -> Unit, onProfile: (uniffi.lime_core.MemberInfo) -> Unit) {
     val colors = Lime.colors
     val first = summary?.members?.firstOrNull()
     Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -169,15 +251,19 @@ private fun Header(summary: ConversationSummary?, onBack: () -> Unit, onProfile:
         }
         // In a one-to-one chat the avatar and the name open the person's profile.
         val opensProfile = summary != null && !summary.isGroup && first != null
+        // In a group they open the group's details (not once it has ended: nothing there can change).
+        val opensGroup = summary != null && summary.isGroup && !summary.isRequest && summary.groupEnded == null
+        val groupLabel = stringResource(R.string.group_info_open)
         Row(
             Modifier.weight(1f).heightIn(min = 48.dp)
                 .then(if (opensProfile) Modifier.semantics(mergeDescendants = true) { role = Role.Button }.clickable { onProfile(first!!) } else Modifier)
+                .then(if (opensGroup) Modifier.semantics(mergeDescendants = true) { role = Role.Button; contentDescription = "${summary!!.title}, $groupLabel" }.clickable(onClick = onGroup) else Modifier)
                 .testTag("chat-header"),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (summary != null) {
                 if (!summary.isGroup && first != null) Avatar(first.initials.ifEmpty { initialsOf(first.name) }, first.tone.toInt(), 36.dp)
-                else Avatar(initialsOf(summary.title), 0, 36.dp, emoji = summary.groupEmoji)
+                else com.limemessenger.lime.ui.common.GroupAvatar(summary, myName, myTone, 36.dp)
             }
             Text(
                 summary?.title.orEmpty(), color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
@@ -212,14 +298,17 @@ private fun SystemLine(text: String) {
 private fun MessageBubble(
     item: MessageItem, summary: ConversationSummary?, showAvatar: Boolean, endsRun: Boolean, showState: Boolean, replyCount: Int,
     onRetry: () -> Unit, onReply: () -> Unit, onOpenThread: () -> Unit, model: ChatModel, onOpenPhoto: (Int) -> Unit,
+    selecting: Boolean, selected: Boolean, onToggleSelect: () -> Unit, onOpenMenu: () -> Unit, onPerform: (uniffi.lime_core.MessageAction) -> Unit, onReact: (String) -> Unit,
+    voice: com.limemessenger.lime.chats.VoicePlayer, voiceNext: (String) -> String?, voiceData: suspend (String) -> ByteArray?,
 ) {
     val colors = Lime.colors
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val own = item.isOwn
     val sender = summary?.members?.firstOrNull { it.id == item.senderId }
     val isGroup = summary?.isGroup == true
     val label = MessageSpeech.label(item, sender?.name, replyCount, plainText = ::messagePlainText)
-    var menu by remember { mutableStateOf(false) }
+    val plan = remember(item) { uniffi.lime_core.messageActions(item, false, System.currentTimeMillis()) }
     val plain = remember(item.text) { messagePlainText(item.text) }
     val copyLabel = stringResource(R.string.chat_copy)
     val replyLabel = stringResource(R.string.chat_reply)
@@ -229,15 +318,38 @@ private fun MessageBubble(
     val photos = item.attachments.filter { it.mime.startsWith("image/") }
     val maxBubble = (LocalConfiguration.current.screenWidthDp * 0.78f).dp
     val actions = buildList {
-        if (!item.deleted && plain.isNotEmpty()) add(CustomAccessibilityAction(copyLabel) { copy(context, plain); true })
-        if (!item.deleted) add(CustomAccessibilityAction(replyLabel) { onReply(); true })
+        // The same actions as the long-press menu, by name, for TalkBack and Switch Access (never a gesture-only menu).
+        shownActions(plan).forEach { action ->
+            val title = actionTitleText(action)
+            when (action) {
+                uniffi.lime_core.MessageAction.REACT -> add(CustomAccessibilityAction(title) { onOpenMenu(); true })
+                uniffi.lime_core.MessageAction.COPY -> if (plain.isNotEmpty()) add(CustomAccessibilityAction(title) { copy(context, plain); true })
+                uniffi.lime_core.MessageAction.REPLY -> add(CustomAccessibilityAction(title) { onReply(); true })
+                else -> add(CustomAccessibilityAction(title) { onPerform(action); true })
+            }
+        }
         if (!item.deleted && photos.isNotEmpty()) add(CustomAccessibilityAction(photoLabel) { onOpenPhoto(0); true })
+        // A voice message plays from its custom actions too (one TalkBack stop per message): play or pause, the speed, and skipping 10 seconds.
+        item.attachments.firstOrNull { it.mime.startsWith("audio/") && !item.deleted }?.let { audio ->
+            val playing = voice.isCurrent(audio.id) && voice.isPlaying
+            add(CustomAccessibilityAction(if (playing) "Pause" else "Play") { scope.launch { voice.toggle(audio.id, voiceNext, voiceData) }; true })
+            add(CustomAccessibilityAction("Change speed") { voice.cycleSpeed(); true })
+            add(CustomAccessibilityAction("Skip forward 10 seconds") { voice.skip(10.0); true })
+            add(CustomAccessibilityAction("Skip back 10 seconds") { voice.skip(-10.0); true })
+        }
         if (failed) add(CustomAccessibilityAction(retryLabel) { onRetry(); true })
     }
     Row(
         Modifier.fillMaxWidth().padding(vertical = 2.dp),
         horizontalArrangement = if (own) Arrangement.End else Arrangement.Start,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (selecting) {
+            val toggleWords = stringResource(R.string.message_select_toggle)
+            Box(Modifier.size(48.dp).semantics { contentDescription = toggleWords; role = Role.Checkbox; this.selected = selected }.clickable(onClick = onToggleSelect).testTag("select-${item.id}"), contentAlignment = Alignment.Center) {
+                Icon(if (selected) Icons.CheckedBox else Icons.UncheckedBox, null, tint = if (selected) colors.text else colors.textSecondary, modifier = Modifier.size(24.dp))
+            }
+        }
         if (!own) {
             if (showAvatar && sender != null) Avatar(sender.initials.ifEmpty { initialsOf(sender.name) }, sender.tone.toInt(), 32.dp)
             else Spacer(Modifier.size(32.dp))
@@ -254,7 +366,7 @@ private fun MessageBubble(
                     Column(
                         Modifier.widthIn(max = maxBubble)
                             .then(if (item.deleted) Modifier.border(0.8.dp, colors.bubbleEdge, bubbleShape) else if (own) Modifier.background(colors.own, bubbleShape) else Modifier.background(colors.bubbleOther, bubbleShape).border(0.8.dp, colors.bubbleEdge, bubbleShape))
-                            .combinedClickable(onClick = {}, onLongClick = { menu = true }, onClickLabel = null)
+                            .combinedClickable(onClick = { if (selecting) onToggleSelect() }, onLongClick = { if (!selecting) onOpenMenu() }, onClickLabel = null)
                             .padding(horizontal = 14.dp, vertical = 10.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
@@ -263,17 +375,17 @@ private fun MessageBubble(
                         } else {
                             photos.forEachIndexed { index, photo -> PhotoThumb(photo, model) { onOpenPhoto(index) } }
                             if (item.text.isNotEmpty()) MessageText(item.text, color = if (own) colors.ownInk else colors.text, linkColor = if (own) colors.linkOwn else colors.link, modifier = Modifier.testTag("message-text-${item.id}"))
-                            if (photos.size != item.attachments.size) AttachmentFormat.summary(item.attachments.filter { !it.mime.startsWith("image/") })?.let { Text(it, color = if (own) colors.ownInk else colors.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
+                            item.attachments.filter { !it.mime.startsWith("image/") }.forEach { a ->
+                                val ink = if (own) colors.ownInk else colors.text
+                                if (a.mime.startsWith("audio/")) com.limemessenger.lime.ui.chat.VoiceCard(a, voice, voiceNext, voiceData, ink)
+                                else com.limemessenger.lime.ui.chat.FileCard(a, model, ink)
+                            }
                         }
-                    }
-                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                        if (!item.deleted && plain.isNotEmpty()) DropdownMenuItem(text = { Text(copyLabel) }, onClick = { menu = false; copy(context, plain) }, modifier = Modifier.testTag("action-copy"))
-                        if (!item.deleted) DropdownMenuItem(text = { Text(replyLabel) }, onClick = { menu = false; onReply() }, modifier = Modifier.testTag("action-reply"))
-                        if (failed) DropdownMenuItem(text = { Text(retryLabel) }, onClick = { menu = false; onRetry() })
                     }
                 }
                 if (!item.deleted && (endsRun || showState || item.edited)) Footer(item, showState, onRetry)
             }
+            ReactionChips(item, onReact)
             if (replyCount > 0 && !item.deleted) {
                 val words = if (replyCount == 1) stringResource(R.string.chat_reply_one) else stringResource(R.string.chat_reply_other, replyCount)
                 Box(Modifier.heightIn(min = 48.dp).clickable(onClick = onOpenThread).padding(horizontal = 4.dp), contentAlignment = Alignment.CenterStart) {
@@ -340,6 +452,34 @@ private fun Composer(model: ChatModel, onSend: (String, List<OutgoingAttachment>
             drafts.addAll(made)
         }
     }
+    // Voice messages and files (LIME-308).
+    val capture = LocalVoiceCapture.current
+    val recorder = remember { VoiceRecorder(capture(context.applicationContext)) }
+    val micDenied = stringResource(R.string.voice_mic_denied)
+    val micUnavailable = stringResource(R.string.voice_mic_unavailable)
+    val unreadable = stringResource(R.string.file_unreadable)
+    val fileTitle = uniffi.lime_core.fileTooLargeWords()
+    var micAllowedNow by remember { mutableStateOf(androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) }
+    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> micAllowedNow = granted; if (!granted) problem = micDenied }
+    val finishVoice: () -> Unit = { recorder.finish()?.let { note -> scope.launch { model.sendVoice(note) } } }
+    LaunchedEffect(recorder.isRecording) {
+        while (recorder.isRecording) {
+            recorder.tick()
+            if (recorder.elapsedMs >= recorder.limitMs) finishVoice()   // the longest a voice message can be
+            delay(50)
+        }
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { recorder.cancel() } }
+    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            val picked = withContext(Dispatchers.IO) { readPickedFile(context, uri) }
+            when (picked) {
+                is PickedFile.TooLarge -> problem = fileTitle.joinToString(" ")
+                is PickedFile.Unreadable -> problem = unreadable
+                is PickedFile.Ok -> { problem = null; model.sendPhotos(listOf(picked.attachment), "", "file") }
+            }
+        }
+    }
     val reply = model.replyingTo
     Column(Modifier.fillMaxWidth().background(colors.canvas).padding(horizontal = 8.dp, vertical = 6.dp)) {
         if (reply != null) {
@@ -383,27 +523,43 @@ private fun Composer(model: ChatModel, onSend: (String, List<OutgoingAttachment>
         }
         problem?.let { Text(it, color = colors.danger, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 8.dp).testTag("photo-problem")) }
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            IconButton(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, Modifier.size(56.dp).testTag("attach-photo")) {
-                Icon(Icons.Photo, contentDescription = stringResource(R.string.photo_attach), tint = colors.text)
+            if (recorder.isRecording) RecordingBar(recorder, onSend = finishVoice, onCancel = { recorder.cancel() }, modifier = Modifier.weight(1f)) else {
+                IconButton(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, Modifier.size(56.dp).testTag("attach-photo")) {
+                    Icon(Icons.Photo, contentDescription = stringResource(R.string.photo_attach), tint = colors.text)
+                }
+                OutlinedTextField(
+                    value = text, onValueChange = { text = it }, modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("composer-field"),
+                    placeholder = { Text(stringResource(R.string.chat_message_hint), color = colors.textSecondary) }, maxLines = 5,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default), shape = RoundedCornerShape(24.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = colors.text, unfocusedTextColor = colors.text, focusedContainerColor = colors.surface, unfocusedContainerColor = colors.surface,
+                        focusedBorderColor = colors.text, unfocusedBorderColor = colors.hairline, cursorColor = colors.text,
+                    ),
+                )
+                IconButton(onClick = { filePicker.launch(arrayOf("*/*")) }, Modifier.size(56.dp).testTag("attach-file")) {
+                    Icon(Icons.Attach, contentDescription = stringResource(R.string.file_attach), tint = colors.text)
+                }
             }
-            OutlinedTextField(
-                value = text, onValueChange = { text = it }, modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("composer-field"),
-                placeholder = { Text(stringResource(R.string.chat_message_hint), color = colors.textSecondary) }, maxLines = 5,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default), shape = RoundedCornerShape(24.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = colors.text, unfocusedTextColor = colors.text, focusedContainerColor = colors.surface, unfocusedContainerColor = colors.surface,
-                    focusedBorderColor = colors.text, unfocusedBorderColor = colors.hairline, cursorColor = colors.text,
-                ),
-            )
             Spacer(Modifier.size(4.dp))
             val canSend = text.isNotBlank() || drafts.isNotEmpty()
             val sendLabel = stringResource(R.string.chat_send)
-            Box(
-                Modifier.size(56.dp).background(if (canSend) colors.accent else colors.pressed, CircleShape)
-                    .then(if (canSend) Modifier.clickable(role = Role.Button) { onSend(text, drafts.map { it.attachment }); text = ""; drafts.clear() } else Modifier.semantics { role = Role.Button; disabled() })
-                    .semantics { contentDescription = sendLabel }.testTag("send-button"),
-                contentAlignment = Alignment.Center,
-            ) { Icon(Icons.Send, contentDescription = null, tint = if (canSend) colors.accentInk else colors.textSecondary) }
+            if (canSend) {
+                Box(
+                    Modifier.size(56.dp).background(if (canSend) colors.accent else colors.pressed, CircleShape)
+                        .then(if (canSend) Modifier.clickable(role = Role.Button) { onSend(text, drafts.map { it.attachment }); text = ""; drafts.clear() } else Modifier.semantics { role = Role.Button; disabled() })
+                        .semantics { contentDescription = sendLabel }.testTag("send-button"),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.Send, contentDescription = null, tint = if (canSend) colors.accentInk else colors.textSecondary) }
+            } else if (recorder.phase != VoiceRecorder.Phase.Locked) {
+                MicButton(
+                    onPress = {
+                        if (!micAllowedNow) { micPermission.launch(android.Manifest.permission.RECORD_AUDIO); false }
+                        else { val ok = recorder.start(); if (!ok) problem = micUnavailable; ok }
+                    },
+                    onRelease = { if (recorder.isRecording) finishVoice() }, onLock = { recorder.lock() }, onCancel = { recorder.cancel() },
+                    onHandsFree = { if (!micAllowedNow) micPermission.launch(android.Manifest.permission.RECORD_AUDIO) else if (!recorder.start()) problem = micUnavailable else recorder.lock() },
+                )
+            }
         }
     }
     describing?.let { draft ->
@@ -450,7 +606,7 @@ private fun PhotoViewer(photos: List<AttachmentInfo>, start: Int, model: ChatMod
     Box(Modifier.fillMaxSize().background(Color.Black).testTag("photo-viewer")) {
         HorizontalPager(pager, Modifier.fillMaxSize()) { page ->
             val photo = photos[page]
-            LaunchedEffect(photo.id) { model.loadImage(photo) }
+            LaunchedEffect(photo.id) { model.loadImage(photo, userRequested = true) }
             var scale by remember { mutableStateOf(1f) }
             var offset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
             val bitmap = model.images[photo.id]
@@ -497,4 +653,57 @@ fun ThreadScreen(root: MessageItem, model: ChatModel, onBack: () -> Unit) {
             }
         }
     }
+}
+
+/** A group that ended is read-only: "You left this group." or "This group was deleted.", with Remove from my list (as iOS's `endedBar`). */
+@Composable
+private fun EndedBar(left: Boolean, onRemove: () -> Unit) {
+    val colors = Lime.colors
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).background(colors.surface, RoundedCornerShape(22.dp)).padding(horizontal = 20.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(stringResource(if (left) R.string.group_ended_left else R.string.group_ended_deleted), color = colors.textSecondary, fontSize = 15.sp, modifier = Modifier.testTag("group-ended-note"))
+        TextButton(onClick = onRemove, Modifier.heightIn(min = 48.dp).testTag("group-ended-remove")) { Text(stringResource(R.string.group_ended_remove), color = colors.danger, fontSize = 17.sp, fontWeight = FontWeight.SemiBold) }
+    }
+}
+
+/** The words of an action for a custom accessibility action (the same words as the menu rows). */
+@Composable
+private fun actionTitleText(action: uniffi.lime_core.MessageAction): String = actionTitle(action)
+
+/** A file picked from the system's file picker, checked against the limits. */
+private sealed class PickedFile {
+    data class Ok(val attachment: OutgoingAttachment) : PickedFile()
+    object TooLarge : PickedFile()
+    object Unreadable : PickedFile()
+}
+
+/** Reads a picked file (no storage permission: the picker hands over this one file): its size is checked against the core's limit before it is read. A picture is sent as a picture. */
+private fun readPickedFile(context: Context, uri: android.net.Uri): PickedFile {
+    val resolver = context.contentResolver
+    var name = "File"; var size = -1L
+    resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME, android.provider.OpenableColumns.SIZE), null, null, null)?.use { c ->
+        if (c.moveToFirst()) { c.getString(0)?.let { name = it }; if (!c.isNull(1)) size = c.getLong(1) }
+    }
+    if (size >= 0 && uniffi.lime_core.checkFileSize(size.toULong()) == uniffi.lime_core.FileCheck.TOO_LARGE) return PickedFile.TooLarge
+    val mime = resolver.getType(uri) ?: "application/octet-stream"
+    if (mime.startsWith("image/") && mime != "image/gif") AttachmentProcessing.photo(resolver, uri)?.let { return PickedFile.Ok(it.copy(name = name)) }
+    val limit = uniffi.lime_core.attachmentLimits().maxFileBytes.toLong()
+    val bytes = try { resolver.openInputStream(uri)?.use { readUpTo(it, (limit + 1).toInt()) } } catch (e: Exception) { null } ?: return PickedFile.Unreadable
+    return when (uniffi.lime_core.checkFileSize(bytes.size.toULong())) {
+        uniffi.lime_core.FileCheck.TOO_LARGE -> PickedFile.TooLarge
+        uniffi.lime_core.FileCheck.EMPTY -> PickedFile.Unreadable
+        else -> PickedFile.Ok(OutgoingAttachment(bytes, name, mime, null, null, null, ByteArray(0), ByteArray(0), ""))
+    }
+}
+
+/** At most `limit` bytes of a stream (`readNBytes` needs API 33). */
+private fun readUpTo(stream: java.io.InputStream, limit: Int): ByteArray {
+    val out = java.io.ByteArrayOutputStream()
+    val buffer = ByteArray(64 * 1024)
+    var total = 0
+    while (total < limit) {
+        val n = stream.read(buffer, 0, minOf(buffer.size, limit - total))
+        if (n < 0) break
+        out.write(buffer, 0, n); total += n
+    }
+    return out.toByteArray()
 }

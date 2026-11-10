@@ -45,6 +45,19 @@ data class LimeColors(
         /** The web app's avatar pastels (`--lime-avatar-0…7`), light and dark; index 5 is lime green. */
         private val avatarLight = longArrayOf(0xFEB2BF, 0xFED2CA, 0xF3BF91, 0xEFDF91, 0x92D4FF, 0xC4EFA6, 0xD9BAFF, 0x99EEFF)
         private val avatarDark = longArrayOf(0xDF8193, 0xEF9B8D, 0xC59770, 0xC3B571, 0x51ABE2, 0x7FBF5F, 0xB091D6, 0x78C2D1)
+
+        /** The tokens of a theme the core resolved (an accent on a background in light or dark, already through the contrast guard). */
+        fun from(theme: uniffi.lime_core.ResolvedTheme, dark: Boolean): LimeColors {
+            fun c(hex: UInt) = Color(0xFF000000 or hex.toLong())
+            val canvas = c(theme.canvas); val surface = c(theme.surface); val text = c(theme.text)
+            return LimeColors(
+                canvas = canvas, surface = surface, bubbleOther = c(theme.bubble), bubbleEdge = c(theme.bubbleEdge), own = c(theme.own), ownInk = c(theme.ownInk),
+                accent = c(theme.accent), accentInk = c(theme.accentInk), text = text, textSecondary = c(theme.secondary), hairline = c(theme.hairline), link = c(theme.link),
+                linkOwn = c(theme.linkOwn),
+                // A pressed fill: a little of the text colour over the surface.
+                pressed = androidx.compose.ui.graphics.lerp(surface, text, 0.10f), chip = c(theme.chip), danger = c(theme.danger), dark = dark,
+            )
+        }
     }
 
     fun avatar(tone: Int): Color {

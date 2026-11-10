@@ -30,6 +30,11 @@ import com.limemessenger.lime.ui.chats.RequestsScreen
 import com.limemessenger.lime.ui.chat.ChatScreen
 import com.limemessenger.lime.ui.chat.ThreadScreen
 import com.limemessenger.lime.chats.ChatModel
+import com.limemessenger.lime.chats.GroupModel
+import com.limemessenger.lime.ui.chats.GroupDetailsScreen
+import com.limemessenger.lime.ui.chats.GroupNameScreen
+import com.limemessenger.lime.ui.chats.SearchScreen
+import com.limemessenger.lime.ui.chats.GroupPickerScreen
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -38,6 +43,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -91,10 +101,13 @@ private fun SignedOut(session: AccountSession, onTermsAgreed: () -> Unit) {
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun SignedIn(session: AccountSession) {
+    val appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
     val chats = remember(session) {
         ChatsModel(
             store = { session.store }, transport = { session.transport }, token = { session.accessToken() },
             staleToken = { session.lastAccessToken() }, registrar = { session.registerDevice(); Unit }, isRegistered = { session.deviceRegistered },
+            me = { session.profile?.displayName.orEmpty() to com.limemessenger.lime.chats.AvatarTone.tone(session.userId.orEmpty()) },
+            mutes = com.limemessenger.lime.chats.MuteSettings(appContext.getSharedPreferences("lime.mutes", android.content.Context.MODE_PRIVATE)),
         )
     }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -102,33 +115,62 @@ private fun SignedIn(session: AccountSession) {
     var openId by rememberSaveable { mutableStateOf<String?>(null) }
     var requestsOpen by rememberSaveable { mutableStateOf(false) }
     var newMessageOpen by rememberSaveable { mutableStateOf(false) }
+    // New group: null, the picker ("pick"), or the name step with the people chosen. A group's details open over its chat.
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
+    var focusMessage by remember { mutableStateOf<String?>(null) }
+    var groupStep by remember { mutableStateOf<List<String>?>(null) }
+    var groupPicking by rememberSaveable { mutableStateOf(false) }
+    var groupInfoOpen by rememberSaveable { mutableStateOf(false) }
     var threadRoot by remember { mutableStateOf<uniffi.lime_core.MessageItem?>(null) }
     var profileOpen by rememberSaveable { mutableStateOf(false) }
     var personProfile by remember { mutableStateOf<Pair<String, String>?>(null) }
     var jamPost by remember { mutableStateOf<uniffi.lime_core.JamPostInfo?>(null) }
     val jam = remember(session) { JamModel(store = { session.store }, nameOf = { id -> if (id == session.userId) session.profile?.displayName else chats.conversations.firstNotNullOfOrNull { c -> c.members.firstOrNull { it.id == id }?.name } }) }
-    val chatModel = remember(openId) { openId?.let { ChatModel(it, chats) } }
+    val app = appContext as? com.limemessenger.lime.LimeApp
+    val mediaPolicy = remember(app) { app?.let { com.limemessenger.lime.chats.MediaPolicy(it, it.mediaPrefs) } }
+    val chatModel = remember(openId) { openId?.let { ChatModel(it, chats, mayAutoDownload = { a -> mediaPolicy?.mayAutoDownload(a) ?: true }) } }
+    // The banner for a new message in another chat while lime is open (no push service yet).
+    val arrivals = remember(chats) {
+        com.limemessenger.lime.chats.ArrivalBanner(
+            enabled = { app?.notificationPrefs?.enabled ?: true }, preview = { app?.notificationPrefs?.preview ?: uniffi.lime_core.NotificationPreview.NAME_AND_MESSAGE },
+            muted = { chats.isMuted(it) }, hideText = { app?.appLock?.hidesNotificationText() ?: false },
+        )
+    }
+    LaunchedEffect(chats.revision) { arrivals.check(chats.conversations, openId) }
+    val groupModel = remember(openId) { openId?.let { GroupModel(chats, it) } }
     BackHandler(enabled = jamPost != null) { jamPost = null }
     BackHandler(enabled = personProfile != null) { personProfile = null }
     BackHandler(enabled = threadRoot != null) { threadRoot = null }
-    BackHandler(enabled = threadRoot == null && openId != null) { openId = null }
+    BackHandler(enabled = openId == null && searchOpen) { searchOpen = false }
+    BackHandler(enabled = groupInfoOpen) { groupInfoOpen = false }
+    BackHandler(enabled = groupStep != null) { groupStep = null }
+    BackHandler(enabled = groupStep == null && groupPicking) { groupPicking = false }
+    BackHandler(enabled = threadRoot == null && !groupInfoOpen && openId != null) { openId = null; focusMessage = null }
     BackHandler(enabled = openId == null && requestsOpen) { requestsOpen = false }
     BackHandler(enabled = openId == null && newMessageOpen) { newMessageOpen = false }
     val root = threadRoot
     val postOpen = jamPost
     val person = personProfile
     if (profileOpen) {
-        SettingsScreen(session, onClose = { profileOpen = false })
+        SettingsScreen(session, onClose = { profileOpen = false }, chats = chats)
     } else if (person != null) {
         PersonProfileScreen(person.first, person.second, chats, onBack = { personProfile = null })
     } else if (postOpen != null) {
         JamReaderScreen(postOpen, jam, onBack = { jamPost = null })
+    } else if (chatModel != null && groupModel != null && groupInfoOpen) {
+        GroupDetailsScreen(chats, groupModel, chats.myName, chats.myTone, onBack = { groupInfoOpen = false }, onLeft = { groupInfoOpen = false; openId = null })
     } else if (chatModel != null && root != null) {
         ThreadScreen(root, chatModel, onBack = { threadRoot = null })
     } else if (chatModel != null) {
-        ChatScreen(chatModel, chats, onBack = { openId = null }, onOpenThread = { threadRoot = it }, onOpenProfile = { id, name -> personProfile = id to name })
+        ChatScreen(chatModel, chats, onBack = { openId = null; focusMessage = null }, focusMessageId = focusMessage, onOpenThread = { threadRoot = it }, onOpenProfile = { id, name -> personProfile = id to name }, onOpenGroup = { groupInfoOpen = true })
+    } else if (searchOpen) {
+        SearchScreen(chats, onBack = { searchOpen = false }, onOpenChat = { searchOpen = false; openId = it }, onOpenMessage = { chat, message -> searchOpen = false; focusMessage = message; openId = chat })
+    } else if (groupStep != null) {
+        GroupNameScreen(chats, groupStep!!, onBack = { groupStep = null }, onCreated = { groupStep = null; groupPicking = false; newMessageOpen = false; openId = it })
+    } else if (groupPicking) {
+        GroupPickerScreen(chats, existing = emptyList(), adding = false, onBack = { groupPicking = false }, onNext = { groupStep = it })
     } else if (newMessageOpen) {
-        NewMessageScreen(chats, onClose = { newMessageOpen = false }, onOpenChat = { newMessageOpen = false; openId = it })
+        NewMessageScreen(chats, onClose = { newMessageOpen = false }, onOpenChat = { newMessageOpen = false; openId = it }, onNewGroup = { groupPicking = true })
     } else if (requestsOpen) {
         RequestsScreen(chats, onOpen = { openId = it.id }, onBack = { requestsOpen = false })
     } else {
@@ -139,7 +181,27 @@ private fun SignedIn(session: AccountSession) {
                 onProfile = { profileOpen = true },
                 onRequests = { requestsOpen = true },
                 onNewMessage = { newMessageOpen = true },
+                onSearch = { searchOpen = true },
             )
         })
+    }
+    ArrivalBannerView(arrivals) { id -> openId = id; arrivals.dismiss() }
+}
+
+/** The banner for a new message: the title and body from the core's words, shown for a few seconds; tapping it opens the chat. TalkBack reads it when it appears. */
+@Composable
+private fun ArrivalBannerView(arrivals: com.limemessenger.lime.chats.ArrivalBanner, onOpen: (String) -> Unit) {
+    val banner = arrivals.banner ?: return
+    LaunchedEffect(banner) { kotlinx.coroutines.delay(4_000); arrivals.dismiss() }
+    val colors = Lime.colors
+    Box(Modifier.fillMaxSize().systemBarsPadding().padding(12.dp), contentAlignment = Alignment.TopCenter) {
+        Column(
+            Modifier.fillMaxWidth().background(colors.surface, androidx.compose.foundation.shape.RoundedCornerShape(18.dp)).heightIn(min = 56.dp)
+                .semantics(mergeDescendants = true) { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite; role = androidx.compose.ui.semantics.Role.Button }
+                .clickable { onOpen(banner.conversationId) }.padding(horizontal = 16.dp, vertical = 10.dp).testTag("arrival-banner"),
+        ) {
+            Text(banner.title, color = colors.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Text(banner.body, color = colors.textSecondary, fontSize = 15.sp, maxLines = 2, modifier = Modifier.testTag("arrival-banner-body"))
+        }
     }
 }

@@ -48,10 +48,8 @@ object AttachmentFormat {
     private fun isVideo(a: AttachmentInfo) = a.mime.startsWith("video/")
     private fun isAudio(a: AttachmentInfo) = a.mime.startsWith("audio/")
 
-    fun voiceClock(seconds: Double): String {
-        val total = seconds.toInt()
-        return "%d:%02d".format(total / 60, total % 60)
-    }
+    /** "0:07", "1:23" (the core's rule, `voice_clock`). */
+    fun voiceClock(seconds: Double): String = uniffi.lime_core.voiceClock(seconds)
 
     fun summary(items: List<AttachmentInfo>): String? {
         val first = items.firstOrNull() ?: return null
@@ -157,9 +155,9 @@ object OfflineCopy {
     fun banner(meshOn: Boolean) = if (meshOn) WITH_MESH else WITHOUT_MESH
 }
 
-/** The unread rules (iOS `Conversation`): a chat marked unread by hand counts as 1. */
-val ConversationSummary.isUnread: Boolean get() = unread > 0u || markedUnread
-val ConversationSummary.unreadCount: Int get() = maxOf(unread.toInt(), if (markedUnread) 1 else 0)
+/** The unread rules are the core's (`list_rules.rs`): a chat marked unread by hand counts as 1. */
+val ConversationSummary.isUnread: Boolean get() = uniffi.lime_core.conversationIsUnread(unread, markedUnread)
+val ConversationSummary.unreadCount: Int get() = uniffi.lime_core.conversationUnreadCount(unread, markedUnread).toInt()
 val ConversationSummary.isRequest: Boolean get() = requestState == "pending"
 
 /** "99+" past 99. */

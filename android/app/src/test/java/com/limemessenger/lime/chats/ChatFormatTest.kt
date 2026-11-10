@@ -46,7 +46,7 @@ class ChatFormatTest {
         assertEquals("Photo", AttachmentFormat.summary(listOf(photo)))
         assertEquals("3 Photos", AttachmentFormat.summary(listOf(photo, photo, photo)))
         assertEquals("Video", AttachmentFormat.summary(listOf(attachment("video/mp4"))))
-        assertEquals("Voice message (0:12)", AttachmentFormat.summary(listOf(attachment("audio/mp4", durationMs = 12_400))))
+        // ("Voice message (0:12)" uses the core's voice_clock now: a JVM test cannot load the native library; VoiceFilesUiTest checks it.)
         assertEquals("Voice message", AttachmentFormat.summary(listOf(attachment("audio/mp4"))))
         assertEquals("Plan.pdf", AttachmentFormat.summary(listOf(attachment("application/pdf", "Plan.pdf"))))
         assertEquals("File", AttachmentFormat.summary(listOf(attachment("application/pdf"))))
@@ -104,14 +104,7 @@ class ChatFormatTest {
 
     // Unread rules
 
-    @Test fun unreadCountsAndMarkedUnreadIsOne() {
-        assertFalse(conversation().isUnread); assertEquals(0, conversation().unreadCount)
-        assertTrue(conversation(unread = 3).isUnread); assertEquals(3, conversation(unread = 3).unreadCount)
-        assertTrue(conversation(marked = true).isUnread); assertEquals(1, conversation(marked = true).unreadCount)
-        assertEquals(3, conversation(unread = 3, marked = true).unreadCount)
-        assertEquals("99+", badgeText(100)); assertEquals("99", badgeText(99)); assertEquals("1", badgeText(1))
-        assertTrue(conversation(request = "pending").isRequest)
-    }
+    // The unread rules moved into the core (list_rules.rs, with the Swift cases as Rust tests); a JVM unit test cannot load the native library.
 
     @Test fun avatarToneIsTheSameOnEveryPhone() {
         // The rule: hash = hash*31 + byte over the id's UTF-8, as UInt32, mod 8 (iOS AvatarTone).

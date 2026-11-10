@@ -9,7 +9,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import uniffi.lime_core.ChatFilter
 import uniffi.lime_core.ConversationSummary
+import uniffi.lime_core.chatFilterApply
 import uniffi.lime_core.LimeStore
 
 // ANDROID DEBT: twin of the sync + reload parts of ios/Lime/App/ConversationStore.swift (syncNow, reload, chats/requests); moves into LimeCore in LIME-133
@@ -28,7 +30,14 @@ class ChatsModel(
     /** Registers this device again when it is not linked (a phone that started offline). */
     private val registrar: suspend () -> Unit = {},
     private val isRegistered: () -> Boolean = { true },
+    /** My name and avatar tone, for a group's picture (it draws me among the circles). */
+    private val me: () -> Pair<String, Int> = { "" to 0 },
+    /** The chats muted on this phone (null in tests that do not need it). */
+    private val mutes: MuteSettings? = null,
 ) {
+    val myName: String get() = me().first
+    val myTone: Int get() = me().second
+
     var conversations by mutableStateOf<List<ConversationSummary>>(emptyList())
         private set
     var isLoaded by mutableStateOf(false)
@@ -36,6 +45,13 @@ class ChatsModel(
     var problem by mutableStateOf<ConnectionProblem?>(null)
         private set
     var unreadOnly by mutableStateOf(false)
+    /** The filters of the list (kind, pinned, muted, label); they apply together and with All | Unread. */
+    var filter by mutableStateOf(ChatFilter(null, false, false, null))
+
+    fun isMuted(conversationId: String): Boolean = mutes?.isMuted(conversationId) == true
+    fun mute(conversationId: String, duration: uniffi.lime_core.MuteDuration) { mutes?.mute(conversationId, duration) }
+    fun unmute(conversationId: String) { mutes?.unmute(conversationId) }
+    fun muteEntries(): List<uniffi.lime_core.MuteEntry> = mutes?.activeEntries() ?: emptyList()
 
     /** Bumped every time the conversations are read again: an open chat reads its messages again when it changes. */
     var revision by mutableStateOf(0)
@@ -56,7 +72,7 @@ class ChatsModel(
     val requests: List<ConversationSummary> get() = conversations.filter { it.isRequest }
 
     /** The chats after the All | Unread segment. */
-    val shownChats: List<ConversationSummary> get() = if (unreadOnly) chats.filter { it.isUnread } else chats
+    val shownChats: List<ConversationSummary> get() = chatFilterApply(filter, chats, unreadOnly, mutes?.mutedIds() ?: emptyList())
 
     val unreadChatCount: Int get() = chats.count { it.isUnread }
 

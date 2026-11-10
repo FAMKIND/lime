@@ -188,6 +188,24 @@ class AccountSession(
         phase = Phase.SignedOut
     }
 
+    // Password
+
+    /** Step one of changing the password: the current one is checked and a code is emailed. */
+    suspend fun startPasswordChange(current: String) {
+        val service = auth ?: throw AuthError.Network
+        accessToken()
+        service.startPasswordChange(current, tokens ?: throw AuthError.NotVerified)
+    }
+
+    /** Step two: the code and the new password. The server ends the account's other sessions and returns a fresh one; this phone carries on with it. */
+    suspend fun finishPasswordChange(code: String, newPassword: String) {
+        val service = auth ?: throw AuthError.Network
+        accessToken()
+        val fresh = service.finishPasswordChange(code, newPassword, tokens ?: throw AuthError.NotVerified)
+        tokens = fresh
+        saveTokens(fresh)
+    }
+
     // Profile
 
     /** Saves the whole profile (an editor changes one field and sends all of them). Throws the server's reason, e.g. `AuthError.UsernameTaken`. */

@@ -18,7 +18,11 @@ import uniffi.lime_core.OutgoingAttachment
 // ANDROID DEBT: twin of the open-chat parts of ios/Lime/App/ConversationStore.swift (sendNow, resend, the reply state); moves into LimeCore in LIME-133
 
 /** One open chat: its messages from the core, sending (plain text; replies hang from a root), retrying, and marking it read. */
-class ChatModel(val conversationId: String, private val chats: ChatsModel, private val accountSignedIn: Boolean = true) {
+class ChatModel(
+    val conversationId: String, val chats: ChatsModel, private val accountSignedIn: Boolean = true,
+    /** May this file be fetched by itself (the person's download choices and the network: `MediaPolicy`)? A tap on it fetches it anyway. */
+    private val mayAutoDownload: (AttachmentInfo) -> Boolean = { true },
+) {
     var messages by mutableStateOf<List<MessageItem>>(emptyList())
         private set
     /** Replies per root message (thread summaries), for the "N replies" row. */
@@ -93,8 +97,12 @@ class ChatModel(val conversationId: String, private val chats: ChatsModel, priva
         withContext(Dispatchers.IO) { runCatching { chats.core()?.listThread(rootId) }.getOrNull().orEmpty() }
 
     /** Sends photos (processed by [AttachmentProcessing]) with an optional caption, as a reply in a thread when one is being replied to. */
-    suspend fun sendPhotos(items: List<OutgoingAttachment>, caption: String) {
+    /** Tests: sees what the composer hands over instead of the core queueing it (a test store has no account to send from); true = taken. */
+    var outgoingHook: ((List<OutgoingAttachment>, String) -> Boolean)? = null
+
+    suspend fun sendPhotos(items: List<OutgoingAttachment>, caption: String, what: String = "photo") {
         if (items.isEmpty()) return
+        if (outgoingHook?.invoke(items, caption) == true) return
         val core = chats.core() ?: return
         val root = replyingTo?.id
         val queued = try {
@@ -102,7 +110,7 @@ class ChatModel(val conversationId: String, private val chats: ChatsModel, priva
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            banner = "Couldn’t queue the photo. Try again." + (if (BuildConfig.DEBUG) " (${e::class.simpleName})" else "")
+            banner = "Couldn’t queue the $what. Try again." + (if (BuildConfig.DEBUG) " (${e::class.simpleName})" else "")
             return
         }
         replyingTo = null
@@ -116,7 +124,7 @@ class ChatModel(val conversationId: String, private val chats: ChatsModel, priva
      * The picture of an image attachment: the tiny preview straight away, then the real one, downloading and decrypting it first when this
      * phone does not have it yet (iOS `image(for:)`; pictures download by themselves, files wait for a tap).
      */
-    suspend fun loadImage(attachment: AttachmentInfo) {
+    suspend fun loadImage(attachment: AttachmentInfo, userRequested: Boolean = false) {
         val id = attachment.id
         if (id in full || !loading.add(id)) return
         try {
@@ -126,6 +134,7 @@ class ChatModel(val conversationId: String, private val chats: ChatsModel, priva
             val core = chats.core() ?: return
             var data = withContext(Dispatchers.IO) { runCatching { core.attachmentData(id) }.getOrNull() }
             if (data == null && !attachment.removed) {
+                if (!userRequested && !mayAutoDownload(attachment)) return
                 val link = chats.transportOrNull() ?: return
                 val bearer = chats.bearer()
                 val fetched = withContext(Dispatchers.IO) { runCatching { core.downloadAttachment(link, bearer, id) }.isSuccess }
@@ -142,6 +151,36 @@ class ChatModel(val conversationId: String, private val chats: ChatsModel, priva
         } finally {
             loading.remove(id)
         }
+    }
+
+    /** Sends a recorded voice message: an m4a with its length, and its 64 loudness bars in the preview slot (as iOS). */
+    suspend fun sendVoice(note: VoiceNote) = sendPhotos(
+        listOf(OutgoingAttachment(note.bytes, "Voice message.m4a", "audio/mp4", null, null, note.durationMs.toUInt(), note.waveform, ByteArray(0), "")), "", "voice message",
+    )
+
+    /** The decrypted bytes of a file or voice message: what this phone has, else downloaded now (voice always; a tap for the rest). Null when it cannot be had. */
+    suspend fun attachmentBytes(attachment: AttachmentInfo): ByteArray? {
+        val core = chats.core() ?: return null
+        var data = withContext(Dispatchers.IO) { runCatching { core.attachmentData(attachment.id) }.getOrNull() }
+        if (data == null && !attachment.removed) {
+            val link = chats.transportOrNull() ?: return null
+            val bearer = chats.bearer()
+            val fetched = withContext(Dispatchers.IO) { runCatching { core.downloadAttachment(link, bearer, attachment.id) }.isSuccess }
+            if (fetched) data = withContext(Dispatchers.IO) { runCatching { core.attachmentData(attachment.id) }.getOrNull() }
+        }
+        reload()
+        return data
+    }
+
+    /** Runs a core change on this chat (a reaction, an edit, a delete, a forward), then reads everything again and sends what was queued. False when the core refused. */
+    internal suspend fun mutate(block: (uniffi.lime_core.LimeStore) -> Unit): Boolean {
+        val core = chats.core() ?: return false
+        val ok = withContext(Dispatchers.IO) { runCatching { block(core) }.isSuccess }
+        chats.reload()
+        reload()
+        chats.deliverNow()
+        reload()
+        return ok
     }
 
     companion object {
