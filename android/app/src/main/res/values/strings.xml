@@ -326,4 +326,12 @@
     <string name="lock_title">lime is locked</string>
     <string name="lock_unlock">Unlock</string>
     <string name="lock_unlock_description">Unlock lime</string>
+    <string name="settings_appearance">Appearance</string>
+    <string name="appearance_title">Appearance</string>
+    <string name="appearance_colour_heading">Colour</string>
+    <string name="appearance_colour_option">%1$s</string>
+    <string name="appearance_colour_selected">%1$s, selected</string>
+    <string name="appearance_background_heading">Background</string>
+    <string name="appearance_note">Colours are checked so text stays readable on every combination. Your choice stays on this phone.</string>
+    <string name="appearance_reset">Back to lime\u2019s own look</string>
 </resources>

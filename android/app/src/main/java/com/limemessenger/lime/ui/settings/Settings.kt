@@ -99,6 +99,7 @@ fun SettingsScreen(session: AccountSession, onClose: () -> Unit, chats: com.lime
         "password" -> { ChangePasswordScreen(session, onBack = { route = "" }); return }
         "notifications" -> if (app != null) { NotificationsScreen(chats, app.notificationPrefs, onBack = { route = "" }); return }
         "storage" -> if (app != null && chats != null) { StorageScreen(chats, app.mediaPrefs, onBack = { route = "" }); return }
+        "appearance" -> if (app != null) { AppearanceScreen(app.themePrefs, onBack = { route = "" }); return }
         "privacy" -> if (app != null) { PrivacyScreen(app.appLock, onBack = { route = "" }); return }
     }
 
@@ -131,6 +132,7 @@ fun SettingsScreen(session: AccountSession, onClose: () -> Unit, chats: com.lime
                 Row2(stringResource(R.string.settings_change_password), "", "settings-row-password") { route = "password" }
                 Row2(stringResource(R.string.settings_notifications), "", "settings-row-notifications") { route = "notifications" }
                 Row2(stringResource(R.string.settings_storage), "", "settings-row-storage") { route = "storage" }
+                Row2(stringResource(R.string.settings_appearance), "", "settings-row-appearance") { route = "appearance" }
                 Row2(stringResource(R.string.settings_privacy), "", "settings-row-privacy") { route = "privacy" }
                 Row2(stringResource(R.string.settings_about), "", "settings-row-about-lime", last = true) { aboutOpen = true }
             }

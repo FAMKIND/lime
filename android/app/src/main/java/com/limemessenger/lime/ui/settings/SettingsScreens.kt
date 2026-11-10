@@ -50,6 +50,7 @@ import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.limemessenger.lime.LimeApp
@@ -337,5 +338,63 @@ fun PrivacyScreen(lock: AppLock, onBack: () -> Unit) {
         if (cannot) Text(stringResource(R.string.privacy_lock_unavailable), color = Lime.colors.danger, fontSize = 15.sp, modifier = Modifier.testTag("privacy-lock-unavailable"))
         Footnote(stringResource(R.string.privacy_lock_note), "privacy-lock-note")
         Footnote(stringResource(R.string.privacy_e2ee))
+    }
+}
+
+// ---------------------------------------------------------------- appearance
+
+/**
+ * Appearance (iOS Customize → Appearance, Colour, Background): follow the phone or always light or dark, one of the eight colours (they colour the main
+ * button, my bubbles and badges), one of the eight backgrounds. Every combination is worked out by the core and passed through its contrast guard, so text
+ * stays readable (4.5:1) on whatever is chosen. The screen itself is the preview: it changes as you choose. Kept on this phone only.
+ */
+@Composable
+fun AppearanceScreen(prefs: com.limemessenger.lime.chats.ThemePrefs, onBack: () -> Unit) {
+    val colors = Lime.colors
+    SettingsPage(stringResource(R.string.appearance_title), onBack, "appearance-screen") {
+        SettingsCardColumn {
+            com.limemessenger.lime.chats.AppearanceMode.entries.forEach { mode -> Choice(mode.title, prefs.mode == mode, "appearance-${mode.name.lowercase()}") { prefs.changeMode(mode) } }
+        }
+        Footnote(stringResource(R.string.appearance_colour_heading))
+        SettingsCardColumn {
+            val names = uniffi.lime_core.accentNames()
+            androidx.compose.foundation.layout.FlowRow(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                (0..7).forEach { tone ->
+                    val on = prefs.accent == tone
+                    val words = stringResource(if (on) R.string.appearance_colour_selected else R.string.appearance_colour_option, names[tone])
+                    Box(
+                        Modifier.size(56.dp).semantics { contentDescription = words; role = Role.RadioButton; selected = on }.clickable { prefs.changeAccent(tone) }.testTag("accent-$tone"),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Box(Modifier.size(40.dp).background(Color(0xFF000000 or uniffi.lime_core.accentHex(tone).toLong()), androidx.compose.foundation.shape.CircleShape), contentAlignment = Alignment.Center) {
+                            // Not by colour alone: the chosen one has a check, in the ink that reads on it.
+                            if (on) Icon(Icons.Check, null, tint = Color(0xFF000000 or uniffi.lime_core.contrastInk(uniffi.lime_core.accentHex(tone)).toLong()), modifier = Modifier.size(22.dp))
+                        }
+                    }
+                }
+            }
+        }
+        Footnote(stringResource(R.string.appearance_background_heading))
+        SettingsCardColumn {
+            uniffi.lime_core.themeBackgrounds().forEach { background ->
+                val swatch = uniffi.lime_core.resolveTheme(prefs.accent, background, colors.dark || uniffi.lime_core.themeBackgroundForcesDark(background), false)
+                val title = uniffi.lime_core.themeBackgroundTitle(background)
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 60.dp).semantics(mergeDescendants = true) { role = Role.RadioButton; selected = prefs.background == background }
+                        .clickable { prefs.changeBackground(background) }.padding(horizontal = 18.dp).testTag("background-${background.name.lowercase()}"),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Row(Modifier.size(width = 44.dp, height = 32.dp).background(Color(0xFF000000 or swatch.canvas.toLong()), RoundedCornerShape(8.dp)).padding(4.dp)) {
+                        Box(Modifier.weight(1f).fillMaxSize().background(Color(0xFF000000 or swatch.surface.toLong()), RoundedCornerShape(5.dp)))
+                    }
+                    Text(title, color = colors.text, fontSize = 17.sp, modifier = Modifier.weight(1f))
+                    if (prefs.background == background) Icon(Icons.Check, null, tint = colors.text, modifier = Modifier.size(20.dp))
+                }
+            }
+        }
+        Footnote(stringResource(R.string.appearance_note), "appearance-note")
+        if (!prefs.isDefault) {
+            TextButton(onClick = { prefs.reset() }, Modifier.heightIn(min = 48.dp).testTag("appearance-reset")) { Text(stringResource(R.string.appearance_reset), color = colors.text) }
+        }
     }
 }
