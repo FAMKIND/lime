@@ -43,6 +43,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -121,7 +126,17 @@ private fun SignedIn(session: AccountSession) {
     var personProfile by remember { mutableStateOf<Pair<String, String>?>(null) }
     var jamPost by remember { mutableStateOf<uniffi.lime_core.JamPostInfo?>(null) }
     val jam = remember(session) { JamModel(store = { session.store }, nameOf = { id -> if (id == session.userId) session.profile?.displayName else chats.conversations.firstNotNullOfOrNull { c -> c.members.firstOrNull { it.id == id }?.name } }) }
-    val chatModel = remember(openId) { openId?.let { ChatModel(it, chats) } }
+    val app = appContext as? com.limemessenger.lime.LimeApp
+    val mediaPolicy = remember(app) { app?.let { com.limemessenger.lime.chats.MediaPolicy(it, it.mediaPrefs) } }
+    val chatModel = remember(openId) { openId?.let { ChatModel(it, chats, mayAutoDownload = { a -> mediaPolicy?.mayAutoDownload(a) ?: true }) } }
+    // The banner for a new message in another chat while lime is open (no push service yet).
+    val arrivals = remember(chats) {
+        com.limemessenger.lime.chats.ArrivalBanner(
+            enabled = { app?.notificationPrefs?.enabled ?: true }, preview = { app?.notificationPrefs?.preview ?: uniffi.lime_core.NotificationPreview.NAME_AND_MESSAGE },
+            muted = { chats.isMuted(it) }, hideText = { app?.appLock?.hidesNotificationText() ?: false },
+        )
+    }
+    LaunchedEffect(chats.revision) { arrivals.check(chats.conversations, openId) }
     val groupModel = remember(openId) { openId?.let { GroupModel(chats, it) } }
     BackHandler(enabled = jamPost != null) { jamPost = null }
     BackHandler(enabled = personProfile != null) { personProfile = null }
@@ -137,7 +152,7 @@ private fun SignedIn(session: AccountSession) {
     val postOpen = jamPost
     val person = personProfile
     if (profileOpen) {
-        SettingsScreen(session, onClose = { profileOpen = false })
+        SettingsScreen(session, onClose = { profileOpen = false }, chats = chats)
     } else if (person != null) {
         PersonProfileScreen(person.first, person.second, chats, onBack = { personProfile = null })
     } else if (postOpen != null) {
@@ -169,5 +184,24 @@ private fun SignedIn(session: AccountSession) {
                 onSearch = { searchOpen = true },
             )
         })
+    }
+    ArrivalBannerView(arrivals) { id -> openId = id; arrivals.dismiss() }
+}
+
+/** The banner for a new message: the title and body from the core's words, shown for a few seconds; tapping it opens the chat. TalkBack reads it when it appears. */
+@Composable
+private fun ArrivalBannerView(arrivals: com.limemessenger.lime.chats.ArrivalBanner, onOpen: (String) -> Unit) {
+    val banner = arrivals.banner ?: return
+    LaunchedEffect(banner) { kotlinx.coroutines.delay(4_000); arrivals.dismiss() }
+    val colors = Lime.colors
+    Box(Modifier.fillMaxSize().systemBarsPadding().padding(12.dp), contentAlignment = Alignment.TopCenter) {
+        Column(
+            Modifier.fillMaxWidth().background(colors.surface, androidx.compose.foundation.shape.RoundedCornerShape(18.dp)).heightIn(min = 56.dp)
+                .semantics(mergeDescendants = true) { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite; role = androidx.compose.ui.semantics.Role.Button }
+                .clickable { onOpen(banner.conversationId) }.padding(horizontal = 16.dp, vertical = 10.dp).testTag("arrival-banner"),
+        ) {
+            Text(banner.title, color = colors.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Text(banner.body, color = colors.textSecondary, fontSize = 15.sp, maxLines = 2, modifier = Modifier.testTag("arrival-banner-body"))
+        }
     }
 }

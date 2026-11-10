@@ -79,7 +79,9 @@ import uniffi.lime_core.coreVersion
  * Sign out (with the honest words about what it does to this phone's keys). The system back gesture leaves a screen.
  */
 @Composable
-fun SettingsScreen(session: AccountSession, onClose: () -> Unit) {
+fun SettingsScreen(session: AccountSession, onClose: () -> Unit, chats: com.limemessenger.lime.chats.ChatsModel? = null) {
+    val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as? com.limemessenger.lime.LimeApp
+    var route by rememberSaveable { mutableStateOf("") }
     val colors = Lime.colors
     var editing by remember { mutableStateOf<ProfileField?>(null) }
     var aboutOpen by rememberSaveable { mutableStateOf(false) }
@@ -87,10 +89,18 @@ fun SettingsScreen(session: AccountSession, onClose: () -> Unit) {
     var confirmingRemoval by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     BackHandler(enabled = aboutOpen) { aboutOpen = false }
-    BackHandler(enabled = !aboutOpen) { onClose() }
+    BackHandler(enabled = route != "") { route = "" }
+    BackHandler(enabled = !aboutOpen && route == "") { onClose() }
     val profile = session.profile ?: Profile(displayName = "")
 
     if (aboutOpen) { AboutScreen(onBack = { aboutOpen = false }); return }
+    // The screens under Account, Notifications, Storage and Privacy.
+    when (route) {
+        "password" -> { ChangePasswordScreen(session, onBack = { route = "" }); return }
+        "notifications" -> if (app != null) { NotificationsScreen(chats, app.notificationPrefs, onBack = { route = "" }); return }
+        "storage" -> if (app != null && chats != null) { StorageScreen(chats, app.mediaPrefs, onBack = { route = "" }); return }
+        "privacy" -> if (app != null) { PrivacyScreen(app.appLock, onBack = { route = "" }); return }
+    }
 
     Column(Modifier.fillMaxSize().background(colors.canvas).systemBarsPadding()) {
         Row(Modifier.fillMaxWidth().heightIn(min = 64.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -118,6 +128,10 @@ fun SettingsScreen(session: AccountSession, onClose: () -> Unit) {
             }
             Card {
                 profile.maskedEmail?.let { Row2(stringResource(R.string.settings_email), it, "settings-row-email", last = false, onClick = null) }
+                Row2(stringResource(R.string.settings_change_password), "", "settings-row-password") { route = "password" }
+                Row2(stringResource(R.string.settings_notifications), "", "settings-row-notifications") { route = "notifications" }
+                Row2(stringResource(R.string.settings_storage), "", "settings-row-storage") { route = "storage" }
+                Row2(stringResource(R.string.settings_privacy), "", "settings-row-privacy") { route = "privacy" }
                 Row2(stringResource(R.string.settings_about), "", "settings-row-about-lime", last = true) { aboutOpen = true }
             }
             Card {

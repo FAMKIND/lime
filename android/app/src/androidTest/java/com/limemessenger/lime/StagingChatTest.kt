@@ -6,6 +6,7 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -138,7 +139,7 @@ class StagingChatTest {
         rule.waitUntil(30_000) { session.profile?.about == "📚 Planning lessons" }
         rule.waitUntil(10_000) { count("field-editor") == 0 }
         rule.onNodeWithTag("settings-about-line", useUnmergedTree = true).assertTextEquals("📚 Planning lessons")
-        rule.onNodeWithTag("settings-sign-out", useUnmergedTree = true).performClick()
+        rule.onNodeWithTag("settings-sign-out", useUnmergedTree = true).performScrollTo().performClick()
         rule.onNodeWithTag("sign-out-confirm", useUnmergedTree = true).performClick()
         rule.waitUntil(30_000) { session.phase == Phase.SignedOut }
         assertEquals(Phase.SignedOut, session.phase)

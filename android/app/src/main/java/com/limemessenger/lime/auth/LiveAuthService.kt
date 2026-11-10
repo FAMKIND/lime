@@ -94,6 +94,18 @@ class LiveAuthService(private val transport: HttpTransport) : AuthService {
         return tokens(JSONObject(r.json.toString()).put("user_id", userId))
     }
 
+    // ANDROID DEBT: twin of the password-change calls of ios/Lime/Core/Auth/LiveAuthService.swift; moves into LimeCore in LIME-133
+    override suspend fun startPasswordChange(current: String, tokens: AuthTokens) {
+        val result = function("password-change-start", JSONObject().put("current_password", current), tokens.accessToken)
+        if (result.status != 200) throw error(result)
+    }
+
+    override suspend fun finishPasswordChange(code: String, newPassword: String, tokens: AuthTokens): AuthTokens {
+        val result = function("password-change-verify", JSONObject().put("code", code).put("new_password", newPassword), tokens.accessToken)
+        if (result.status != 200) throw error(result)
+        return tokens(result.json)
+    }
+
     override suspend fun signOut(tokens: AuthTokens) {
         try {
             post("/auth/v1/logout", JSONObject(), tokens.accessToken)

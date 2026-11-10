@@ -26,6 +26,10 @@ interface AuthService {
     suspend fun startReset(identifier: String)
     suspend fun finishReset(identifier: String, code: String, newPassword: String): AuthTokens
 
+    /** Changing the password from Settings: the current one is checked and a code is emailed; then the code and the new password give a fresh session. */
+    suspend fun startPasswordChange(current: String, tokens: AuthTokens)
+    suspend fun finishPasswordChange(code: String, newPassword: String, tokens: AuthTokens): AuthTokens
+
     suspend fun saveProfile(draft: ProfileDraft, tokens: AuthTokens): Profile
     suspend fun loadProfile(tokens: AuthTokens): Profile?
 

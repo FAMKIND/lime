@@ -44,6 +44,18 @@ class FakeAuthService : AuthService {
         return tokens("reset")
     }
 
+    override suspend fun startPasswordChange(current: String, tokens: AuthTokens) {
+        calls += "startPasswordChange"; maybeFail()
+        if (current != correctPassword) throw AuthError.InvalidCredentials
+    }
+
+    override suspend fun finishPasswordChange(code: String, newPassword: String, tokens: AuthTokens): AuthTokens {
+        calls += "finishPasswordChange:$code"; maybeFail()
+        if (code != correctCode) throw AuthError.BadCode("That code isn't right.")
+        if (newPassword.length < 10) throw AuthError.WeakPassword
+        return tokens("change")
+    }
+
     override suspend fun saveProfile(draft: ProfileDraft, tokens: AuthTokens): Profile {
         calls += "saveProfile:${draft.displayName}:${draft.username}:${draft.school}"; lastDraft = draft; maybeFail()
         return Profile(draft.displayName, draft.username, draft.school, draft.aboutEmoji, draft.aboutText, draft.hideFromSearch ?: false).also { profile = it }

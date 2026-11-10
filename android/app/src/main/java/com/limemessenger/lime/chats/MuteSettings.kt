@@ -30,6 +30,9 @@ class MuteSettings(private val prefs: SharedPreferences, private val clock: () -
         prefs.edit().remove(PREFIX + conversationId).apply()
     }
 
+    /** The mutes still on, soonest end first, "Always" last (the core's `active_mutes`). */
+    fun activeEntries(): List<uniffi.lime_core.MuteEntry> = uniffi.lime_core.activeMutes(until.map { uniffi.lime_core.MuteEntry(it.key, it.value) }, clock())
+
     /** The chats muted now. */
     fun mutedIds(): List<String> = until.filterValues { isMutedUntil(it, clock()) }.keys.toList()
 

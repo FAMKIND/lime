@@ -18,7 +18,11 @@ import uniffi.lime_core.OutgoingAttachment
 // ANDROID DEBT: twin of the open-chat parts of ios/Lime/App/ConversationStore.swift (sendNow, resend, the reply state); moves into LimeCore in LIME-133
 
 /** One open chat: its messages from the core, sending (plain text; replies hang from a root), retrying, and marking it read. */
-class ChatModel(val conversationId: String, val chats: ChatsModel, private val accountSignedIn: Boolean = true) {
+class ChatModel(
+    val conversationId: String, val chats: ChatsModel, private val accountSignedIn: Boolean = true,
+    /** May this file be fetched by itself (the person's download choices and the network: `MediaPolicy`)? A tap on it fetches it anyway. */
+    private val mayAutoDownload: (AttachmentInfo) -> Boolean = { true },
+) {
     var messages by mutableStateOf<List<MessageItem>>(emptyList())
         private set
     /** Replies per root message (thread summaries), for the "N replies" row. */
@@ -116,7 +120,7 @@ class ChatModel(val conversationId: String, val chats: ChatsModel, private val a
      * The picture of an image attachment: the tiny preview straight away, then the real one, downloading and decrypting it first when this
      * phone does not have it yet (iOS `image(for:)`; pictures download by themselves, files wait for a tap).
      */
-    suspend fun loadImage(attachment: AttachmentInfo) {
+    suspend fun loadImage(attachment: AttachmentInfo, userRequested: Boolean = false) {
         val id = attachment.id
         if (id in full || !loading.add(id)) return
         try {
@@ -126,6 +130,7 @@ class ChatModel(val conversationId: String, val chats: ChatsModel, private val a
             val core = chats.core() ?: return
             var data = withContext(Dispatchers.IO) { runCatching { core.attachmentData(id) }.getOrNull() }
             if (data == null && !attachment.removed) {
+                if (!userRequested && !mayAutoDownload(attachment)) return
                 val link = chats.transportOrNull() ?: return
                 val bearer = chats.bearer()
                 val fetched = withContext(Dispatchers.IO) { runCatching { core.downloadAttachment(link, bearer, id) }.isSuccess }

@@ -51,6 +51,7 @@ class ChatsModel(
     fun isMuted(conversationId: String): Boolean = mutes?.isMuted(conversationId) == true
     fun mute(conversationId: String, duration: uniffi.lime_core.MuteDuration) { mutes?.mute(conversationId, duration) }
     fun unmute(conversationId: String) { mutes?.unmute(conversationId) }
+    fun muteEntries(): List<uniffi.lime_core.MuteEntry> = mutes?.activeEntries() ?: emptyList()
 
     /** Bumped every time the conversations are read again: an open chat reads its messages again when it changes. */
     var revision by mutableStateOf(0)

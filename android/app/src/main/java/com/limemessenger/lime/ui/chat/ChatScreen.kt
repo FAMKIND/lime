@@ -537,7 +537,7 @@ private fun PhotoViewer(photos: List<AttachmentInfo>, start: Int, model: ChatMod
     Box(Modifier.fillMaxSize().background(Color.Black).testTag("photo-viewer")) {
         HorizontalPager(pager, Modifier.fillMaxSize()) { page ->
             val photo = photos[page]
-            LaunchedEffect(photo.id) { model.loadImage(photo) }
+            LaunchedEffect(photo.id) { model.loadImage(photo, userRequested = true) }
             var scale by remember { mutableStateOf(1f) }
             var offset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
             val bitmap = model.images[photo.id]

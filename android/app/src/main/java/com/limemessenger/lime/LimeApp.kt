@@ -19,6 +19,11 @@ class LimeApp : Application() {
     val secrets: SecureBlobStore by lazy { SecureBlobStore(File(noBackupFilesDir, "secrets"), wrapper) }
     val storage: StorageBootstrap by lazy { StorageBootstrap(File(noBackupFilesDir, "data"), secrets) }
 
+    /** This phone's own choices (not secret, never sent anywhere): the lock, notifications, media. */
+    val appLock: com.limemessenger.lime.security.AppLock by lazy { com.limemessenger.lime.security.AppLock(getSharedPreferences("lime.lock", MODE_PRIVATE)) }
+    val notificationPrefs: com.limemessenger.lime.chats.NotificationPrefs by lazy { com.limemessenger.lime.chats.NotificationPrefs(getSharedPreferences("lime.notify", MODE_PRIVATE)) }
+    val mediaPrefs: com.limemessenger.lime.chats.MediaPrefs by lazy { com.limemessenger.lime.chats.MediaPrefs(getSharedPreferences("lime.media", MODE_PRIVATE)) }
+
     val backend: BackendConfig? get() = BackendConfig.current
     val transport: HttpTransport? by lazy { backend?.let { HttpTransport(it.url, it.apiKey) } }
 

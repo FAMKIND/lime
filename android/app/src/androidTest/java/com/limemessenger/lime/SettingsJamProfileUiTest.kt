@@ -8,6 +8,7 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -117,16 +118,16 @@ class SettingsJamProfileUiTest {
 
     @Test fun aboutLimeShowsTheVersionsAndSignOutTellsTheTruthThenSignsOut() {
         settings()
-        rule.onNodeWithTag("settings-row-about-lime").performClick()
+        rule.onNodeWithTag("settings-row-about-lime").performScrollTo().performClick()
         rule.onNodeWithTag("about-version", useUnmergedTree = true).assertTextEquals("Version ${BuildConfig.VERSION_NAME}")
         rule.onNodeWithTag("about-core", useUnmergedTree = true).assertIsDisplayed()
         rule.onNodeWithTag("about-terms").assertIsDisplayed()
         rule.onNodeWithTag("about-back").performClick()
-        rule.onNodeWithTag("settings-sign-out").performClick()
+        rule.onNodeWithTag("settings-sign-out").performScrollTo().performClick()
         rule.onNodeWithTag("sign-out-confirm").assertIsDisplayed()
         rule.onNodeWithTag("sign-out-confirm-cancel").performClick()
         assertEquals(Phase.SignedIn, session.phase)
-        rule.onNodeWithTag("settings-sign-out").performClick()
+        rule.onNodeWithTag("settings-sign-out").performScrollTo().performClick()
         rule.onNodeWithTag("sign-out-confirm").performClick()
         rule.waitUntil(5_000) { session.phase == Phase.SignedOut }
         assertTrue(auth.calls.contains("signOut"))
