@@ -259,7 +259,8 @@ struct JamPostCard: View {
             unread: isArticle && JamRead.isUnread(post, me: store.meProvider().id),
             title: post.title, subtitle: post.kind == "quick" ? "" : post.subtitle, text: post.plain,
             series: post.series.map { "\($0.partLabel) of the series \($0.title)" },
-            saved: saved, likes: Int(counts.likes), liked: counts.likedByMe, comments: Int(counts.comments))
+            saved: saved, likes: Int(counts.likes), liked: counts.likedByMe, comments: Int(counts.comments),
+            coverAlt: store.jamAttachments(post.postId).first(where: JamCover.isCover)?.alt ?? "")
         return JamCardStop(
             active: CallControlsPolicy.voiceOverRunning || CallControlsPolicy.switchControlRunning,
             label: label, hint: isArticle ? "Opens the article" : "Opens the post",

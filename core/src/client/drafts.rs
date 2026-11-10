@@ -175,6 +175,16 @@ impl LimeStore {
         self.with_draft(&draft_id, |d| d.set_cover(&file_id))
     }
 
+    /// The cover's description for people who cannot see it (LIME-130-6b).
+    pub fn draft_set_cover_alt(&self, draft_id: String, alt: String) -> Result<(), StoreError> {
+        self.with_draft(&draft_id, |d| d.set_cover_alt(&alt))
+    }
+
+    /// An image block's description (LIME-130-6b).
+    pub fn draft_set_block_alt(&self, draft_id: String, block_id: String, alt: String) -> Result<(), StoreError> {
+        self.with_draft(&draft_id, |d| d.set_block_alt(&block_id, &alt))
+    }
+
     pub fn draft_insert_text(&self, draft_id: String, block_id: String, at: u32, text: String) -> Result<(), StoreError> {
         self.with_draft(&draft_id, |d| d.insert_text(&block_id, at as usize, &text))
     }

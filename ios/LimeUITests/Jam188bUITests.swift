@@ -54,6 +54,29 @@ final class Jam188bUITests: LimeUITestCase {
         }
     }
 
+    /// LIME-130-6b: a photo can be described in the composer, and the reader's picture is read by that description, not "Photo".
+    func testADescribedPhotoIsReadByItsDescription() {
+        let app = launch("jam")
+        app.buttons["new-jam-post"].tap()
+        write(app, "Sports day")
+        app.buttons["jam-add-photo"].tap()
+        XCTAssertTrue(any(app, "jam-photo-0").waitForExistence(timeout: 8))
+        let pill = app.buttons["Add description to photo 1"]
+        XCTAssertTrue(pill.waitForExistence(timeout: 5), "a + Alt pill on the photo")
+        pill.tap()
+        let field = any(app, "description-field")
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("A red kite over the field")
+        app.buttons["description-save"].tap()
+        XCTAssertTrue(app.buttons["Edit description of photo 1"].waitForExistence(timeout: 5), "described now")
+        postNow(app)
+        XCTAssertTrue(card(app, containing: "Sports day").waitForExistence(timeout: 8))
+        let photo = app.descendants(matching: .any).matching(identifier: "jam-row-photo-0").firstMatch
+        XCTAssertTrue(photo.waitForExistence(timeout: 8))
+        XCTAssertEqual(photo.label, "A red kite over the field", "the reader hears the description")
+    }
+
     func testAQuickPostWithThreePhotosPostsAndTheTextSitsAtTheTop() {
         let app = launch("jam")
         app.buttons["new-jam-post"].tap()

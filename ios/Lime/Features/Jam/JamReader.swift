@@ -132,7 +132,7 @@ struct JamAttachmentsView: View {
             ForEach(indexed.filter { $0.element.kind != "image" && $0.element.mime != JamLink.mime }, id: \.element.attachmentId) { entry in
                 let file = entry.element
                 switch file.kind {
-                case "video": JamVideoCard(postID: postID, file: file, captionFile: JamCaptions.file(for: entry.offset, in: all))
+                case "video": VStack(alignment: .leading, spacing: 8) { JamVideoCard(postID: postID, file: file, captionFile: JamCaptions.file(for: entry.offset, in: all)); ReadTranscriptButton(text: file.transcript) }
                 case "audio": JamAudioCard(postID: postID, file: file, coverFile: cover, captionFile: JamCaptions.file(for: entry.offset, in: all), showsWords: compact)
                 default: JamFileCard(postID: postID, file: file)
                 }
@@ -231,7 +231,7 @@ struct JamPhotoRow: View {
         .contentShape(Rectangle())
         .onTapGesture { viewing = ViewerStart(index: index) }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(files.count > 1 ? "Photo \(index + 1) of \(files.count)" : "Photo")
+        .accessibilityLabel(JamPhotoLabel.label(alt: file.alt)).accessibilityValue(JamPhotoLabel.value(index: index, count: files.count))
         .accessibilityAddTraits(.isButton).accessibilityHint("Opens the photo")
         .accessibilityIdentifier("jam-row-photo-\(index)")
         .task { _ = await picture(for: file.attachmentId) }
@@ -246,7 +246,7 @@ struct JamPhotoRow: View {
 
     private func item(_ file: JamAttachmentInfo) -> AttachmentItem {
         AttachmentItem(id: file.attachmentId, mime: file.mime, name: file.name, size: Int64(file.size), width: file.width.map(Int.init), height: file.height.map(Int.init),
-                       durationMs: file.durationMs.map(Int.init), thumb: file.thumb, downloaded: true)
+                       durationMs: file.durationMs.map(Int.init), thumb: file.thumb, alt: file.alt, downloaded: true)
     }
 }
 
@@ -280,6 +280,7 @@ struct JamInlineAttachment: View {
                     JamPhoto(postID: postID, file: file, onLoaded: { full = $0 }, tapToOpen: true)
                 } else if file.kind == "video" {
                     JamVideoCard(postID: postID, file: file, captionFile: JamCaptions.file(for: index, in: files))
+                    ReadTranscriptButton(text: file.transcript)
                 } else if file.kind == "audio" {
                     JamAudio(postID: postID, file: file)
                 } else {
@@ -310,7 +311,7 @@ private struct JamPhoto: View {
                     .frame(maxWidth: JamMedia.maxColumn, maxHeight: JamMedia.windowHeight * JamMedia.maxHeightShare)
                     .jamMediaClip()
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityLabel(file.name.isEmpty ? "Photo" : "Photo, \(file.name)")
+                    .accessibilityLabel(JamPhotoLabel.label(alt: file.alt))
                     .onTapGesture { if tapToOpen { opened = true } }
                     .accessibilityAddTraits(tapToOpen ? .isButton : [])
                     .fullScreenCover(isPresented: $opened) {

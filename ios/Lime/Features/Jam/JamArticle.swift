@@ -806,7 +806,8 @@ enum ArticlePrint {
         for (index, file) in files.enumerated() where file.kind == "image" {
             if let data = await store.jamAttachmentData(post.postId, file.attachmentId) { images[index] = data.base64EncodedString() }
         }
-        let html = Self.html(post: post, writer: store.authorName(post), face: face, images: images)
+        let alts = Dictionary(uniqueKeysWithValues: store.jamAttachments(post.postId).enumerated().map { ($0.offset, $0.element.alt) })
+        let html = Self.html(post: post, writer: store.authorName(post), face: face, images: images, alts: alts)
         let formatter = UIMarkupTextPrintFormatter(markupText: html)
         formatter.perPageContentInsets = UIEdgeInsets(top: 54, left: 54, bottom: 54, right: 54)
         let info = UIPrintInfo(dictionary: nil)
@@ -835,7 +836,7 @@ enum ArticlePrint {
         }.joined()
     }
 
-    static func html(post: JamPostInfo, writer: String, face: ReaderFont, images: [Int: String]) -> String {
+    static func html(post: JamPostInfo, writer: String, face: ReaderFont, images: [Int: String], alts: [Int: String] = [:]) -> String {
         let family: String
         switch face {
         case .newYork: family = "'New York', Georgia, serif"
@@ -855,7 +856,7 @@ enum ArticlePrint {
             case .divider: body += "<hr>"
             case .freewall: break
             case .image(let caption, let index):
-                if let data = images[index] { body += "<figure><img src=\"data:image/jpeg;base64,\(data)\" style=\"max-width:100%\"><figcaption>\(escape(caption))</figcaption></figure>" }
+                if let data = images[index] { body += "<figure><img src=\"data:image/jpeg;base64,\(data)\" alt=\"\(escape(alts[index] ?? "").replacingOccurrences(of: "\"", with: "&quot;"))\" style=\"max-width:100%\"><figcaption>\(escape(caption))</figcaption></figure>" }
             }
         }
         return "<html><body style=\"font-family:\(family);font-size:13pt;line-height:1.5\"><h1>\(escape(post.title))</h1><p style=\"color:#555\">\(escape(post.subtitle))</p><p style=\"color:#555\">\(escape(writer)) \u{00B7} \(escape(JamDates.text(post.created)))</p><hr>\(body)</body></html>"

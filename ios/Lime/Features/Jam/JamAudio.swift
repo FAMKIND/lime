@@ -153,6 +153,7 @@ struct JamAudioCard: View {
             Text(VoiceFormat.clock(max(controller.duration - controller.position, 0))).font(Theme.caption.monospacedDigit()).foregroundStyle(Theme.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .trailing).padding(.trailing, 38)
                 .accessibilityLabel("Length \(PodcastFormat.spoken(Double(file.durationMs ?? 0) / 1000))").accessibilityIdentifier("jam-audio-length")
+            ReadTranscriptButton(text: file.transcript)
             // The card says so too, not only the player (LIME-130-6a).
             if controller.failed {
                 Text("Couldn\u{2019}t play this recording.").font(Theme.caption).foregroundStyle(Theme.danger)

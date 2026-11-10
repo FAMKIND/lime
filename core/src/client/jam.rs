@@ -174,6 +174,12 @@ pub struct JamAttachmentInfo {
     pub poster: Vec<u8>,
     /// This phone already has the file.
     pub available: bool,
+    /// The writer's description of a photo (LIME-130-6b), or empty.
+    #[uniffi(default = "")]
+    pub alt: String,
+    /// The writer's transcript of an audio or video file, or empty.
+    #[uniffi(default = "")]
+    pub transcript: String,
 }
 
 /// A jam's public page as the server shows it to any signed-in teacher.
@@ -567,7 +573,8 @@ impl LimeStore {
                 duration_ms: file.duration_ms,
                 thumb: file.thumb.clone(),
                 poster: file.poster.clone(),
-                alt: String::new(),
+                alt: crate::store::attachments::clean_alt(&file.alt),
+                transcript: if file.mime.starts_with("audio/") || file.mime.starts_with("video/") { crate::store::attachments::clean_transcript(&file.transcript) } else { String::new() },
             };
             let mut value = descriptor.to_json();
             value["blob_sha"] = json!(hash);
@@ -745,7 +752,8 @@ impl LimeStore {
                         duration_ms: file.duration_ms,
                         thumb: file.thumb.clone(),
                         poster: file.poster.clone(),
-                        alt: String::new(),
+                        alt: crate::store::attachments::clean_alt(&file.alt),
+                transcript: if file.mime.starts_with("audio/") || file.mime.starts_with("video/") { crate::store::attachments::clean_transcript(&file.transcript) } else { String::new() },
                     };
                     let mut value = descriptor.to_json();
                     value["blob_sha"] = json!(hash);
@@ -1139,6 +1147,8 @@ impl LimeStore {
                     duration_ms: d.duration_ms,
                     thumb: d.thumb,
                     poster: d.poster,
+                    alt: d.alt,
+                    transcript: d.transcript,
                 });
             }
             Ok(out)

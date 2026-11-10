@@ -58,6 +58,10 @@ struct JamComposeSheet: View {
     @State private var pickingCover = false
     @State private var choosingArticlePhoto = false
     @State private var viewingCover = false
+    /// The picture whose description is being written (LIME-130-6b).
+    @State private var describing: DescribeTarget?
+    /// The recording or video whose transcript is being written (LIME-130-6b).
+    @State private var transcribing: CaptionKey?
     @State private var headingOpen = false
     @State private var recordMode: Int?
     @State private var chooser: Chooser?
@@ -180,6 +184,12 @@ struct JamComposeSheet: View {
             .onChange(of: composer.plainText) { refreshLink() }
             .onChange(of: previewsOn) { refreshLink() }
             .sheet(isPresented: $choosingCoauthors) { JamCoauthorPicker(selected: $coauthors) }
+            .sheet(item: $transcribing) { key in TranscriptEditSheet(text: transcript(for: key)) { setTranscript($0, for: key) } }
+            .sheet(item: $describing) { target in
+                if let draft = describedDraft(target) {
+                    PhotoDescriptionSheet(draft: draft) { text in setDescription(text, for: target) }
+                }
+            }
             .sheet(isPresented: $choosingArticlePhoto) { ArticlePhotoPicker(load: articlePhotos) { setCover($0); choosingArticlePhoto = false } }
             .fullScreenCover(isPresented: $pickingCover) {
                 MediaLibraryPicker(limit: 1, onPick: { images, _ in pickingCover = false; if let image = images.first { setCover(image) } }, onCancel: { pickingCover = false }).ignoresSafeArea()
@@ -401,6 +411,7 @@ struct JamComposeSheet: View {
             postLine.padding(.bottom, 6)
             if let coedit { CoEditBar(session: coedit) }
             coverRow.padding(.bottom, 8)
+            articlePicturesRow
             CaretTextField(text: $title, title: "Title", prompt: Text("Title").foregroundColor(Theme.placeholderLarge)) { caret, end in titleCaret = (caret, end); coedit?.fieldMoved() }
                 .font(Theme.font(.title2, weight: .bold)).lineLimit(1...3)
                 .focused($focus, equals: .title).submitLabel(.next).onSubmit { focus = .subtitle }
@@ -444,11 +455,67 @@ struct JamComposeSheet: View {
                 Text(coverImage == nil ? "Add cover" : "Edit cover").font(Theme.secondary).foregroundStyle(Theme.text).lineLimit(1).fixedSize().padding(.horizontal, 14).frame(minHeight: 44).background(Theme.surface, in: Capsule())
             }
             .accessibilityLabel(coverImage == nil ? "Add cover" : "Edit cover").accessibilityIdentifier("jam-cover-change")
+            if coverImage != nil, articleCover != nil {
+                AltPill(described: !(articleCover?.alt ?? "").isEmpty, what: "the cover") { describing = .cover }
+            }
             if coverImage != nil {
                 Button(role: .destructive) { articleCover = nil; coverImage = nil; coverRemoved = hasStoredCover } label: { Text("Remove").font(Theme.secondary).padding(.horizontal, 10).frame(minHeight: 44) }
                     .accessibilityIdentifier("jam-cover-remove")
             }
             Spacer(minLength: 0)
+        }
+    }
+
+    private func transcript(for key: CaptionKey) -> String {
+        switch key {
+        case .clip(let i): return clips.indices.contains(i) ? clips[i].transcript : ""
+        case .article(let i): return articleFiles.indices.contains(i) ? articleFiles[i].transcript : ""
+        }
+    }
+
+    private func setTranscript(_ text: String, for key: CaptionKey) {
+        switch key {
+        case .clip(let i): if clips.indices.contains(i) { clips[i].transcript = text }
+        case .article(let i): if articleFiles.indices.contains(i) { articleFiles[i].transcript = text }
+        }
+    }
+
+    /// The article's pictures as small tiles with a description pill each (the ones already in a published post keep theirs).
+    @ViewBuilder
+    private var articlePicturesRow: some View {
+        let existing = editing.map { store.jamAttachments($0.postId).count } ?? 0
+        let tiles = articleFiles.enumerated().filter { $0.offset >= existing && $0.element.mime.hasPrefix("image/") }
+        if !tiles.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(tiles, id: \.offset) { index, file in
+                        Group {
+                            if let image = UIImage(data: file.bytes) { Image(uiImage: image).resizable().scaledToFill() } else { Rectangle().fill(Theme.surface) }
+                        }
+                        .frame(width: 72, height: 72).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .accessibilityHidden(true)
+                        .overlay(alignment: .bottomLeading) { AltPill(described: !file.alt.isEmpty, what: "picture \(index + 1)") { describing = .articleFile(index) } }
+                    }
+                }
+                .padding(.horizontal, 20)
+            }
+            .frame(height: 84).accessibilityIdentifier("jam-article-pictures")
+        }
+    }
+
+    private func describedDraft(_ target: DescribeTarget) -> DraftAttachment? {
+        switch target {
+        case .photo(let i): return photos.indices.contains(i) ? photos[i] : nil
+        case .articleFile(let i): return articleFiles.indices.contains(i) ? DraftAttachment(outgoing: articleFiles[i], preview: UIImage(data: articleFiles[i].bytes)) : nil
+        case .cover: return articleCover.map { DraftAttachment(outgoing: $0, preview: coverImage) }
+        }
+    }
+
+    private func setDescription(_ text: String, for target: DescribeTarget) {
+        switch target {
+        case .photo(let i): if photos.indices.contains(i) { photos[i].outgoing.alt = text }
+        case .articleFile(let i): if articleFiles.indices.contains(i) { articleFiles[i].alt = text }
+        case .cover: articleCover?.alt = text
         }
     }
 
@@ -531,8 +598,8 @@ struct JamComposeSheet: View {
     /// Starts making captions for a video or a recording on this phone (nothing leaves it).
     private func startCaptions(_ item: OutgoingAttachment, _ key: CaptionKey) {
         guard item.mime.hasPrefix("video/") || item.mime.hasPrefix("audio/") else { return }
-        if let ms = item.durationMs, Int(ms) / 1000 > CaptionMaker.maxSeconds { captions[key] = CaptionDraft(making: false, none: true); return }
         captions[key] = CaptionDraft()
+        let seconds = item.durationMs.map { Double($0) / 1000 }
         let ext = item.mime.hasPrefix("video/") ? "mp4" : "m4a"
         #if DEBUG
         let demo = store.isDemo
@@ -540,8 +607,11 @@ struct JamComposeSheet: View {
         let demo = false
         #endif
         Task {
-            let cues = await CaptionMaker.make(bytes: item.bytes, fileExtension: ext, demo: demo)
-            captions[key] = cues.map { CaptionDraft(cues: $0, making: false) } ?? CaptionDraft(making: false, none: true)
+            // Over five minutes only an iOS 26 phone with the language model already installed can do it (no cap there); otherwise none.
+            let possible = demo ? true : await CaptionMaker.canMake(seconds: seconds)
+            guard possible else { captions[key] = CaptionDraft(making: false, none: true); return }
+            let made = await CaptionMaker.make(bytes: item.bytes, fileExtension: ext, seconds: seconds, demo: demo)
+            captions[key] = made.map { CaptionDraft(cues: $0.cues, making: false, stoppedAtMs: $0.stoppedAtMs) } ?? CaptionDraft(making: false, none: true)
         }
     }
 
@@ -553,11 +623,14 @@ struct JamComposeSheet: View {
                     let draft = captions[key] ?? CaptionDraft(making: false)
                     HStack(spacing: 10) {
                         Image(systemName: "captions.bubble").foregroundStyle(Theme.textSecondary).accessibilityHidden(true)
-                        Text(draft.making ? "Making captions\u{2026}" : draft.none ? "No captions for this one" : draft.on ? "Captions \u{00B7} \(draft.cues.count) \(draft.cues.count == 1 ? "line" : "lines")" : "Captions off")
+                        Text(draft.making ? "Making captions\u{2026}" : draft.none ? "No captions. Add a transcript so everyone can follow it." : draft.on ? "Captions \u{00B7} \(draft.cues.count) \(draft.cues.count == 1 ? "line" : "lines")" + (draft.stoppedAtMs.map { ". They stop at \(VoiceFormat.clock(Double($0) / 1000)): that is the most a post can carry." } ?? "") : "Captions off")
                             .font(Theme.secondary).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("jam-captions-status")
                         Spacer()
                         if !draft.making, !draft.none {
                             Button("Edit") { editingCaptions = key }.font(Theme.secondary).foregroundStyle(Theme.text).frame(minWidth: 44, minHeight: 44).accessibilityIdentifier("jam-captions-edit")
+                        }
+                        if !draft.making {
+                            Button(transcript(for: key).isEmpty ? "Add transcript" : "Transcript") { transcribing = key }.font(Theme.secondary).foregroundStyle(Theme.text).frame(minHeight: 44).accessibilityIdentifier("jam-transcript-add")
                         }
                     }
                 }
@@ -580,6 +653,7 @@ struct JamComposeSheet: View {
                         }
                         .accessibilityLabel("Remove photo \(index + 1)").accessibilityIdentifier("jam-photo-remove-\(index)")
                     }
+                    .overlay(alignment: .bottomLeading) { AltPill(described: !draft.outgoing.alt.isEmpty, what: "photo \(index + 1)") { describing = .photo(index) } }
                     .accessibilityIdentifier("jam-photo-\(index)")
                 }
             }

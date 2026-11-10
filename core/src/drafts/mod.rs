@@ -42,6 +42,9 @@ pub struct DraftBlock {
     pub attachment: u32,
     /// An image's caption, or a button's line above it.
     pub caption: String,
+    /// An image's description for people who cannot see it (at most 250 characters), or empty (LIME-130-6b). A draft written before this reads empty;
+    /// a co-author on an older build ignores the field.
+    pub alt: String,
     /// A button's address.
     pub url: String,
     /// A button's palette colour name.
@@ -57,6 +60,8 @@ pub struct DraftMeta {
     pub subtitle: String,
     /// The cover's file id, or empty.
     pub cover: String,
+    /// The cover's description (at most 250 characters), or empty (LIME-130-6b).
+    pub cover_alt: String,
 }
 
 /// What changed in the document, for the editor to apply in order. Text positions are characters within the block.
@@ -83,6 +88,9 @@ pub struct DraftBlockInput {
     pub number: u32,
     pub attachment: u32,
     pub caption: String,
+    /// An image's description (LIME-130-6b); a block rewritten from markdown keeps the one it has.
+    #[uniffi(default = "")]
+    pub alt: String,
     pub url: String,
     pub colour: String,
     pub spans: Vec<Span>,
@@ -276,6 +284,7 @@ impl DraftDoc {
             number: self.get_u32(block, "number"),
             attachment: self.get_u32(block, "attachment"),
             caption: self.get_str(block, "caption"),
+            alt: self.get_str(block, "alt"),
             url: self.get_str(block, "url"),
             colour: self.get_str(block, "colour"),
             spans: self.text_obj(block).map(|t| self.spans_of(&t)).unwrap_or_default(),
@@ -287,7 +296,7 @@ impl DraftDoc {
     }
 
     pub fn meta(&self) -> DraftMeta {
-        DraftMeta { title: self.doc.text(&self.title).unwrap_or_default(), subtitle: self.doc.text(&self.subtitle).unwrap_or_default(), cover: self.get_str(&ROOT, "cover") }
+        DraftMeta { title: self.doc.text(&self.title).unwrap_or_default(), subtitle: self.doc.text(&self.subtitle).unwrap_or_default(), cover: self.get_str(&ROOT, "cover"), cover_alt: self.get_str(&ROOT, "cover_alt") }
     }
 
     /// The plain text of a block (its characters).
@@ -383,6 +392,29 @@ impl DraftDoc {
         self.doc.put(ROOT, "cover", file_id).map_err(bad)
     }
 
+    /// The cover's description (LIME-130-6b): cleaned and cut to 250 characters.
+    pub fn set_cover_alt(&mut self, alt: &str) -> Result<(), StoreError> {
+        self.doc.put(ROOT, "cover_alt", crate::store::attachments::clean_alt(alt)).map_err(bad)
+    }
+
+    /// An image block's description (LIME-130-6b): cleaned and cut to 250 characters. Other kinds of block take none.
+    pub fn set_block_alt(&mut self, id: &str, alt: &str) -> Result<(), StoreError> {
+        let block = self.block_for(id)?;
+        if self.get_str(&block, "kind") != "image" {
+            return Err(StoreError::Rejected);
+        }
+        self.doc.put(&block, "alt", crate::store::attachments::clean_alt(alt)).map_err(bad)
+    }
+
+    /// Each picture's description by its attachment number (the first block that shows it wins; empty ones are left out).
+    pub fn image_alts(&self) -> std::collections::HashMap<u32, String> {
+        let mut out = std::collections::HashMap::new();
+        for b in self.blocks() {
+            if b.kind == "image" && !b.alt.is_empty() { out.entry(b.attachment).or_insert(b.alt); }
+        }
+        out
+    }
+
     fn write_block(&mut self, index: usize, id: &str, input: &DraftBlockInput, list_start: bool) -> Result<(), StoreError> {
         if !KINDS.contains(&input.kind.as_str()) {
             return Err(StoreError::Rejected);
@@ -395,6 +427,7 @@ impl DraftDoc {
         self.doc.put(&block, "number", input.number as u64).map_err(bad)?;
         self.doc.put(&block, "attachment", input.attachment as u64).map_err(bad)?;
         self.doc.put(&block, "caption", input.caption.as_str()).map_err(bad)?;
+        if !input.alt.is_empty() { self.doc.put(&block, "alt", crate::store::attachments::clean_alt(&input.alt)).map_err(bad)?; }
         self.doc.put(&block, "url", input.url.as_str()).map_err(bad)?;
         self.doc.put(&block, "colour", input.colour.as_str()).map_err(bad)?;
         self.doc.put(&block, "list_start", list_start).map_err(bad)?;
@@ -442,7 +475,7 @@ impl DraftDoc {
         let from = self.index_of(id).ok_or(StoreError::NotFound)?;
         let block = self.block_obj(from).ok_or(StoreError::NotFound)?;
         let read = self.read_block(&block);
-        let input = DraftBlockInput { kind: read.kind, level: read.level, ordered: read.ordered, number: read.number, attachment: read.attachment, caption: read.caption, url: read.url, colour: read.colour, spans: read.spans };
+        let input = DraftBlockInput { kind: read.kind, level: read.level, ordered: read.ordered, number: read.number, attachment: read.attachment, caption: read.caption, alt: read.alt, url: read.url, colour: read.colour, spans: read.spans };
         self.doc.delete(&self.blocks, from).map_err(bad)?;
         let to = to.min(self.block_count());
         let list_start = self.get_bool(&block, "list_start");
@@ -766,7 +799,7 @@ fn same_style(a: &Span, b: &Span) -> bool {
 }
 
 fn plain(kind: &str) -> DraftBlockInput {
-    DraftBlockInput { kind: kind.to_string(), level: 0, ordered: false, number: 0, attachment: 0, caption: String::new(), url: String::new(), colour: String::new(), spans: Vec::new() }
+    DraftBlockInput { kind: kind.to_string(), level: 0, ordered: false, number: 0, attachment: 0, caption: String::new(), alt: String::new(), url: String::new(), colour: String::new(), spans: Vec::new() }
 }
 
 /// A parsed Markdown block as draft blocks (a list becomes one block per item).
