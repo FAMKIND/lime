@@ -33,6 +33,7 @@ import com.limemessenger.lime.chats.ChatModel
 import com.limemessenger.lime.chats.GroupModel
 import com.limemessenger.lime.ui.chats.GroupDetailsScreen
 import com.limemessenger.lime.ui.chats.GroupNameScreen
+import com.limemessenger.lime.ui.chats.SearchScreen
 import com.limemessenger.lime.ui.chats.GroupPickerScreen
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -95,11 +96,13 @@ private fun SignedOut(session: AccountSession, onTermsAgreed: () -> Unit) {
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun SignedIn(session: AccountSession) {
+    val appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
     val chats = remember(session) {
         ChatsModel(
             store = { session.store }, transport = { session.transport }, token = { session.accessToken() },
             staleToken = { session.lastAccessToken() }, registrar = { session.registerDevice(); Unit }, isRegistered = { session.deviceRegistered },
             me = { session.profile?.displayName.orEmpty() to com.limemessenger.lime.chats.AvatarTone.tone(session.userId.orEmpty()) },
+            mutes = com.limemessenger.lime.chats.MuteSettings(appContext.getSharedPreferences("lime.mutes", android.content.Context.MODE_PRIVATE)),
         )
     }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -108,6 +111,8 @@ private fun SignedIn(session: AccountSession) {
     var requestsOpen by rememberSaveable { mutableStateOf(false) }
     var newMessageOpen by rememberSaveable { mutableStateOf(false) }
     // New group: null, the picker ("pick"), or the name step with the people chosen. A group's details open over its chat.
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
+    var focusMessage by remember { mutableStateOf<String?>(null) }
     var groupStep by remember { mutableStateOf<List<String>?>(null) }
     var groupPicking by rememberSaveable { mutableStateOf(false) }
     var groupInfoOpen by rememberSaveable { mutableStateOf(false) }
@@ -121,10 +126,11 @@ private fun SignedIn(session: AccountSession) {
     BackHandler(enabled = jamPost != null) { jamPost = null }
     BackHandler(enabled = personProfile != null) { personProfile = null }
     BackHandler(enabled = threadRoot != null) { threadRoot = null }
+    BackHandler(enabled = openId == null && searchOpen) { searchOpen = false }
     BackHandler(enabled = groupInfoOpen) { groupInfoOpen = false }
     BackHandler(enabled = groupStep != null) { groupStep = null }
     BackHandler(enabled = groupStep == null && groupPicking) { groupPicking = false }
-    BackHandler(enabled = threadRoot == null && !groupInfoOpen && openId != null) { openId = null }
+    BackHandler(enabled = threadRoot == null && !groupInfoOpen && openId != null) { openId = null; focusMessage = null }
     BackHandler(enabled = openId == null && requestsOpen) { requestsOpen = false }
     BackHandler(enabled = openId == null && newMessageOpen) { newMessageOpen = false }
     val root = threadRoot
@@ -141,7 +147,9 @@ private fun SignedIn(session: AccountSession) {
     } else if (chatModel != null && root != null) {
         ThreadScreen(root, chatModel, onBack = { threadRoot = null })
     } else if (chatModel != null) {
-        ChatScreen(chatModel, chats, onBack = { openId = null }, onOpenThread = { threadRoot = it }, onOpenProfile = { id, name -> personProfile = id to name }, onOpenGroup = { groupInfoOpen = true })
+        ChatScreen(chatModel, chats, onBack = { openId = null; focusMessage = null }, focusMessageId = focusMessage, onOpenThread = { threadRoot = it }, onOpenProfile = { id, name -> personProfile = id to name }, onOpenGroup = { groupInfoOpen = true })
+    } else if (searchOpen) {
+        SearchScreen(chats, onBack = { searchOpen = false }, onOpenChat = { searchOpen = false; openId = it }, onOpenMessage = { chat, message -> searchOpen = false; focusMessage = message; openId = chat })
     } else if (groupStep != null) {
         GroupNameScreen(chats, groupStep!!, onBack = { groupStep = null }, onCreated = { groupStep = null; groupPicking = false; newMessageOpen = false; openId = it })
     } else if (groupPicking) {
@@ -158,6 +166,7 @@ private fun SignedIn(session: AccountSession) {
                 onProfile = { profileOpen = true },
                 onRequests = { requestsOpen = true },
                 onNewMessage = { newMessageOpen = true },
+                onSearch = { searchOpen = true },
             )
         })
     }

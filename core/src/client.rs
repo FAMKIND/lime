@@ -38,6 +38,7 @@ pub(crate) mod profile;
 pub(crate) mod groups;
 pub(crate) mod group_rules;
 pub(crate) mod message_rules;
+pub(crate) mod list_rules;
 pub(crate) mod jam;
 mod handover;
 pub(crate) mod open;

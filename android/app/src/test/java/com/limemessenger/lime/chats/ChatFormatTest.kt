@@ -104,14 +104,7 @@ class ChatFormatTest {
 
     // Unread rules
 
-    @Test fun unreadCountsAndMarkedUnreadIsOne() {
-        assertFalse(conversation().isUnread); assertEquals(0, conversation().unreadCount)
-        assertTrue(conversation(unread = 3).isUnread); assertEquals(3, conversation(unread = 3).unreadCount)
-        assertTrue(conversation(marked = true).isUnread); assertEquals(1, conversation(marked = true).unreadCount)
-        assertEquals(3, conversation(unread = 3, marked = true).unreadCount)
-        assertEquals("99+", badgeText(100)); assertEquals("99", badgeText(99)); assertEquals("1", badgeText(1))
-        assertTrue(conversation(request = "pending").isRequest)
-    }
+    // The unread rules moved into the core (list_rules.rs, with the Swift cases as Rust tests); a JVM unit test cannot load the native library.
 
     @Test fun avatarToneIsTheSameOnEveryPhone() {
         // The rule: hash = hash*31 + byte over the id's UTF-8, as UInt32, mod 8 (iOS AvatarTone).

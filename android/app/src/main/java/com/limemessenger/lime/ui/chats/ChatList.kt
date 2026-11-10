@@ -52,6 +52,21 @@ import com.limemessenger.lime.chats.MessageFormat
 import com.limemessenger.lime.chats.OfflineCopy
 import com.limemessenger.lime.chats.badgeText
 import com.limemessenger.lime.chats.isUnread
+import com.limemessenger.lime.chats.RowAction
+import com.limemessenger.lime.chats.rowActions
+import com.limemessenger.lime.chats.setPinned
+import com.limemessenger.lime.chats.setMarkedUnread
+import com.limemessenger.lime.chats.setLabel
+import com.limemessenger.lime.chats.leaveGroup
+import com.limemessenger.lime.chats.deleteGroupForEveryone
+import com.limemessenger.lime.chats.clearMessages
+import com.limemessenger.lime.chats.removeChat
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.semantics.customActions
+import uniffi.lime_core.ChatFilter
+import uniffi.lime_core.ChatKind
+import uniffi.lime_core.chatFilterActiveCount
+import uniffi.lime_core.chatLabels
 import com.limemessenger.lime.chats.unreadCount
 import com.limemessenger.lime.auth.ConnectionProblem
 import com.limemessenger.lime.ui.common.Avatar
@@ -75,7 +90,7 @@ fun ChatListScreen(
     onProfile: () -> Unit = {},
     onRequests: () -> Unit = {},
     onNewMessage: () -> Unit = {},
-    isMuted: (String) -> Boolean = { false },
+    onSearch: () -> Unit = {},
 ) {
     val colors = Lime.colors
     val scope = rememberCoroutineScope()
@@ -83,7 +98,7 @@ fun ChatListScreen(
     var note by remember { mutableStateOf(false) }
     Box(modifier.fillMaxSize().background(colors.canvas)) {
     Column(Modifier.fillMaxSize()) {
-        Header(myName, myTone, onProfile)
+        Header(myName, myTone, onProfile, onSearch)
         FilterRow(model)
         PullToRefreshBox(
             isRefreshing = refreshing,
@@ -98,9 +113,7 @@ fun ChatListScreen(
                 } else if (model.chats.isNotEmpty() && model.shownChats.isEmpty()) {
                     item(key = "filtered") { FilteredEmpty { model.unreadOnly = false } }
                 }
-                items(model.shownChats, key = { it.id }) { conversation ->
-                    ConversationRow(conversation, isMuted(conversation.id), myName, myTone) { onOpen(conversation) }
-                }
+                items(model.shownChats, key = { it.id }) { conversation -> ChatRowItem(model, conversation, myName, myTone) { onOpen(conversation) } }
             }
         }
     }
@@ -115,10 +128,12 @@ fun ChatListScreen(
 }
 
 @Composable
-private fun Header(myName: String, myTone: Int, onProfile: () -> Unit) {
+private fun Header(myName: String, myTone: Int, onProfile: () -> Unit, onSearch: () -> Unit) {
     val colors = Lime.colors
     Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(stringResource(R.string.app_name), color = colors.text, fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+        val searchLabel = stringResource(R.string.search_label)
+        Box(Modifier.size(48.dp).clickable(onClick = onSearch).semantics { contentDescription = searchLabel; role = Role.Button }.testTag("search-button"), contentAlignment = Alignment.Center) { Icon(Icons.Search, null, tint = colors.text) }
         val profile = stringResource(R.string.my_profile)
         Box(
             Modifier.size(48.dp).clickable(onClick = onProfile).semantics { contentDescription = "$profile, $myName"; role = Role.Button }.testTag("my-avatar"),
@@ -129,10 +144,101 @@ private fun Header(myName: String, myTone: Int, onProfile: () -> Unit) {
 
 @Composable
 private fun FilterRow(model: ChatsModel) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    val colors = Lime.colors
+    var menu by remember { mutableStateOf(false) }
+    val active = chatFilterActiveCount(model.filter).toInt()
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         Chip(stringResource(R.string.chats_all), !model.unreadOnly, "chat-filter-all") { model.unreadOnly = false }
         Chip(stringResource(R.string.chats_unread), model.unreadOnly, "chat-filter-unread") { model.unreadOnly = true }
+        Box {
+            val words = if (active == 0) stringResource(R.string.filter_button) else stringResource(R.string.filter_button_active, active)
+            Box(Modifier.heightIn(min = 48.dp).widthIn(min = 48.dp).semantics { contentDescription = words; role = Role.Button }.clickable { menu = true }.testTag("chat-filter-menu"), contentAlignment = Alignment.Center) {
+                Row(Modifier.background(if (active > 0) colors.pressed else colors.surface, RoundedCornerShape(18.dp)).padding(horizontal = 14.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.filter_label), color = colors.text, fontSize = 15.sp, fontWeight = if (active > 0) FontWeight.Bold else FontWeight.Normal)
+                    if (active > 0) Text("$active", color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            FilterMenu(model, menu) { menu = false }
+        }
     }
+}
+
+@Composable
+private fun FilterMenu(model: ChatsModel, open: Boolean, onDismiss: () -> Unit) {
+    val f = model.filter
+    val labels = chatLabels(model.chats)
+    androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = onDismiss, modifier = Modifier.testTag("filter-menu")) {
+        @Composable
+        fun toggle(title: String, on: Boolean, tag: String, set: (Boolean) -> Unit) {
+            androidx.compose.material3.DropdownMenuItem(
+                text = { Text(title) }, onClick = { set(!on) }, modifier = Modifier.semantics { role = Role.Checkbox; selected = on }.testTag(tag),
+                leadingIcon = { Icon(if (on) Icons.CheckedBox else Icons.UncheckedBox, null) },
+            )
+        }
+        toggle(stringResource(R.string.filter_direct), f.kind == ChatKind.DIRECT, "filter-direct") { model.filter = f.copy(kind = if (it) ChatKind.DIRECT else null) }
+        toggle(stringResource(R.string.filter_groups), f.kind == ChatKind.GROUP, "filter-groups") { model.filter = f.copy(kind = if (it) ChatKind.GROUP else null) }
+        toggle(stringResource(R.string.filter_pinned), f.pinned, "filter-pinned") { model.filter = f.copy(pinned = it) }
+        toggle(stringResource(R.string.filter_muted), f.muted, "filter-muted") { model.filter = f.copy(muted = it) }
+        labels.forEach { label -> toggle(label, f.label == label, "filter-label-$label") { model.filter = f.copy(label = if (it) label else null) } }
+        if (chatFilterActiveCount(f) > 0u) androidx.compose.material3.DropdownMenuItem(text = { Text(stringResource(R.string.filter_clear), color = Lime.colors.danger) }, onClick = { model.filter = ChatFilter(null, false, false, null); onDismiss() }, modifier = Modifier.testTag("filter-clear"))
+    }
+}
+
+/**
+ * One row of the list with its actions (as iOS): swipe right = Read/Unread (iOS's full-swipe action), swipe left or long-press = the actions sheet
+ * (Pin, Mute, Read/Unread, Label, Leave/Delete…). TalkBack gets every action as a custom action on the row.
+ */
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun ChatRowItem(model: ChatsModel, conversation: ConversationSummary, myName: String, myTone: Int, onOpen: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var sheet by remember { mutableStateOf(false) }
+    var pending by remember { mutableStateOf<RowAction?>(null) }
+    val muted = model.isMuted(conversation.id)
+    val id = conversation.id
+    fun run(action: RowAction, duration: uniffi.lime_core.MuteDuration?, text: String?) {
+        sheet = false; pending = null
+        scope.launch {
+            when (action) {
+                RowAction.MarkRead -> model.setMarkedUnread(id, false)
+                RowAction.MarkUnread -> model.setMarkedUnread(id, true)
+                RowAction.Pin -> model.setPinned(id, true)
+                RowAction.Unpin -> model.setPinned(id, false)
+                RowAction.Mute -> if (duration != null) model.mute(id, duration)
+                RowAction.Unmute -> model.unmute(id)
+                RowAction.Label -> conversation.members.firstOrNull()?.let { model.setLabel(it.id, text) }
+                RowAction.Leave -> model.leaveGroup(id)
+                RowAction.DeleteForEveryone -> model.deleteGroupForEveryone(id)
+                RowAction.Clear -> model.clearMessages(id)
+                RowAction.DeleteChat -> model.removeChat(id)
+            }
+        }
+    }
+    // Actions that need a choice or a confirmation first open it; the rest run at once.
+    fun pick(action: RowAction) {
+        when (action) {
+            RowAction.Mute, RowAction.Label, RowAction.Leave, RowAction.DeleteForEveryone, RowAction.Clear, RowAction.DeleteChat -> { sheet = false; pending = action }
+            else -> run(action, null, null)
+        }
+    }
+    val state = androidx.compose.material3.rememberSwipeToDismissBoxState(confirmValueChange = { value ->
+        when (value) {
+            androidx.compose.material3.SwipeToDismissBoxValue.StartToEnd -> run(if (conversation.isUnread) RowAction.MarkRead else RowAction.MarkUnread, null, null)
+            androidx.compose.material3.SwipeToDismissBoxValue.EndToStart -> sheet = true
+            else -> {}
+        }
+        false
+    })
+    val titles = rowActions(conversation, muted).associateWith { rowActionTitle(it) }
+    val custom = titles.map { (action, title) -> androidx.compose.ui.semantics.CustomAccessibilityAction(title) { pick(action); true } }
+    androidx.compose.material3.SwipeToDismissBox(
+        state = state, backgroundContent = { Box(Modifier.fillMaxWidth().background(Lime.colors.surface)) }, modifier = Modifier.background(Lime.colors.canvas),
+    ) {
+        Box(Modifier.background(Lime.colors.canvas)) {
+            ConversationRow(conversation, muted, myName, myTone, onLongClick = { sheet = true }, customActions = custom, onClick = onOpen)
+        }
+    }
+    ChatRowActionsHost(conversation, muted, open = sheet, pending = pending, onDismiss = { sheet = false }, onPick = { pick(it) }, onClearPending = { pending = null }, onRun = { a, d, t -> run(a, d, t) })
 }
 
 /** A segment: the selected one is filled (ink on a warm neutral; the lime accent is only for the primary action); it says "selected" to TalkBack. */
@@ -243,7 +349,11 @@ private fun FilteredEmpty(onClear: () -> Unit) {
 
 /** One conversation: avatar, name (bold when unread), pinned/muted marks, time, the preview (two lines), the unread count. One TalkBack stop. */
 @Composable
-fun ConversationRow(conversation: ConversationSummary, muted: Boolean, myName: String = "", myTone: Int = 0, onClick: () -> Unit) {
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+fun ConversationRow(
+    conversation: ConversationSummary, muted: Boolean, myName: String = "", myTone: Int = 0, onLongClick: (() -> Unit)? = null,
+    customActions: List<androidx.compose.ui.semantics.CustomAccessibilityAction> = emptyList(), onClick: () -> Unit,
+) {
     val colors = Lime.colors
     val preview = ListPreview.make(conversation, plainText = ::messagePlainText)
     val time = MessageFormat.listTime(if (conversation.activityAt > 0) conversation.activityAt else conversation.lastMessage?.sentAt)
@@ -264,8 +374,8 @@ fun ConversationRow(conversation: ConversationSummary, muted: Boolean, myName: S
     }
     Row(
         Modifier.fillMaxWidth().heightIn(min = 72.dp)
-            .semantics(mergeDescendants = false) { contentDescription = description; role = Role.Button }
-            .clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 15.dp).testTag("conversation-row-${conversation.id}"),
+            .semantics(mergeDescendants = false) { contentDescription = description; role = Role.Button; if (customActions.isNotEmpty()) this.customActions = customActions }
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(horizontal = 16.dp, vertical = 15.dp).testTag("conversation-row-${conversation.id}"),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         if (!conversation.isGroup && first != null) Avatar(first.initials.ifEmpty { initialsOf(first.name) }, first.tone.toInt(), 52.dp)

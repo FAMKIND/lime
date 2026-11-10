@@ -120,7 +120,7 @@ import uniffi.lime_core.messagePlainText
 
 /** A chat (iOS's `ChatView`): the header, the messages, and the composer (or Accept for a stranger's first message). The system back gesture closes it. */
 @Composable
-fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenThread: (MessageItem) -> Unit = {}, modifier: Modifier = Modifier, onOpenProfile: (String, String) -> Unit = { _, _ -> }, onOpenGroup: () -> Unit = {}) {
+fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenThread: (MessageItem) -> Unit = {}, modifier: Modifier = Modifier, onOpenProfile: (String, String) -> Unit = { _, _ -> }, onOpenGroup: () -> Unit = {}, focusMessageId: String? = null) {
     val colors = Lime.colors
     val scope = rememberCoroutineScope()
     val summary = model.summary
@@ -153,7 +153,13 @@ fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenTh
     // Read the messages again whenever the list was (a sync brought something), and mark the chat read while it is open.
     LaunchedEffect(chats.revision) { model.reload(); model.markRead() }
     // The newest message is in view on open and when something arrives or is sent.
-    LaunchedEffect(rows.lastOrNull()?.id) { if (rows.isNotEmpty()) listState.scrollToItem(rows.lastIndex) }
+    // (A search result opens the chat at its message instead.)
+    var focused by remember { mutableStateOf(false) }
+    LaunchedEffect(rows.lastOrNull()?.id, focusMessageId) {
+        if (rows.isEmpty()) return@LaunchedEffect
+        val target = if (focusMessageId != null) rows.indexOfFirst { it.id == focusMessageId } else -1
+        if (target >= 0 && !focused) { listState.scrollToItem(target); focused = true } else if (target < 0 || focused) { if (focusMessageId == null || focused) listState.scrollToItem(rows.lastIndex) }
+    }
 
     Column(modifier.fillMaxSize().background(colors.canvas).systemBarsPadding().imePadding()) {
         val chosen = selection
