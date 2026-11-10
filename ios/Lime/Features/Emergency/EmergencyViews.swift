@@ -64,6 +64,7 @@ struct EmergencySheet: View {
     @State private var settings: EmergencySettings?
     @State private var changing = false
     @State private var sending = false
+    @State private var sendFailed = false
     @AccessibilityFocusState private var focusStatus: Bool
 
     private let number = EmergencyCopy.number()
@@ -162,6 +163,10 @@ struct EmergencySheet: View {
                 .disabled(target.isEmpty || sending)
                 .opacity(target.isEmpty ? 0.45 : 1)
                 .accessibilityIdentifier("emergency-send")
+                if sendFailed {
+                    Text("Couldn\u{2019}t send. Try again.").font(Theme.secondary).foregroundStyle(Theme.danger)
+                        .accessibilityIdentifier("emergency-send-failed")
+                }
                 if target.isEmpty { Text(EmergencyCopy.noGroup).font(Theme.caption).foregroundStyle(Theme.textSecondary) }
                 Text(EmergencyCopy.keepAwake).font(Theme.caption).foregroundStyle(Theme.textSecondary)
             }
@@ -210,6 +215,7 @@ struct EmergencySheet: View {
 
     private func send() async {
         sending = true
+        sendFailed = false
         defer { sending = false }
         let draft = EmergencyDraft(status: status, situation: settings?.schoolActions == true ? situation : "", students: UInt32(students),
                                    place: place, note: note)
@@ -218,8 +224,11 @@ struct EmergencySheet: View {
             if !store.isDemo { MeshService.shared.setNearby(true) }   // turning an emergency on turns Nearby mode on (M3)
             #endif
             UINotificationFeedbackGenerator().notificationOccurred(.success)
+            Announce.say("Sent to \(targetTitle)")
             dismiss()
         } else {
+            // Spoken and kept on the sheet, next to Send, so it can be read again and Send tried again (LIME-130-5b).
+            sendFailed = true
             store.showBanner("Couldn\u{2019}t send. Try again.")
         }
     }
@@ -302,6 +311,7 @@ struct EmergencyPanel: View {
     @State private var confirmEnd = false
     /// Folded to one line by default (LIME-152b); anyone who needs help stays listed under it.
     @State private var expanded = false
+    @State private var announcer = EmergencyAnnouncer()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private func toggle() {
@@ -348,6 +358,7 @@ struct EmergencyPanel: View {
             .contentShape(Rectangle())
             .onTapGesture { if let id = entry.userId, store.conversation("dm:\(id)") != nil { store.path.append("dm:\(id)") } }
             .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(entry.userId == nil ? [] : .isButton)
             .accessibilityIdentifier("emergency-help-\(index)")
         }
     }
@@ -429,7 +440,12 @@ struct EmergencyPanel: View {
                 }
             }
         }
-        .task(id: conversation.messages.count) { rollup = await store.emergencyRollup(for: conversation.id) }
+        .task(id: conversation.messages.count) {
+            let next = await store.emergencyRollup(for: conversation.id)
+            // The first load is the starting point; after it, whoever changed is spoken (LIME-130-5b).
+            if let old = rollup, let next { announcer.note(EmergencyAnnouncements.changes(old: old.entries, new: next.entries, name: name)) }
+            rollup = next
+        }
     }
 }
 

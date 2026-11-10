@@ -52,7 +52,9 @@ protocol CallSystem: AnyObject {
 @MainActor
 @Observable
 final class CallManager {
-    private(set) var phase: CallPhase = .idle
+    private(set) var phase: CallPhase = .idle {
+        didSet { if let words = CallAnnouncements.phase(from: oldValue, to: phase) { Announce.say(words) } }
+    }
     /// iOS's own call screen is ringing for this incoming call (its report was accepted), so it owns Answer and Decline (LIME-177).
     private(set) var systemRinging = false
     /// lime's own Accept and Decline show only when iOS did not show its screen: it refused, or never confirmed within about two seconds.
@@ -69,16 +71,22 @@ final class CallManager {
     /// The person left the call screen to read a chat; the call goes on and a bar returns to it.
     var minimized = false
     /// The other phone is ringing (it sent `call.ringing`).
-    private(set) var remoteRinging = false
+    private(set) var remoteRinging = false {
+        didSet { if remoteRinging && !oldValue && phase == .outgoing { Announce.say(CallAnnouncements.ringing) } }
+    }
     /// Ten seconds of "Calling…" with no sign of ringing: the other phone may be off or lime closed.
-    private(set) var showUnreachableHint = false
+    private(set) var showUnreachableHint = false {
+        didSet { if showUnreachableHint && !oldValue { Announce.say(CallAnnouncements.unreachable(name: peerName)) } }
+    }
     /// The other side's picture has arrived (a frame was drawn).
     private(set) var remoteVideoLive = false
     /// The other person muted their microphone / turned their camera off (told over the control channel).
     private(set) var remoteMuted = false
     private(set) var remoteCameraOn = true
     /// Another app has my camera (an iPad window): my picture is paused.
-    private(set) var cameraPaused = false
+    private(set) var cameraPaused = false {
+        didSet { if cameraPaused && !oldValue { Announce.say(CallAnnouncements.cameraPaused) } }
+    }
     /// The four emoji both people compare once the call is up (empty before that).
     private(set) var verificationEmoji: [CallEmoji] = []
     /// Something to tell the person after the call screen has gone (shown by the app).
@@ -507,6 +515,7 @@ final class CallManager {
         guard phase == .outgoing, event.callID == callID, event.peerID == peerID, unavailableNote == nil else { return }
         let note = (event.payload["reason"] as? String) == CallQuietReason.workHours.rawValue ? "\(peerName) is outside work hours" : "\(peerName) has Do Not Disturb on"
         unavailableNote = note
+        Announce.say(note)
         showUnreachableHint = false
         stopRinging()
         ringTimeout?.cancel()

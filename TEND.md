@@ -10518,3 +10518,183 @@ Photo descriptions and on-device transcripts in chat (audit rows for alt text an
 | 5. Reopen the chat: the transcript is still there; delete the message: it goes | not needed | receiver | on | off | open |
 
 **For plot:** (1) 130-3b is committed but not signed off; it needs your two-device gate, and the transcript has never run on real speech. (2) The no-network proof is lime's own process only; if you want more, check with airplane mode on a phone (step 4). (3) lime never downloads a speech model, so on a phone without the language's on-device model a transcript says "not available"; say if you would rather offer a download with a clear prompt. (4) The viewer ⋯ item is not built (the viewer has no ⋯). (5) 183b gains `ChatOpensUITests.testBackFromAThreadKeepsThePlaceInTheChat` and `Review273UITests.testAWriterOfABandSendsAnArticleForReviewInsteadOfPublishing`; the second one fails in the main tree and passes in a clean worktree, so check `Local.xcconfig`/`BackendConfig.generated.swift` against it. (6) Release was built for the simulator only.
+
+## LIME-130-4a
+
+The 1:1 call screen's major accessibility findings (audit rows ~549–559, ~676). Fixes only.
+
+**Survey:** the audit's findings were all still present as described (`CallView`, `CallHeaderViews`, `CallEffects`); the blocker, Accept/red contrast and red-button text were already 130-1/130-2 (confirmed, not touched).
+
+**What changed**
+1. **Control state.** Mute, Camera and Speaker now carry a value ("On"/"Off") and `.isSelected`; the icons change shape (`mic`/`mic.slash`, `video`/`video.slash`, `speaker.wave.2`/`speaker`), labels stay the action names. The start-Video button (Voice call) is one-way, so it has no value.
+2. **Announcements** (new `CallAnnouncements`, spoken from `CallManager`/`CallRoute` so "Call ended" is heard after the screen is gone): Calling…, Ringing…, Connecting…, Connected, Call ended, the route toast, the "phone may be off" hint, "camera paused", the Do Not Disturb / work-hours note. Incoming is not spoken (iOS's own call screen does). `remoteMuted` is unchanged (no double speech). **There is no reconnecting phase in `CallManager`, so nothing to announce there.**
+3. **Scrim.** Name pill 0.35→0.6 black (shared with the group call); status/timer, hint, "camera paused" and the "Muted" chip got the same 0.6 black capsule (`callTextScrim`); hint text 0.7→0.9 white. Computed on a white frame: white on 60% black = #666 → 5.7:1; the hint at 0.9 white → 5.0:1.
+4. **Round buttons.** Off = black 0.45 fill (white glyph on #8C8C8C over white = 3.4:1, and the edge is 3.4:1 too); lit = white with a 1.5 pt black 0.6 ring (5.7:1). Applied to the controls, the Minimise circle, the route button and the Effects button. These are calculated, not measured from a rendered white frame (the demo has no video).
+5. **Sheets.** The person and emoji sheets scroll and have `.large`; the emoji glyph scales with text size (`@ScaledMetric`), and a row of four that no longer fits becomes 2×2.
+6. **Minors.** Self-view handle: `isButton` + action "Move to the other corner" (next corner); animations check Reduce Motion; the route picker is `isButton`; with VoiceOver/Switch Control on, focus starts on the first control (Video on a voice call, Camera on a video call, Flip camera in landscape; the Effects menu, when present, comes before Camera in order and is not the focus target).
+
+**Verification**
+- `check-warnings.sh`: 0 in Lime's own sources (simulator and device); Release build (simulator) succeeds.
+- New `Access130eTests` (4) and `CallTests.testTheRealManagerSpeaksEachPhaseAndTheEnd` pass; `CallTests`, `CallPolishTests` pass (53); `CallScreenUITests` + `Access130UITests` pass (18) on the 13 mini simulator. No new UI tests for the colours (visual-change rule). No UI test for "Mute, on" or the announcement probe was added; the unit tests cover the wording and values.
+- Audit harness (iPhone 17, default pass; before → after): call-voice 12 → 13, call-video 14 → 15, call-group-incoming 8 → 8. The one extra on voice/video is "Contrast failed: 0:54", the timer on the new scrim over the avatar background; the audit cannot see the scrim, and the real ratio above is 5.0:1+. Output: `docs/qa-shots/130-4a/`.
+
+**Not done / flagged**
+- (Superseded: installed and pushed afterwards, see the Installed line.)
+- On a voice call the control circles are now dark glass: their edges are less visible on the dark backdrop than before. Please look.
+- The emoji chip under the timer (shared with the group call) has no scrim; it was not in the list.
+
+- Installed (5a664de, Debug), pushed to `main` (`ba18786..5a664de`): iPhone 13 mini (`00008110-000651D23647801E`), iPad Pro 12.9-inch 5th gen (`00008103-001E699A2168801E`), Jean Chung's iPhone 12 mini (`00008101-000348EC0E51003A`). The first attempt failed on all three (error 4000, connection invalidated); the retry 20 s later took on all three.
+
+**Gate (you, 13 mini + iPad, VoiceOver on):** place a video call: after 10 s the controls are still reachable; toggling Mute says "Mute, on"; "Connected" and "Call ended" are spoken; open the details sheet at the largest text: it scrolls and nothing is cut off. Look at the round buttons on a bright picture.
+
+**For plot:** (1) there is no reconnecting state to announce; if one is wanted it is a core change. (2) Decide whether the voice call's dark-glass buttons need a visible edge. (3) 130-4b can reuse `callRoundBackground`/`callTextScrim`.
+
+## LIME-130-4b
+
+Group call, mini player, calls list, and the flashing/Reduce Motion survey (audit rows ~561–584, 556).
+
+**STOP, for plot (item 5, effects): the call effects ARE drawn into the sent video.** `CallEffects.perform` calls `AVCaptureDevice.performEffect(for:)`; the code's own doc says Apple draws the reaction "on this phone before the picture is encrypted and sent". So the receiver's Reduce Motion cannot turn it off, lime does not draw or time the animation (so there is no timeline to cap and no flash rate lime can measure or set), and a "still note instead" cannot be made on the receiving side. I changed nothing in the effects. Options for plot: (a) hide Reactions from the Effects menu when the *sender's* Reduce Motion is on (a sender-side rule only); (b) stop using Apple's reactions and draw lime's own effects locally from a message (a new feature, with its own flash cap); (c) keep as is and say so in the accessibility statement.
+
+**Emergency visuals (survey):** nothing flashes or pulses. `Features/Emergency/*` has no repeating animation; its only animation is an expand/collapse that already checks Reduce Motion (`EmergencyViews:305-308`); the rest are static fills and rings. The only `repeatForever` in the app is `JamSkeleton`, which checks Reduce Motion. Flash rate of anything lime draws: 0 per second. The pure rate-cap function and its unit test were therefore not written (nothing to cap).
+
+**What changed**
+1. **Group call announcements.** New `GroupCallAnnouncer` (pure; in `CallAccessibility.swift`) fed by `GroupCallManager.tiles`' `didSet`: "<Name> joined", "<Name> left" (only once the call is active, never for me, never for the people already there), and "<Name> is speaking" at most once every 3 s and only while VoiceOver runs. "Call ended" for a group call too (phase didSet). The tile value (Speaking, Muted) is unchanged: SwiftUI updates it.
+2. **Calls list.** A missed call shows "· Missed" in words (semibold) under the name; the name and time stack vertically at accessibility sizes and the name wraps (no `lineLimit(1)`); with VoiceOver or Switch Control running, the row is one stop (the picture and the round call button are hidden from them; "Details" stays an action, call-back is the default action). They stay for touch, so existing tests are unchanged. The chat call bubble ("Missed voice call") and the profile call row ("Missed") already said the word: confirmed, not touched.
+2b. **Scrims.** Tile name pill 0.55 → 0.6 black (now a rounded rectangle so it can wrap), "+N more" 0.4 → 0.6, the emoji chip (shared by 1:1 and group) and its "Waiting for keys" state got the 0.6 black capsule. **I did not use `callRoundBackground` for the group controls:** they sit on a solid dark background, not video, and dark glass (black 0.45) would be nearly invisible on it; they keep today's white 0.18 / white fills. No edge-ring decision had been made, so none was added.
+3. **Group minors.** At the last-resort size Leave is pinned outside the horizontal scroll; my tile has "Move to the other corner" (both layouts); the tile name wraps (up to 3 lines) instead of `minimumScaleFactor(0.7)` + `lineLimit(1)`.
+4. **Mini player.** The tuck tab's hit area is 44 pt wide (24 pt shows; the rest is transparent, into the screen); the mute button's label is always "Mute", the value is "On"/"Off" (+ selected), matching 4a; it says "Call minimised. Controls at the bottom of the screen", "Call controls hidden at the edge" / "Call controls shown"; the end of a call is said by the managers ("Call ended"). `CallMiniPlayerUITests` changed to the new label/value.
+
+**Verification**
+- `check-warnings.sh`: 0 in Lime's own sources; Release build (simulator) succeeds.
+- New `Access130fTests` (3): join/leave by name and nothing while the call comes up or for me; speaker at most once per 3 s, only with VoiceOver, never me. Pass, with `Access130eTests`, `GroupCallManagerTests`, `GroupCallLayoutTests`, `CallMiniPlayerTests` (72 unit tests, 0 failures).
+- UI (13 mini simulator): `CallMiniPlayerUITests` (5) and `CallsTabUITests` (19) pass. `GroupCallHeaderUITests`: 1 of 3 fails, `testThePillOpensThePeopleSheet…` at line 41 (cannot find "People"), the same failure recorded for 130-1 and before (ENDS in TEND at the 130 Phase 1 notes), not touched by this brief.
+- Audit harness (iPhone 17, default pass; before → after): calls-list 3 → 3, calls-list-many 3 → 3, call-group-4 20 → 19. Output `docs/qa-shots/130-4b/`.
+- No new UI tests for the colours, layout or the missed word (visual-change rule); the missed word is on screen as `call-row-missed` for the gate.
+
+**Not done / flagged**
+- Item 5's effects part: stopped, above. Nothing in `CallEffects` changed.
+- The row's "oneStop" is read when the row is drawn; if VoiceOver is turned on while the Calls tab is open, the row updates on its next redraw.
+- Incoming-group-banner minors (hints, grabber) and the PiP grid's 11 pt labels are in the audit's group table but not in this brief; untouched.
+- No test for the mini player's spoken lines (they are `Announce.say` calls); the gate covers them.
+
+**Installed (Debug, this commit's tree):** iPhone 13 mini (`00008110-000651D23647801E`), iPad Pro 12.9-inch 5th gen (`00008103-001E699A2168801E`), Jean Chung's iPhone 12 mini (`00008101-000348EC0E51003A`); all three took it on the first attempt.
+
+**Gate (you, VoiceOver on, two phones):** start a group call; have the iPad join and leave: both are spoken by name; the Calls tab at the largest text: no cut-off names, a missed call says "Missed" in words, and VoiceOver stops once per row; minimise a call: it says so, tuck and untuck are spoken, the tab is easy to hit; Mute reads "Mute, on/off". Effects: see the stop above, nothing to test.
+
+**For plot:** (1) **Decide the effects question** (options a/b/c above): the brief's receiver-side Reduce Motion rule cannot be met while Apple draws reactions into the video. (2) Emergency has nothing that flashes, so the "pulses become static" rule has nothing to apply to; confirm that matches your picture of Emergency. (3) The group controls keep their light glass (solid dark background); the voice-call edge-ring question from 4a is still open. (4) The Calls-list one-stop rule is for VoiceOver/Switch Control only, to keep Voice Control and the tests on the visible buttons.
+
+## LIME-130-4c
+
+No flashing call effects; a visible edge on the off buttons (DESIGN-34 = A, and the edge ring; the user's decisions 2026-11-09).
+
+**What changed**
+1. **Fireworks and Lasers are gone** from `CallReaction` (cases, titles, symbols, types): six reactions remain (Hearts, Thumbs up, Thumbs down, Balloons, Confetti, Rain). Searched `ios/`, tests, `docs/`, `site/`: the only other references were `CallEffects280Tests` (count 8 → 6) and `Effects280UITests` (it tapped "Lasers"; now "Rain", and it asserts Fireworks and Lasers are absent). Nothing else offers them.
+2. **Reduce Motion.** `CallEffects.support(canReact:available:cameraOn:reduceMotion:)` returns no reactions when it is on; the Video Effects panel stays while the camera is on. `support(for:cameraOn:)` (now `@MainActor`) reads `UIAccessibility.isReduceMotionEnabled`; the demo path (`-lime-demo-effects`) follows the same rule. No notification is needed: `CallEffectsButton` already looks again every second, so switching the setting during a call changes the menu within a second.
+3. **Edge ring.** In `callRoundBackground` the off circle gets `strokeBorder(white 0.3, 1 pt)` (`CallScrim.offRing`), everywhere the helper is used (controls, Minimise, route, Effects). Computed: on the voice call's near-black backdrop the ring is about 2.4:1 against it (a decorative edge; the glyph carries the meaning); on a white frame the button's edge is still its 0.45-black fill, 3.4:1 (the ring adds little there, about 1.5:1 against the fill).
+4. **Docs.** No accessibility statement or calls doc lists the effects (`docs/` and `site/` only mention reactions to messages), so nothing was updated and nothing created. The line "Effects are drawn into your video by iOS; lime offers only ones that don't flash, and none when Reduce Motion is on." is ready for when a statement exists.
+
+**Verification**
+- `check-warnings.sh`: 0 in Lime's own sources (it first caught a main-actor warning in my first version; fixed by making the function `@MainActor`); Release build (simulator) succeeds.
+- `CallEffects280Tests` (5, two new: Fireworks/Lasers never offered even if the camera lists them; Reduce Motion gives no reactions, keeps the panel, camera off still gives nothing) + `CallTests` + `CallPolishTests` pass (54 unit tests); `Effects280UITests` (2) and `CallScreenUITests` (12) pass on the 13 mini simulator. No test for the ring (visual-change rule).
+
+**Not done / flagged**
+- This covers only *this* phone's setting: the sender's. A receiver with Reduce Motion on still sees whatever the sender sends (the remaining Apple reactions are not flashing ones, but they do move). Lime's own receiver-drawn effects are the later fix, as the brief says.
+- The group call's effects button uses the same menu, so it follows the same rules.
+
+**Installed (Debug, this commit's tree):** iPhone 13 mini (`00008110-000651D23647801E`), iPad Pro 12.9-inch 5th gen (`00008103-001E699A2168801E`), Jean Chung's iPhone 12 mini (`00008101-000348EC0E51003A`); all three first try.
+
+**Gate (you, 13 mini):** in a video call open Effects: no Fireworks, no Lasers; turn on Reduce Motion (Settings → Accessibility → Motion) and open Effects again (within a second): no reactions, Video Effects still there; on a voice call the round buttons have a faint edge.
+
+**For plot:** (1) The receiver's Reduce Motion is still not honoured for the four remaining moving reactions (Balloons, Confetti, Rain, Hearts and the thumbs); only lime's own receiver-drawn effects fix that. (2) There is no accessibility statement yet to hold the effects line; draft one with 130-5 or the launch docs if you want it public.
+
+## LIME-130-5a
+
+Settings, profile and groups: the 13 majors (audit rows 341, 342, 344, 609, 612–618, 634, 635). Fixes only.
+
+**Survey:** line numbers had drifted a few lines; every row was still present except parts of 613 (130-2 had already added `announcesWhenShown` on the error and "Your password was changed", and the hint on the code field).
+
+**What changed, by row**
+- **341, 634** (media cells, three places: group details, the profile, "See all"): a new `SharedMediaButton` is a real `Button` with `.isImage`, reading "Photo from <name>, <date>" / "Video, 0:12, from <name>, <date>" ("you" for my own), then the photo's description when it has one (130-3b). One pure `SharedItemLabel` holds the wording.
+- **635** (links and files): one element each. Link: title, site, date, `.isLink` and a double-tap action that opens it. File: name, size, date. **A file row has no tap action today, so I did not add `.isButton` (it would promise something that doesn't happen).**
+- **342:** the member row's label now ends ", new security key not accepted" (`GroupMemberLabel`).
+- **344, 615** (both crops): `cropAccessibility` gives the frame the label "Photo position", the zoom as its value ("Zoom 150 percent"), swipe up/down to zoom in half steps (1×–6×), and the actions Move up/down/left/right (10% of the frame, clamped by the existing limit). The gestures are unchanged.
+- **609:** at accessibility sizes a settings row's title and value stack, the value wraps; otherwise as before (value on one line beside the title).
+- **612:** the busy spinner is labelled "Working" and announced; a problem is announced. **The visibility title ("Who can see my background") is moved above its choices as the section's header and is a heading** (closest to iOS Settings).
+- **613:** the busy spinner on the primary button is labelled "Working"; on the passwords step the error is now the hint of each password field (the code step already had it). `RevealablePassword` gained an optional `problem`.
+- **614:** Blocked: the button is "Unblock <name>", 44 pt, "<name> unblocked" is spoken, and with VoiceOver or Switch Control on the row is one element ("<name>, blocked") with "Unblock <name>" as its action. For touch the button stays.
+- **616:** "Unmute <chat name>", 44 pt, "<chat> unmuted" spoken. **617:** the explainer sheet scrolls and has `.large`.
+- **618:** the sliders are "Start" and "Length" with values in seconds ("1.5 seconds"); Preview is Play/Stop, labelled by state, and returns to Play when the clip ends.
+
+**Verification**
+- `check-warnings.sh`: 0 in Lime's own sources; Release build (simulator) succeeds.
+- New `Access130gTests` (5): photo/video/file/link labels, the member label, the crop step and zoom maths. Pass.
+- UI (13 mini simulator): `ProfileUITests`, `Profile217/225/226bUITests` (30) and `LimeUITestsSettings` Blocked + Change password, `LimeUITestsSearchAndNotifications` (15) pass. No new UI tests (visual-change rule; the VoiceOver wording is pure and unit-tested).
+- Audit harness (iPhone 17, default; before → after): group-details 16 → 16, profile-sam 16 → 16, settings 1 → 1, settings-account 2 → 1. Apple's audit does not read custom labels or actions, so these rows could not move it; the evidence for them is the unit tests and your gate. Output `docs/qa-shots/130-5a/`.
+
+**Not done / flagged**
+- The "one stop" rows (Blocked here, the Calls list in 4b) read VoiceOver/Switch Control when the row is drawn; turning VoiceOver on while the screen is open updates on the next redraw.
+- Voice Control users on Blocked: the row is one element with a named action, and the visible button is hidden from them while VoiceOver runs; with VoiceOver off the button works as before.
+- Not touched: onboarding, Emergency, QR/Report, the shell (130-5b); "Verify in person" without a camera (DESIGN-35).
+
+**Installed (Debug, this commit's tree):** iPhone 13 mini (`00008110-000651D23647801E`), iPad Pro 12.9-inch 5th gen (`00008103-001E699A2168801E`), Jean Chung's iPhone 12 mini (`00008101-000348EC0E51003A`). The iPad and Jean's phone needed a second try.
+
+**Gate (you, 13 mini, VoiceOver on):** Settings at the largest text: values wrap, nothing cut off; Blocked: "Unblock <name>"; a profile's shared photo reads who sent it and when; the profile photo crop: swipe up/down zooms, the actions menu moves it.
+
+**For plot:** (1) Apple's audit can't see these fixes: only your VoiceOver pass or the `-lime-ax-probe` can; consider probe checks in 130-m for the new custom actions. (2) File rows are not openable today; if "open a shared file" is wanted it is a feature, then it gets `.isButton`. (3) The two "one stop when VoiceOver runs" rows could use a live VoiceOver-status observer; harmless today.
+
+## LIME-130-5b — onboarding, Emergency, QR, Report and the banners (landed 2026-11-09; gate pending)
+
+- **Installed (130-5b):** the 13 mini, the iPad (4) and Jean's 12 mini, first attempt each (Debug build from `$TMPDIR/dd130h`).
+- **Survey:** rows 538, 539–541 and 680 were already fixed by 130-2 (confirmed in code): no `Color.red` text left (all `Theme.danger`, light 0xB3261E / dark 0xFF8A80); `showBanner` speaks and stays under VoiceOver; ProblemBanner / LowStorageBanner speak on appear and "Back online" / "There is room again" on clear (`MessagesView.listBody`); ConfirmSheet scrolls and has `.large`. 538's old 3.3:1 is gone because `Theme.danger` is now 0xB3261E on the light canvas. **Not changed in ConfirmSheet:** the tap-to-dismiss `simultaneousGesture` sits on the buttons' stack, whose empty gaps are not hit-testable in SwiftUI (no background / contentShape), so I could not reproduce "tapping a gap closes it"; `ConfirmSheetUITests` pass. Flagging, not fixing.
+- **597** help entries in the folded roll-up get `.isButton` (when they have a thread). **598** new `EmergencyAnnouncements` / `EmergencyAnnouncer`: "<Name> needs help", "<Name> is safe", "N people updated"; at most one announcement per 2 s, the rest held and said together; the first load is silent, your own changes and "no response" are skipped. **599** "Sent to <group>" before dismiss; on failure the banner (spoken) plus a red line beside Send that stays. No new surface.
+- **647** `OnboardingField` / `RevealablePassword` take the visible label as their accessibility name (the visible Text is hidden from VoiceOver so it is not read twice); a text field's hint is "For example, <placeholder>". **648** the screen's error is the hint on each of its fields (environment `fieldProblem`; screens have one or two fields, so all of a screen's fields read it); colour was already `Theme.danger`; still announced. **649** ConfirmationSheet scrolls (`.height(320)`, `.large`); Terms-updated sheet scrolls with "I agree" pinned under it (`.medium`, `.large`).
+- **663** scan: "Checking", "Matches. <name> is verified in person.", "Doesn't match." + the warning text, not-lime / nobody / self / problem messages, unchecked: all spoken. The warning text is now `Theme.text` on the surface with a danger icon and edge (the red-on-red-tint 3.1:1 is gone). **664** Report: "Report sent" spoken and focus moves to the thank-you (now a heading); the failure line was already `Theme.danger` and spoken.
+- **Not done (as briefed):** 662 "Verify in person" without a camera (DESIGN-35).
+- **Gate:** `check-warnings.sh` 0; Release sim build OK; `Access130hTests` (5) pass; UI: Emergency, Terms283, Report191, ReportGroup256, Moderation191 (15), ConfirmSheet + the two scan tests (5), onboarding eye / sign-up-and-in / wrong password / phone (4): all pass. Harness not re-run (Apple's audit cannot see labels, hints or announcements; same as 5a), so audit counts for `onboarding-*`, `emergency`, `qr` are unchanged.
+- **For the user (13 mini, VoiceOver on):** sign-in reads "Email or username, text field" (and "For example, you@example.com"); a wrong password is spoken and read as the password field's hint; airplane mode: the banner is spoken, then "Back online"; Emergency on the iPad marks "need help": the 13 mini says "<Name> needs help" (with the group open); sending says "Sent to <group>"; scan a code (Debug paste) says "Checking" then "Matches…"; Report ends on "Report sent" with focus on the thank-you; Terms-updated sheet at the largest text: "I agree" stays at the bottom.
+- **For plot:** (1) ConfirmSheet gap-tap not reproducible (above): drop that sub-item unless the user sees it. (2) 662 / DESIGN-35 is still yours to raise. (3) Judgment call: errors are attached to every field on the screen, not one. (4) Offline and low-storage banner announcements were already in from 130-2; only the clear cases were verified, not changed.
+
+## LIME-130-6a — jam reading: feed, article, media, comments, drafts (landed 2026-11-09; gate pending)
+
+- **Installed (130-6a):** the 13 mini, the iPad (4) and Jean's 12 mini, first attempt each (Debug build, `$TMPDIR/dd130h`).
+- **Confirmed already fixed (130-2), not redone:** **361** `limeGlass` has the Reduce Transparency solid fill and the Increase Contrast border; **365** no `Color.red` text left in jam; **370** `showBanner` speaks and stays under VoiceOver.
+- **376** `JamCardStop` (new `Jam/JamAccessibility.swift`): with VoiceOver or Switch Control running, a quick/article card is one stop ("<author>, <time>, Unread, title, subtitle, first words, series, Saved, N likes, N comments"), Open as the default action, named actions Like/Unlike, Comment, Save/Unsave, Open author, Open series. Touch is unchanged. The ⋯ stays its own stop (a menu cannot be opened from an action). **Remix and Share are not offered**: they are still disabled "Coming soon" buttons, so an action that does nothing would be a lie. Video-podcast and small-podcast cards are not one-stop (their players need their own controls).
+- **377/378** the article cover is no longer reached through a nested Save button (the card's one stop carries Save and Open series). The cover is now words-over-picture: it grows with the text at accessibility sizes (`minHeight`, no line limits, picture as the background), shows "New" in words beside the dot there. At normal sizes it is the same height.
+- **364** composer error pinned at the bottom (`safeAreaInset`), not at the top of a long article; silent failures now speak and show the banner: delete post (card menu, reader, video screen, article options; the screen now stays on a failed delete), band picture set/remove. **Not done (6c scope):** community toggle, `createOrgGroup`, recorder.
+- **397** podcast player and audio card: "Couldn't play this recording" in `Theme.danger`, spoken, on both; the spinners are labelled "Loading" (the card's play button now shows one).
+- **400** `PlayerControls.keepsVisible`: the video controls stay when VoiceOver, Switch Control or **AssistiveTouch** runs. **Voice Control has no API on iOS**, so I took the first option in the brief (never hide when an assistive setting we can see is on); Voice Control users tap the video to bring the controls back. Say if you want the "Keep controls visible" toggle too.
+- **403** the feed video card has a 44 pt Pause/Play button and a "Pause video"/"Play video" action; a paused video stays paused until it scrolls away and back.
+- **415/416** real, not just UNVERIFIED: the action pill and the top bar were hidden by opacity only, so VoiceOver could land on them. Now they are `accessibilityHidden` while hidden, and with VoiceOver/Switch Control the bars never hide on scroll; while typing the pill is hidden from both. `accessibilityAction(.escape)` on the article page goes back (two-finger Z).
+- **432** "Cancel reply" is 44 pt. **434** "Comment posted" is spoken and VoiceOver moves to the new comment; a failure is spoken and stays with Retry.
+- **450** Drafts rows scale with text (`ScaledMetric`), lines wrap at accessibility sizes, and the list scrolls there (capped at 560 pt). **453** the invite banner is spoken on arrival, has a "Dismiss" action, stays while VoiceOver/Switch Control run, otherwise **20 s** (the brief said ≥ 20 s; `BannerTiming`'s 4 s is for the short toast), and fades under Reduce Motion.
+- **208** white text over cover photos (series meta/description/progress, band authors/topics/subscribers, group member count) sits on a 0.6 black scrim (`coverTextScrim`, the call-text scrim: 5.7:1 on white).
+- **Gate:** `check-warnings.sh` 0; Release sim build OK; `Access130iTests` (4) pass; UI: Jam188c/d/p/z, Jam215b, Jam228, Drafts237, Series260c, Jam203 pass (1 skipped, Jam203's, pre-existing). **`Jam188jUITests.testTheVideoCardHasAMuteButton…` fails at line 26** (`XCTAssertFalse(app.buttons["Report"].exists)`): the video screen's menu has had a Report button since f86faa9, which I did not touch; I could not get a clean baseline run (stashing broke the generated project), so treat it as probably pre-existing and stale, not proven.
+- **For the user (13 mini, VoiceOver on):** in the Jam feed a post is one stop with Like/Comment/Save/Open author in the rotor; an article reads "Unread" and "Saved"; post a comment (spoken, focus on it); scroll an article: the pill and back button stay; drafts and the invite banner at the largest text; feed video: Pause button and "Pause video" action.
+- **For plot:** (1) Voice Control gap and the toggle question above. (2) Remix/Share omitted as actions on purpose until they exist. (3) Banner 20 s vs `BannerTiming` 4 s. (4) The Jam188j failure. (5) 6c still owns community toggle, `createOrgGroup`, recorder errors.
+
+## LIME-130-6c — bands, composer, recorder, co-edit (landed 2026-11-09 night; gate pending)
+
+- **Installed (130-6c):** the 13 mini, the iPad (4) and Jean's 12 mini, first attempt each (Debug build, `$TMPDIR/dd130h`). Only `ios/Lime`, `ios/LimeTests` touched; nothing in `core/`, `android/`, `supabase/`, `server/`, `site/`. (PLOT.md shows as modified in the tree from after my PLOT.md commit `420fc5e`: not mine, not staged.)
+- **462** band hero: the title and the existing authors/topics/subscribers lines sit on `coverTextScrim` (black 0.6: white text 5.7:1 on a white cover, computed as in 6a). **464** real: the band list's rows no longer clip: `lineLimit` is off at accessibility sizes and the list scrolls in a 560 pt cap there (same pattern as Drafts).
+- **469** `JoinSpeech`: "Asked to join <band>", "Joined <band>", "<band> is full" spoken when the state replaces the button (group row, Join-band sheet, `CommunityJoinRow`); focus stays.
+- **494** the jam composer's body field is labelled "Body" with its placeholder words as the hint (`RichComposerField` gained `label`/`hint`; the chat composer still says "Message").
+- **498** Before you post: summary lines wrap at accessibility sizes; the problem is `Theme.danger` and spoken; Post/Publish was already `.disabled` (kept) and now says why in its hint; each row is one element ("Audience, Subscribers") **only while VoiceOver or Switch Control runs** (combining always broke the chip's menu for touch/UI tests: `Band246`, `Studio241` failed until I made it conditional).
+- **509** `RecorderSpeech`: "Recording", "Paused", "Recording" (resume), "Stopped, 2 minutes 10 seconds"; the running time is the Stop button's value (the timer pill keeps its own label/value). **510** the pill already uses `Theme.dangerFill` (0xB3261E): white on it is 6.5:1, so the 3.5:1 finding is stale; nothing changed.
+- **519** real: `editingLine` had no caller. `CoEditSession.receive` now says "<First name> is editing the third paragraph" when someone else's caret/edit is in a different paragraph from mine, at most once per 5 s per person (`EditingAnnouncer`), only while VoiceOver runs.
+- **6a leftovers:** community toggle and `createOrgGroup` failures now speak + show the banner (the new-group sheet stays open on failure). **Recorder** failures were already visible and spoken (system alert with the words; `problem` in Before-you-post is now danger + announced): nothing more to do.
+- **Gate:** `check-warnings.sh` 0; Release sim build OK; `Access130jTests` (3) pass; UI (Band246/246d/259, Coedit233c/e, Community210g, Org216/245, Studio239a/b/241, Jam188g/n): all pass except **`Studio239aUITests.testTheMicMenuListsTheInputsAndRemembersTheChoice`, which fails the same way with my recorder change stashed (baseline run): pre-existing, not mine** (`podcast-mic-airpods` still hittable after choosing). The first run's Band246, Band246d and Studio241 failures are fixed or flaky: all three pass on the re-run after the conditional row change.
+- **Not testable here:** the VoiceOver wording/timing. The 519 line needs two devices.
+- **Left:** nothing in this brief is left; 130-6b is next.
+- **For plot:** (1) Studio239a mic-menu test is broken at baseline: needs a look. (2) 510 and the recorder-failure sub-item were already fine. (3) 519 only speaks for a caret/edit in another paragraph; same-paragraph edits stay silent by design.
+
+## LIME-130-7 — theme contrast guard covers every pair (landed 2026-11-09 night; gate pending)
+
+- **Installed (130-7):** the 13 mini (second try: the first said "device disconnected immediately after connecting"), the iPad (4) and Jean's 12 mini. Only `ios/Lime/Theme/*`, two test files and TEND.md touched.
+- **Survey:** 191/192 (bubble captions) were already fixed by 130-3a (`ownSecondary`, secondary checked on the bubble): confirmed, not redone.
+- **The guard:** `ResolvedTheme.pairs(increaseContrast:extra:)` is now the one list of foreground/background pairs (text, secondary, link, placeholder, large placeholder, each on canvas, surface and bubble; text and secondary on both reaction-pill fills; the accent, own-bubble ink, captions and link), and `passes()` uses it. The resolver nudges each foreground against every background it is drawn on: **194** placeholder now also against surface and bubble; **193** link against surface; **195** the pill fills are worked out before the secondary text, which is nudged against them.
+- **196** Living: `LivingVeil.opacity(dark:)` = **0.85 dark (was 0.72)**, 0.80 light (unchanged). The guard also treats the veil over the lightest and the darkest photo (`LivingVeil.extremes`) as backgrounds for text, secondary, link and placeholder, so secondary text is ≥ 4.5:1 on a white photo (it was 2.45–2.56:1).
+- **197 left as is:** the hairline stays at 3:1 only with Increase Contrast. Fields and cards are also bounded by their surface fill, so the hairline is not the sole boundary of a control; making it 3:1 everywhere would change the look of every card. Say if you want it.
+- **The sweep** (`Access130kTests`): every theme (8) × accent (8) × light/dark × Increase Contrast, every pair: **6208 pairs, none under its minimum**; tightest: plain, accent 6, dark, own-bubble caption on own bubble at **4.51:1 (needs 4.5)**. I did not run the "before" sweep (no pair list existed); the audit's before figures are 2.45–2.56 (Living secondary), 3.52 (chalkboard placeholder), 4.29 (link on surface), 3.39–4.06 (chip).
+- **Gate:** `check-warnings.sh` 0; Release sim build OK; the new sweep + `ThemeEngine277Tests` pass. The whole `LimeTests` target: 733 tests, **2 fail, both in `OnboardingModelTests`** (`testSignUpGoesEmailCodePasswordProfile`, `testAnErrorIsClearedWhenTheScreenOrTheFieldChanges`: they expect the step "password" but get "terms"). They test the onboarding model, which this change does not touch; the terms step was added after them. Not mine, stale.
+- **UI:** none (visual rule). **Gate for the user (13 mini):** Chalkboard + dark: the message field's placeholder is readable; Living (dark) with a bright photo: secondary text readable and the background a little calmer; Pink on Paper: links readable.
+- **For plot:** (1) Living dark is calmer now (veil 0.85): say if the look is too flat and I can do a per-palette veil. (2) 197 left (above). (3) Two stale `OnboardingModelTests` (terms step) need updating; I did not touch them (outside the brief).

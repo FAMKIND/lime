@@ -154,8 +154,11 @@ struct NotificationsScreen: View {
                                 Text(MuteText.until(entry.until)).font(Theme.caption).foregroundStyle(Theme.textSecondary)
                             }
                             Spacer()
-                            Button("Unmute") { notifications.settings.unmute(entry.conversationID) }
+                            let chat = store.conversation(entry.conversationID)?.title ?? "Chat"
+                            Button("Unmute") { notifications.settings.unmute(entry.conversationID); Announce.say("\(chat) unmuted") }
                                 .font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
+                                .frame(minHeight: 44).contentShape(Rectangle())
+                                .accessibilityLabel("Unmute \(chat)")
                                 .accessibilityIdentifier("unmute-\(entry.conversationID)")
                         }
                         .padding(.horizontal, 18).frame(minHeight: 58)
@@ -183,6 +186,7 @@ struct NotificationExplainerSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
+        ScrollView {
         VStack(alignment: .leading, spacing: 18) {
             Image(systemName: "bell.badge").font(.system(size: 34)).foregroundStyle(Theme.text)
             Text("Know when a teacher writes").font(Theme.font(.title2, weight: .bold)).foregroundStyle(Theme.text)
@@ -193,7 +197,6 @@ struct NotificationExplainerSheet: View {
             }
             .font(Theme.body).foregroundStyle(Theme.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
             Button {
                 Task { await notifications.requestAuthorization(); dismiss() }
             } label: {
@@ -210,8 +213,9 @@ struct NotificationExplainerSheet: View {
             .accessibilityIdentifier("explainer-not-now")
         }
         .padding(24)
+        }
         .limeBackground()
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("notification-explainer")
     }

@@ -175,12 +175,12 @@ struct OrgPictureSheet: View {
     private func save(_ image: UIImage) {
         guard let jpeg = PhotoProcessing.jpeg(image) else { return }
         busy = true
-        Task { _ = await store.setJamPicture(jamId, jpeg: jpeg); busy = false }
+        Task { if await !store.setJamPicture(jamId, jpeg: jpeg) { store.showBanner("Couldn\u{2019}t change the picture. Try again.") }; busy = false }
     }
 
     private func remove() {
         busy = true
-        Task { _ = await store.removeJamPicture(jamId); busy = false }
+        Task { if await !store.removeJamPicture(jamId) { store.showBanner("Couldn\u{2019}t remove the picture. Try again.") }; busy = false }
     }
 }
 

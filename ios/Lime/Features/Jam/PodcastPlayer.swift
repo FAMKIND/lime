@@ -266,7 +266,7 @@ struct PodcastBar: View {
                 Button { Task { await controller.toggle(data: load) } } label: {
                     ZStack {
                         Circle().fill(Theme.accent).frame(width: 56, height: 56)
-                        if controller.loading { ProgressView().tint(Theme.accentInk) }
+                        if controller.loading { ProgressView().tint(Theme.accentInk).accessibilityLabel("Loading") }
                         else { Image(systemName: controller.isPlaying ? "pause.fill" : "play.fill").font(.system(size: 22)).foregroundStyle(Theme.accentInk) }
                     }
                     .frame(width: 60, height: 60)
@@ -277,7 +277,8 @@ struct PodcastBar: View {
                 Color.clear.frame(width: 48, height: 44).accessibilityHidden(true)
             }
             if controller.failed {
-                Text("Couldn\u{2019}t play this recording.").font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                Text("Couldn\u{2019}t play this recording.").font(Theme.caption).foregroundStyle(Theme.danger)
+                    .announcesWhenShown("Couldn\u{2019}t play this recording.").accessibilityIdentifier("podcast-failed-\(id)")
             }
         }
         .padding(12)

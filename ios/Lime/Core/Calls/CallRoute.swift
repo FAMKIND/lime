@@ -39,6 +39,7 @@ final class CallRoute {
         if reason == .oldDeviceUnavailable { onHeadphonesGone?() }
         guard name != before else { return }
         toast = "Audio now on \(name)"
+        Announce.say("Audio now on \(name)")
         toastTask?.cancel()
         toastTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(2))

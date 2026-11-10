@@ -244,11 +244,10 @@ struct JamComposeSheet: View {
             ScrollView {
                 VStack(spacing: 0) {
                     quickHead
-                    problemText
                     if hasClip { clipsRow }
                     captionsRow
                     ZStack(alignment: .topLeading) {
-                        RichComposerField(model: composer, selfSizing: true)
+                        RichComposerField(model: composer, selfSizing: true, label: "Body", hint: "What\u{2019}s on your mind?")
                             .onAppear { composer.hasText = false; composer.isPost = true }
                         if !composer.hasText {
                             Text("What\u{2019}s on your mind?").font(Theme.body).foregroundStyle(Theme.placeholder)
@@ -261,6 +260,7 @@ struct JamComposeSheet: View {
                 }
             }
             .scrollDismissesKeyboard(.interactively)
+            .safeAreaInset(edge: .bottom, spacing: 0) { problemText }
         } else {
             quickPageTall
         }
@@ -269,12 +269,11 @@ struct JamComposeSheet: View {
     private var quickPageTall: some View {
         VStack(spacing: 0) {
             quickHead
-            problemText
             if hasClip { clipsRow }
             captionsRow
             GeometryReader { geo in
                 ZStack(alignment: .topLeading) {
-                    RichComposerField(model: composer, maxHeight: geo.size.height, fills: true)
+                    RichComposerField(model: composer, maxHeight: geo.size.height, fills: true, label: "Body", hint: "What\u{2019}s on your mind?")
                         .onAppear { composer.hasText = false; composer.isPost = true }
                     if !composer.hasText {
                         Text("What\u{2019}s on your mind?").font(Theme.body).foregroundStyle(Theme.placeholder)
@@ -286,6 +285,7 @@ struct JamComposeSheet: View {
             if !photos.isEmpty { photosRow }
             if let link { linkRow(link) }
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) { problemText }
     }
 
     /// An article is one page (LIME-188n): the name line, the title, the subtitle and the body scroll together, under the top bar, and the body is as
@@ -294,11 +294,10 @@ struct JamComposeSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 articleHead
-                problemText
                 if hasClip { clipsRow }
                 captionsRow
                 ZStack(alignment: .topLeading) {
-                    RichComposerField(model: composer, selfSizing: true)
+                    RichComposerField(model: composer, selfSizing: true, label: "Body", hint: "Start writing an article\u{2026}")
                         .onAppear { composer.hasText = false; composer.isPost = true }
                     if !composer.hasText {
                         Text("Start writing an article\u{2026}").font(Theme.body).foregroundStyle(Theme.placeholder)
@@ -310,13 +309,15 @@ struct JamComposeSheet: View {
             }
         }
         .scrollDismissesKeyboard(.interactively)
+        .safeAreaInset(edge: .bottom, spacing: 0) { problemText }
         .accessibilityIdentifier("jam-article-page")
     }
 
     @ViewBuilder
     private var problemText: some View {
         if let problem {
-            Text(problem).font(Theme.secondary).foregroundStyle(Theme.danger).announcesWhenShown(problem).padding(.horizontal, 20).padding(.top, 6).frame(maxWidth: .infinity, alignment: .leading)
+            Text(problem).font(Theme.secondary).foregroundStyle(Theme.danger).announcesWhenShown(problem).padding(.horizontal, 20).padding(.vertical, 10).frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.canvas)
                 .accessibilityIdentifier("jam-compose-problem")
         }
     }

@@ -127,7 +127,7 @@ struct ScanQRScreen: View {
                     .onSubmit { Task { await model.handle(pasted, store: store) } }
                 #endif
             case .checking:
-                ProgressView("Checking…").padding(.top, 60)
+                ProgressView("Checking…").padding(.top, 60).announcesWhenShown("Checking")
             case .notLime:
                 message("That isn't a lime QR code.", id: "scan-not-lime")
             case .nobody:
@@ -153,6 +153,7 @@ struct ScanQRScreen: View {
         VStack(spacing: 16) {
             Text(text).font(Theme.body).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
                 .accessibilityIdentifier(id)
+                .announcesWhenShown(text)
             Button("Scan again") { model.restart() }.font(Theme.title).accessibilityIdentifier("scan-again")
         }
         .padding(.top, 50).padding(.horizontal, 28)
@@ -193,6 +194,7 @@ struct ScanResult: View {
                 .font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
                 .padding(.horizontal, 14).padding(.vertical, 8).background(Theme.surface, in: Capsule())
                 .accessibilityIdentifier("scan-verified")
+                .announcesWhenShown(ScanSpeech.matches(person.displayName))
         case .mismatch:
             warning("This code doesn't match \(person.displayName)'s key. It may be old, or it may not be theirs. Don't treat them as verified, and ask them to show the code again.",
                     id: "scan-mismatch")
@@ -203,18 +205,29 @@ struct ScanResult: View {
             Text("This link has no key to check, so \(person.displayName) isn't marked verified.")
                 .font(Theme.secondary).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center).padding(.horizontal, 28)
                 .accessibilityIdentifier("scan-unchecked")
+                .announcesWhenShown("Found \(person.displayName). Not checked.")
         }
     }
 
     private func warning(_ text: String, id: String) -> some View {
-        Label(text, systemImage: "exclamationmark.triangle.fill")
-            .font(Theme.secondary).foregroundStyle(Theme.danger).padding(14)
+        // The words are the ordinary text colour on the surface (well over 4.5:1 in both modes); the danger red is the icon and the edge,
+        // so the warning is never colour alone (LIME-130-5b).
+        Label { Text(text).foregroundStyle(Theme.text) } icon: { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.danger) }
+            .font(Theme.secondary).padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.danger.opacity(0.1), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.danger, lineWidth: 1.5))
             .padding(.horizontal, 16)
+            .accessibilityElement(children: .combine)
             .accessibilityIdentifier(id)
-            .announcesWhenShown(text)
+            .announcesWhenShown(ScanSpeech.doesNotMatch(person.displayName) + " " + text)
     }
+}
+
+/// What the scan says aloud when its result shows.
+enum ScanSpeech {
+    static func matches(_ name: String) -> String { "Matches. \(name) is verified in person." }
+    static func doesNotMatch(_ name: String) -> String { "Doesn\u{2019}t match." }
 }
 
 // MARK: The camera

@@ -70,7 +70,7 @@ struct JamPostMenu: View {
         .sheet(isPresented: $sharing) { JamShareSheet(post: post) }
         .reportSheet($reporting)
         .confirmationDialog("Delete this post for everyone?", isPresented: $confirmingDelete, titleVisibility: .visible) {
-            Button("Delete", role: .destructive) { Task { _ = await store.deleteJamPost(post.postId) } }.accessibilityIdentifier("card-delete-confirm")
+            Button("Delete", role: .destructive) { Task { if await !store.deleteJamPost(post.postId) { store.showBanner("Couldn\u{2019}t delete the post. Try again.") } } }.accessibilityIdentifier("card-delete-confirm")
             Button("Cancel", role: .cancel) {}
         } message: { Text("Subscribers' copies are removed.") }
     }

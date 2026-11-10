@@ -70,12 +70,19 @@ final class GroupCallManager {
         let video: Bool
     }
 
-    private(set) var phase: Phase = .idle
+    private(set) var phase: Phase = .idle {
+        didSet { if phase == .idle && oldValue != .idle { Announce.say("Call ended") } }
+    }
     private(set) var callID = ""
     private(set) var conversationID = ""
     private(set) var title = ""
     private(set) var video = false
-    private(set) var tiles: [Tile] = []
+    private(set) var tiles: [Tile] = [] {
+        didSet {
+            for words in announcer.update(tiles, active: phase == .active, now: Date(), voiceOver: CallControlsPolicy.voiceOverRunning) { Announce.say(words) }
+        }
+    }
+    @ObservationIgnored private var announcer = GroupCallAnnouncer()
     /// The four-emoji check (LIME-147): from everyone's current media keys; empty while any person's key has not arrived (`emojiWaiting`).
     private(set) var verificationEmoji: [CallEmoji] = []
     private(set) var emojiWaiting = false

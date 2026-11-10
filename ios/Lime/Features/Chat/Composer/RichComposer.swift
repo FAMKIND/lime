@@ -680,6 +680,9 @@ struct RichComposerField: UIViewRepresentable {
     var fills = false
     /// As tall as the text, never scrolling itself (an article's body, inside the page's scroll).
     var selfSizing = false
+    /// What VoiceOver calls the field, and the example the empty field shows (the jam composer's "Body" and its placeholder: LIME-130-6c).
+    var label = "Message"
+    var hint = ""
 
     func makeUIView(context: Context) -> ComposerTextView {
         let view = ComposerTextView()
@@ -695,7 +698,8 @@ struct RichComposerField: UIViewRepresentable {
         view.typingAttributes = ComposerTextView.plainTypingAttributes
         view.linkTextAttributes = [.foregroundColor: UIColor(Theme.linkOther), .underlineStyle: NSUnderlineStyle.single.rawValue]
         view.accessibilityIdentifier = "composer-field"
-        view.accessibilityLabel = "Message"
+        view.accessibilityLabel = label
+        view.accessibilityHint = hint.isEmpty ? nil : hint
         view.setContentHuggingPriority(.defaultLow, for: .horizontal)
         model.textView = view
         view.model = model

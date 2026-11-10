@@ -16,9 +16,10 @@ final class Effects280UITests: XCTestCase {
         XCTAssertTrue(button.waitForExistence(timeout: 10), "Effects is in the video call's controls")
         XCTAssertEqual(button.label, "Effects")
         button.tap()
-        for name in ["Hearts", "Thumbs up", "Confetti", "Lasers", "Video effects\u{2026}"] {
+        for name in ["Hearts", "Thumbs up", "Confetti", "Rain", "Video effects\u{2026}"] {
             XCTAssertTrue(app.buttons[name].waitForExistence(timeout: 5), name)
         }
+        XCTAssertFalse(app.buttons["Fireworks"].exists || app.buttons["Lasers"].exists, "the two that flash are not offered (LIME-130-4c)")
     }
 
     func testNoButtonWhereTheCameraCannotDoEffects() {

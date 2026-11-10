@@ -127,6 +127,8 @@ struct PhotoCropScreen: View {
                         offset = clamped(offset, viewport: viewport)
                     }
                 ))
+                .cropAccessibility(label: "Photo position", scale: $scale, offset: $offset, frame: CGSize(width: viewport, height: viewport),
+                                   clamp: { clamped($0, viewport: viewport) })
                 .accessibilityIdentifier("photo-crop-area")
                 Text("Drag and pinch to choose how your photo is cropped.").font(Theme.secondary).foregroundStyle(Theme.textSecondary).padding(.top, 20)
                 Spacer(minLength: 0)

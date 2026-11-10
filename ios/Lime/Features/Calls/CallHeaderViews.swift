@@ -32,7 +32,7 @@ struct CallNamePill<Picture: View>: View {
                 Image(systemName: "chevron.right").font(Theme.font(.caption, weight: .semibold)).foregroundStyle(.white.opacity(0.7))
             }
             .padding(.leading, 6).padding(.trailing, 12).padding(.vertical, 6)
-            .background(.black.opacity(0.35), in: Capsule())
+            .background(.black.opacity(CallScrim.text), in: Capsule())
         }
         .accessibilityLabel(accessibilityLabel)
         .accessibilityIdentifier("call-name-pill")
@@ -57,6 +57,7 @@ struct CallEmojiChip: View {
             }
             .foregroundStyle(.white.opacity(0.85))
             .padding(.horizontal, 10).frame(minHeight: 44)
+            .background(.black.opacity(CallScrim.text), in: Capsule())
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Waiting for everyone\u{2019}s keys")
             .accessibilityIdentifier("call-emoji-waiting")
@@ -72,6 +73,7 @@ struct CallEmojiChip: View {
                 }
                 .foregroundStyle(.white)
                 .padding(.horizontal, 10).frame(minHeight: 44)
+                .background(.black.opacity(CallScrim.text), in: Capsule())
                 .contentShape(Rectangle())
                 // A brief fade when the four change (none with Reduce Motion).
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: emoji.map(\.emoji))
@@ -90,12 +92,24 @@ struct CallEmojiSheet: View {
     var changeNote: String?
     let footnote: String
     var height: CGFloat = 380
+    /// The emoji grow with the text size (the sheet scrolls; a row of four that no longer fits becomes two rows of two).
+    @ScaledMetric(relativeTo: .largeTitle) private var glyph: CGFloat = 52
 
     var body: some View {
+        ScrollView {
         VStack(spacing: 18) {
             Image(systemName: "lock.fill").font(Theme.font(.title2)).foregroundStyle(.white.opacity(0.8)).padding(.top, 28).accessibilityHidden(true)
-            HStack(spacing: 14) {
-                ForEach(Array(emoji.enumerated()), id: \.offset) { Text($1.emoji).font(.system(size: 52)) }
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 14) {
+                    ForEach(Array(emoji.enumerated()), id: \.offset) { Text($1.emoji).font(.system(size: glyph)) }
+                }
+                Grid(horizontalSpacing: 14, verticalSpacing: 8) {
+                    ForEach(0..<((emoji.count + 1) / 2), id: \.self) { row in
+                        GridRow {
+                            ForEach(Array(emoji.enumerated()).filter { $0.offset / 2 == row }, id: \.offset) { Text($1.emoji).font(.system(size: glyph)) }
+                        }
+                    }
+                }
             }
             .environment(\.layoutDirection, .leftToRight)
             .accessibilityElement(children: .ignore)
@@ -110,10 +124,10 @@ struct CallEmojiSheet: View {
             }
             Text(footnote)
                 .font(Theme.font(.footnote)).multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.6))
-            Spacer()
         }
-        .padding(.horizontal, 24)
-        .presentationDetents([.height(height)])
+        .padding(.horizontal, 24).padding(.bottom, 16)
+        }
+        .presentationDetents([.height(height), .large])
         // (An identifier on the container would replace the children's own.)
         .background(Color.clear.accessibilityIdentifier("call-emoji-sheet"))
     }

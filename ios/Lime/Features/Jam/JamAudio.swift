@@ -138,7 +138,8 @@ struct JamAudioCard: View {
                 Button { play(controller) } label: {
                     ZStack {
                         Circle().fill(Theme.accent).frame(width: 36, height: 36)
-                        Image(systemName: playing ? "pause.fill" : "play.fill").font(.system(size: 14)).foregroundStyle(Theme.accentInk)
+                        if controller.loading { ProgressView().tint(Theme.accentInk).accessibilityLabel("Loading") }
+                        else { Image(systemName: playing ? "pause.fill" : "play.fill").font(.system(size: 14)).foregroundStyle(Theme.accentInk) }
                     }
                     .frame(width: 40, height: 44)
                 }
@@ -152,6 +153,11 @@ struct JamAudioCard: View {
             Text(VoiceFormat.clock(max(controller.duration - controller.position, 0))).font(Theme.caption.monospacedDigit()).foregroundStyle(Theme.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .trailing).padding(.trailing, 38)
                 .accessibilityLabel("Length \(PodcastFormat.spoken(Double(file.durationMs ?? 0) / 1000))").accessibilityIdentifier("jam-audio-length")
+            // The card says so too, not only the player (LIME-130-6a).
+            if controller.failed {
+                Text("Couldn\u{2019}t play this recording.").font(Theme.caption).foregroundStyle(Theme.danger)
+                    .announcesWhenShown("Couldn\u{2019}t play this recording.").accessibilityIdentifier("jam-audio-failed-\(file.attachmentId)")
+            }
         }
     }
 

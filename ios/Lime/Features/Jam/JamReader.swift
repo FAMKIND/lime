@@ -101,7 +101,7 @@ struct JamPostView: View {
         }
         .fullScreenCover(item: $editingPost) { JamEditSheet(post: $0) }
         .confirmationDialog("Delete this post?", isPresented: $confirmingDelete, titleVisibility: .visible) {
-            Button("Delete post", role: .destructive) { if let post { Task { _ = await store.deleteJamPost(post.postId); dismiss() } } }.accessibilityIdentifier("options-delete-confirm")
+            Button("Delete post", role: .destructive) { if let post { Task { if await store.deleteJamPost(post.postId) { dismiss() } else { store.showBanner("Couldn\u{2019}t delete the post. Try again.") } } } }.accessibilityIdentifier("options-delete-confirm")
             Button("Cancel", role: .cancel) {}
         } message: { Text("It goes from your subscribers' phones too.") }
         .accessibilityIdentifier("jam-reader")

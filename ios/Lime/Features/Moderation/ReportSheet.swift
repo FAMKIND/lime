@@ -19,6 +19,7 @@ struct ReportSheet: View {
     @State private var leaveAfter = false
     @State private var leftGroup = false
     @FocusState private var noteFocused: Bool
+    @AccessibilityFocusState private var thanksFocused: Bool
 
     var body: some View {
         NavigationStack {
@@ -147,6 +148,8 @@ struct ReportSheet: View {
             Image(systemName: "checkmark.circle").font(.system(size: 44)).foregroundStyle(Theme.text).accessibilityHidden(true)
             Text("Thanks. lime\u{2019}s team will look at this.").font(Theme.font(.title3, weight: .semibold)).foregroundStyle(Theme.text).multilineTextAlignment(.center)
                 .accessibilityIdentifier("report-thanks")
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityFocused($thanksFocused)
             #if DEBUG
             // Tests: what the last demo report carried (kind and ids).
             if store.isDemo, let last = ConversationStore.demoReports.last {
@@ -157,6 +160,11 @@ struct ReportSheet: View {
             Spacer()
         }
         .padding(24).frame(maxWidth: .infinity)
+        .onAppear {
+            // The form is gone: say so, and put VoiceOver on the thank-you (LIME-130-5b).
+            Announce.say("Report sent")
+            DispatchQueue.main.async { thanksFocused = true }
+        }
     }
 
     private func send() async {

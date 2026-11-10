@@ -56,7 +56,8 @@ struct CallView: View {
     /// VoiceOver or Switch Control is running: the controls stay (LIME-130-1).
     @State private var voiceOver = CallControlsPolicy.voiceOverRunning
     @State private var switchControl = CallControlsPolicy.switchControlRunning
-    @AccessibilityFocusState private var muteFocused: Bool
+    @AccessibilityFocusState private var focus: CallFocus?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let tile = CGSize(width: 108, height: 148)
 
@@ -79,8 +80,8 @@ struct CallView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     header(call)
                     if call.phase == .outgoing && call.showUnreachableHint {
-                        Text("\(call.peerName)\u{2019}s phone may be off or lime closed")
-                            .font(Theme.font(.footnote)).foregroundStyle(.white.opacity(0.7))
+                        Text(CallAnnouncements.unreachable(name: call.peerName))
+                            .font(Theme.font(.footnote)).foregroundStyle(.white.opacity(0.9)).callTextScrim()
                             .accessibilityIdentifier("call-unreachable-hint")
                     }
                     Spacer()
@@ -98,7 +99,7 @@ struct CallView: View {
                     // Voice: the Minimise button is a glass circle on the name pill's row (the controls row is full on a small phone).
                     Button { call.minimize() } label: {
                         Image(systemName: "arrow.down.right.and.arrow.up.left").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
-                            .frame(width: 44, height: 44).background(.white.opacity(0.2), in: Circle())
+                            .frame(width: 44, height: 44).callRoundBackground()
                     }
                     .accessibilityLabel("Minimise").accessibilityIdentifier("call-minimize")
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(.top, 8).padding(.trailing, 16)
@@ -108,7 +109,7 @@ struct CallView: View {
                     .opacity(hidden ? 0 : 1)
                     .allowsHitTesting(!hidden)
                     .accessibilityHidden(hidden)
-                    .animation(.easeInOut(duration: 0.25), value: controlsVisible)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: controlsVisible)
                 if hidden {
                     // The controls are away (a touch user): the picture is one button, so Voice Control ("Tap Show call controls") and Switch Control can bring
                     // them back. It takes no touches itself; a tap on the picture is the gesture below, as before.
@@ -128,7 +129,7 @@ struct CallView: View {
             }
             .contentShape(Rectangle())
             .onTapGesture { if call.video { showControls() } }
-            .onAppear { showControls(); preparePictureInPicture(call) }
+            .onAppear { showControls(); preparePictureInPicture(call); focusFirstControlSoon(call) }
             .onChange(of: call.phase) { _, _ in showControls(); preparePictureInPicture(call) }
             .onChange(of: call.video) { _, _ in preparePictureInPicture(call) }
             .onReceive(NotificationCenter.default.publisher(for: UIAccessibility.voiceOverStatusDidChangeNotification)) { _ in
@@ -201,9 +202,11 @@ struct CallView: View {
                 .offset(x: tileOrigin.x + drag.width, y: tileOrigin.y + drag.height)
                 .gesture(DragGesture().onChanged { drag = $0.translation }.onEnded { value in
                     let end = CGPoint(x: tileOrigin.x + value.translation.width + tile.width / 2, y: tileOrigin.y + value.translation.height + tile.height / 2)
-                    withAnimation(.spring(duration: 0.3)) { corner = nearest(to: end, in: size, safe: safe); drag = .zero }
+                    withAnimation(reduceMotion ? nil : .spring(duration: 0.3)) { corner = nearest(to: end, in: size, safe: safe); drag = .zero }
                 })
-                .onTapGesture { withAnimation { swapped.toggle() }; showControls() }
+                .onTapGesture { swapPictures() }
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction(named: "Move to the other corner") { moveToNextCorner() }
                 .accessibilityIdentifier("call-tile-handle")
                 .accessibilityLabel("Swap the pictures")
         }
@@ -243,7 +246,20 @@ struct CallView: View {
         } ?? .topTrailing
     }
 
+    private func swapPictures() {
+        withAnimation(reduceMotion ? nil : .default) { swapped.toggle() }
+        showControls()
+    }
+
+    /// The non-drag way to move my picture (WCAG 2.5.7): the next corner, round the screen.
+    private func moveToNextCorner() {
+        let all = Corner.allCases, next = all[((all.firstIndex(of: corner) ?? 0) + 1) % all.count]
+        withAnimation(reduceMotion ? nil : .spring(duration: 0.3)) { corner = next }
+        showControls()
+    }
+
     // MARK: Header
+
 
     private func header(_ call: CallManager) -> some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -253,7 +269,7 @@ struct CallView: View {
             HStack(spacing: 8) {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     Text(call.statusText(at: context.date)).monospacedDigit()
-                        .font(Theme.font(.subheadline)).foregroundStyle(.white.opacity(0.85))
+                        .font(Theme.font(.subheadline)).foregroundStyle(.white.opacity(0.9)).callTextScrim()
                         .accessibilityIdentifier("call-status")
                 }
                 if call.phase == .active {
@@ -262,7 +278,7 @@ struct CallView: View {
                 if call.remoteMuted && call.phase == .active {
                     Label("Muted", systemImage: "mic.slash.fill").labelStyle(.titleAndIcon)
                         .font(Theme.font(.caption, weight: .semibold)).foregroundStyle(.white)
-                        .padding(.horizontal, 8).padding(.vertical, 3).background(.white.opacity(0.2), in: Capsule())
+                        .callTextScrim()
                         .accessibilityLabel("\(call.peerName) is muted")
                         .accessibilityIdentifier("call-remote-muted")
                 }
@@ -272,8 +288,8 @@ struct CallView: View {
                 UIAccessibility.post(notification: .announcement, argument: "\(call.peerName) \(muted ? "muted" : "unmuted")")
             }
             if call.cameraPaused {
-                Text("Your camera is paused while lime is in a window")
-                    .font(Theme.font(.footnote)).foregroundStyle(.white.opacity(0.85)).padding(.leading, 8)
+                Text(CallAnnouncements.cameraPaused)
+                    .font(Theme.font(.footnote)).foregroundStyle(.white.opacity(0.9)).callTextScrim().padding(.leading, 8)
                     .accessibilityIdentifier("call-camera-paused")
             }
         }
@@ -286,6 +302,7 @@ struct CallView: View {
     }
 
     private func personSheet(_ call: CallManager) -> some View {
+        ScrollView {
         VStack(spacing: 16) {
             AvatarView(person: person(store), size: 88).padding(.top, 24)
             Text(call.peerName).font(Theme.font(.title2, weight: .semibold))
@@ -298,10 +315,11 @@ struct CallView: View {
             }
             .buttonStyle(.borderedProminent).tint(Theme.accent).foregroundStyle(Theme.accentInk)
             .accessibilityIdentifier("call-person-message")
-            Spacer()
+        }
+        .padding(.bottom, 16)
         }
         .padding(.horizontal, 24)
-        .presentationDetents([.height(300)])
+        .presentationDetents([.height(300), .large])
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("call-person-sheet")
     }
@@ -322,10 +340,10 @@ struct CallView: View {
         } else if call.video && landscape {
             // Landscape is short: the column would not fit, so the same buttons run along the bottom.
             HStack(spacing: 14) {
-                toggle("arrow.triangle.2.circlepath.camera", "Flip camera", on: false, id: "call-flip") { call.flipCamera(); showControls() }
+                toggle("arrow.triangle.2.circlepath.camera", "Flip camera", on: false, id: "call-flip", focus: .first) { call.flipCamera(); showControls() }
                 CallEffectsButton(size: 56, id: "call-effects", support: { call.effectsSupport }) { call.perform($0); showControls() }
-                toggle(call.cameraOn ? "video.fill" : "video.slash.fill", "Camera", on: !call.cameraOn, id: "call-video") { call.toggleCamera(); showControls() }
-                toggle(call.muted ? "mic.slash.fill" : "mic.fill", "Mute", on: call.muted, id: "call-mute", focus: $muteFocused) { call.setMuted(!call.muted); showControls() }
+                toggle(CallToggleIcon.camera(on: call.cameraOn), "Camera", on: !call.cameraOn, value: CallAnnouncements.value(call.cameraOn), selected: call.cameraOn, id: "call-video", focus: nil) { call.toggleCamera(); showControls() }
+                toggle(CallToggleIcon.mute(muted: call.muted), "Mute", on: call.muted, value: CallAnnouncements.value(call.muted), selected: call.muted, id: "call-mute", focus: .mute) { call.setMuted(!call.muted); showControls() }
                 toggle("arrow.down.right.and.arrow.up.left", "Minimise", on: false, id: "call-minimize") { call.minimize() }
                 routeButton(call)
                 round("xmark", "End call", Theme.dangerFill, id: "call-end") { Task { await call.end() } }
@@ -338,8 +356,8 @@ struct CallView: View {
                 VStack(spacing: 14) {
                     Spacer()
                     CallEffectsButton(size: 56, id: "call-effects", support: { call.effectsSupport }) { call.perform($0); showControls() }
-                    toggle(call.cameraOn ? "video.fill" : "video.slash.fill", "Camera", on: !call.cameraOn, id: "call-video") { call.toggleCamera(); showControls() }
-                    toggle(call.muted ? "mic.slash.fill" : "mic.fill", "Mute", on: call.muted, id: "call-mute", focus: $muteFocused) { call.setMuted(!call.muted); showControls() }
+                    toggle(CallToggleIcon.camera(on: call.cameraOn), "Camera", on: !call.cameraOn, value: CallAnnouncements.value(call.cameraOn), selected: call.cameraOn, id: "call-video", focus: .first) { call.toggleCamera(); showControls() }
+                    toggle(CallToggleIcon.mute(muted: call.muted), "Mute", on: call.muted, value: CallAnnouncements.value(call.muted), selected: call.muted, id: "call-mute", focus: .mute) { call.setMuted(!call.muted); showControls() }
                     toggle("arrow.down.right.and.arrow.up.left", "Minimise", on: false, id: "call-minimize") { call.minimize() }
                     routeButton(call)
                     round("xmark", "End call", Theme.dangerFill, id: "call-end") { Task { await call.end() } }
@@ -360,9 +378,9 @@ struct CallView: View {
         } else {
             // Four 56 pt buttons and a 64 pt End: on a 375 pt phone the gaps are 12, not 22, so the margins stay above 16.
             HStack(spacing: 12) {
-                toggle("video.fill", "Video", on: false, id: "call-start-video") { Task { await call.startVideo() } }
-                toggle(call.muted ? "mic.slash.fill" : "mic.fill", "Mute", on: call.muted, id: "call-mute") { call.setMuted(!call.muted) }
-                toggle("speaker.wave.2.fill", "Speaker", on: call.speaker, id: "call-speaker") { call.toggleSpeaker() }
+                toggle("video.fill", "Video", on: false, id: "call-start-video", focus: .first) { Task { await call.startVideo() } }
+                toggle(CallToggleIcon.mute(muted: call.muted), "Mute", on: call.muted, value: CallAnnouncements.value(call.muted), selected: call.muted, id: "call-mute") { call.setMuted(!call.muted) }
+                toggle(CallToggleIcon.speaker(on: call.speaker), "Speaker", on: call.speaker, value: CallAnnouncements.value(call.speaker), selected: call.speaker, id: "call-speaker") { call.toggleSpeaker() }
                 routeButton(call)
                 round("phone.down.fill", "End call", Theme.dangerFill, id: "call-end") { Task { await call.end() } }
             }
@@ -375,10 +393,11 @@ struct CallView: View {
     /// The system output picker, labelled with where the sound is now.
     private func routeButton(_ call: CallManager) -> some View {
         ZStack {
-            Circle().fill(Color.white.opacity(0.2)).frame(width: 56, height: 56)
+            Circle().fill(Color.clear).frame(width: 56, height: 56).callRoundBackground()
             RoutePicker().frame(width: 40, height: 40)
         }
         .accessibilityElement(children: .ignore)
+        .accessibilityAddTraits(.isButton)
         .accessibilityLabel("Audio output, now \(call.route.name)")
         .accessibilityIdentifier("call-route")
     }
@@ -389,6 +408,15 @@ struct CallView: View {
         call.preparePictureInPicture(sourceView: view)
     }
 
+    /// When the call screen opens with VoiceOver or Switch Control on, focus starts on the first control, not the picture behind it (LIME-130-4a).
+    private func focusFirstControlSoon(_ call: CallManager) {
+        guard CallControlsPolicy.voiceOverRunning || CallControlsPolicy.switchControlRunning, call.phase != .incoming else { return }
+        Task {
+            try? await Task.sleep(for: .milliseconds(500))
+            focus = .first
+        }
+    }
+
     private func controlsHidden(_ call: CallManager) -> Bool {
         CallControlsPolicy.hidden(video: call.video, visible: controlsVisible, voiceOver: voiceOver, switchControl: switchControl)
     }
@@ -397,7 +425,7 @@ struct CallView: View {
     private func focusMuteSoon() {
         Task {
             try? await Task.sleep(for: .milliseconds(350))
-            muteFocused = true
+            focus = .mute
         }
     }
 
@@ -420,20 +448,32 @@ struct CallView: View {
         .accessibilityLabel(label).accessibilityIdentifier(id)
     }
 
-    private func toggle(_ symbol: String, _ label: String, on: Bool, id: String, focus: AccessibilityFocusState<Bool>.Binding? = nil, action: @escaping () -> Void) -> some View {
+    /// A round toggle. `on` is the lit look; `value` ("On"/"Off") and `selected` are what VoiceOver gets, and the glyph changes shape with the state.
+    private func toggle(_ symbol: String, _ label: String, on: Bool, value: String? = nil, selected: Bool = false, id: String, focus: CallFocus? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol).font(.system(size: 22)).foregroundStyle(on ? .black : .white)
-                .frame(width: 56, height: 56).background(on ? Color.white : Color.white.opacity(0.2), in: Circle())
+                .frame(width: 56, height: 56).callRoundBackground(lit: on)
         }
         .accessibilityLabel(label).accessibilityIdentifier(id)
-        .modifier(OptionalAccessibilityFocus(focus: focus))
+        .modifier(ToggleState(value: value, selected: selected))
+        .modifier(OptionalAccessibilityFocus(state: $focus, target: focus))
     }
 }
 
-/// `accessibilityFocused` when a binding is given.
-private struct OptionalAccessibilityFocus: ViewModifier {
-    let focus: AccessibilityFocusState<Bool>.Binding?
+/// The value ("On"/"Off") and the selected trait of a toggling call button.
+private struct ToggleState: ViewModifier {
+    let value: String?
+    let selected: Bool
     func body(content: Content) -> some View {
-        if let focus { content.accessibilityFocused(focus) } else { content }
+        if let value { content.accessibilityValue(value).accessibilityAddTraits(selected ? .isSelected : []) } else { content }
+    }
+}
+
+/// `accessibilityFocused` when the button is a focus target.
+private struct OptionalAccessibilityFocus: ViewModifier {
+    var state: AccessibilityFocusState<CallFocus?>.Binding
+    let target: CallFocus?
+    func body(content: Content) -> some View {
+        if let target { content.accessibilityFocused(state, equals: target) } else { content }
     }
 }

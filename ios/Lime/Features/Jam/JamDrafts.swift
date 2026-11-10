@@ -11,7 +11,12 @@ struct JamDraftsList: View {
     @State private var openingLocal: LocalDraft?
     @State private var deletingLocal: LocalDraft?
 
-    private static let rowHeight: CGFloat = 84
+    /// The rows grow with the text size; at accessibility sizes their lines wrap and the list scrolls (LIME-130-6a).
+    @ScaledMetric(relativeTo: .body) private var rowHeight: CGFloat = 84
+    @Environment(\.dynamicTypeSize) private var typeSize
+    private var big: Bool { typeSize.isAccessibilitySize }
+    private var lines: Int? { big ? nil : 1 }
+    private func listHeight(_ count: Int) -> CGFloat { let all = CGFloat(count) * rowHeight + 8; return big ? min(all, 560) : all }
 
     var body: some View {
         // Not a timeline: the system rebuilds a list's rows when its view redraws, which would cancel a swipe or a long press; the list changes when the
@@ -35,8 +40,8 @@ struct JamDraftsList: View {
                                 .contextMenu { if !store.draftSelecting { menu(row) } }
                         }
                     }
-                    .listStyle(.plain).scrollContentBackground(.hidden).scrollDisabled(true)
-                    .frame(height: CGFloat(rows.count) * Self.rowHeight + 8)
+                    .listStyle(.plain).scrollContentBackground(.hidden).scrollDisabled(!big)
+                    .frame(height: listHeight(rows.count))
                 }
                 if !local.isEmpty { localSection(local) }
             }
@@ -84,8 +89,8 @@ struct JamDraftsList: View {
                     }
             }
         }
-        .listStyle(.plain).scrollContentBackground(.hidden).scrollDisabled(true)
-        .frame(height: CGFloat(drafts.count) * Self.rowHeight + 8)
+        .listStyle(.plain).scrollContentBackground(.hidden).scrollDisabled(!big)
+        .frame(height: listHeight(drafts.count))
         .accessibilityIdentifier("jam-local-drafts")
     }
 
@@ -104,12 +109,12 @@ struct JamDraftsList: View {
                 }
                 .frame(width: 52, height: 52).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(draft.headline).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
-                    Text("\(draft.label) \u{00B7} Edited \(ago)").font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                    Text(draft.headline).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(lines)
+                    Text("\(draft.label) \u{00B7} Edited \(ago)").font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(lines)
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 20).frame(maxWidth: .infinity, minHeight: Self.rowHeight, alignment: .leading).contentShape(Rectangle())
+            .padding(.horizontal, 20).frame(maxWidth: .infinity, minHeight: rowHeight, alignment: .leading).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
@@ -138,21 +143,21 @@ struct JamDraftsList: View {
                     .frame(width: 56, height: 56).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text(row.title.isEmpty ? "Untitled" : row.title).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
+                        Text(row.title.isEmpty ? "Untitled" : row.title).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(lines)
                         if row.pinned { Image(systemName: "pin.fill").font(.system(size: 11)).foregroundStyle(Theme.textSecondary).accessibilityHidden(true) }
                     }
                     if let writingLine {
-                        Text(writingLine).font(Theme.secondary).foregroundStyle(Theme.text).lineLimit(1).accessibilityIdentifier("jam-draft-live-\(row.draftID)")
+                        Text(writingLine).font(Theme.secondary).foregroundStyle(Theme.text).lineLimit(lines).accessibilityIdentifier("jam-draft-live-\(row.draftID)")
                     }
                     if let state = row.reviewState {
-                        Text(state).font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.text).lineLimit(1).accessibilityIdentifier("jam-draft-review-\(row.draftID)")
+                        Text(state).font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.text).lineLimit(lines).accessibilityIdentifier("jam-draft-review-\(row.draftID)")
                     }
                     Text(["Edited \(Self.ago(row.updatedAt))"] .appending(names.isEmpty ? [] : [names.joined(separator: ", ")]).joined(separator: " \u{00B7} "))
-                        .font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                        .font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(lines)
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 20).frame(maxWidth: .infinity, minHeight: Self.rowHeight, alignment: .leading).contentShape(Rectangle())
+            .padding(.horizontal, 20).frame(maxWidth: .infinity, minHeight: rowHeight, alignment: .leading).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
@@ -277,6 +282,10 @@ private extension Array {
 /// <title>"; a tap opens the draft; it goes by itself after a few seconds or when swiped up.
 struct DraftInviteBanner: View {
     @Environment(ConversationStore.self) private var store
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// How long it stays for a touch user; with VoiceOver or Switch Control it stays until dismissed (LIME-130-6a).
+    static let touchSeconds = 20.0
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -289,10 +298,10 @@ struct DraftInviteBanner: View {
                         AvatarView(person: who, size: 40).accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 1) {
                             if let band = store.reviewBannerLine(banner) {
-                                Text("\(first) sent \u{201C}\(band.title)\u{201D} for review in \(band.band)").font(Theme.title).foregroundStyle(Theme.text).lineLimit(2)
+                                Text("\(first) sent \u{201C}\(band.title)\u{201D} for review in \(band.band)").font(Theme.title).foregroundStyle(Theme.text).lineLimit(nil)
                             } else {
-                                Text("\(first) invited you to write").font(Theme.title).foregroundStyle(Theme.text).lineLimit(1)
-                                Text(title).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(2)
+                                Text("\(first) invited you to write").font(Theme.title).foregroundStyle(Theme.text).lineLimit(nil)
+                                Text(title).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(nil)
                             }
                         }
                         Spacer(minLength: 0)
@@ -308,15 +317,18 @@ struct DraftInviteBanner: View {
                 .accessibilityLabel("\(first) invited you to write \(title)")
                 .accessibilityHint("Opens the draft")
                 .accessibilityIdentifier("draft-invite-banner")
+                .accessibilityAction(named: "Dismiss") { store.draftInviteBanner = nil }
                 .gesture(DragGesture(minimumDistance: 12).onEnded { drag in if drag.translation.height < -10 { store.draftInviteBanner = nil } })
-                .transition(.move(edge: .top).combined(with: .opacity))
+                .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
                 .task(id: banner.id) {
-                    try? await Task.sleep(for: .seconds(6))
-                    if store.draftInviteBanner?.id == banner.id { store.draftInviteBanner = nil }
+                    Announce.say("\(first) invited you to write \(title)")
+                    if BannerTiming.staysUntilDismissed { return }
+                    try? await Task.sleep(for: .seconds(Self.touchSeconds))
+                    if !BannerTiming.staysUntilDismissed, store.draftInviteBanner?.id == banner.id { store.draftInviteBanner = nil }
                 }
             }
         }
-        .animation(.spring(duration: 0.3), value: store.draftInviteBanner?.id)
+        .animation(reduceMotion ? .linear(duration: 0.15) : .spring(duration: 0.3), value: store.draftInviteBanner?.id)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .allowsHitTesting(store.draftInviteBanner != nil)
     }

@@ -52,6 +52,15 @@ enum VideoAutoplay {
     }
 }
 
+/// Whether the player's controls stay on screen (WCAG 2.2.1, LIME-130-6a). VoiceOver, Switch Control and AssistiveTouch are detectable; **Voice Control is
+/// not** (iOS gives apps no signal for it), so its users can tap the video to bring the controls back and say "Show numbers".
+enum PlayerControls {
+    static func keepsVisible(voiceOver: Bool, switchControl: Bool, assistiveTouch: Bool) -> Bool { voiceOver || switchControl || assistiveTouch }
+    @MainActor static var keepsVisible: Bool {
+        keepsVisible(voiceOver: CallControlsPolicy.voiceOverRunning, switchControl: UIAccessibility.isSwitchControlRunning, assistiveTouch: UIAccessibility.isAssistiveTouchRunning)
+    }
+}
+
 /// App-wide video choices, remembered on this phone.
 enum VideoPrefs {
     static let captionsKey = "lime.video.captions"
@@ -113,6 +122,8 @@ struct JamVideoCard: View {
                 HStack {
                     Spacer()
                     VStack(spacing: 8) {
+                        // A video that starts by itself can be stopped (WCAG 2.2.2): a 44 pt button, and a VoiceOver action (LIME-130-6a).
+                        round(controller.isPlaying ? "pause.fill" : "play.fill", label: controller.isPlaying ? "Pause video" : "Play video", id: "jam-video-playpause") { togglePlayback(controller) }
                         round(controller.muted ? "speaker.slash.fill" : "speaker.wave.2.fill", label: controller.muted ? "Unmute" : "Mute", id: "jam-video-mute") { controller.muted.toggle() }
                         if !cues.isEmpty {
                             round(captionsOn ? "captions.bubble.fill" : "captions.bubble", label: captionsOn ? "Turn captions off" : "Turn captions on", id: "jam-video-cc") { captionsOn.toggle() }
@@ -157,6 +168,7 @@ struct JamVideoCard: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel(label ?? "Video, \(VoiceFormat.clock(controller.duration))").accessibilityHint("Opens the video full screen")
         .accessibilityAddTraits(.isButton)
+        .accessibilityAction(named: controller.isPlaying ? "Pause video" : "Play video") { togglePlayback(controller) }
         .accessibilityIdentifier("jam-video")
         .onGeometryChange(for: Bool.self) { proxy in
             let frame = proxy.frame(in: .global)
@@ -195,9 +207,22 @@ struct JamVideoCard: View {
         return controller
     }
 
-    /// Plays while at least half of it shows and the rule allows; otherwise it waits with its cover and a play button.
+    private func togglePlayback(_ controller: PodcastController) {
+        if controller.isPlaying {
+            userPaused = true
+            controller.pause()
+        } else {
+            userPaused = false
+            Task { await controller.play { await store.jamAttachmentData(postID, file.attachmentId) } }
+        }
+    }
+
+    /// Plays while at least half of it shows and the rule allows; otherwise it waits with its cover and a play button. A video the person paused stays
+    /// paused until it is scrolled away and back.
     private func autoplay(_ controller: PodcastController) async {
         guard !opening else { return }
+        if !visible { userPaused = false }
+        guard !userPaused else { return }
         if visible {
             guard VideoAutoplay.allowed(onPhone: file.available) else { return }
             await controller.play { await store.jamAttachmentData(postID, file.attachmentId) }
@@ -305,7 +330,7 @@ struct JamVideoScreen: View {
             JamVideoFullScreen(postID: item.postID, file: item.file, controller: item.controller, cues: shownCues, captionsOn: captionsOn, tint: tint, openProfile: { viewProfile(of: $0) }, close: { fullScreen = false })
         }
         .confirmationDialog("Delete this post for everyone?", isPresented: $confirmingDelete, titleVisibility: .visible) {
-            Button("Delete post", role: .destructive) { Task { _ = await store.deleteJamPost(active.postID); NowPlaying.shared.close(); dismiss() } }.accessibilityIdentifier("jam-video-delete-confirm")
+            Button("Delete post", role: .destructive) { Task { if await store.deleteJamPost(active.postID) { NowPlaying.shared.close(); dismiss() } else { store.showBanner("Couldn\u{2019}t delete the post. Try again.") } } }.accessibilityIdentifier("jam-video-delete-confirm")
             Button("Cancel", role: .cancel) {}
         } message: { Text("Subscribers' copies are removed.") }
         .sheet(isPresented: $commenting) {
@@ -1073,16 +1098,16 @@ struct JamVideoFullScreen: View {
     }
 
     private func toggle() {
-        if showsControls { withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { showsControls = false } } else { show() }
+        if showsControls, !PlayerControls.keepsVisible { withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { showsControls = false } } else { show() }
     }
 
-    /// Shows the controls; while playing they go after 3 seconds (not while VoiceOver is on, which needs them in reach).
+    /// Shows the controls; while playing they go after 3 seconds (not while VoiceOver, Switch Control or AssistiveTouch is on: they need them in reach).
     private func show() {
         withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { showsControls = true }
         hideTask?.cancel()
         hideTask = Task {
             try? await Task.sleep(for: .seconds(3))
-            if !Task.isCancelled, controller.isPlaying, !UIAccessibility.isVoiceOverRunning { withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) { showsControls = false } }
+            if !Task.isCancelled, controller.isPlaying, !PlayerControls.keepsVisible { withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) { showsControls = false } }
         }
     }
 }

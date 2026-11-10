@@ -98,6 +98,16 @@ struct CallMiniPlayer: View {
         .onChange(of: store.groupCalls.inCall || store.calls.inCall) { _, inCall in
             if !inCall { store.miniPlayerTuck.show() }
         }
+        // Said aloud (LIME-130-4b): the player appears, folds into the edge tab, comes back. The call's end is said by the call managers.
+        .onChange(of: miniShowing) { _, showing in if showing { Announce.say("Call minimised. Controls at the bottom of the screen") } }
+        .onChange(of: store.miniPlayerTuck.isTucked) { _, tucked in
+            if miniShowing { Announce.say(tucked ? "Call controls hidden at the edge" : "Call controls shown") }
+        }
+    }
+
+    private var miniShowing: Bool {
+        CallMiniPlayerRule.subject(groupInCall: store.groupCalls.inCall, groupMinimized: store.groupCalls.minimized,
+                                   callInCall: store.calls.inCall, callMinimized: store.calls.minimized) != nil
     }
 
     private func animate(_ change: @escaping () -> Void) {
@@ -120,6 +130,9 @@ struct CallMiniPlayer: View {
                 Image(systemName: edge == .trailing ? "chevron.left" : "chevron.right").font(.system(size: 15, weight: .heavy)).foregroundStyle(.white)
                     .frame(width: Self.tabWidth, height: Self.tabHeight)
                     .modifier(TabGlass(edge: edge, reduceTransparency: reduceTransparency))
+                    // The tab shows 24 pt of itself at the screen's edge; its tap area reaches 44 pt (WCAG 2.5.8, lime's rule), into the screen.
+                    .padding(edge == .trailing ? .leading : .trailing, 20)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .gesture(DragGesture(minimumDistance: 12).onEnded { value in
@@ -177,8 +190,9 @@ struct CallMiniPlayer: View {
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
-                .accessibilityLabel(muted ? "Unmute" : "Mute")
-                .accessibilityValue(muted ? "Muted" : "Microphone on")
+                .accessibilityLabel("Mute")
+                .accessibilityValue(CallAnnouncements.value(muted))
+                .accessibilityAddTraits(muted ? .isSelected : [])
                 .accessibilityIdentifier("call-mini-mute")
 
                 Button {

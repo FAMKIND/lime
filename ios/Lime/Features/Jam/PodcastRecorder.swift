@@ -291,6 +291,8 @@ struct PodcastRecorder: View {
         #endif
     }
     private var isRecording: Bool { cameraOn ? (demo ? simulatedVideo != nil : capture.recording) : voice.phase != .idle }
+    /// The last running time seen while recording, for "Stopped, 2 minutes".
+    @State private var lastElapsed: TimeInterval = 0
     private var isPaused: Bool { cameraOn ? (demo ? simulatedPaused : capture.paused) : voice.paused }
     private var canPause: Bool { !cameraOn || demo || PodcastCapture.canPause }
     private var elapsed: TimeInterval { cameraOn ? seconds : voice.elapsed }
@@ -329,6 +331,13 @@ struct PodcastRecorder: View {
             Button("Save draft") { saveDraft(closing: true) }.accessibilityIdentifier("podcast-close-save-draft")
             Button("Keep editing", role: .cancel) {}
         } message: { Text("Your recording and what you\u{2019}ve written will be deleted.") }
+        .onChange(of: isRecording) { was, now in
+            if let words = RecorderSpeech.change(wasRecording: was, isRecording: now, wasPaused: isPaused, isPaused: isPaused, elapsed: lastElapsed) { Announce.say(words) }
+        }
+        .onChange(of: isPaused) { was, now in
+            if let words = RecorderSpeech.change(wasRecording: isRecording, isRecording: isRecording, wasPaused: was, isPaused: now, elapsed: lastElapsed) { Announce.say(words) }
+        }
+        .onChange(of: elapsed) { _, now in if isRecording { lastElapsed = now } }
         .alert("Can\u{2019}t record", isPresented: Binding(get: { problem != nil }, set: { if !$0 { problem = nil } })) {
             Button("OK", role: .cancel) {}
         } message: { Text(problem ?? "") }
@@ -477,7 +486,7 @@ struct PodcastRecorder: View {
                 }
             }
         }
-        .disabled(preparing).accessibilityLabel(isRecording ? "Stop recording" : "Record").accessibilityIdentifier(isRecording ? "podcast-stop" : "podcast-record")
+        .disabled(preparing).accessibilityLabel(isRecording ? "Stop recording" : "Record").accessibilityValue(isRecording ? PodcastFormat.spoken(elapsed) : "").accessibilityIdentifier(isRecording ? "podcast-stop" : "podcast-record")
     }
 
     private func glass(_ symbol: String, _ label: String, id: String, size: CGFloat = 44, action: @escaping () -> Void) -> some View {

@@ -183,6 +183,7 @@ struct GroupCallView: View {
                             selfDrag = .zero
                         })
                     .accessibilitySortPriority(0.5)
+                    .accessibilityAction(named: "Move to the other corner") { moveSelfToNextCorner() }
             }
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: layout)
@@ -218,10 +219,11 @@ struct GroupCallView: View {
                                 selfDrag = .zero
                             })
                         .accessibilitySortPriority(0.5)
+                        .accessibilityAction(named: "Move to the other corner") { moveSelfToNextCorner() }
                 }
                 if tiles.count > shown.count {
-                    Text("+\(tiles.count - shown.count) more").font(Theme.font(.footnote)).foregroundStyle(.white.opacity(0.7)).padding(8)
-                        .background(.black.opacity(0.4), in: Capsule()).position(x: geo.size.width / 2, y: geo.size.height - 14)
+                    Text("+\(tiles.count - shown.count) more").font(Theme.font(.footnote)).foregroundStyle(.white.opacity(0.9)).padding(8)
+                        .background(.black.opacity(CallScrim.text), in: Capsule()).position(x: geo.size.width / 2, y: geo.size.height - 14)
                         .accessibilityLabel("\(tiles.count - shown.count) more people, see the people list")
                 }
             }
@@ -240,13 +242,17 @@ struct GroupCallView: View {
             HStack(spacing: 14) { buttons(size: 56) }
             HStack(spacing: 10) { buttons(size: 50) }
             HStack(spacing: 6) { buttons(size: 44) }
-            ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 6) { buttons(size: 44) }.padding(.horizontal, 16) }
+            // Last resort at the largest sizes: the others scroll, Leave stays pinned and visible (LIME-130-4b).
+            HStack(spacing: 6) {
+                ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 6) { buttons(size: 44, leave: false) }.padding(.leading, 16) }
+                leaveButton(size: 44).padding(.trailing, 8)
+            }
         }
         .padding(.vertical, 12)
         .padding(.horizontal, 8)
     }
 
-    @ViewBuilder private func buttons(size: CGFloat) -> some View {
+    @ViewBuilder private func buttons(size: CGFloat, leave: Bool = true) -> some View {
         control(call.muted ? "mic.slash.fill" : "mic.fill", label: call.muted ? "Unmute" : "Mute", on: call.muted, id: "group-call-mute", size: size) { Task { await call.setMuted(!call.muted) } }
         if call.video {
             control(call.cameraOn ? "video.fill" : "video.slash.fill", label: call.cameraOn ? "Turn camera off" : "Turn camera on", on: !call.cameraOn, id: "group-call-camera", size: size) { Task { await call.toggleCamera() } }
@@ -255,11 +261,21 @@ struct GroupCallView: View {
         }
         control("arrow.down.right.and.arrow.up.left", label: "Minimise", on: false, id: "group-call-minimise-control", size: size) { call.minimize() }
         control(call.speakerOn ? "speaker.wave.3.fill" : "speaker.fill", label: call.speakerOn ? "Speaker on" : "Speaker off", on: call.speakerOn, id: "group-call-speaker", size: size) { call.toggleSpeaker() }
+        if leave { leaveButton(size: size) }
+    }
+
+    private func leaveButton(size: CGFloat) -> some View {
         Button { Task { await call.leave() } } label: {
             Image(systemName: "phone.down.fill").font(.system(size: size * 0.4)).foregroundStyle(.white)
                 .frame(width: size, height: size).background(Theme.dangerFill, in: Circle())
         }
         .accessibilityLabel("Leave call").accessibilityIdentifier("group-call-leave")
+    }
+
+    /// The non-drag way to move my picture (WCAG 2.5.7): the next corner, round the screen.
+    private func moveSelfToNextCorner() {
+        let all = GroupCallLayout.Corner.allCases
+        selfCorner = all[((all.firstIndex(of: selfCorner) ?? 0) + 1) % all.count]
     }
 
     private func control(_ symbol: String, label: String, on: Bool, id: String, size: CGFloat, action: @escaping () -> Void) -> some View {
@@ -302,11 +318,12 @@ struct GroupTileView: View {
         HStack(spacing: 6) {
             if tile.muted { Image(systemName: "mic.slash.fill").font(Theme.font(.caption)) }
             else if tile.speaking { Image(systemName: "waveform").font(Theme.font(.caption)) }
-            Text(tile.name).font(Theme.font(.footnote, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.7)
+            // The name wraps (up to three lines) instead of shrinking (WCAG 1.4.4).
+            Text(tile.name).font(Theme.font(.footnote, weight: .semibold)).lineLimit(3).fixedSize(horizontal: false, vertical: true)
             if tile.muted && !compact { Text("Muted").font(Theme.font(.caption2)).lineLimit(1) }
         }
         .foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 4)
-        .background(.black.opacity(0.55), in: Capsule()).padding(6)
+        .background(.black.opacity(CallScrim.text), in: RoundedRectangle(cornerRadius: 14, style: .continuous)).padding(6)
     }
 
     var body: some View {
