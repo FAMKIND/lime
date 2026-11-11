@@ -137,7 +137,7 @@ struct CallRowView: View {
             .accessibilityIdentifier("call-history-row")
             Button { callBack(call) } label: {
                 Image(systemName: call.video ? "video" : "phone").font(.system(size: 17))
-                    .foregroundStyle(Theme.text).frame(width: 40, height: 40)
+                    .foregroundStyle(Theme.text).frame(width: 44, height: 44)
                     .background(Theme.surface, in: Circle())
             }
             .buttonStyle(.plain)
@@ -224,6 +224,7 @@ struct CallHistoryView: View {
                         Button(role: .destructive) { log.delete(ids: group.records.map(\.id)) } label: { Label("Delete", systemImage: "trash") }
                             .tint(Theme.dangerFill).accessibilityIdentifier("call-swipe-delete")
                     }
+                    .accessibilityAction(named: "Delete") { log.delete(ids: group.records.map(\.id)) }
             }
         }
         .listStyle(.plain)
@@ -376,8 +377,8 @@ struct NewCallSheet: View {
     private func circle(_ symbol: String, _ label: String, id: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol).font(.system(size: 16)).foregroundStyle(Theme.text)
-                .frame(width: 40, height: 40)
-                .overlay(Circle().stroke(Theme.textSecondary.opacity(0.5), lineWidth: 1))
+                .frame(width: 44, height: 44)
+                .overlay(Circle().stroke(Theme.textSecondary, lineWidth: 1))   // the ring is the control's only edge: full strength (LIME-321)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)

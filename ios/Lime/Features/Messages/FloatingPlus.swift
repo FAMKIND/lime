@@ -30,10 +30,15 @@ struct FloatingPlus: View {
         }
     }
 
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
     private var button: some View {
         let glyph = Image(systemName: "plus").font(.system(size: 26, weight: .regular)).foregroundStyle(Theme.accentInk)
         return Button(action: action) {
-            if #available(iOS 26, *) {
+            if reduceTransparency {
+                // A solid disc: the list does not show through it (LIME-321).
+                glyph.frame(width: Self.size, height: Self.size).background(Theme.accent, in: Circle())
+            } else if #available(iOS 26, *) {
                 // A tint at about 55 % so the list shows faintly through it while the green still reads.
                 glyph.frame(width: Self.size, height: Self.size)
                     .glassEffect(.regular.tint(Theme.accent.opacity(0.55)).interactive(), in: Circle())

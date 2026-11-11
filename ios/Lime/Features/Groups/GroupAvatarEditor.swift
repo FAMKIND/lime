@@ -112,7 +112,7 @@ struct GroupAvatarSheet: View {
             HStack {
                 Button("Cancel") { finish(false) }.foregroundStyle(Theme.text).accessibilityIdentifier("group-avatar-cancel")
                 Spacer()
-                Text("Group picture").font(Theme.title).foregroundStyle(Theme.text)
+                Text("Group picture").font(Theme.title).foregroundStyle(Theme.text).accessibilityAddTraits(.isHeader)
                 Spacer()
                 Button("Save") { save() }.font(Theme.title).foregroundStyle(Theme.text).disabled(!canSave)
                     .accessibilityIdentifier("group-avatar-save")

@@ -320,6 +320,7 @@ private struct JamPhoto: View {
                             // Centred between the top and the action pill, fitted not filled (LIME-242).
                             VStack(spacing: 0) {
                                 Image(uiImage: image).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: .infinity).padding(.top, 56)
+                                    .accessibilityLabel(JamPhotoLabel.label(alt: file.alt))
                                 JamViewerBar(postID: postID)
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)

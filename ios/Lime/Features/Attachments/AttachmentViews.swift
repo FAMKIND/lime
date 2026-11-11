@@ -227,6 +227,7 @@ struct FileCard: View {
     private var ownInk: Color { ownStyle?.ink ?? Theme.ownBubbleInk }
     private var ownSecondary: Color { ownStyle?.secondary ?? Theme.ownBubbleSecondary }
     @Environment(ConversationStore.self) private var store
+    @Environment(\.dynamicTypeSize) private var typeSize
     let item: AttachmentItem
     let isOwn: Bool
     var uploading = false
@@ -236,7 +237,7 @@ struct FileCard: View {
         HStack(spacing: 12) {
                 Image(systemName: symbol).font(.system(size: 26)).frame(width: 36)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(item.name.isEmpty ? "File" : item.name).font(Theme.body).lineLimit(1).truncationMode(.middle)
+                    Text(item.name.isEmpty ? "File" : item.name).font(Theme.body).lineLimit(typeSize.isAccessibilitySize ? nil : 1).truncationMode(.middle)
                     Text(item.removed ? "Media removed" : item.detail).font(Theme.caption).foregroundStyle(isOwn ? ownSecondary : Theme.textSecondary)
                     if !item.downloaded && !item.removed && !isOwn {
                         AvailabilityText(item: item).font(Theme.caption).foregroundStyle(isOwn ? ownSecondary : Theme.textSecondary)
@@ -422,7 +423,7 @@ struct AttachmentViewer: View {
         guard items.indices.contains(page) else { return }
         // A GIF stays a GIF in Photos (LIME-206).
         if GIF.isGIF(mime: items[page].mime), let data = await store.attachmentData(items[page]), GIF.isGIF(data) {
-            if await GIF.saveToPhotos(data) { saved = true; try? await Task.sleep(for: .seconds(2)); saved = false }
+            if await GIF.saveToPhotos(data) { saved = true; Announce.say("Saved to Photos"); try? await Task.sleep(for: .seconds(2)); saved = false }
             return
         }
         let found: UIImage?
@@ -430,6 +431,7 @@ struct AttachmentViewer: View {
         guard let image = found else { return }
         UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
         saved = true
+        Announce.say("Saved to Photos")
         try? await Task.sleep(for: .seconds(2))
         saved = false
     }
@@ -647,7 +649,7 @@ struct ViewerReactButton: View {
                 Image(systemName: "face.smiling").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
                     .frame(width: 44, height: 44).background(.ultraThinMaterial, in: Circle())
             }
-            .accessibilityLabel("React").accessibilityIdentifier("attachment-react")
+            .accessibilityLabel("React").accessibilityValue(open ? "Expanded" : "Collapsed").accessibilityIdentifier("attachment-react")
             // The tapback bar: the six quick emoji and "+", in a row (the same as the long-press menu in the chat).
             .overlay(alignment: .topTrailing) {
                 if open {
@@ -658,7 +660,7 @@ struct ViewerReactButton: View {
                                 open = false
                                 Task { await store.toggleReaction(emoji, on: message, in: conversationID) }
                             } label: {
-                                Text(emoji).font(.system(size: 26)).frame(width: 40, height: 40)
+                                Text(emoji).font(.system(size: 26)).frame(width: 44, height: 44)
                                     .background(mine ? Color.white.opacity(0.25) : Color.clear, in: Circle())
                             }
                             .buttonStyle(.plain)
@@ -666,7 +668,7 @@ struct ViewerReactButton: View {
                         }
                         Button { picking = true } label: {
                             Image(systemName: "plus").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
-                                .frame(width: 36, height: 36).background(Color.white.opacity(0.2), in: Circle())
+                                .frame(width: 44, height: 44).background(Color.white.opacity(0.2), in: Circle())
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("More emoji").accessibilityIdentifier("viewer-react-more")

@@ -33,7 +33,7 @@ struct IncomingBannerView: View {
                 .gesture(DragGesture(minimumDistance: 12).onEnded { drag in
                     if drag.translation.height < -10 { notifications.dismissBanner() }
                 })
-                .transition(.move(edge: .top).combined(with: .opacity))
+                .transition(Motion.reduced ? .opacity : .move(edge: .top).combined(with: .opacity))
                 .task(id: banner.id) {
                     Announce.say("Message from \(banner.content.title): \(banner.content.body)")
                     // It stays until dismissed while VoiceOver or Switch Control runs (WCAG 2.2.1).
@@ -41,7 +41,7 @@ struct IncomingBannerView: View {
                 }
             }
         }
-        .animation(.spring(duration: 0.3), value: notifications.banner)
+        .animation(Motion.animation(.spring(duration: 0.3)), value: notifications.banner)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .allowsHitTesting(notifications.banner != nil)
     }

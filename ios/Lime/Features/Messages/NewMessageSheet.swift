@@ -573,6 +573,7 @@ struct FindByScreen: View {
                         .opacity(canNext ? 1 : 0.6)
                 }
                 .disabled(!canNext)
+                .accessibilityHint(canNext ? "" : "Type what to look for first")
                 .accessibilityIdentifier("find-next")
             }
             Text(kind.hint).font(Theme.secondary).foregroundStyle(Theme.textSecondary)

@@ -53,7 +53,7 @@ struct FilterMenuButton<MenuContent: View>: View {
     Menu { menu() } label: {
         Image(systemName: "line.3.horizontal.decrease")
             .font(.system(size: 17, weight: .regular)).foregroundStyle(Theme.text)
-            .frame(width: 40, height: 40)
+            .frame(width: 44, height: 44)
             .limeGlass(in: Circle())
             .overlay(alignment: .topTrailing) {
                 if activeCount > 0 {
@@ -66,7 +66,8 @@ struct FilterMenuButton<MenuContent: View>: View {
             // Room around the button so the badge, which hangs off its corner, is inside the menu's and the row's bounds on the first frame.
             .padding(.top, 6).padding(.trailing, 6)
     }
-    .accessibilityLabel(activeCount == 0 ? "Filter" : "Filter, \(activeCount) active")
+    // "Filter" and, when some are on, their number as its value: said once, not "Filter, 2 active, 2" (LIME-321).
+    .accessibilityLabel("Filter")
     .accessibilityValue(activeCount == 0 ? "" : "\(activeCount)")
     .accessibilityIdentifier("\(idPrefix)-button")
     }

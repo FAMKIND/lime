@@ -187,9 +187,10 @@ struct CaptionsEditor: View {
                 Section("Lines") {
                     ForEach(draft.cues.indices, id: \.self) { index in
                         HStack(alignment: .top, spacing: 10) {
-                            Text(VoiceFormat.clock(Double(draft.cues[index].startMs) / 1000)).font(Theme.caption.monospacedDigit()).foregroundStyle(Theme.textSecondary).frame(width: 44, alignment: .leading).padding(.top, 4)
+                            Text(VoiceFormat.clock(Double(draft.cues[index].startMs) / 1000)).font(Theme.caption.monospacedDigit()).foregroundStyle(Theme.textSecondary).frame(minWidth: 44, alignment: .leading).fixedSize(horizontal: true, vertical: false).padding(.top, 4)
+                                .accessibilityLabel("at \(PodcastFormat.spoken(Double(draft.cues[index].startMs) / 1000))")
                             TextField("Line", text: Binding(get: { draft.cues[index].text }, set: { draft.cues[index] = CaptionCue(startMs: draft.cues[index].startMs, endMs: draft.cues[index].endMs, text: $0) }), axis: .vertical)
-                                .font(Theme.body).accessibilityIdentifier("caption-line-\(index)")
+                                .font(Theme.body).accessibilityLabel("Caption line \(index + 1)").accessibilityIdentifier("caption-line-\(index)")
                         }
                     }
                     .onDelete { draft.cues.remove(atOffsets: $0) }

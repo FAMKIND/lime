@@ -292,7 +292,7 @@ final class VoicePlayer: NSObject, AVAudioPlayerDelegate {
         isPlaying = false
         progress = 0
         currentID = nil
-        if let following { Task { await play(following) } }
+        if let following { Announce.say("Playing the next voice message"); Task { await play(following) } }
     }
 }
 

@@ -712,6 +712,7 @@ struct JamComposeSheet: View {
                             if let preview = draft.preview { Image(uiImage: preview).resizable().scaledToFill() } else { Rectangle().fill(Theme.surface) }
                         }
                         .frame(width: 84, height: 84).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .accessibilityLabel(draft.outgoing.alt.isEmpty ? "Photo \(index + 1)" : "Photo \(index + 1), \(draft.outgoing.alt)")
                         Button { photos.remove(at: index) } label: {
                             Image(systemName: "xmark.circle.fill").font(.system(size: 22)).symbolRenderingMode(.palette).foregroundStyle(.white, .black.opacity(0.6)).frame(width: 44, height: 44)
                         }

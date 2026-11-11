@@ -205,11 +205,11 @@ struct ChatView: View {
                         guard abs(drag.translation.width) > abs(drag.translation.height) * 1.4, drag.translation.width < 0 else { return }
                         timeReveal = min(1, -drag.translation.width / 90)
                     }
-                    .onEnded { _ in withAnimation(.snappy(duration: 0.25)) { timeReveal = 0 } }
+                    .onEnded { _ in withMotion(.snappy(duration: 0.25)) { timeReveal = 0 } }
             )
             // Not everyone can drag: the same thing as an action (VoiceOver already reads every time with its message).
             .accessibilityAction(named: timeReveal > 0 ? "Hide message times" : "Show message times") {
-                withAnimation(.snappy(duration: 0.25)) { timeReveal = timeReveal > 0 ? 0 : 1 }
+                withMotion(.snappy(duration: 0.25)) { timeReveal = timeReveal > 0 ? 0 : 1 }
             }
             #if DEBUG
             .task { if ProcessInfo.processInfo.arguments.contains("-lime-demo-reveal-times") { timeReveal = 1 } }
@@ -259,7 +259,7 @@ struct ChatView: View {
             .refreshable { await store.pullToRefresh() }
             .onChange(of: scrollRequest) { _, request in
                 guard let request else { return }
-                withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(request.id, anchor: .center) }
+                withMotion(.easeInOut(duration: 0.25)) { proxy.scrollTo(request.id, anchor: .center) }
             }
             #if DEBUG
             .task {
@@ -294,10 +294,10 @@ struct ChatView: View {
                 highlightedID = focusMessageID
                 jump(to: focusMessageID, in: conversation)
                 try? await Task.sleep(for: .seconds(4))
-                if highlightedID == focusMessageID && !finding { withAnimation { highlightedID = nil } }
+                if highlightedID == focusMessageID && !finding { withMotion { highlightedID = nil } }
             }
             .onChange(of: conversation.messages.count) {
-                withAnimation { proxy.scrollTo("bottom") }
+                withMotion { proxy.scrollTo("bottom") }
                 // A message that arrives while the chat is open is read.
                 Task { await store.markRead(conversationID) }
             }
@@ -331,6 +331,7 @@ struct ChatView: View {
                 proxy.scrollTo(firstShown, anchor: .top)
             }
             try? await Task.sleep(for: .milliseconds(120))
+            Announce.say("Earlier messages loaded")
             loadingOlder = false
         }
     }
@@ -549,11 +550,12 @@ struct ChatView: View {
                 }
             Text(findStatus)
                 .font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                .onChange(of: findStatus) { _, now in if !now.isEmpty { Announce.say(now) } }   // "3 of 12", "No matches" (LIME-321)
                 .accessibilityIdentifier("find-count")
-            Button { step(by: -1) } label: { Image(systemName: "chevron.up").frame(width: 32, height: 36) }
+            Button { step(by: -1) } label: { Image(systemName: "chevron.up").frame(minWidth: 44, minHeight: 44) }
                 .disabled(findIndex <= 0 || findHits.isEmpty)
                 .accessibilityLabel("Previous match").accessibilityIdentifier("find-up")
-            Button { step(by: 1) } label: { Image(systemName: "chevron.down").frame(width: 32, height: 36) }
+            Button { step(by: 1) } label: { Image(systemName: "chevron.down").frame(minWidth: 44, minHeight: 44) }
                 .disabled(findIndex >= findHits.count - 1 || findHits.isEmpty)
                 .accessibilityLabel("Next match").accessibilityIdentifier("find-down")
             Button("Done") { stopFinding() }
@@ -938,7 +940,7 @@ struct MessageBubble: View {
         .contentShape(Rectangle())
         .onTapGesture { if selection != nil { onToggleSelect?() } }
         .accessibilityElement(children: selection != nil || (oneStop && isPlain) ? .ignore : .contain)
-        .accessibilityLabel(selection != nil ? "\(message.deleted ? "Deleted message" : messagePlainText(text: message.text))" : (oneStop && isPlain ? MessageSpeech.label(for: message, senderName: sender?.name) : ""))
+        .accessibilityLabel(selection != nil ? MessageSpeech.label(for: message, senderName: sender?.name) : (oneStop && isPlain ? MessageSpeech.label(for: message, senderName: sender?.name) : ""))
         .modifier(MessageExtraActions(actions: oneStop && isPlain ? extraActions : []))
         .messageAccessibilityActions(oneStop && isPlain ? ax : nil)
         .accessibilityAddTraits(selection == true ? [.isButton, .isSelected] : (selection == false ? .isButton : []))
@@ -1027,7 +1029,7 @@ struct MessageBubble: View {
                             RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous)
                                 .strokeBorder(message.isOwn ? Color.clear : Theme.bubbleEdge, lineWidth: 0.5)
                         )
-                        .animation(.easeInOut(duration: 0.2), value: highlighted)
+                        .animation(Motion.animation(.easeInOut(duration: 0.2)), value: highlighted)
                         .accessibilityIdentifier(message.isOwn ? "own-bubble" : "other-bubble")
                         .messageAccessibilityActions(ax)
                         .overlay(alignment: .topLeading) {
@@ -1232,7 +1234,7 @@ struct LabelSheet: View {
             HStack {
                 Button("Cancel") { finish(false) }.foregroundStyle(Theme.text).accessibilityIdentifier("label-cancel")
                 Spacer()
-                Text("Label for \(name)").font(Theme.title).foregroundStyle(Theme.text).lineLimit(1)
+                Text("Label for \(name)").font(Theme.title).foregroundStyle(Theme.text).lineLimit(1).accessibilityAddTraits(.isHeader)
                 Spacer()
                 Button("Save") { finish(true) }.font(Theme.title).foregroundStyle(Theme.text).accessibilityIdentifier("label-save")
             }
@@ -1316,6 +1318,8 @@ struct CallBubbleView: View {
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous))
         .accessibilityElement(children: .contain)
         .accessibilityLabel(LiveCardWords.spoken(who: who, video: call.video))
+        // People joining and leaving are said, in the card's own words (LIME-321).
+        .onChange(of: count) { _, _ in Announce.say(who) }
         .accessibilityIdentifier("call-bubble-\(id)")
     }
 
@@ -1457,6 +1461,7 @@ struct NearbyOfferBar: View {
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .padding(.horizontal, 8)
             .accessibilityElement(children: .contain)
+            .onAppear { Announce.say(NearbyMode.offerTitle) }   // it appears without moving focus (LIME-321)
             .accessibilityIdentifier("nearby-offer")
         }
     }
@@ -1497,7 +1502,7 @@ struct CallMenuButton: View {
             case .toolbar: ToolIconLabel(symbol: "video")
             case .circle:
                 Image(systemName: "video").font(.system(size: 16)).foregroundStyle(Theme.text)
-                    .frame(width: 40, height: 40).overlay(Circle().stroke(Theme.textSecondary.opacity(0.5), lineWidth: 1))
+                    .frame(width: 40, height: 40).overlay(Circle().stroke(Theme.textSecondary, lineWidth: 1))
                     .frame(width: 44, height: 44).contentShape(Rectangle())
             }
         }

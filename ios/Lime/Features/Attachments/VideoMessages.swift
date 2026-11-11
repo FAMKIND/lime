@@ -97,6 +97,13 @@ struct VideoTile: View {
     @State private var opening = false
     @State private var poster: UIImage?
 
+    /// "Video, 0:12", and for one not on this phone what pictures say too: removed, or tap to download with its size (LIME-321).
+    private var videoLabel: String {
+        let name = "Video, \(VoiceFormat.clock(Double(item.durationMs ?? 0) / 1000))"
+        guard let phrase = store.downloadPhrase(item) else { return name }
+        return item.removed ? "\(name), \(phrase)" : "\(name), tap to download, \(phrase)"
+    }
+
     var body: some View {
         ZStack {
                 Theme.surface
@@ -136,7 +143,7 @@ struct VideoTile: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .mediaTap { Task { await open() } }
-        .accessibilityLabel("Video, \(VoiceFormat.clock(Double(item.durationMs ?? 0) / 1000))")
+        .accessibilityLabel(videoLabel)
         .accessibilityActions {
             if item.downloaded, let messageID { Button("Show transcript") { Transcripts.shared.show(item, messageID: messageID, store: store) } }
         }

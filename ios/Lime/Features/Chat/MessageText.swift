@@ -252,6 +252,8 @@ enum MessageRender {
             let upper = text.characters.index(text.startIndex, offsetBy: plain.distance(from: plain.startIndex, to: span.upperBound))
             text[lower..<upper].backgroundColor = find.current ? Theme.findCurrent : Theme.findMatch
             text[lower..<upper].foregroundColor = Theme.findInk
+            // The current match is underlined as well as a deeper yellow: not colour alone (LIME-321).
+            if find.current { text[lower..<upper].underlineStyle = .single }
         }
     }
 

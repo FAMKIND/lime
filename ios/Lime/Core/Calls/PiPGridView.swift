@@ -40,14 +40,14 @@ final class PiPGridView: UIView {
             let slot = Slot()
             slot.container.clipsToBounds = true
             slot.container.addSubview(slot.video)
-            slot.pill.backgroundColor = UIColor(white: 0, alpha: 0.55)
+            slot.pill.backgroundColor = UIColor(white: 0, alpha: 0.6)   // the call text scrim (LIME-321)
             slot.pill.layer.cornerRadius = 8
             slot.label.textColor = .white
             slot.label.adjustsFontSizeToFitWidth = true
             slot.label.minimumScaleFactor = 0.7
             slot.pill.addSubview(slot.label)
             slot.container.addSubview(slot.pill)
-            slot.ring.borderColor = UIColor(red: 0.64, green: 0.88, blue: 0.54, alpha: 1).cgColor
+            slot.ring.borderColor = UIColor.white.cgColor   // white, as in the call screen (LIME-321)
             slot.ring.borderWidth = 0
             slot.container.layer.addSublayer(slot.ring)
             let video = slot.video

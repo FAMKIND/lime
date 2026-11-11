@@ -129,6 +129,7 @@ struct LinkCardView: View {
     var image: UIImage?
     var isOwn = false
     var width: CGFloat = 248
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -137,7 +138,7 @@ struct LinkCardView: View {
                     .frame(width: width, height: width / 1.9).clipped()
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(isOwn ? ownInk : Theme.text).lineLimit(2)
+                Text(title).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(isOwn ? ownInk : Theme.text).lineLimit(typeSize.isAccessibilitySize ? nil : 2)
                     .accessibilityIdentifier("link-card-title")
                 Text(site).font(Theme.caption).foregroundStyle(isOwn ? ownSecondary : Theme.textSecondary).lineLimit(1)
                     .accessibilityIdentifier("link-card-site")

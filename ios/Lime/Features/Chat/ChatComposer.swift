@@ -55,6 +55,8 @@ struct ChatComposer: View {
                     ProgressView(value: fraction).tint(Theme.text).frame(width: 90)
                     Text("Preparing video… \(Int(fraction * 100))%").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
                 }
+                .accessibilityElement(children: .combine)
+                .onAppear { Announce.say("Preparing video") }   // the percentage is read when the line is reached, not every second (LIME-321)
                 .padding(.horizontal, 6).padding(.top, 8).accessibilityIdentifier("video-preparing")
             }
             // "/" and words: my GIFs that match, above the field (LIME-208). Chats only.
@@ -104,14 +106,14 @@ struct ChatComposer: View {
                     // send GIFs); tapping it again goes back to the text keyboard. It stays a face, highlighted like Aa while the panel shows.
                     Button { trace("composer tap emoji"); model.toggleEmojiKeyboard() } label: {
                         Image(systemName: "face.smiling").font(.system(size: 20)).foregroundStyle(Theme.text)
-                            .frame(width: 44, height: 40)
+                            .frame(width: 44, height: 44)
                             .background(model.showsEmojiKeyboard ? Theme.pressed : Color.clear, in: Capsule())
                     }
                     .accessibilityLabel("Emoji").accessibilityIdentifier("composer-emoji")
                     .accessibilityAddTraits(model.showsEmojiKeyboard ? [.isSelected] : [])
                     Button { trace("composer tap Aa"); model.formattingTapped() } label: {
                         Text("Aa").font(.system(size: 17, weight: model.toolbarVisible ? .bold : .medium)).foregroundStyle(Theme.text)
-                            .frame(width: 44, height: 40)
+                            .frame(width: 44, height: 44)
                             .background(model.toolbarVisible ? Theme.pressed : Color.clear, in: Capsule())
                     }
                     .accessibilityLabel("Formatting").accessibilityIdentifier("composer-aa")
@@ -120,7 +122,7 @@ struct ChatComposer: View {
                     // the iPhone-style keyboard, which has no hide key of its own (LIME-175c).
                     Button { trace("composer tap keyboard"); model.toggleKeyboard() } label: {
                         Image(systemName: model.editing ? "keyboard.chevron.compact.down" : "keyboard").font(.system(size: 20)).foregroundStyle(Theme.text)
-                            .frame(width: 44, height: 40)
+                            .frame(width: 44, height: 44)
                     }
                     .accessibilityLabel(model.editing ? "Hide keyboard" : "Show keyboard").accessibilityIdentifier("composer-hide-keyboard")
                 }
@@ -133,7 +135,7 @@ struct ChatComposer: View {
                             .foregroundStyle(Theme.primaryInk)
                             .frame(width: 36, height: 36)
                             .background(Theme.primary, in: Circle())
-                            .frame(width: 44, height: 40)
+                            .frame(width: 44, height: 44)
                     }
                     .accessibilityLabel("Send")
                     .accessibilityIdentifier("send-button")
@@ -161,8 +163,8 @@ struct ChatComposer: View {
             }
         }
         .background { if model.expanded { Theme.canvas } }
-        .animation(.easeOut(duration: 0.2), value: model.showsStrip)
-        .animation(.easeOut(duration: 0.2), value: model.showsEmojiKeyboard)
+        .animation(Motion.animation(.easeOut(duration: 0.2)), value: model.showsStrip)
+        .animation(Motion.animation(.easeOut(duration: 0.2)), value: model.showsEmojiKeyboard)
         .onDisappear { model.expanded = false }
         .sheet(item: $model.linkRequest) { request in LinkSheet(request: request, composer: model) }
         .sheet(item: $describing) { draft in
@@ -250,9 +252,9 @@ struct ChatComposer: View {
     /// The mic: hold to record, release to send, slide left to cancel, slide up to lock and go hands-free.
     private var micButton: some View {
         Image(systemName: "waveform").font(.system(size: 20)).foregroundStyle(recorder.isRecording ? Color.white : Theme.text)
-            .frame(width: 44, height: 40)
+            .frame(width: 44, height: 44)
             .background(recorder.isRecording ? Theme.dangerFill : Color.clear, in: Circle())
-            .scaleEffect(recorder.isRecording ? 1.35 : 1)
+            .scaleEffect(recorder.isRecording && !Motion.reduced ? 1.35 : 1)
             .overlay(alignment: .top) {
                 if recorder.phase == .recording {
                     Image(systemName: "lock").font(.system(size: 15)).foregroundStyle(Theme.text)
@@ -290,7 +292,7 @@ struct ChatComposer: View {
     private var lockedRow: some View {
         HStack {
             Button { cancelVoice() } label: {
-                Image(systemName: "trash").font(.system(size: 19)).foregroundStyle(Theme.danger).frame(width: 44, height: 40)
+                Image(systemName: "trash").font(.system(size: 19)).foregroundStyle(Theme.danger).frame(width: 44, height: 44)
             }
             .accessibilityLabel("Cancel recording").accessibilityIdentifier("voice-cancel")
             Spacer()
@@ -298,7 +300,7 @@ struct ChatComposer: View {
             Spacer()
             Button { finishVoice() } label: {
                 Image(systemName: "arrow.up").font(.system(size: 18, weight: .semibold)).foregroundStyle(Theme.primaryInk)
-                    .frame(width: 36, height: 36).background(Theme.primary, in: Circle()).frame(width: 44, height: 40)
+                    .frame(width: 36, height: 36).background(Theme.primary, in: Circle()).frame(width: 44, height: 44)
             }
             .accessibilityLabel("Send voice message").accessibilityIdentifier("voice-send")
             .accessibilityFocused($sendFocused)
@@ -427,7 +429,7 @@ struct ChatComposer: View {
 
     private func button(_ symbol: String, label: String, id: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 20)).foregroundStyle(Theme.text).frame(width: 44, height: 40)
+            Image(systemName: symbol).font(.system(size: 20)).foregroundStyle(Theme.text).frame(width: 44, height: 44)
         }
         .accessibilityLabel(label).accessibilityIdentifier(id)
     }
@@ -443,9 +445,10 @@ struct ChatComposer: View {
     private func previewCard(_ draft: PreviewDraft) -> some View {
         HStack(alignment: .top, spacing: 8) {
             LinkCardView(title: draft.outgoing.title, site: draft.outgoing.site, image: UIImage(data: draft.outgoing.image), width: 220)
+                .onAppear { Announce.say("Link preview added") }
             Button { dismissedURL = draft.url; previewDraft = nil } label: {
                 Image(systemName: "xmark.circle.fill").font(.system(size: 22)).foregroundStyle(Theme.textSecondary)
-                    .frame(width: 36, height: 36)
+                    .frame(width: 44, height: 44).contentShape(Rectangle())
             }
             .accessibilityLabel("Remove link preview").accessibilityIdentifier("preview-remove")
             Spacer(minLength: 0)

@@ -720,3 +720,86 @@ Do each step with VoiceOver on and your eyes off the screen if you can. **Today 
 - **Dark mode** was audited for the same screens (third pass); **Increase Contrast, Reduce Transparency and Reduce Motion** were not toggled in the simulator passes.
 - **The audit tool's own limits:** it checks element descriptions, hit areas (< 44 pt), clipping, Dynamic Type support and the contrast of text it can see; it cannot judge reading order, announcements, gesture-only actions or meaning, which is why the code review exists.
 
+
+## LIME-321 status (130-m1: the minors for common, chat, attachments and calls)
+
+Added by LIME-321 (2026-11-11). Nothing above is changed; line numbers are this file's own. **Fixed already** = by an earlier 130 brief; **Fixed in 321** = changed now; **Ask / deferred** = needs a product decision, a device check, or is acceptable as it is. No row is stale (the code moved but every finding still pointed at something real).
+
+| line | status | note |
+|---|---|---|
+| 203 | ask / deferred | disabled text is exempt from 1.4.3; labels stay readable (deferred) |
+| 204 | fixed in 321 |  |
+| 205 | fixed in 321 |  |
+| 209 | fixed in 321 |  |
+| 210 | already fixed | 130-3a (the ring and ', including you') |
+| 211 | already fixed | 130-2/130-4 (`Theme.danger`, the word Missed) |
+| 213 | ask / deferred | nothing is carried by colour alone in the call controls, the Missed word or the badges; no branch added (deferred until a colour-only state turns up) |
+| 214 | already fixed | 130-2/130-7 (the theme resolves Increase Contrast) |
+| 225 | already fixed | 130-2 (Glass.swift) |
+| 227 | ask / deferred | about 290 fixed glyph sizes, mostly in fixed circles (deferred; the text cases are separate findings) |
+| 228 | fixed in 321 |  |
+| 229 | fixed in 321 |  |
+| 235 | fixed in 321 |  |
+| 236 | fixed in 321 |  |
+| 237 | fixed in 321 |  |
+| 238 | fixed in 321 |  |
+| 239 | fixed in 321 |  |
+| 240 | fixed in 321 |  |
+| 243 | fixed in 321 |  |
+| 253 | fixed in 321 |  |
+| 254 | fixed in 321 |  |
+| 268 | fixed in 321 |  |
+| 273 | already fixed | 130-3a (a named Play GIF action) |
+| 277 | fixed in 321 |  |
+| 280 | fixed in 321 |  |
+| 281 | fixed in 321 |  |
+| 282 | fixed in 321 |  |
+| 292 | fixed in 321 |  |
+| 293 | fixed in 321 |  |
+| 294 | fixed in 321 |  |
+| 295 | fixed in 321 |  |
+| 296 | fixed in 321 |  |
+| 303 | fixed in 321 |  |
+| 311 | fixed in 321 |  |
+| 312 | fixed in 321 |  |
+| 314 | fixed in 321 |  |
+| 315 | fixed in 321 |  |
+| 316 | fixed in 321 | labels, announcement and the Send-to flows fixed; the picker's fixed row height and the .regularMaterial fallback are deferred |
+| 324 | fixed in 321 |  |
+| 325 | fixed in 321 |  |
+| 327 | fixed in 321 | Saved to Photos announced, React expanded/collapsed, 44 pt targets; the zoom photo's label was already alt-aware |
+| 329 | ask / deferred | captions for chat videos are a product decision; the close button over AVKit's controls is a layout question |
+| 338 | fixed in 321 |  |
+| 340 | fixed in 321 |  |
+| 362 | ask / deferred | the sites are jam files: 130-m3/m4 (LIME-323/324) |
+| 363 | ask / deferred | the sites are jam files: 130-m3/m4 (LIME-323/324) |
+| 366 | ask / deferred | the sites are jam files: 130-m3/m4 (LIME-323/324) |
+| 367 | ask / deferred | the sites are jam files: 130-m3/m4 (LIME-323/324) |
+| 426 | fixed in 321 | the full-screen photo now reads its description; a zoom control is a behaviour change (deferred) |
+| 495 | fixed in 321 |  |
+| 500 | fixed in 321 |  |
+| 535 | ask / deferred | Bold Text needs a device check; nothing reads legibilityWeight |
+| 536 | already fixed | 130-2 |
+| 537 | fixed in 321 | the 40 pt circles are 44 now; fixed glyph sizes deferred |
+| 554 | already fixed | 130-4a |
+| 555 | already fixed | 130-4a |
+| 556 | already fixed | 130-4c |
+| 557 | ask / deferred | the audit itself says acceptable for call controls |
+| 558 | ask / deferred | visible Accept/Decline captions would be a layout change |
+| 559 | already fixed | 130-4a |
+| 566 | already fixed | 130-4b |
+| 567 | already fixed | 130-4b |
+| 568 | already fixed | 130-4b |
+| 569 | fixed in 321 | grabber hidden, hints added; the .regularMaterial fallback is deferred (the system usually handles it) |
+| 570 | already fixed | 130-4b |
+| 571 | fixed in 321 |  |
+| 581 | already fixed | 130-4b |
+| 582 | fixed in 321 |  |
+| 583 | fixed in 321 |  |
+| 584 | ask / deferred | a 28 pt frame glyph (acceptable) |
+| 590 | already fixed | 130-5a/earlier (one adjustable rail) |
+| 591 | fixed in 321 |  |
+| 674 | ask / deferred | needs a device test with VoiceOver, Switch Control and Voice Control |
+| 675 | ask / deferred | renaming the tabs is a product decision; the 12 pt badge font is deferred |
+| 676 | fixed in 321 |  |
+| 678 | fixed in 321 |  |

@@ -43,6 +43,7 @@ struct GroupPickerScreen: View {
                         .opacity(chosen.isEmpty ? 0.6 : 1)
                 }
                 .disabled(chosen.isEmpty)
+                .accessibilityHint(chosen.isEmpty ? "Choose at least one person first" : "")
                 .accessibilityIdentifier("group-next")
             }
             Text(countText).font(Theme.secondary).foregroundStyle(Theme.textSecondary)
@@ -181,6 +182,7 @@ struct GroupNameScreen: View {
                         .opacity(canCreate ? 1 : 0.6)
                 }
                 .disabled(!canCreate)
+                .accessibilityHint(canCreate ? "" : "Give the group a name first")
                 .accessibilityIdentifier("group-create")
             }
             ScrollView {
