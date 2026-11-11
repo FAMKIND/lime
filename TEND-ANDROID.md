@@ -1,5 +1,39 @@
 # TEND-ANDROID.md
 
+## Prototype notes, night 3 (LIME-316, 2026-11-11 ~05:40)
+
+**What you have now:** night 2 plus **jam reading and writing, Report and Block, GIFs and stickers**, and the Android debt moved into core; each proved on staging with Ben as the partner on the API 36 emulator (green plain pass on API 26 and 36).
+
+**Watch/see:** `~/Desktop/lime-android-night3/` (outside the repo): `0504-night3.mp4` (subscribe to Ben's jam, read, like, comment, then the GIF panel and a sticker and the Report sheet; about 3 minutes) and `0518-night3.mp4` (the same walk after a tab fix, with writing a post and an article; the later steps did not film that time, so the first clip has them), plus screenshots `1-list`, `2-profile-jam`, `3-jam-feed`, `4-reader`, `5-comment`, `6-before-you-post`, `7-article-toolbar`, `8-gif-panel`, `9-sticker-sent`, `10-report`, `10b-profile-block`, `12-largest-font` (200%), `13-dark`. **Missing:** a screenshot of Settings → Blocked (`11-blocked`: the step did not run; the screen is covered by `ModerationUiTest` and `StagingModerationTest`).
+
+**How to play (10 minutes):**
+1. As night 2 (emulator; `android/tools/staging-test-accounts.sh --push`; `cd android && ./gradlew installDebug`; Use a test account → Ada). In one terminal: `android/tools/partner/run reset && android/tools/partner/run jam-publish && android/tools/partner/run jam-echo` (Ben's jam with three posts; the echo follows Ada's jam, comments on her posts and answers her comments).
+2. Message Ben (pencil → `ben_android` → hello), open the chat header → his profile → **Subscribe**. The **jam** tab shows his three posts: segments, the ♥, the comment (Ben answers "Ben here: thanks!"), the bookmark (Saved).
+3. jam tab → **Your jam** → create it; **Write a post**; **Write an article** (the toolbar); Next → Post/Publish; open your post → Edit or Delete; your subscribers (Ben appears once he follows) with Remove; End this jam.
+4. In a chat: **GIF** (next to the photo button) → Stickers (24, searchable) or My GIFs (+ adds a GIF from the file picker, you type its words). Long-press a message → **Report**; a profile has **Report** and **Block**; Settings → **Blocked**.
+**Proof:** `android/tools/connected.sh` (all instrumented tests on both emulators, then the staging classes one at a time; the new ones are `StagingJamTest`, `StagingJamWriteTest`, `StagingModerationTest`, `StagingGifTest`). **The staging server allows 10 device registrations an hour per account, and every partner command and every class counts: run the staging classes one or two at a time, not a whole night in a row** (I lost about two hours to that).
+
+**What landed, per brief (commits on `android`; the four share one commit):**
+| Brief | What | Commit |
+|---|---|---|
+| 400 | the Android debt into core (chat words, message speech, auth and banner rules) | `4a28d35` |
+| 311 | jam reading + subscribing | `17f2ae0` |
+| 312 | jam writing, drafts, subscribers | `17f2ae0` |
+| 401 | Report and Block | `17f2ae0` |
+| 313 | GIFs and stickers | `17f2ae0` |
+| 402 | the calls survey and plan (`docs/android-calls.md`) | `dd9d5b0` |
+| 316 | this recording and these notes | (the commit that carries this block) |
+
+**Not built (of the night's list):** video messages (LIME-314), bands (LIME-315), co-editing, podcast recording, series, Everyone posts, calls, push, mesh, emergency, deletion, move; and inside the briefs: the jam picture, the sending-progress line, the feed's filter sheet, the "show stickers" switch, a Report entry on jam posts and comments, the group-chat proof of Block (Cleo).
+
+**Core rules added tonight (iOS to adopt in LIME-133b; each a NEW core file with Rust tests; iOS keeps its Swift until then):** `chat_words_rules.rs`, `message_speech_rules.rs`, `auth_rules.rs`, `arrival_rules.rs` (LIME-400); `jam_rules.rs` (311: the feed's segments, filter, card choice, feed order, byline, excerpt); `moderation_rules.rs` (401: the report reasons, the target of each thing reported, the group payload); `gif_rules.rs` (313: GIF size/frames/limits, sticker finding words and names). Only registration lines in `core/src/client.rs` touch an existing core file. Rust: 502 + 36 + 12 pass; `build-ios.sh` and the iOS Debug build pass.
+**Kotlin twins still on Android (for LIME-133):** `JamDates` (locale), `JamModel`/`JamDrafts` (a coroutine model and the drafts' storage), the state machines (`OnboardingModel`, `AccountSession`, `ChangePasswordModel`, `ProfileEditor`), `ChatsModel`/`ChatModel`, `MessageFormat`.
+
+**Choices to confirm:** the four briefs in one commit; Settings → Blocked is a row of Settings (iOS: inside Privacy); a blocked person's profile offers Unblock; one profile jam per teacher; the audience of a post is always the subscribers; the filter sheet, the show-stickers switch and the one-GIF-at-a-time budget are not built; a GIF plays in every bubble (each has Stop) and shows its first frame on API 26–27.
+**Known failures / caveats:** (1) one plain instrumented pass on **API 36 failed once** and passed on the next two runs; its report was overwritten before I read it (cause unknown; the likely suspect is timing). (2) `StagingJamTest` was **not run on API 26** and the partner's new `post removed` detection was **not re-run** (the hourly device limit). (3) **Core drops a jam photo's Alt text at publish** (`jam.rs:570`, `:748`); `send_report` returns no id, so the 2 test reports are recorded by kind and time only (see LIME-401). (4) The calls plan marks every Android API fact it could not check as "unverified".
+**Found while testing, all fixed:** posts published with the wrong tier (free subscribers got nothing), the Subscribe button unsubscribing with no question, my subscribers list not refreshing, and **leaving a jam post returned to the Chats tab** (the shell lost its tab: Root keeps it now).
+**How to replay the film:** `android/tools/record-night3.sh [<out dir>] [<avd>]` (then `record-night3-extra.sh` for the partner-free screens).
+
 ## Prototype notes, night 2 (LIME-309, 2026-11-10 ~02:30)
 
 **What you have now:** everything of night 1 plus **groups, message actions, the full chat list controls and search, account settings, Appearance, and voice messages and files**, each proved on staging with the partner (Ben, and Cleo for groups) on **two headless emulators (API 26 and API 36)**. `main` was fast-forwarded to `android` first (LIME-302: it holds the merge only, **303–309 are on `android` alone**, and it is **not pushed**: `git -C ~/Sites/lime push origin main` is yours to do after your check); the `android` branch is pushed. Nothing has run on a real phone yet.
@@ -331,3 +365,14 @@ For plot: the state machines (`OnboardingModel`, `AccountSession`) are the big d
 **Not exercised / cut:** the jam's **picture** (Photo Picker → `set_jam_picture`; first in the cut order), a photo in an article on staging (the toolbar's Photo button is built and unit-tested only as far as the screen), the sending progress bar (`jam_send_progress`: not shown; Post waits for the core's save, then delivers), co-authors, podcast recording, series, scheduling, posting as a band; Alt text on a post's photos is **lost by the core at publish** (see LIME-311).
 **Choices made (the user to confirm):** one profile jam per teacher on Android tonight (bands are LIME-315); a draft is saved when the writing screen is left, not while typing; editing a sent post changes its words only (its photos can't be changed: the core's `edit_jam_post` adds files, no screen for that).
 **For plot:** the `alt` loss; whether Android needs the sending-progress line (a long delivery shows nothing but the working button).
+
+
+## LIME-402 — the calls survey and plan (Android night 3)
+
+**Done:** `docs/android-calls.md` (the survey: the phases and who decides today, the media layer, the Android calling surface, what an emulator can and cannot prove, what the server and Google learn, and a seven-brief split with the user's decision points). **No code, no dependency, no staging call.** Spot-checked: every iOS file and core function the doc names exists (`CallManager.swift`, `CallKitSystem.swift`, `PiPGridPlan.swift`, `GroupCallMedia.swift`, `ios/project.yml`, `turn-credentials`, `livekit-token`, `send_call_signal`, `fetch_turn_servers`, `start_group_call`, `join_group_call`, `fetch_livekit_token`). The LiveKit Android facts (2.30.0, Apache-2.0, needs JitPack, includes x86/x86_64 native libraries) are from its README fetched once; **its minSdk, its WebRTC artifact and its foreground-service type were not stated** there and are marked unverified in the doc.
+**For plot:** the user's decisions are listed in the doc's last table: the 1:1 WebRTC library (the doc recommends the same two-library split as iOS), approval of a new SDK dependency (LiveKit) in LIME-415, and Telecom vs a notification in LIME-414. Also: **calls can ring only while lime is open until DESIGN-37 (push) lands**: say that to the user before the calls build is announced.
+**Core rules added:** none (the doc proposes `call_rules.rs`).
+
+## LIME-316 — the recording and the notes (Android night 3, last)
+
+Recorded to `~/Desktop/lime-android-night3/` (never in the repo; two clips, thirteen screenshots including the largest font and dark); the `Prototype notes, night 3` block at the top of this file is the notes. The film is a best-effort script (`Night3RecordingTest`: every step after sign-in is wrapped so a missed tap never fails the take); the two clips differ in which steps filmed. Not done: a `11-blocked` screenshot.

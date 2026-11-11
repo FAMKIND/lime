@@ -108,4 +108,27 @@ class Night3RecordingTest {
             tap("my-avatar"); tap("settings-row-blocked"); pause(1500); shot("11-blocked")
         }
     }
+
+    /** The screens that need no partner: the GIF panel, a sticker, the Report sheet and Settings > Blocked (`tools/record-night3.sh` runs this after the film). */
+    @Test fun extraShots() {
+        val pushed = File(context.filesDir, "test-accounts.json")
+        assumeTrue("no pushed test accounts", pushed.exists())
+        val benId = JSONObject(pushed.readText()).getJSONObject("accounts").getJSONObject("b").getString("user_id")
+        val session = (context.applicationContext as LimeApp).session
+        rule.waitUntil(15_000) { count("welcome-continue") > 0 || count("my-avatar") > 0 }
+        if (count("welcome-continue") > 0) {
+            rule.onNodeWithTag("use-test-account").performClick(); pause(900)
+            rule.onNodeWithTag("test-account-ada_android").performClick()
+        }
+        rule.waitUntil(60_000) { session.deviceRegistered }
+        val core = session.store!!
+        val dm = "dm:$benId"
+        core.startDm(benId, "Ben Android")
+        runBlocking { core.sendTextIdentified(session.transport!!, session.accessToken(), benId, "Hello Ben") }
+        rule.waitUntil(120_000) { count("conversation-row-$dm") > 0 }
+        pause()
+        tryIt { tap("conversation-row-$dm"); tap("attach-gif"); pause(1800); shot("8-gif-panel"); tap("gif-sticker-thank-you"); pause(4000); shot("9-sticker-sent") }
+        tryIt { tap("chat-header"); tap("profile-report"); pause(1500); shot("10-report"); tap("report-cancel"); pause(800); shot("10b-profile-block") ; back(); pause(500); back() }
+        tryIt { tap("my-avatar"); tap("settings-row-blocked"); pause(1500); shot("11-blocked") }
+    }
 }
