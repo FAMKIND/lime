@@ -101,6 +101,7 @@ fun SettingsScreen(session: AccountSession, onClose: () -> Unit, chats: com.lime
         "storage" -> if (app != null && chats != null) { StorageScreen(chats, app.mediaPrefs, onBack = { route = "" }); return }
         "appearance" -> if (app != null) { AppearanceScreen(app.themePrefs, onBack = { route = "" }); return }
         "privacy" -> if (app != null) { PrivacyScreen(app.appLock, onBack = { route = "" }); return }
+        "blocked" -> if (chats != null) { com.limemessenger.lime.ui.moderation.BlockedScreen(chats, onBack = { route = "" }); return }
     }
 
     Column(Modifier.fillMaxSize().background(colors.canvas).systemBarsPadding()) {
@@ -134,6 +135,7 @@ fun SettingsScreen(session: AccountSession, onClose: () -> Unit, chats: com.lime
                 Row2(stringResource(R.string.settings_storage), "", "settings-row-storage") { route = "storage" }
                 Row2(stringResource(R.string.settings_appearance), "", "settings-row-appearance") { route = "appearance" }
                 Row2(stringResource(R.string.settings_privacy), "", "settings-row-privacy") { route = "privacy" }
+                if (chats != null) Row2(stringResource(R.string.blocked_title), "", "settings-row-blocked") { route = "blocked" }
                 Row2(stringResource(R.string.settings_about), "", "settings-row-about-lime", last = true) { aboutOpen = true }
             }
             Card {

@@ -18,7 +18,7 @@ for avd in ${AVDS:-lime-api36 lime-api26}; do
     ./gradlew -q installDebug installDebugAndroidTest || status=1
     # The server allows 10 device registrations per hour per account (staging's LIME_RATE_REGISTER_PER_HOUR), and every class registers Ada once, so
     # only the chat and groups tests run by default (LIME-303); STAGING_CLASSES="StagingSignInTest StagingChatTest" runs both.
-    for cls in ${STAGING_CLASSES:-StagingChatTest StagingGroupsTest StagingActionsTest StagingListTest StagingVoiceFilesTest}; do
+    for cls in ${STAGING_CLASSES:-StagingChatTest StagingGroupsTest StagingActionsTest StagingListTest StagingVoiceFilesTest StagingJamTest StagingJamWriteTest StagingModerationTest StagingGifTest}; do
       tools/staging-test-accounts.sh --push >/dev/null || status=1
       tools/partner/run reset >/dev/null || status=1
       case "$cls" in
@@ -32,6 +32,17 @@ for avd in ${AVDS:-lime-api36 lime-api26}; do
         StagingActionsTest*)
           # Message actions (LIME-304): Ben reacts to every message and prints what Ada edits and deletes.
           tools/partner/run actions-echo >/tmp/lime-partner.log 2>&1 &
+          partner=$!
+          partner2= ;;
+        StagingJamWriteTest*)
+          # Jam writing (LIME-312): Ben follows Ada's jam when she creates it, says what arrives, and comments on each new post.
+          tools/partner/run jam-echo >/tmp/lime-partner.log 2>&1 &
+          partner=$!
+          partner2= ;;
+        StagingJamTest*)
+          # Jam reading (LIME-311): Ben's jam and three posts are published first, then Ben answers comments.
+          tools/partner/run jam-publish >/tmp/lime-partner-publish.log 2>&1 || status=1
+          tools/partner/run jam-echo >/tmp/lime-partner.log 2>&1 &
           partner=$!
           partner2= ;;
         *)
@@ -50,7 +61,15 @@ for avd in ${AVDS:-lime-api36 lime-api26}; do
         for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q "^deleted: Delete me" /tmp/lime-partner.log && break; sleep 2; done
         grep -q "^edited: Hello Ben (edited)" /tmp/lime-partner.log || { status=1; echo "$cls: the partner never saw the edit"; }
         grep -q "^deleted: Delete me" /tmp/lime-partner.log || { status=1; echo "$cls: the partner never saw the delete"; } ;; esac
-      kill "$partner" $partner2 2>/dev/null; pkill -f "MainKt echo" 2>/dev/null; pkill -f "MainKt actions-echo" 2>/dev/null; pkill -f "MainKt group-echo" 2>/dev/null
+      case "$cls" in StagingJamWriteTest*)
+        # Ben must have followed Ada's jam, received her post and her article, seen the edit and seen the delete.
+        for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do grep -q "^jam: post removed" /tmp/lime-partner.log && break; sleep 2; done
+        grep -q '^jam: subscribed to Ada' /tmp/lime-partner.log || { status=1; echo "$cls: the partner never followed Ada's jam"; }
+        grep -q '^jam: received quick' /tmp/lime-partner.log || { status=1; echo "$cls: the partner never received the post"; }
+        grep -q '^jam: received article' /tmp/lime-partner.log || { status=1; echo "$cls: the partner never received the article"; }
+        grep -q '^jam: edited' /tmp/lime-partner.log || { status=1; echo "$cls: the partner never saw the edit"; }
+        grep -q '^jam: post removed' /tmp/lime-partner.log || { status=1; echo "$cls: the partner never saw the delete"; } ;; esac
+      kill "$partner" $partner2 2>/dev/null; pkill -f "MainKt echo" 2>/dev/null; pkill -f "MainKt actions-echo" 2>/dev/null; pkill -f "MainKt jam-echo" 2>/dev/null; pkill -f "MainKt group-echo" 2>/dev/null
     done
     adb uninstall com.limemessenger.lime >/dev/null 2>&1
     adb uninstall com.limemessenger.lime.test >/dev/null 2>&1

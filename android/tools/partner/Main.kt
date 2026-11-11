@@ -6,6 +6,10 @@
 //   partner photo <file>    send a picture to Ada (the echo also sends one back whenever Ada sends a photo)
 //   partner voice [file]    send a voice message to Ada (a generated one-second tone when no file is given); the echo answers a voice message with its length and sends one back
 //   partner file <file>     send a file to Ada; the echo answers a file with its name and the bytes it downloaded
+//   partner jam-publish     (LIME-311) Ben's jam "Ben's classroom notes" (made if missing) and, if not already there, three posts for Ada's phone to read: a quick post,
+//                           an article with a photo (with its description), a podcast clip; subscribers-only jam, "free" tier posts
+//   partner jam-echo        (LIME-311) runs until stopped: handles subscriptions, answers every comment with "Ben here: thanks!" (a reply), likes are counted by the core, and prints
+//                           what it receives ("jam: subscriber …", "jam: comment …", "jam: like …")
 //   partner status          print what Ben's store holds
 //   partner actions-echo    like echo, and also reacts 👍 to every new message and prints "edited: …" / "deleted: …" when Ada edits or deletes one (LIME-304)
 //   partner group-echo      like echo, for every GROUP: accept invitations and answer each new message from someone else with: Ben here: got "<first 40 chars>"
@@ -191,6 +195,90 @@ fun main(args: Array<String>) {
             store.sendAttachments(dm, "", listOf(OutgoingAttachment(file.readBytes(), file.name, mimeOf(file), null, null, null, ByteArray(0), ByteArray(0), "")), null)
             store.deliverQueued(http, freshToken(http, tokens))
             println("sent")
+        }
+        "jam-publish" -> {
+            store.sync(http, freshToken(http, tokens))
+            val mine = store.listMyJams().firstOrNull { !it.ended }
+            if (mine == null) store.createJam("Ben's classroom notes", "Notes and short clips from Ben's classroom.", listOf("science", "grade 4"))   // (returns the conversation id, not the jam id)
+            val jamId = store.listMyJams().first { !it.ended }.jamId
+            // Pages left live by an earlier reset of Ben's store (nothing local owns them) would be served first, being older: end them (Ben's own test jams).
+            fun jamPage(json: String) = http.request("POST", "/functions/v1/jam-page", listOf(HeaderPair("content-type", "application/json"), HeaderPair("authorization", "Bearer " + freshToken(http, tokens))), json.toByteArray()).body.decodeToString()
+            val live = Regex(""""jam_id":"([0-9a-f-]{36})"""").findAll(jamPage("""{"action":"by_writer","writer_id":"${tokens.userId}"}""")).map { it.groupValues[1] }.toSet()
+            for (orphan in live - store.listMyJams().map { it.jamId }.toSet()) { jamPage("""{"action":"end","jam_id":"$orphan"}"""); println("jam: ended an orphan page ${orphan.take(8)}") }
+            val have = if (mine != null) store.listJamPosts(jamId).map { it.title.ifEmpty { it.plain.take(20) } }.toSet() else emptySet()
+            val quick = "First day of the magnets unit! Who has a favourite experiment?"
+            if (quick.take(20) !in have) store.publishJamPost(jamId, "quick", "", "", quick, "free", emptyList(), emptyList())
+            if ("How we built a bridge" !in have) {
+                val photo = generatedPhoto()
+                store.publishJamPost(
+                    jamId, "article", "How we built a bridge", "A week of engineering with grade 4",
+                    "We spent a week on bridges.\n\n![Students testing the bridge](attachment:0)\n\nThe **strongest** one held 40 books.\n\n- tape\n- straws\n- patience",
+                    "free", listOf(photo), emptyList(),
+                )
+            }
+            if ("Ben's quick physics tip" !in have) store.publishJamPost(jamId, "record", "Ben's quick physics tip", "One second of a tone", "", "free", listOf(generatedVoice()), emptyList())
+            store.deliverQueued(http, freshToken(http, tokens))
+            println("jam: $jamId with ${store.listJamPosts(jamId).size} posts")
+        }
+        "jam-echo" -> {
+            val answered = mutableSetOf<String>()
+            val noted = mutableSetOf<String>()
+            val seenPosts = mutableMapOf<String, String>()
+            val seenLabels = mutableMapOf<String, String>()
+            println("jam-echo: listening as $personaName (Ctrl-C to stop)")
+            while (true) {
+                try {
+                    store.sync(http, freshToken(http, tokens))
+                    for (jam in store.listMyJams().filter { !it.ended }) {
+                        for (sub in store.listJamSubscribers(jam.jamId)) if (noted.add("s:" + sub.userId + sub.status)) println("jam: subscriber ${sub.name.ifEmpty { sub.userId.take(8) }} (${sub.status})")
+                        for (post in store.listJamPosts(jam.jamId)) {
+                            val counts = store.jamPostCounts(post.postId)
+                            if (counts.likes > 0u && noted.add("l:${post.postId}:${counts.likes}")) println("jam: like on \"${post.title.ifEmpty { post.plain.take(20) }}\" (${counts.likes})")
+                            for (c in store.listJamComments(post.postId)) {
+                                if (c.mine || c.commentId in answered) continue
+                                answered += c.commentId
+                                println("jam: comment \"${c.text.take(40)}\"")
+                                store.commentOnJamPost(post.postId, "Ben here: thanks!", c.parentId ?: c.commentId)
+                            }
+                        }
+                    }
+                    // A teacher who writes to Ben first becomes a chat request: accept it, so each can send to the other (a subscription travels like a message).
+                    store.listConversations().filter { it.requestState == "pending" }.forEach { runCatching { store.acceptRequest(it.id) } }
+                    // LIME-312: Ben follows Ada's jam when she has one, says what arrives (a new post, an edit, a delete) and comments on each new post.
+                    val followed = store.listJamSubscriptions()
+                    if (followed.none { it.writer == adaId && it.status != "left" && !it.ended }) {
+                        store.fetchJamPage(http, freshToken(http, tokens), adaId)?.let { page ->
+                            store.subscribeToJam(page.jamId, page.writerId)
+                            println("jam: subscribed to Ada's jam \"${page.title}\"")
+                        }
+                    }
+                    followed.filter { it.writer == adaId }.forEach { j ->
+                        val states = store.listJamPosts(j.jamId).joinToString(",") { it.state }
+                        if (noted.add("a:${j.status}:$states")) println("jam: Ada's jam is ${j.status}; posts [$states]")
+                    }
+                    for (jam in followed.filter { it.writer == adaId && it.status == "active" }) {
+                        val now = store.listJamPosts(jam.jamId)
+                        // A deleted post leaves the list (or turns "gone"): say so once.
+                        for (id in seenPosts.keys.toList()) if (now.none { it.postId == id && it.state != "gone" } && noted.add("g:$id")) println("jam: post removed \"${seenLabels[id].orEmpty()}\"")
+                        for (post in now) {
+                            val label = post.title.ifEmpty { post.plain.take(40) }
+                            if (post.state == "gone") continue
+                            if (post.state != "ready") continue
+                            val signature = post.title + "|" + post.subtitle + "|" + post.markdown
+                            seenLabels[post.postId] = label
+                            val before = seenPosts.put(post.postId, signature)
+                            if (before == null) {
+                                println("jam: received ${post.kind} \"$label\" (${post.attachmentsJson.split("\"mime\"").size - 1} files)")
+                                store.commentOnJamPost(post.postId, "Ben here: nice ${post.kind}!", null)
+                            } else if (before != signature) println("jam: edited \"$label\"")
+                        }
+                    }
+                    store.deliverQueued(http, freshToken(http, tokens))
+                } catch (e: Exception) {
+                    System.err.println("jam-echo: ${e::class.simpleName} (will retry)")
+                }
+                Thread.sleep(2000)
+            }
         }
         "status" -> {
             store.sync(http, freshToken(http, tokens))

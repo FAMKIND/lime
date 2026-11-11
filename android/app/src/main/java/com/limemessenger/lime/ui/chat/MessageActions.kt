@@ -50,8 +50,7 @@ import uniffi.lime_core.MessageAction
 import uniffi.lime_core.MessageItem
 import uniffi.lime_core.quickReactions
 
-// The long-press menu of a message, as iOS's `MessageActionsHost`: the six quick reactions, then the actions in the core's order. Report and Save to my GIFs
-// are not here yet (moderation and GIFs come later). TalkBack gets the same actions as custom actions on the message (ChatScreen), never a gesture-only menu.
+// The long-press menu of a message, as iOS's `MessageActionsHost`: the six quick reactions, then the actions in the core's order.  TalkBack gets the same actions as custom actions on the message (ChatScreen), never a gesture-only menu.
 
 /** The words of an action, as in the iOS menu. */
 @Composable
@@ -67,8 +66,8 @@ fun actionTitle(action: MessageAction): String = stringResource(when (action) {
     MessageAction.DELETE -> R.string.message_action_delete
 })
 
-/** The actions this screen has (the core's list minus Report and Save to my GIFs). */
-fun shownActions(plan: List<MessageAction>): List<MessageAction> = plan.filter { it != MessageAction.REPORT && it != MessageAction.SAVE_GIF }
+/** The actions this screen has: all of the core's list. */
+fun shownActions(plan: List<MessageAction>): List<MessageAction> = plan
 
 fun actionTag(action: MessageAction): String = "action-" + action.name.lowercase().replace('_', '-')
 

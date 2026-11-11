@@ -1,0 +1,221 @@
+{
+  "name" : "lime",
+  "stickers" : [
+    {
+      "card" : "FED2CA",
+      "file" : "hi.gif",
+      "find" : [
+        "hello",
+        "hey"
+      ],
+      "words" : "Hi!"
+    },
+    {
+      "card" : "92D4FF",
+      "file" : "good-morning.gif",
+      "find" : [
+        "morning",
+        "gm"
+      ],
+      "words" : "Good morning!"
+    },
+    {
+      "card" : "FEB2BF",
+      "file" : "thank-you.gif",
+      "find" : [
+        "thanks",
+        "ty"
+      ],
+      "words" : "Thank you!"
+    },
+    {
+      "card" : "C4EFA6",
+      "file" : "welcome.gif",
+      "find" : [
+        "welcome",
+        "new"
+      ],
+      "words" : "Welcome!"
+    },
+    {
+      "card" : "EFDF91",
+      "file" : "happy-birthday.gif",
+      "find" : [
+        "birthday",
+        "bday"
+      ],
+      "words" : "Happy birthday!"
+    },
+    {
+      "card" : "D9BAFF",
+      "file" : "congrats.gif",
+      "find" : [
+        "congratulations",
+        "yay"
+      ],
+      "words" : "Congrats!"
+    },
+    {
+      "card" : "F3BF91",
+      "file" : "great-job.gif",
+      "find" : [
+        "good job",
+        "nice",
+        "well done"
+      ],
+      "words" : "Great job!"
+    },
+    {
+      "card" : "C4EFA6",
+      "file" : "proud-of-you.gif",
+      "find" : [
+        "proud"
+      ],
+      "words" : "Proud of you!"
+    },
+    {
+      "card" : "C4EFA6",
+      "file" : "yes.gif",
+      "find" : [
+        "yes",
+        "yay"
+      ],
+      "words" : "Yes!"
+    },
+    {
+      "card" : "F3BF91",
+      "file" : "you-got-this.gif",
+      "find" : [
+        "you got this",
+        "encourage"
+      ],
+      "words" : "You've got this!"
+    },
+    {
+      "card" : "92D4FF",
+      "file" : "hang-in-there.gif",
+      "find" : [
+        "hang in",
+        "support"
+      ],
+      "words" : "Hang in there"
+    },
+    {
+      "card" : "EFDF91",
+      "file" : "lol.gif",
+      "find" : [
+        "lol",
+        "funny",
+        "haha"
+      ],
+      "words" : "LOL"
+    },
+    {
+      "card" : "FED2CA",
+      "file" : "oops.gif",
+      "find" : [
+        "oops",
+        "sorry",
+        "mistake"
+      ],
+      "words" : "Oops!"
+    },
+    {
+      "card" : "99EEFF",
+      "file" : "friday.gif",
+      "find" : [
+        "tgif",
+        "weekend"
+      ],
+      "words" : "Friday!"
+    },
+    {
+      "card" : "92D4FF",
+      "file" : "snow-day.gif",
+      "find" : [
+        "snow"
+      ],
+      "words" : "Snow day!"
+    },
+    {
+      "card" : "F3BF91",
+      "file" : "coffee-time.gif",
+      "find" : [
+        "coffee",
+        "tired"
+      ],
+      "words" : "Coffee time"
+    },
+    {
+      "card" : "D9BAFF",
+      "file" : "brain-break.gif",
+      "find" : [
+        "break",
+        "recess"
+      ],
+      "words" : "Brain break"
+    },
+    {
+      "card" : "C4EFA6",
+      "file" : "field-trip.gif",
+      "find" : [
+        "field trip",
+        "trip"
+      ],
+      "words" : "Field trip!"
+    },
+    {
+      "card" : "EFDF91",
+      "file" : "report-cards.gif",
+      "find" : [
+        "grades",
+        "grading"
+      ],
+      "words" : "Report cards"
+    },
+    {
+      "card" : "99EEFF",
+      "file" : "testing-week.gif",
+      "find" : [
+        "testing",
+        "exams"
+      ],
+      "words" : "Testing week"
+    },
+    {
+      "card" : "FEB2BF",
+      "file" : "quiet-please.gif",
+      "find" : [
+        "quiet",
+        "shh"
+      ],
+      "words" : "Quiet please"
+    },
+    {
+      "card" : "D9BAFF",
+      "file" : "see-you-tomorrow.gif",
+      "find" : [
+        "bye"
+      ],
+      "words" : "See you tomorrow"
+    },
+    {
+      "card" : "FED2CA",
+      "file" : "bell-rang.gif",
+      "find" : [
+        "bell",
+        "dismissal"
+      ],
+      "words" : "Bell rang!"
+    },
+    {
+      "card" : "EFDF91",
+      "file" : "summer.gif",
+      "find" : [
+        "vacation",
+        "holiday"
+      ],
+      "words" : "Summer!"
+    }
+  ]
+}

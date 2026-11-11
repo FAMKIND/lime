@@ -94,7 +94,7 @@ class ChatUiTest {
         val actions = rule.onNodeWithTag("message-${theirs.id}").fetchSemanticsNode().config[SemanticsProperties.Role]
         assertNotNull(actions)
         val custom = rule.onNodeWithTag("message-${theirs.id}").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsActions.CustomActions]
-        assertEquals(listOf("React", "Reply", "Forward", "Copy", "Select", "Delete"), custom.map { it.label })
+        assertEquals(listOf("React", "Reply", "Forward", "Copy", "Select", "Report", "Delete"), custom.map { it.label })
     }
 
     @Test fun sendingShowsTheMessageWithItsStateAndClearsTheField() {

@@ -158,6 +158,12 @@ class ChatModel(
         listOf(OutgoingAttachment(note.bytes, "Voice message.m4a", "audio/mp4", null, null, note.durationMs.toUInt(), note.waveform, ByteArray(0), "")), "", "voice message",
     )
 
+    /** The decrypted bytes of an attachment only if this phone already has them (no download): a GIF that plays in its bubble. */
+    suspend fun localBytes(attachment: AttachmentInfo): ByteArray? {
+        val core = chats.core() ?: return null
+        return withContext(Dispatchers.IO) { runCatching { core.attachmentData(attachment.id) }.getOrNull() }
+    }
+
     /** The decrypted bytes of a file or voice message: what this phone has, else downloaded now (voice always; a tap for the rest). Null when it cannot be had. */
     suspend fun attachmentBytes(attachment: AttachmentInfo): ByteArray? {
         val core = chats.core() ?: return null

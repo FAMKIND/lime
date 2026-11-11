@@ -33,8 +33,11 @@ enum class Tab(val label: Int, val icon: ImageVector) {
 
 /** The signed-in shell: link · call · jam as a bottom bar (as iOS). Call and jam say "Coming soon on Android" until built. */
 @Composable
-fun Shell(link: @Composable () -> Unit, modifier: Modifier = Modifier, jam: (@Composable () -> Unit)? = null) {
-    var tab by rememberSaveable { mutableStateOf(Tab.Link) }
+fun Shell(link: @Composable () -> Unit, modifier: Modifier = Modifier, jam: (@Composable () -> Unit)? = null, selected: Tab? = null, onSelect: ((Tab) -> Unit)? = null) {
+    // The caller can keep the tab (Root does: a post, a chat or a profile replaces the whole shell, and coming back must land on the same tab).
+    var own by rememberSaveable { mutableStateOf(Tab.Link) }
+    val tab = selected ?: own
+    val choose: (Tab) -> Unit = { own = it; onSelect?.invoke(it) }
     val colors = Lime.colors
     Scaffold(
         modifier = modifier,
@@ -45,7 +48,7 @@ fun Shell(link: @Composable () -> Unit, modifier: Modifier = Modifier, jam: (@Co
                     NavigationBarItem(
                         modifier = Modifier.testTag("tab-${entry.name.lowercase()}"),
                         selected = tab == entry,
-                        onClick = { tab = entry },
+                        onClick = { choose(entry) },
                         icon = { Icon(entry.icon, contentDescription = null) },
                         label = { Text(stringResource(entry.label), fontSize = 12.sp) },
                         colors = NavigationBarItemDefaults.colors(

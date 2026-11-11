@@ -249,8 +249,21 @@ fun StorageScreen(chats: ChatsModel, prefs: MediaPrefs, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     var usage by remember { mutableStateOf<StorageUsage?>(null) }
     var removing by remember { mutableStateOf<uniffi.lime_core.ChatUsage?>(null) }
-    suspend fun load() { val core = chats.core() ?: return; usage = withContext(Dispatchers.IO) { runCatching { core.storageUsage() }.getOrNull() } }
+    var gifs by remember { mutableStateOf<uniffi.lime_core.MyGifUsage?>(null) }
+    var clearingGifs by remember { mutableStateOf(false) }
+    suspend fun load() {
+        val core = chats.core() ?: return
+        usage = withContext(Dispatchers.IO) { runCatching { core.storageUsage() }.getOrNull() }
+        gifs = withContext(Dispatchers.IO) { runCatching { core.myGifsUsage() }.getOrNull() }
+    }
     LaunchedEffect(Unit) { load() }
+    if (clearingGifs) androidx.compose.material3.AlertDialog(
+        onDismissRequest = { clearingGifs = false }, containerColor = colors.canvas,
+        title = { Text(stringResource(R.string.storage_clear_gifs), color = colors.text) },
+        text = { Text(stringResource(R.string.storage_clear_gifs_body), color = colors.textSecondary) },
+        confirmButton = { TextButton({ clearingGifs = false; scope.launch { chats.core()?.let { core -> withContext(Dispatchers.IO) { runCatching { core.removeAllMyGifs() } } }; load() } }, Modifier.heightIn(min = 48.dp).testTag("storage-gifs-clear-confirm")) { Text(stringResource(R.string.storage_clear_gifs), color = colors.danger) } },
+        dismissButton = { TextButton({ clearingGifs = false }, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.jam_cancel), color = colors.text) } },
+    )
     SettingsPage(stringResource(R.string.storage_title), onBack, "storage-screen") {
         val u = usage
         SettingsCardColumn {
@@ -258,6 +271,13 @@ fun StorageScreen(chats: ChatsModel, prefs: MediaPrefs, onBack: () -> Unit) {
             ValueRow(stringResource(R.string.storage_media), friendlyBytes(u?.mediaBytes?.toLong() ?: 0), "storage-media")
         }
         Footnote(stringResource(R.string.storage_note))
+        // My GIFs (LIME-313): how many, their size, and Clear (they live in this phone's store, not in a chat).
+        SettingsCardColumn {
+            ValueRow(stringResource(R.string.storage_my_gifs), "${gifs?.count ?: 0} · ${friendlyBytes(gifs?.bytes?.toLong() ?: 0)}", "storage-gifs")
+            if ((gifs?.count ?: 0u) > 0u) Row(Modifier.fillMaxWidth().heightIn(min = 54.dp).padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { clearingGifs = true }, Modifier.heightIn(min = 48.dp).testTag("storage-gifs-clear")) { Text(stringResource(R.string.storage_clear_gifs), color = colors.danger) }
+            }
+        }
         Footnote(stringResource(R.string.storage_keep_heading))
         SettingsCardColumn {
             keepMediaChoices().forEach { option ->

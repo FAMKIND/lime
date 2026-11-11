@@ -125,7 +125,20 @@ private fun SignedIn(session: AccountSession) {
     var profileOpen by rememberSaveable { mutableStateOf(false) }
     var personProfile by remember { mutableStateOf<Pair<String, String>?>(null) }
     var jamPost by remember { mutableStateOf<uniffi.lime_core.JamPostInfo?>(null) }
-    val jam = remember(session) { JamModel(store = { session.store }, nameOf = { id -> if (id == session.userId) session.profile?.displayName else chats.conversations.firstNotNullOfOrNull { c -> c.members.firstOrNull { it.id == id }?.name } }) }
+    var yourJam by remember { mutableStateOf(false) }
+    var shellTab by rememberSaveable { mutableStateOf(com.limemessenger.lime.ui.shell.Tab.Link) }
+    var compose by remember { mutableStateOf<com.limemessenger.lime.ui.jam.ComposeRoute?>(null) }
+    // Unpublished posts stay on this phone, in this account's own folder.
+    val jamDrafts = remember(session.userId) { com.limemessenger.lime.jam.JamDrafts(java.io.File(appContext.filesDir, "lime-jam-drafts/${session.userId.orEmpty().ifEmpty { "me" }}")) }
+    val jam = remember(session) {
+        JamModel(
+            store = { session.store }, nameOf = { id -> if (id == session.userId) session.profile?.displayName else chats.conversations.firstNotNullOfOrNull { c -> c.members.firstOrNull { it.id == id }?.name } },
+            env = com.limemessenger.lime.jam.JamEnv(transport = { session.transport }, token = { session.accessToken() }, deliver = { chats.deliverNow() }),
+            savedStore = com.limemessenger.lime.jam.SavedPosts.Prefs(appContext.getSharedPreferences("lime.jam", android.content.Context.MODE_PRIVATE)),
+        )
+    }
+    // A sync brought something: the jam posts and their counts are read again.
+    LaunchedEffect(chats.revision) { jam.reload() }
     val app = appContext as? com.limemessenger.lime.LimeApp
     val mediaPolicy = remember(app) { app?.let { com.limemessenger.lime.chats.MediaPolicy(it, it.mediaPrefs) } }
     val chatModel = remember(openId) { openId?.let { ChatModel(it, chats, mayAutoDownload = { a -> mediaPolicy?.mayAutoDownload(a) ?: true }) } }
@@ -138,7 +151,8 @@ private fun SignedIn(session: AccountSession) {
     }
     LaunchedEffect(chats.revision) { arrivals.check(chats.conversations, openId) }
     val groupModel = remember(openId) { openId?.let { GroupModel(chats, it) } }
-    BackHandler(enabled = jamPost != null) { jamPost = null }
+    BackHandler(enabled = jamPost != null && compose == null) { jamPost = null }
+    BackHandler(enabled = yourJam && compose == null && jamPost == null) { yourJam = false }
     BackHandler(enabled = personProfile != null) { personProfile = null }
     BackHandler(enabled = threadRoot != null) { threadRoot = null }
     BackHandler(enabled = openId == null && searchOpen) { searchOpen = false }
@@ -151,12 +165,17 @@ private fun SignedIn(session: AccountSession) {
     val root = threadRoot
     val postOpen = jamPost
     val person = personProfile
-    if (profileOpen) {
+    val writing = compose
+    if (writing != null) {
+        com.limemessenger.lime.ui.jam.JamComposeScreen(jam, jamDrafts, writing, onDone = { compose = null })
+    } else if (profileOpen) {
         SettingsScreen(session, onClose = { profileOpen = false }, chats = chats)
     } else if (person != null) {
-        PersonProfileScreen(person.first, person.second, chats, onBack = { personProfile = null })
+        PersonProfileScreen(person.first, person.second, chats, onBack = { personProfile = null }, jam = jam, onBlocked = { personProfile = null; openId = null })
     } else if (postOpen != null) {
-        JamReaderScreen(postOpen, jam, onBack = { jamPost = null })
+        JamReaderScreen(postOpen, jam, myId = session.userId, onEdit = { compose = com.limemessenger.lime.ui.jam.ComposeRoute(if (it.kind == "article") "article" else "quick", editing = it); jamPost = null }, onBack = { jamPost = null })
+    } else if (yourJam) {
+        com.limemessenger.lime.ui.jam.YourJamScreen(jam, jamDrafts, onBack = { yourJam = false }, onCompose = { compose = it })
     } else if (chatModel != null && groupModel != null && groupInfoOpen) {
         GroupDetailsScreen(chats, groupModel, chats.myName, chats.myTone, onBack = { groupInfoOpen = false }, onLeft = { groupInfoOpen = false; openId = null })
     } else if (chatModel != null && root != null) {
@@ -174,7 +193,7 @@ private fun SignedIn(session: AccountSession) {
     } else if (requestsOpen) {
         RequestsScreen(chats, onOpen = { openId = it.id }, onBack = { requestsOpen = false })
     } else {
-        Shell(jam = { JamFeedScreen(jam, onOpen = { jamPost = it }) }, link = {
+        Shell(selected = shellTab, onSelect = { shellTab = it }, jam = { JamFeedScreen(jam, onYours = { yourJam = true }, onOpen = { jamPost = it }) }, link = {
             ChatListScreen(
                 chats, myName = session.profile?.displayName.orEmpty(), myTone = com.limemessenger.lime.chats.AvatarTone.tone(session.userId.orEmpty()),
                 onOpen = { openId = it.id },

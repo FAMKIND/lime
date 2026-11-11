@@ -215,6 +215,7 @@ fun GroupDetailsScreen(chats: ChatsModel, model: GroupModel, myName: String, myT
     var newName by remember { mutableStateOf("") }
     var removing by remember { mutableStateOf<uniffi.lime_core.GroupMemberInfo?>(null) }
     var leaving by remember { mutableStateOf(false) }
+    var reportingGroup by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf(false) }
     if (adding && details != null) {
         GroupPickerScreen(chats, existing = details.members.map { it.userId }, adding = true, onBack = { adding = false }, onNext = { ids -> scope.launch { model.add(ids); adding = false } })
@@ -250,6 +251,7 @@ fun GroupDetailsScreen(chats: ChatsModel, model: GroupModel, myName: String, myT
             }
         }
         Text(stringResource(R.string.group_name_note), color = colors.textSecondary, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+        DetailRow(stringResource(R.string.report_group), "group-report", danger = true) { reportingGroup = true }
         DetailRow(stringResource(R.string.group_leave), "group-leave", danger = true) { leaving = true }
         if (model.failed) Text("That didn’t work. Try again.", color = colors.danger, fontSize = 15.sp, modifier = Modifier.padding(20.dp).testTag("group-failed"))
     }
@@ -271,6 +273,25 @@ fun GroupDetailsScreen(chats: ChatsModel, model: GroupModel, myName: String, myT
             text = { Text(stringResource(R.string.group_remove_body)) },
             confirmButton = { TextButton(onClick = { removing = null; scope.launch { model.remove(m.userId) } }, modifier = Modifier.testTag("group-remove-confirm")) { Text(stringResource(R.string.group_remove), color = colors.danger) } },
             dismissButton = { TextButton(onClick = { removing = null }) { Text(stringResource(R.string.group_cancel)) } },
+        )
+    }
+    if (reportingGroup && details != null) {
+        val messages by androidx.compose.runtime.produceState(emptyList<uniffi.lime_core.ReportGroupMessage>(), model.conversationId) {
+            val core = chats.core()
+            value = if (core == null) emptyList() else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { core.listMessages(model.conversationId) }.getOrDefault(emptyList())
+                    .filter { it.localState != "system" && !it.deleted && it.text.isNotEmpty() }.takeLast(20)
+                    .map { m ->
+                        val sender = m.senderId ?: details.members.firstOrNull { it.isMe }?.userId.orEmpty()
+                        val who = if (m.senderId == null) chats.myName else details.members.firstOrNull { it.userId == sender }?.name.orEmpty()
+                        uniffi.lime_core.ReportGroupMessage(m.id, sender, who, m.text, m.sentAt, m.attachments.size.toUInt())
+                    }
+            }
+        }
+        com.limemessenger.lime.ui.moderation.ReportDialog(
+            uniffi.lime_core.reportTargetGroup(model.conversationId, details.name), chats,
+            group = com.limemessenger.lime.ui.moderation.GroupReportDraft(model.conversationId, details.name, details.hasPhoto, messages, details.members.map { uniffi.lime_core.ReportGroupMember(it.userId, if (it.isMe) chats.myName else it.name, it.role) }),
+            onDismiss = { reportingGroup = false }, onLeftGroup = onLeft,
         )
     }
     if (leaving) {

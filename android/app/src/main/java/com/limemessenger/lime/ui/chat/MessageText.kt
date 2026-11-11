@@ -39,7 +39,11 @@ import uniffi.lime_core.parseMessageMarkdown
  * long-press and the TalkBack actions sit on the bubble, so a tap on text does nothing else.
  */
 @Composable
-fun MessageText(text: String, color: Color, linkColor: Color, modifier: Modifier = Modifier, fontSize: Float = 16f, post: Boolean = false) {
+fun MessageText(
+    text: String, color: Color, linkColor: Color, modifier: Modifier = Modifier, fontSize: Float = 16f, post: Boolean = false,
+    /** Draws a jam post's picture in the place it was put (`![caption](attachment:n)`): the attachment's number and the caption. */
+    image: (@Composable (Int, String) -> Unit)? = null,
+) {
     val blocks = androidx.compose.runtime.remember(text, post) { if (post) uniffi.lime_core.parsePostMarkdown(text) else parseMessageMarkdown(text) }
     val colors = Lime.colors
     Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -67,7 +71,8 @@ fun MessageText(text: String, color: Color, linkColor: Color, modifier: Modifier
             }
             is Block.Indent -> Text(spans(block.spans, linkColor), color = color, fontSize = fontSize.sp, modifier = Modifier.padding(start = 16.dp))
             Block.Divider -> Box(Modifier.fillMaxWidth().height(1.dp).background(colors.hairline))
-            else -> {}   // images, buttons and the free wall are for posts, not chat messages
+            is Block.Image -> image?.invoke(block.attachment.toInt(), block.caption)
+            else -> {}   // buttons and the free wall are for posts, not chat messages
         }
     }
 }

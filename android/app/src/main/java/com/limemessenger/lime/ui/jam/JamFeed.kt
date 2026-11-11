@@ -52,19 +52,32 @@ import com.limemessenger.lime.ui.shell.Icons
 import com.limemessenger.lime.ui.theme.Lime
 import kotlinx.coroutines.launch
 import uniffi.lime_core.JamPostInfo
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.semantics.selected
+import uniffi.lime_core.JamFeedSegment
 
-/** The jam tab: the posts of the jams I follow and my own, newest first, read only (iOS `JamPage`'s feed and `JamPostCard`). Tapping a post reads it. */
+/** The jam tab (iOS `JamPage`'s feed): the segments All · Posts · Articles · Podcasts and Saved, then the posts of the jams I follow and my own, newest first. Tapping a post reads it. */
 @androidx.compose.material3.ExperimentalMaterial3Api
 @Composable
-fun JamFeedScreen(model: JamModel, modifier: Modifier = Modifier, onOpen: (JamPostInfo) -> Unit) {
+fun JamFeedScreen(model: JamModel, modifier: Modifier = Modifier, onYours: (() -> Unit)? = null, onOpen: (JamPostInfo) -> Unit) {
     val colors = Lime.colors
     val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val player = remember { com.limemessenger.lime.chats.VoicePlayer(context.applicationContext) }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { player.stop() } }
     var refreshing by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { model.reload() }
     Column(modifier.fillMaxSize().background(colors.canvas)) {
         Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(R.string.tab_jam), color = colors.text, fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
+            Text(stringResource(R.string.tab_jam), color = colors.text, fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f).semantics { heading() })
+            if (onYours != null) androidx.compose.material3.TextButton(onYours, Modifier.heightIn(min = 48.dp).testTag("jam-yours-open")) { Text(stringResource(R.string.jam_yours), color = colors.text, fontWeight = FontWeight.SemiBold) }
         }
+        SegmentRow(model)
         PullToRefreshBox(
             isRefreshing = refreshing, onRefresh = { scope.launch { refreshing = true; try { model.reload() } finally { refreshing = false } } },
             modifier = Modifier.weight(1f),
@@ -75,59 +88,140 @@ fun JamFeedScreen(model: JamModel, modifier: Modifier = Modifier, onOpen: (JamPo
                         stringResource(R.string.jam_empty), color = colors.textSecondary, fontSize = 17.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 40.dp).padding(top = 120.dp).testTag("jam-feed-empty"),
                     )
+                } else if (model.isLoaded && model.shown.isEmpty()) item(key = "none") {
+                    Text(
+                        stringResource(if (model.savedOnly) R.string.jam_empty_saved else R.string.jam_empty), color = colors.textSecondary, fontSize = 17.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 40.dp).padding(top = 120.dp).testTag("jam-feed-none"),
+                    )
                 }
-                items(model.posts, key = { it.postId }) { post -> PostCard(post, model) { onOpen(post) } }
+                items(model.shown, key = { it.postId }) { post -> PostCard(post, model, player) { onOpen(post) } }
             }
         }
     }
 }
 
-/** A post as a card: the byline (avatar, name, "by …", date), then the title and the first words. One TalkBack stop that opens the post. */
+/** All · Posts · Articles · Podcasts (the core's segments) and a Saved pill: one chosen, 48 dp targets, "selected" said to TalkBack. */
 @Composable
-private fun PostCard(post: JamPostInfo, model: JamModel, onOpen: () -> Unit) {
+private fun SegmentRow(model: JamModel) {
+    val colors = Lime.colors
+    val segments = uniffi.lime_core.jamSegments().filter { it != JamFeedSegment.DRAFTS && it != JamFeedSegment.DISCOVER }
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        segments.forEach { segment ->
+            val on = model.segment == segment && !model.savedOnly
+            val title = uniffi.lime_core.jamSegmentTitle(segment)
+            Pill(title, on, "jam-segment-$title") { model.segment = segment; model.savedOnly = false }
+        }
+        Pill(stringResource(R.string.jam_segment_saved), model.savedOnly, "jam-segment-saved") { model.savedOnly = !model.savedOnly }
+    }
+}
+
+@Composable
+private fun Pill(title: String, on: Boolean, tag: String, onClick: () -> Unit) {
+    val colors = Lime.colors
+    Box(Modifier.heightIn(min = 48.dp).widthIn(min = 56.dp).semantics(mergeDescendants = true) { selected = on; role = Role.RadioButton }.clickable(onClick = onClick).testTag(tag), contentAlignment = Alignment.Center) {
+        Box(Modifier.background(if (on) colors.pressed else colors.surface, RoundedCornerShape(18.dp)).padding(horizontal = 14.dp, vertical = 8.dp)) {
+            Text(title, color = colors.text, fontSize = 15.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal)
+        }
+    }
+}
+
+/** A post as a card: the byline (avatar, name, "by …", date), then the title and the first words; a recording shows its play pill; then ♥ and comments. */
+@Composable
+private fun PostCard(post: JamPostInfo, model: JamModel, player: com.limemessenger.lime.chats.VoicePlayer, onOpen: () -> Unit) {
     val colors = Lime.colors
     val name = model.authorName(post)
     val writer = model.teacherName(post.author)
     val asJam = post.displayAs == "jam"
     val detail = listOfNotNull(model.byline(post), JamDates.short(post.created), if (post.editedAt > 0) "Edited" else null).joinToString(" · ")
+    val files by androidx.compose.runtime.produceState(emptyList<uniffi.lime_core.JamAttachmentInfo>(), post.postId, post.state) { value = model.attachments(post.postId) }
+    val audio = files.firstOrNull { it.kind == "audio" }
+    val card = uniffi.lime_core.jamCardKind(post.kind == "record", post.state == "ready", audio != null, files.any { it.kind == "video" })
+    val counts = model.countsOf(post.postId)
     val spoken = listOfNotNull(
-        if (asJam) "$name, by $writer" else name, JamDates.spoken(post.created), post.title.ifEmpty { null }, JamModel.excerpt(post, 120).ifEmpty { null },
+        if (asJam) "$name, by $writer" else name, JamDates.spoken(post.created), if (card == uniffi.lime_core.JamCardKind.SMALL_PODCAST) "Podcast" else null,
+        post.title.ifEmpty { null }, JamModel.excerpt(post, 120).ifEmpty { null },
+        if (counts.likes > 0u) "${counts.likes} likes" else null, if (counts.comments > 0u) "${counts.comments} comments" else null, if (counts.unseen) "new comments" else null,
     ).joinToString(", ")
-    Column(
-        Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(horizontal = 20.dp, vertical = 14.dp)
-            .semantics { contentDescription = spoken; role = Role.Button }.testTag("jam-post-${post.postId}"),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Row(Modifier.clearAndSetSemantics { }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Avatar(initialsOf(name), AvatarTone.tone(if (asJam) post.jamId else post.author), 40.dp)
-            Column(Modifier.weight(1f)) {
-                Text(name, color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(if (asJam) "by $writer · $detail" else detail, color = colors.textSecondary, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(
+            Modifier.fillMaxWidth().clickable(onClick = onOpen).semantics { contentDescription = spoken; role = Role.Button }.testTag("jam-post-${post.postId}"),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(Modifier.clearAndSetSemantics { }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Avatar(initialsOf(name), AvatarTone.tone(if (asJam) post.jamId else post.author), 40.dp)
+                Column(Modifier.weight(1f)) {
+                    Text(name, color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(if (asJam) "by $writer · $detail" else detail, color = colors.textSecondary, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                if (counts.unseen) Box(Modifier.size(10.dp).background(colors.accent, CircleShape).testTag("jam-unseen-${post.postId}"))
+            }
+            Column(Modifier.clearAndSetSemantics { }, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (post.title.isNotEmpty()) Text(post.title, color = colors.text, fontSize = 19.sp, fontWeight = FontWeight.Bold, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                val excerpt = JamModel.excerpt(post, if (post.kind == "quick") 400 else 200)
+                if (excerpt.isNotEmpty()) Text(excerpt, color = if (post.kind == "article") colors.textSecondary else colors.text, fontSize = 16.sp, maxLines = if (post.kind == "quick") 8 else 3, overflow = TextOverflow.Ellipsis)
             }
         }
-        Column(Modifier.clearAndSetSemantics { }, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            if (post.title.isNotEmpty()) Text(post.title, color = colors.text, fontSize = 19.sp, fontWeight = FontWeight.Bold, maxLines = 3, overflow = TextOverflow.Ellipsis)
-            val excerpt = JamModel.excerpt(post, if (post.kind == "quick") 400 else 200)
-            if (excerpt.isNotEmpty()) Text(excerpt, color = if (post.kind == "article") colors.textSecondary else colors.text, fontSize = 16.sp, maxLines = if (post.kind == "quick") 8 else 3, overflow = TextOverflow.Ellipsis)
+        if (card == uniffi.lime_core.JamCardKind.SMALL_PODCAST && audio != null) JamPodcastPill(post, audio, model, player)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            JamHeartButton(post, model)
+            JamCommentCount(post, model, onOpen)
+            Spacer(Modifier.weight(1f))
+            val saved = post.postId in model.saved
+            val saveWords = stringResource(if (saved) R.string.jam_saved else R.string.jam_save)
+            Box(Modifier.size(48.dp).semantics { contentDescription = saveWords; role = Role.Button; selected = saved }.clickable { model.toggleSaved(post.postId) }.testTag("jam-save-${post.postId}"), contentAlignment = Alignment.Center) {
+                Icon(if (saved) Icons.BookmarkFilled else Icons.Bookmark, null, tint = colors.text, modifier = Modifier.size(22.dp))
+            }
         }
     }
     Box(Modifier.fillMaxWidth().size(1.dp).background(colors.hairline))
 }
 
-/** Reading one post (the core's post Markdown: paragraphs, headings, lists, quotes, code; pictures are not shown yet). */
+/** Reading one post: the title, subtitle and byline, the post's Markdown with its photos in place (the writer's descriptions for TalkBack), a recording's player, then ♥ and the comments. */
 @Composable
-fun JamReaderScreen(post: JamPostInfo, model: JamModel, onBack: () -> Unit) {
+fun JamReaderScreen(post: JamPostInfo, model: JamModel, myId: String? = null, onEdit: ((JamPostInfo) -> Unit)? = null, onBack: () -> Unit) {
     val colors = Lime.colors
-    Column(Modifier.fillMaxSize().background(colors.canvas).systemBarsPadding()) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val player = remember { com.limemessenger.lime.chats.VoicePlayer(context.applicationContext) }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { player.stop() } }
+    val files by androidx.compose.runtime.produceState(emptyList<uniffi.lime_core.JamAttachmentInfo>(), post.postId) { value = model.attachments(post.postId) }
+    val saved = post.postId in model.saved
+    val scope = rememberCoroutineScope()
+    var confirmDelete by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxSize().background(colors.canvas).systemBarsPadding().imePadding()) {
         Row(Modifier.fillMaxWidth().heightIn(min = 64.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack, Modifier.size(56.dp).testTag("jam-reader-back")) { Icon(Icons.Back, stringResource(R.string.chat_back), tint = colors.text) }
+            Spacer(Modifier.weight(1f))
+            // My own post: Edit and Delete (iOS's post menu).
+            if (model.isMine(post)) {
+                if (onEdit != null) androidx.compose.material3.TextButton({ onEdit(post) }, Modifier.heightIn(min = 48.dp).testTag("jam-reader-edit")) { Text(stringResource(R.string.jam_post_menu_edit), color = colors.text) }
+                androidx.compose.material3.TextButton({ confirmDelete = true }, Modifier.heightIn(min = 48.dp).testTag("jam-reader-delete")) { Text(stringResource(R.string.jam_post_menu_delete), color = colors.danger) }
+            }
+            val saveWords = stringResource(if (saved) R.string.jam_saved else R.string.jam_save)
+            Box(Modifier.size(56.dp).semantics { contentDescription = saveWords; role = Role.Button; selected = saved }.clickable { model.toggleSaved(post.postId) }.testTag("jam-reader-save"), contentAlignment = Alignment.Center) {
+                Icon(if (saved) Icons.BookmarkFilled else Icons.Bookmark, null, tint = colors.text)
+            }
         }
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp).testTag("jam-reader"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (post.title.isNotEmpty()) Text(post.title, color = colors.text, fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp).testTag("jam-reader"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (post.title.isNotEmpty()) Text(post.title, color = colors.text, fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() }.testTag("jam-reader-title"))
             if (post.subtitle.isNotEmpty()) Text(post.subtitle, color = colors.textSecondary, fontSize = 18.sp)
             val detail = listOfNotNull(model.authorName(post), model.byline(post), JamDates.short(post.created), if (post.editedAt > 0) "Edited" else null).joinToString(" · ")
             Text(detail, color = colors.textSecondary, fontSize = 14.sp, modifier = Modifier.testTag("jam-reader-byline"))
-            MessageText(post.markdown, color = colors.text, linkColor = colors.link, post = true, fontSize = 18f)
+            val images = files.filter { it.kind == "image" }
+            files.firstOrNull { it.kind == "audio" }?.let { JamPodcastPill(post, it, model, player) }
+            MessageText(
+                post.markdown, color = colors.text, linkColor = colors.link, post = true, fontSize = 18f,
+                image = { index, caption -> files.getOrNull(index)?.takeIf { it.kind == "image" }?.let { JamPhoto(post, it, caption, model) } },
+            )
+            // A quick post keeps its photos as a row under the words (an article puts them in the text).
+            if (post.kind == "quick") images.forEach { JamPhoto(post, it, "", model) }
+            JamEngagementSection(post, model, myId)
         }
     }
+    if (confirmDelete) androidx.compose.material3.AlertDialog(
+        onDismissRequest = { confirmDelete = false }, containerColor = colors.canvas,
+        title = { Text(stringResource(R.string.jam_delete_title), color = colors.text) },
+        text = { Text(stringResource(R.string.jam_delete_body), color = colors.textSecondary) },
+        confirmButton = { androidx.compose.material3.TextButton({ confirmDelete = false; scope.launch { if (model.deletePost(post.postId)) onBack() } }, Modifier.heightIn(min = 48.dp).testTag("jam-delete-confirm")) { Text(stringResource(R.string.jam_delete_confirm), color = colors.danger) } },
+        dismissButton = { androidx.compose.material3.TextButton({ confirmDelete = false }, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.jam_cancel), color = colors.text) } },
+    )
 }

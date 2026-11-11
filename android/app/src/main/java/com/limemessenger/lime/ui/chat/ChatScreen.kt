@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import com.limemessenger.lime.chats.AttachmentProcessing
+import android.widget.Toast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import uniffi.lime_core.AttachmentInfo
@@ -105,6 +106,7 @@ import com.limemessenger.lime.chats.forward
 import com.limemessenger.lime.chats.forwardTargets
 import com.limemessenger.lime.chats.ChatRow
 import com.limemessenger.lime.chats.ChatsModel
+import com.limemessenger.lime.chats.block
 import com.limemessenger.lime.chats.DeliveryState
 import com.limemessenger.lime.chats.MessageFormat
 import com.limemessenger.lime.chats.MessageSpeech
@@ -136,6 +138,9 @@ fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenTh
     var editing by remember { mutableStateOf<MessageItem?>(null) }
     var deleting by remember { mutableStateOf<List<MessageItem>>(emptyList()) }
     var forwarding by remember { mutableStateOf<List<String>?>(null) }
+    var reporting by remember { mutableStateOf<uniffi.lime_core.ReportTargetInfo?>(null) }
+    var blocking by remember { mutableStateOf(false) }
+    var gifPanel by remember { mutableStateOf(false) }
     var selection by remember { mutableStateOf<Set<String>?>(null) }
     BackHandler(enabled = selection != null && viewer == null) { selection = null }
     val context = LocalContext.current
@@ -156,6 +161,18 @@ fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenTh
             uniffi.lime_core.MessageAction.EDIT -> editing = item
             uniffi.lime_core.MessageAction.SELECT -> selection = setOf(item.id)
             uniffi.lime_core.MessageAction.DELETE -> deleting = listOf(item)
+            uniffi.lime_core.MessageAction.SAVE_GIF -> scope.launch {
+                val gif = item.attachments.firstOrNull { it.mime == "image/gif" }
+                val bytes = gif?.let { model.attachmentBytes(it) }
+                val info = bytes?.let { uniffi.lime_core.gifInspect(it) }
+                val ok = bytes != null && withContext(Dispatchers.IO) { runCatching { chats.core()!!.addMyGif(bytes, "", messagePlainText(item.text), "", info?.width, info?.height) }.isSuccess }
+                Toast.makeText(context, if (ok) R.string.gif_saved_to_mine else R.string.gif_save_failed, Toast.LENGTH_SHORT).show()
+            }
+            uniffi.lime_core.MessageAction.REPORT -> {
+                val sender = item.senderId.orEmpty()
+                val name = summary?.members?.firstOrNull { it.id == sender }?.name ?: summary?.title
+                reporting = uniffi.lime_core.reportTargetMessage(item.id, item.conversationId, sender, name, messagePlainText(item.text), item.sentAt, item.attachments.size.toUInt())
+            }
             else -> {}
         }
     }
@@ -205,9 +222,9 @@ fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenTh
             }
         }
         model.banner?.let { Text(it, color = colors.danger, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).testTag("chat-banner")) }
-        if (summary != null && summary.isRequest) RequestBar(summary.title) { scope.launch { chats.acceptRequest(summary.id) } }
+        if (summary != null && summary.isRequest) RequestBar(summary.title, onBlock = { blocking = true }) { scope.launch { chats.acceptRequest(summary.id) } }
         else if (summary?.groupEnded != null) EndedBar(summary.groupEnded == "left") { scope.launch { chats.removeChat(summary.id); onBack() } }
-        else if (selection == null) Composer(model) { text, photos -> scope.launch { if (photos.isNotEmpty()) model.sendPhotos(photos, text) else model.send(text) } }
+        else if (selection == null) Composer(model, onGif = { gifPanel = true }) { text, photos -> scope.launch { if (photos.isNotEmpty()) model.sendPhotos(photos, text) else model.send(text) } }
     }
     viewer?.let { (item, index) -> PhotoViewer(item.attachments.filter { it.mime.startsWith("image/") }, index, model, onClose = { viewer = null }) }
     menuFor?.let { item ->
@@ -218,6 +235,12 @@ fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenTh
         EditMessageDialog(item.text, allowBlank = item.attachments.isNotEmpty(),
             onSave = { text -> editing = null; scope.launch { model.edit(item, text) } }, onCancel = { editing = null })
     }
+    if (gifPanel) GifPanel(chats, onSend = { gif -> gifPanel = false; scope.launch { model.sendPhotos(listOf(gif), "", "GIF") } }, onDismiss = { gifPanel = false })
+    reporting?.let { target -> com.limemessenger.lime.ui.moderation.ReportDialog(target, chats, onDismiss = { reporting = null }) }
+    if (blocking && summary != null) com.limemessenger.lime.ui.moderation.BlockConfirm(
+        summary.title, stringResource(R.string.block_request_body), "request-block-confirm",
+        onConfirm = { blocking = false; scope.launch { chats.block(summary.id); onBack() } }, onDismiss = { blocking = false },
+    )
     if (deleting.isNotEmpty()) {
         val now = System.currentTimeMillis()
         DeleteMessagesDialog(deleting.size, everyoneAllowed = deleting.all { uniffi.lime_core.canDeleteForEveryone(it, now) },
@@ -415,10 +438,16 @@ private fun Footer(item: MessageItem, showState: Boolean, onRetry: () -> Unit) {
 }
 
 @Composable
-private fun RequestBar(title: String, onAccept: () -> Unit) {
+private fun RequestBar(title: String, onBlock: () -> Unit, onAccept: () -> Unit) {
     val colors = Lime.colors
     Column(Modifier.fillMaxWidth().background(colors.surface).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(stringResource(R.string.chat_request_bar, title), color = colors.text, fontSize = 16.sp, modifier = Modifier.testTag("request-bar"))
+        // Block is the quiet choice (a grey pill); Accept stays the one lime button.
+        Box(
+            Modifier.fillMaxWidth().heightIn(min = 52.dp).background(colors.chip, RoundedCornerShape(26.dp))
+                .semantics { role = Role.Button }.clickable(onClick = onBlock).testTag("request-block"),
+            contentAlignment = Alignment.Center,
+        ) { Text(stringResource(R.string.block_confirm), color = colors.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold) }
         Box(
             Modifier.fillMaxWidth().heightIn(min = 52.dp).background(colors.accent, RoundedCornerShape(26.dp))
                 .semantics { role = Role.Button }.clickable(onClick = onAccept).testTag("request-accept"),
@@ -432,7 +461,7 @@ private class DraftPhoto(var attachment: OutgoingAttachment, val preview: ImageB
 
 /** The composer: plain text, photos from the system Photo Picker, a reply bar when replying, and send = the one lime action. */
 @Composable
-private fun Composer(model: ChatModel, onSend: (String, List<OutgoingAttachment>) -> Unit) {
+private fun Composer(model: ChatModel, onGif: () -> Unit, onSend: (String, List<OutgoingAttachment>) -> Unit) {
     val colors = Lime.colors
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -527,6 +556,10 @@ private fun Composer(model: ChatModel, onSend: (String, List<OutgoingAttachment>
                 IconButton(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, Modifier.size(56.dp).testTag("attach-photo")) {
                     Icon(Icons.Photo, contentDescription = stringResource(R.string.photo_attach), tint = colors.text)
                 }
+                val gifWords = stringResource(R.string.gif_open)
+                Box(Modifier.size(56.dp).semantics { contentDescription = gifWords; role = Role.Button }.clickable(onClick = onGif).testTag("attach-gif"), contentAlignment = Alignment.Center) {
+                    Text("GIF", color = colors.text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                }
                 OutlinedTextField(
                     value = text, onValueChange = { text = it }, modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("composer-field"),
                     placeholder = { Text(stringResource(R.string.chat_message_hint), color = colors.textSecondary) }, maxLines = 5,
@@ -592,6 +625,14 @@ private fun PhotoThumb(photo: AttachmentInfo, model: ChatModel, onOpen: () -> Un
     LaunchedEffect(photo.id) { model.loadImage(photo) }
     val bitmap = model.images[photo.id]
     val ratio = if ((photo.width ?: 0u) > 0u && (photo.height ?: 0u) > 0u) (photo.width!!.toFloat() / photo.height!!.toFloat()).coerceIn(0.6f, 1.8f) else 1f
+    if (photo.mime == "image/gif") {
+        // A GIF plays (unless the system's animations are off: then a still with a Play button) and is read by its sticker name or "GIF" (LIME-313).
+        val bytes by androidx.compose.runtime.produceState<ByteArray?>(null, photo.id, bitmap) { value = model.localBytes(photo) }
+        val context = androidx.compose.ui.platform.LocalContext.current
+        val words = remember(photo.name) { uniffi.lime_core.stickerSpokenName(photo.name, com.limemessenger.lime.chats.StickerPack.entries(context)) }
+        GifThumb(bytes, bitmap, ratio, if (words == "Sticker" && !photo.name.startsWith(uniffi.lime_core.stickerNamePrefix())) stringResource(R.string.gif_label) else words, "photo-${photo.id}", onOpen)
+        return
+    }
     Box(Modifier.width(240.dp).aspectRatio(ratio).clip(RoundedCornerShape(14.dp)).background(colors.chip).clickable(onClick = onOpen).testTag("photo-${photo.id}")) {
         if (bitmap != null) Image(bitmap, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
     }

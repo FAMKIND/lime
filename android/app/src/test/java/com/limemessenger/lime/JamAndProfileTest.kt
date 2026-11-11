@@ -30,31 +30,10 @@ class JamAndProfileTest {
         assertEquals("October 22, 2025", JamDates.spoken(ms(2025, 10, 22), now, zone, Locale.US))
     }
 
-    // The feed (iOS jamFeed)
+    // (The feed, byline and excerpt rules moved into the core in LIME-311: jam_rules.rs carries the same cases.)
 
-    @Test fun theFeedHoldsTheReadyPostsOfActiveAndOwnJamsNewestFirst() {
-        val jams = listOf(jam("a"), jam("b", status = "requested"), jam("c", mine = true, status = "active"), jam("d", status = "removed"))
-        val posts = listOf(
-            jamPost("p1", "a", at = 100), jamPost("p2", "b", at = 900), jamPost("p3", "c", at = 300), jamPost("p4", "d", at = 400),
-            jamPost("p5", "a", at = 200, state = "pending"), jamPost("p1", "a", at = 100),
-        )
-        assertEquals(listOf("p3", "p1"), JamModel.feed(posts, jams).map { it.postId })   // requested/removed jams, a post still arriving, and a repeat are out
-    }
 
-    @Test fun bylineNamesTheCoauthors() {
-        assertNull(JamModel.byline(emptyList()))
-        assertEquals("with Jean Chung", JamModel.byline(listOf("Jean Chung")))
-        assertEquals("with Jean Chung and Lee Wong", JamModel.byline(listOf("Jean Chung", "Lee Wong")))
-        assertEquals("with A, B and C", JamModel.byline(listOf("A", "B", "C")))
-    }
 
-    @Test fun anExcerptIsCutAtAWord() {
-        val long = jamPost("p", plain = "word ".repeat(100))
-        val cut = JamModel.excerpt(long, 50)
-        assertTrue(cut.endsWith("…") && cut.length <= 51 && !cut.dropLast(1).endsWith(" "))
-        assertEquals("A short post", JamModel.excerpt(jamPost("q")))
-        assertEquals("The subtitle", JamModel.excerpt(jamPost("r", kind = "article", subtitle = "The subtitle", plain = "Body text here")))
-    }
 
     // Editing my profile (iOS FieldEditorModel)
 
