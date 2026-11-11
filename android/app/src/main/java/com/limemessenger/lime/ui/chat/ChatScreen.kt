@@ -117,6 +117,9 @@ import com.limemessenger.lime.ui.common.Avatar
 import com.limemessenger.lime.ui.common.initialsOf
 import com.limemessenger.lime.ui.shell.Icons
 import com.limemessenger.lime.ui.theme.Lime
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -500,6 +503,19 @@ private fun Composer(model: ChatModel, chats: ChatsModel, seedPhotos: List<Outgo
     LaunchedEffect(composer, people, mentionEveryone) { androidx.compose.runtime.snapshotFlow { composer.doc to composer.textState.selection }.collect { composer.updateMentions(people, mentionEveryone) } }
     var barTop by remember { mutableStateOf(0f) }
     val statusTop = with(androidx.compose.ui.platform.LocalDensity.current) { androidx.compose.foundation.layout.WindowInsets.statusBars.getTop(this).toDp() }
+    // Expand and collapse (LIME-406 C): past five lines an icon in the card's corner grows the field to the room really there (the window under the header, above the keyboard).
+    var expanded by remember { mutableStateOf(false) }
+    var lineCount by remember { mutableStateOf(1) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val windowDp = with(density) { androidx.compose.ui.platform.LocalWindowInfo.current.containerSize.height.toDp().value }
+    val keyboardDp = with(density) { androidx.compose.foundation.layout.WindowInsets.ime.getBottom(this).toDp().value }
+    val topDp = with(density) { androidx.compose.foundation.layout.WindowInsets.statusBars.getTop(this).toDp().value }
+    val bottomDp = with(density) { androidx.compose.foundation.layout.WindowInsets.navigationBars.getBottom(this).toDp().value }
+    val lineDp = with(density) { 24.sp.toDp().value }
+    val stripUp = composer.stripShown
+    val capDp = minOf(lineDp * 5 + 24f, ComposerSizing.maxFieldHeight(windowDp, keyboardDp, topDp, bottomDp, stripUp, lineDp))
+    val expandedDp = ComposerSizing.expandedFieldHeight(windowDp, keyboardDp, topDp, bottomDp, stripUp, lineDp)
+    LaunchedEffect(composer.hasWords) { if (!composer.hasWords) expanded = false }
     LaunchedEffect(composer) { androidx.compose.runtime.snapshotFlow { composer.textState.selection }.collect { composer.selectionMoved() } }
     val drafts = remember {
         mutableStateListOf<DraftPhoto>().also { list -> seedPhotos.forEach { a -> AttachmentProcessing.decodeForDisplay(a.bytes, 320)?.let { list.add(DraftPhoto(a, it.asImageBitmap())) } } }
@@ -617,13 +633,15 @@ private fun Composer(model: ChatModel, chats: ChatsModel, seedPhotos: List<Outgo
             if (recorder.isRecording) RecordingBar(recorder, onSend = finishVoice, onCancel = { recorder.cancel() }, modifier = Modifier.fillMaxWidth()) else {
                 val hint = stringResource(R.string.chat_message_hint)
                 val output = remember(composer, colors) { composer.output(colors.link, colors.chip) }
+                Box(Modifier.fillMaxWidth()) {
                 androidx.compose.foundation.text.BasicTextField(
                     state = composer.textState, inputTransformation = composer.filter, outputTransformation = output,
-                    lineLimits = androidx.compose.foundation.text.input.TextFieldLineLimits.MultiLine(minHeightInLines = 1, maxHeightInLines = 5),
+                    lineLimits = if (expanded) androidx.compose.foundation.text.input.TextFieldLineLimits.MultiLine(minHeightInLines = 1) else androidx.compose.foundation.text.input.TextFieldLineLimits.MultiLine(minHeightInLines = 1, maxHeightInLines = 5),
+                    onTextLayout = { layout -> lineCount = layout()?.lineCount ?: 1 },
                     textStyle = androidx.compose.ui.text.TextStyle(color = colors.text, fontSize = 17.sp, lineHeight = 24.sp),
                     cursorBrush = androidx.compose.ui.graphics.SolidColor(colors.text),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).focusRequester(focusRequester).semantics { contentDescription = hint }
+                    modifier = Modifier.fillMaxWidth().then(if (expanded) Modifier.height(expandedDp.dp) else Modifier.heightIn(min = 48.dp, max = capDp.dp)).focusRequester(focusRequester).semantics { contentDescription = hint }
                         .onPreviewKeyEvent { e -> e.key == androidx.compose.ui.input.key.Key.Backspace && e.type == androidx.compose.ui.input.key.KeyEventType.KeyDown && composer.backspaceAtStart() }
                         .testTag("composer-field"),
                     decorator = { inner ->
@@ -633,6 +651,14 @@ private fun Composer(model: ChatModel, chats: ChatsModel, seedPhotos: List<Outgo
                         }
                     },
                 )
+                    if (lineCount > 5 || expanded) {
+                        val expandWords = stringResource(if (expanded) R.string.composer_collapse else R.string.composer_expand)
+                        Box(
+                            Modifier.align(Alignment.TopEnd).size(48.dp).semantics { contentDescription = expandWords; role = Role.Button }.clickable { expanded = !expanded }.testTag(if (expanded) "composer-collapse" else "composer-expand"),
+                            contentAlignment = Alignment.Center,
+                        ) { Icon(if (expanded) Icons.Collapse else Icons.Expand, null, tint = colors.text, modifier = Modifier.size(18.dp).graphicsLayer { scaleX = -1f }) }   // (mirrored left to right, as iOS 176c)
+                    }
+                }
             }
             // The tool row: + · face · keyboard on the left, then the one right control: send (lime) with words or a draft, else the microphone.
             if (recorder.phase != VoiceRecorder.Phase.Locked) Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {

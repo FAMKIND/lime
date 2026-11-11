@@ -44,6 +44,8 @@ object Icons {
     val ListNumber = glyph("ListNumber", "M2,17h2v0.5H3v1h1v0.5H2v1h3v-4H2v1zM3,8h1V4H2v1h1v3zM2,11h1.8L2,13.1v0.9h3v-1H3.2L5,10.9V10H2v1zM7,5v2h14V5H7zM7,19h14v-2H7v2zM7,13h14v-2H7v2z")
     val Outdent = glyph("Outdent", "M11,17h10v-2H11v2zM3,12l4,4V8l-4,4zM3,21h18v-2H3v2zM3,3v2h18V3H3zM11,9h10V7H11v2zM11,13h10v-2H11v2z")
     val Indent = glyph("Indent", "M3,21h18v-2H3v2zM3,8v8l4,-4 -4,-4zM11,17h10v-2H11v2zM3,3v2h18V3H3zM11,7v2h10V7H11zM11,13h10v-2H11v2z")
+    val Expand = glyph("Expand", "M21,11V3h-8l3.29,3.29 -10,10L3,13v8h8l-3.29,-3.29 10,-10z")
+    val Collapse = glyph("Collapse", "M22,3.41L16.71,8.7 20,12h-8V4l3.29,3.29L20.59,2 22,3.41zM3.41,22l5.29,-5.29L12,20v-8H4l3.29,3.29L2,20.59 3.41,22z")
     val Send = glyph("Send", "M4,12l1.41,1.41L11,7.83V20h2V7.83l5.58,5.59L20,12l-8,-8z")
 
     // iOS `xmark` (close, cancel a reply)

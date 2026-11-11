@@ -527,4 +527,6 @@
     <string name="mention_suggestions">Suggestions, %1$d people</string>
     <string name="mention_suggestions_one">Suggestions, 1 person</string>
     <string name="mention_everyone_spoken">Everyone, notify the group</string>
+    <string name="composer_expand">Expand message</string>
+    <string name="composer_collapse">Collapse message</string>
 </resources>

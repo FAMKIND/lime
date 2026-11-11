@@ -143,4 +143,26 @@ class ComposerUiTest {
         }
         assertEquals(card.width - 24f * rule.density.density, bounds("composer-field").width, 1.5f)
     }
+
+    // LIME-406 C
+    @Test fun anExpandIconAppearsPastFiveLinesAndGrowsTheFieldToTheRoomThereIsAndBack() {
+        show()
+        rule.waitUntil(5_000) { count("composer-field") > 0 }
+        rule.onNodeWithTag("composer-field").performTextInput("1\n2")
+        rule.waitForIdle()
+        assertEquals("no icon for a short message", 0, count("composer-expand"))
+        rule.onNodeWithTag("composer-field").performTextInput("\n3\n4\n5\n6\n7\n8")
+        rule.waitUntil(5_000) { count("composer-expand") > 0 }
+        val collapsed = bounds("composer-field").height
+        assertEquals("Expand message", rule.onNodeWithTag("composer-expand", useUnmergedTree = true).fetchSemanticsNode().config[SemanticsProperties.ContentDescription].joinToString())
+        rule.onNodeWithTag("composer-expand", useUnmergedTree = true).performClick()
+        rule.waitUntil(5_000) { count("composer-collapse") > 0 }
+        val grown = bounds("composer-field").height
+        assertTrue("the field grew ($collapsed to $grown)", grown > collapsed + 40f * rule.density.density)
+        // It never runs under the header: the card's top stays below it.
+        assertTrue("the card stays under the header", bounds("composer-card").top >= 56f * rule.density.density - 1f)
+        rule.onNodeWithTag("composer-collapse", useUnmergedTree = true).performClick()
+        rule.waitUntil(5_000) { count("composer-expand") > 0 }
+        assertEquals("back to five lines", collapsed, bounds("composer-field").height, 2f)
+    }
 }
