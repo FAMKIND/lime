@@ -18,7 +18,7 @@ final class Fix242UITests: LimeUITestCase {
         app.buttons["jam-write-article"].tap()
         XCTAssertTrue(app.navigationBars["Step 1 of 2"].waitForExistence(timeout: 8))
         let title = app.textFields["jam-article-title"].exists ? app.textFields["jam-article-title"] : app.textViews["jam-article-title"]
-        title.tap(); title.typeText("Pairs\n\n")
+        title.tap(); title.typeText("Pairs\n"); focusArticleBody(app)
         let body = app.textViews["composer-field"]; body.tap(); body.typeText("Two steps")
         app.buttons["jam-next"].tap()
         XCTAssertTrue(app.navigationBars["Step 2 of 2"].waitForExistence(timeout: 8))

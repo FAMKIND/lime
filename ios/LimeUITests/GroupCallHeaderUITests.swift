@@ -38,7 +38,11 @@ final class GroupCallHeaderUITests: XCTestCase {
         XCTAssertTrue(grid.waitForExistence(timeout: 5), "the people sheet starts with the layout")
         XCTAssertTrue(speaker.exists)
         XCTAssertEqual(grid.value as? String, "Selected", "4 people: Grid is the default, and it is checked")
-        XCTAssertLessThan(grid.frame.minY, app.staticTexts["People"].frame.minY, "the layout is above the people")
+        // The list below it is lazy and its "People" header is not on the screen yet at the sheet's first height (LIME-130-4b made it a Section), so the
+        // layout is checked where it must be: right under the sheet's title, as the first thing in it.
+        let title = app.navigationBars["Shem, Jean, Lee, Sam"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        XCTAssertLessThan(grid.frame.minY - title.frame.maxY, 120, "the layout is the first thing under the title")
         XCTAssertGreaterThanOrEqual(grid.frame.height, 44)
         speaker.tap()
         XCTAssertEqual(app.buttons["Layout: Speaker"].value as? String, "Selected", "the choice is checked at once")

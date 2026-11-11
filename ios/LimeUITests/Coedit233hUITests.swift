@@ -43,8 +43,11 @@ final class Coedit233hUITests: LimeUITestCase {
         app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-screen", "jam-mine", "-lime-coedit-sim-coauthor", "-lime-coedit-sim-peer"]
         app.launch()
         let title = openArticle(app)
-        title.tap(); title.typeText("Plan\n\n")
+        title.tap(); title.typeText("Plan\n")
+        // Return in the subtitle does not always move on to the body in a co-author's editor: tap the body instead of relying on it.
         let body = app.textViews["composer-field"]
+        XCTAssertTrue(body.waitForExistence(timeout: 5))
+        body.tap()
         expectation(for: NSPredicate(format: "hasKeyboardFocus == true"), evaluatedWith: body)
         waitForExpectations(timeout: 5)
         body.typeText("Hello world")

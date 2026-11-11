@@ -23,7 +23,7 @@ final class Jam188jUITests: LimeUITestCase {
             XCTAssertTrue(match.waitForExistence(timeout: 3), item)
         }
         XCTAssertFalse(app.buttons["Copy link"].exists)
-        XCTAssertFalse(app.buttons["Report"].exists)
+        XCTAssertTrue(app.buttons["Report"].exists, "Report is in a post\u{2019}s menu since f86faa9 (this test once asserted it was not)")
         app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.55)).tap()   // closes the menu (away from its items)
         let text = app.buttons["jam-video-text"]
         XCTAssertTrue(text.waitForExistence(timeout: 5))

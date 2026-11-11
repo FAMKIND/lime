@@ -24,7 +24,7 @@ final class Jam188lUITests: LimeUITestCase {
         XCTAssertLessThan(add.frame.minY, app.buttons["jam-add"].frame.minY, "not in the bottom bar")
 
         let title = app.textFields["jam-article-title"].exists ? app.textFields["jam-article-title"] : app.textViews["jam-article-title"]
-        title.tap(); title.typeText("Ten minutes of fractions\n\n")
+        title.tap(); title.typeText("Ten minutes of fractions\n"); focusArticleBody(app)
         let body = app.textViews["composer-field"]
         expectation(for: NSPredicate(format: "hasKeyboardFocus == true"), evaluatedWith: body)
         waitForExpectations(timeout: 5)

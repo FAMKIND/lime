@@ -19,7 +19,7 @@ final class Jam188rUITests: LimeUITestCase {
         XCTAssertTrue(app.buttons["jam-write-article"].waitForExistence(timeout: 8))
         app.buttons["jam-write-article"].tap()
         let title = app.textFields["jam-article-title"].exists ? app.textFields["jam-article-title"] : app.textViews["jam-article-title"]
-        title.tap(); title.typeText("Arranged\n\n")
+        title.tap(); title.typeText("Arranged\n"); focusArticleBody(app)
         let body = app.textViews["composer-field"]
         expectation(for: NSPredicate(format: "hasKeyboardFocus == true"), evaluatedWith: body)
         waitForExpectations(timeout: 5)

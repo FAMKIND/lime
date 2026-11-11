@@ -76,6 +76,9 @@ final class OnboardingModelTests: XCTestCase {
         XCTAssertEqual(model.errorMessage, "That code isn't right. 4 tries left.")
         model.code = FakeAuthService.code
         await model.submitCode()
+        // A new account agrees to the terms before it chooses a password (LIME-283 added the step after these tests were written).
+        XCTAssertEqual(model.step, .terms)
+        model.agreeToTerms()
         XCTAssertEqual(model.step, .password)
 
         // The password: 10 characters at least, and both fields must match.
@@ -132,7 +135,7 @@ final class OnboardingModelTests: XCTestCase {
         XCTAssertNotNil(model.errorMessage)
         model.code = FakeAuthService.code
         await model.submitCode()
-        XCTAssertEqual(model.step, .password)
+        XCTAssertEqual(model.step, .terms)
         XCTAssertNil(model.errorMessage, "an error never follows the person to the next screen")
     }
 
