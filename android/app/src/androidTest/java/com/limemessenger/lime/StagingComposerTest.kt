@@ -62,6 +62,7 @@ class StagingComposerTest {
         val benId = JSONObject(pushed.readText()).getJSONObject("accounts").getJSONObject("b").getString("user_id")
         val secrets = SecureBlobStore(File(dir, "secrets"), KeyWrapper(KeystoreKey.getOrCreate(alias)))
         val session = AccountSession(LiveAuthService(HttpTransport(backend!!.url, backend.apiKey)), backend, StorageBootstrap(File(dir, "data"), secrets), secrets)
+        (context.applicationContext as LimeApp).linkPreviewPrefs.change(false)   // LIME-407: this test sends a real-looking link; no fetch
         rule.setContent { LimeTheme { Root(session) } }
         rule.waitUntil(15_000) { count("use-test-account") > 0 }
         rule.onNodeWithTag("use-test-account").performClick()

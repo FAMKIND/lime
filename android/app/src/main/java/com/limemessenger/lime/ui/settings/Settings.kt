@@ -100,7 +100,7 @@ fun SettingsScreen(session: AccountSession, onClose: () -> Unit, chats: com.lime
         "notifications" -> if (app != null) { NotificationsScreen(chats, app.notificationPrefs, onBack = { route = "" }); return }
         "storage" -> if (app != null && chats != null) { StorageScreen(chats, app.mediaPrefs, onBack = { route = "" }); return }
         "appearance" -> if (app != null) { AppearanceScreen(app.themePrefs, onBack = { route = "" }); return }
-        "privacy" -> if (app != null) { PrivacyScreen(app.appLock, onBack = { route = "" }); return }
+        "privacy" -> if (app != null) { PrivacyScreen(app.appLock, onBack = { route = "" }, linkPreviews = app.linkPreviewPrefs); return }
         "blocked" -> if (chats != null) { com.limemessenger.lime.ui.moderation.BlockedScreen(chats, onBack = { route = "" }); return }
     }
 

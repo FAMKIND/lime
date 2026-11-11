@@ -304,7 +304,14 @@ fun main(args: Array<String>) {
                         val words = messagePlainText(m.text).replace("\n", " ").take(40)
                         println("markdown: " + m.text.replace("\n", "\\n"))   // what arrived, exactly (LIME-405 compares it with what Android sent)
                         val photos = m.attachments.filter { it.mime.startsWith("image/") }
-                        if (photos.isNotEmpty()) {
+                        val card = m.linkPreview
+                        if (card != null) {
+                            // LIME-407: say exactly what card arrived (the picture downloaded and decrypted) and answer with a card of our own.
+                            val bytes = card.image?.let { img -> store.downloadAttachment(http, freshToken(http, tokens), img.id); store.attachmentData(img.id)?.size ?: -1 } ?: 0
+                            println("preview: ${card.url}|${card.title}|${card.site}|$bytes bytes")
+                            val pic = generatedPhoto()
+                            store.queueTextWithPreview(dm, "$personaName here: a card for you https://example.org/from-ben", null, uniffi.lime_core.OutgoingPreview("https://example.org/from-ben", "Ben's lesson page", "example.org", pic.bytes, 480u, 300u))
+                        } else if (photos.isNotEmpty()) {
                             // Prove the photo arrived whole: download it, decrypt it, and report how big it came out.
                             val sizes = photos.map { p -> store.downloadAttachment(http, freshToken(http, tokens), p.id); store.attachmentData(p.id)?.size ?: -1 }
                             store.queueText(dm, "$personaName here: got ${photos.size} photo${if (photos.size == 1) "" else "s"} (${sizes.joinToString { "$it bytes" }})" + (if (words.isNotEmpty()) " and \"$words\"" else ""))

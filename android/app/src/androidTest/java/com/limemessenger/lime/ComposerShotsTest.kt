@@ -15,6 +15,10 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.up
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.limemessenger.lime.chats.ChatModel
@@ -81,6 +85,14 @@ class ComposerShotsTest {
         val bitmap = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
         File(shots, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
+    private fun cardJpeg(): ByteArray {
+        val b = Bitmap.createBitmap(640, 336, Bitmap.Config.ARGB_8888)
+        android.graphics.Canvas(b).also { c -> c.drawColor(0xFFE4F9BE.toInt()); c.drawCircle(320f, 168f, 110f, android.graphics.Paint().apply { color = 0xFF09A950.toInt() }) }
+        return ByteArrayOutputStream().also { b.compress(Bitmap.CompressFormat.JPEG, 85, it) }.toByteArray()
+    }
+    private val fakeFetcher = object : com.limemessenger.lime.chats.LinkPreviewFetcher() {
+        override suspend fun make(address: String) = uniffi.lime_core.OutgoingPreview(address, "Fractions made visible: a lesson plan for grade 4", "Example Schools", cardJpeg(), 640u, 336u)
+    }
     private fun photo(): OutgoingAttachment {
         val bitmap = Bitmap.createBitmap(240, 160, Bitmap.Config.ARGB_8888).also { b -> android.graphics.Canvas(b).drawColor(0xFF9AD4A8.toInt()) }
         val out = ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it) }.toByteArray()
@@ -88,7 +100,7 @@ class ComposerShotsTest {
     }
     private fun show(fontScale: Float = 1f, dark: Boolean = false, photos: List<OutgoingAttachment> = emptyList(), model: ChatModel = chat, edit: uniffi.lime_core.MessageItem? = null) = rule.setContent {
         val d = LocalDensity.current
-        CompositionLocalProvider(LocalDensity provides Density(d.density, fontScale), LocalVoiceCapture provides { FakeMic() }) {
+        CompositionLocalProvider(LocalDensity provides Density(d.density, fontScale), LocalVoiceCapture provides { FakeMic() }, com.limemessenger.lime.ui.chat.LocalLinkPreviewFetcher provides fakeFetcher) {
             LimeTheme(dark = dark) { ChatScreen(model, chats, onBack = {}, seedPhotos = photos, seedEdit = edit) }
         }
         androidx.compose.runtime.LaunchedEffect(Unit) { model.reload() }
@@ -216,5 +228,40 @@ class ComposerShotsTest {
         show(fontScale = 2f, dark = true); ready(chat); type("/thank")
         rule.waitUntil(5_000) { rule.onAllNodes(hasTestTag("gif-slash-strip"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
         shot("17b-slash-font-2-dark")
+    }
+
+    // LIME-407
+    private val cardNode = androidx.compose.ui.test.SemanticsMatcher("a link card") { n -> androidx.compose.ui.semantics.SemanticsProperties.TestTag in n.config && n.config[androidx.compose.ui.semantics.SemanticsProperties.TestTag].startsWith("link-card-") }
+    @Test fun linkDraft() { show(); ready(); type("have a look https://example.org/fractions"); rule.waitUntil(8_000) { rule.onAllNodes(hasTestTag("link-draft"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }; shot("14-link-draft") }
+    @Test fun linkDraftDarkLargestFont() { show(fontScale = 2f, dark = true); ready(); type("https://example.org/fractions"); rule.waitUntil(8_000) { rule.onAllNodes(hasTestTag("link-draft"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }; shot("14b-link-draft-dark-font-2") }
+    /** The card as drawn in a message (the unsigned local store cannot hold a message with a card; the real chat shot comes from StagingLinkPreviewTest). */
+    private fun bubbleHarness(dark: Boolean, fontScale: Float, name: String) {
+        val chat0 = chat
+        rule.setContent {
+            val d = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(d.density, fontScale)) {
+                LimeTheme(dark = dark) {
+                    androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize().background(com.limemessenger.lime.ui.theme.Lime.colors.canvas).padding(16.dp)) {
+                        androidx.compose.foundation.layout.Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                            androidx.compose.material3.Text("have a look https://example.org/fractions", color = com.limemessenger.lime.ui.theme.Lime.colors.text)
+                            com.limemessenger.lime.ui.chat.LinkCard("x", uniffi.lime_core.LinkPreview("https://example.org/fractions", "Fractions made visible: a lesson plan for grade 4", "Example Schools", null), false, chat0)
+                        }
+                    }
+                }
+            }
+        }
+        shot(name)
+    }
+    @Test fun linkBubbleDark() = bubbleHarness(true, 1f, "15b-link-card-dark")
+    @Test fun linkBubbleLargestFont() = bubbleHarness(false, 2f, "15c-link-card-font-2")
+    @Test fun privacyRow() {
+        val prefs = com.limemessenger.lime.chats.LinkPreviewPrefs(context.getSharedPreferences("lime.shots.linkpreviews", android.content.Context.MODE_PRIVATE)).also { it.change(true) }
+        rule.setContent { LimeTheme { com.limemessenger.lime.ui.settings.PrivacyScreen(com.limemessenger.lime.security.AppLock(context.getSharedPreferences("lime.shots.lock", android.content.Context.MODE_PRIVATE)), onBack = {}, linkPreviews = prefs) } }
+        shot("16-privacy-row")
+    }
+    @Test fun privacyRowDarkLargestFont() {
+        val prefs = com.limemessenger.lime.chats.LinkPreviewPrefs(context.getSharedPreferences("lime.shots.linkpreviews", android.content.Context.MODE_PRIVATE)).also { it.change(true) }
+        rule.setContent { val d = LocalDensity.current; CompositionLocalProvider(LocalDensity provides Density(d.density, 2f)) { LimeTheme(dark = true) { com.limemessenger.lime.ui.settings.PrivacyScreen(com.limemessenger.lime.security.AppLock(context.getSharedPreferences("lime.shots.lock", android.content.Context.MODE_PRIVATE)), onBack = {}, linkPreviews = prefs) } } }
+        shot("16b-privacy-row-dark-font-2")
     }
 }

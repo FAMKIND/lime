@@ -25,6 +25,8 @@ class LimeApp : Application() {
     val themePrefs: com.limemessenger.lime.chats.ThemePrefs by lazy { com.limemessenger.lime.chats.ThemePrefs(getSharedPreferences("lime.theme", MODE_PRIVATE)) }
     val mediaPrefs: com.limemessenger.lime.chats.MediaPrefs by lazy { com.limemessenger.lime.chats.MediaPrefs(getSharedPreferences("lime.media", MODE_PRIVATE)) }
 
+    val linkPreviewPrefs: com.limemessenger.lime.chats.LinkPreviewPrefs by lazy { com.limemessenger.lime.chats.LinkPreviewPrefs(getSharedPreferences("lime.linkpreviews", MODE_PRIVATE)) }
+
     val backend: BackendConfig? get() = BackendConfig.current
     val transport: HttpTransport? by lazy { backend?.let { HttpTransport(it.url, it.apiKey) } }
 

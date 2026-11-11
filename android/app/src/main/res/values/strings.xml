@@ -531,4 +531,11 @@
     <string name="composer_collapse">Collapse message</string>
     <string name="gif_slash_none">No saved GIFs yet. Save GIFs from chats or add them with the GIF button.</string>
     <string name="gif_slash_none_for">No GIFs for \u2018%1$s\u2019. Save GIFs from chats or add them with the GIF button.</string>
+    <string name="privacy_link_previews">Generate link previews</string>
+    <string name="privacy_link_previews_note">When you write a link, lime opens it from this phone to make a card with its title and picture, which goes to the other person inside the encrypted message. The site can see this phone\u2019s address. Nobody else can: lime\u2019s server never sees the link, and the people who read your message never visit it.</string>
+    <string name="link_card_label">Link: %1$s, %2$s</string>
+    <string name="link_draft_remove">Remove link preview</string>
+    <string name="link_open_title">Open this link?</string>
+    <string name="link_open_body">It does not use a secure connection:\n%1$s</string>
+    <string name="link_open">Open</string>
 </resources>

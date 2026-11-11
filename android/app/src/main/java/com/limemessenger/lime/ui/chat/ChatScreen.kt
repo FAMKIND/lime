@@ -242,7 +242,7 @@ fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenTh
         model.banner?.let { Text(it, color = colors.danger, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).testTag("chat-banner")) }
         if (summary != null && summary.isRequest) RequestBar(summary.title, onBlock = { blocking = true }) { scope.launch { chats.acceptRequest(summary.id) } }
         else if (summary?.groupEnded != null) EndedBar(summary.groupEnded == "left") { scope.launch { chats.removeChat(summary.id); onBack() } }
-        else if (selection == null) Composer(model, chats, seedPhotos, editing = editing, onEdited = { editing = null }, onSaveEdit = { item, text -> scope.launch { model.edit(item, text) } }, panelOpen = gifPanel, onGif = { gifPanel = true }) { text, photos -> scope.launch { if (photos.isNotEmpty()) model.sendPhotos(photos, text) else model.send(text) } }
+        else if (selection == null) Composer(model, chats, seedPhotos, editing = editing, onEdited = { editing = null }, onSaveEdit = { item, text -> scope.launch { model.edit(item, text) } }, panelOpen = gifPanel, onGif = { gifPanel = true }) { text, photos, preview -> scope.launch { if (photos.isNotEmpty()) model.sendPhotos(photos, text) else if (preview != null) model.sendWithPreview(text, preview) else model.send(text) } }
     }
     viewer?.let { (item, index) -> PhotoViewer(item.attachments.filter { it.mime.startsWith("image/") }, index, model, onClose = { viewer = null }) }
     menuFor?.let { item ->
@@ -412,6 +412,7 @@ private fun MessageBubble(
                         } else {
                             photos.forEachIndexed { index, photo -> PhotoThumb(photo, model) { onOpenPhoto(index) } }
                             if (item.text.isNotEmpty()) MessageText(item.text, color = if (own) colors.ownInk else colors.text, linkColor = if (own) colors.linkOwn else colors.link, modifier = Modifier.testTag("message-text-${item.id}"))
+                            item.linkPreview?.let { card -> LinkCard(item.id, card, own, model) }
                             item.attachments.filter { !it.mime.startsWith("image/") }.forEach { a ->
                                 val ink = if (own) colors.ownInk else colors.text
                                 if (a.mime.startsWith("audio/")) com.limemessenger.lime.ui.chat.VoiceCard(a, voice, voiceNext, voiceData, ink)
@@ -475,7 +476,7 @@ private class DraftPhoto(var attachment: OutgoingAttachment, val preview: ImageB
 
 /** The composer: plain text, photos from the system Photo Picker, a reply bar when replying, and send = the one lime action. */
 @Composable
-private fun Composer(model: ChatModel, chats: ChatsModel, seedPhotos: List<OutgoingAttachment>, editing: MessageItem?, onEdited: () -> Unit, onSaveEdit: (MessageItem, String) -> Unit, panelOpen: Boolean, onGif: () -> Unit, onSend: (String, List<OutgoingAttachment>) -> Unit) {
+private fun Composer(model: ChatModel, chats: ChatsModel, seedPhotos: List<OutgoingAttachment>, editing: MessageItem?, onEdited: () -> Unit, onSaveEdit: (MessageItem, String) -> Unit, panelOpen: Boolean, onGif: () -> Unit, onSend: (String, List<OutgoingAttachment>, uniffi.lime_core.OutgoingPreview?) -> Unit) {
     val colors = Lime.colors
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -570,6 +571,24 @@ private fun Composer(model: ChatModel, chats: ChatsModel, seedPhotos: List<Outgo
     val keyboardUp = androidx.compose.foundation.layout.WindowInsets.isImeVisible
     var attaching by remember { mutableStateOf(false) }
     val canSend = if (editing != null) (composer.hasWords || editing.attachments.isNotEmpty()) else (composer.hasWords || drafts.isNotEmpty())
+    // Link previews (LIME-407): 700 ms after the text stops changing, if it holds a web address (typed, or put on words with the Link button), this phone makes a card from it, unless the
+    // setting is off, a photo is in the draft, or the message is being edited. A new change of the text cancels the wait or the fetch (the effect restarts).
+    val linkPrefs = remember { (context.applicationContext as? com.limemessenger.lime.LimeApp)?.linkPreviewPrefs }
+    val fetcher = LocalLinkPreviewFetcher.current
+    var previewDraft by remember { mutableStateOf<uniffi.lime_core.OutgoingPreview?>(null) }
+    var dismissedPreview by remember { mutableStateOf<String?>(null) }
+    val wordsNow = composer.textState.text.toString()
+    val linkedAddress = composer.doc.runs.firstOrNull { it.link != null && !it.link!!.startsWith("mention:") }?.link
+    val previewsOn = linkPrefs?.enabled ?: true
+    LaunchedEffect(wordsNow, linkedAddress, previewsOn, drafts.isEmpty(), editing == null) {
+        val address = if (!previewsOn || drafts.isNotEmpty() || editing != null) null else (linkedAddress ?: uniffi.lime_core.linkPreviewFirstUrl(wordsNow))
+        val target = address?.let { uniffi.lime_core.linkPreviewTarget(it) }
+        if (target == null) { previewDraft = null; if (address == null) dismissedPreview = null; return@LaunchedEffect }
+        if (target == dismissedPreview || previewDraft?.url == target) return@LaunchedEffect
+        previewDraft = null
+        kotlinx.coroutines.delay(uniffi.lime_core.linkPreviewLimits().debounceMs.toLong())
+        previewDraft = fetcher.make(address)
+    }
     val cardShape = RoundedCornerShape(26.dp)
     // The lime pattern (iOS `ChatComposer`): ONE rounded card, the text on top at the card's full width, one tool row under it. Adding a tool never changes the field's size.
     Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 4.dp).onGloballyPositioned { barTop = it.positionInWindow().y }.testTag("composer-bar")) {
@@ -629,6 +648,7 @@ private fun Composer(model: ChatModel, chats: ChatsModel, seedPhotos: List<Outgo
                 }
             }
             problem?.let { Text(it, color = colors.danger, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp).testTag("photo-problem")) }
+            previewDraft?.let { card -> LinkDraftCard(card, onRemove = { dismissedPreview = card.url; previewDraft = null }) }
             // "/" and words: the GIFs and stickers that match, above the field (LIME-406 D). A tap sends it and clears the field.
             if (editing == null && !recorder.isRecording && composer.textState.text.startsWith("/")) {
                 GifSlashStrip(chats, composer.textState.text.toString().drop(1).trim(), onPick = { gif -> composer.clear(); scope.launch { model.sendPhotos(listOf(gif), "", "GIF") } })
@@ -683,7 +703,7 @@ private fun Composer(model: ChatModel, chats: ChatsModel, seedPhotos: List<Outgo
                 Spacer(Modifier.weight(1f))
                 val sendLabel = stringResource(if (editing != null) R.string.composer_save else R.string.chat_send)
                 if (canSend && !recorder.isRecording) {
-                    Box(Modifier.size(48.dp).semantics { contentDescription = sendLabel; role = Role.Button }.clickable { if (editing != null) { onSaveEdit(editing, composer.markdown()); finishEdit() } else { onSend(composer.markdown(), drafts.map { it.attachment }); composer.clear(); drafts.clear() } }.testTag("send-button"), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(48.dp).semantics { contentDescription = sendLabel; role = Role.Button }.clickable { if (editing != null) { onSaveEdit(editing, composer.markdown()); finishEdit() } else { onSend(composer.markdown(), drafts.map { it.attachment }, previewDraft); previewDraft = null; dismissedPreview = null; composer.clear(); drafts.clear() } }.testTag("send-button"), contentAlignment = Alignment.Center) {
                         Box(Modifier.size(36.dp).background(colors.accent, CircleShape), contentAlignment = Alignment.Center) { Icon(Icons.Send, contentDescription = null, tint = colors.accentInk, modifier = Modifier.size(20.dp)) }
                     }
                 } else if (editing == null) {

@@ -342,7 +342,7 @@ private fun ValueRow(title: String, value: String, tag: String) {
 
 /** Privacy: Lock lime (off by default) and how long lime may be away before it asks again (iOS's Privacy screen). */
 @Composable
-fun PrivacyScreen(lock: AppLock, onBack: () -> Unit) {
+fun PrivacyScreen(lock: AppLock, onBack: () -> Unit, linkPreviews: com.limemessenger.lime.chats.LinkPreviewPrefs? = null) {
     val scope = rememberCoroutineScope()
     var cannot by remember { mutableStateOf(false) }
     SettingsPage(stringResource(R.string.privacy_title), onBack, "privacy-screen") {
@@ -358,6 +358,11 @@ fun PrivacyScreen(lock: AppLock, onBack: () -> Unit) {
         if (cannot) Text(stringResource(R.string.privacy_lock_unavailable), color = Lime.colors.danger, fontSize = 15.sp, modifier = Modifier.testTag("privacy-lock-unavailable"))
         Footnote(stringResource(R.string.privacy_lock_note), "privacy-lock-note")
         Footnote(stringResource(R.string.privacy_e2ee))
+        // Link previews (LIME-407, iOS "Generate link previews"): on by default, as iOS. Off: no page is visited and no card is made.
+        if (linkPreviews != null) {
+            SettingsCardColumn { ToggleRow(stringResource(R.string.privacy_link_previews), linkPreviews.enabled, "privacy-link-previews") { linkPreviews.change(it) } }
+            Footnote(stringResource(R.string.privacy_link_previews_note), "privacy-link-previews-note")
+        }
     }
 }
 

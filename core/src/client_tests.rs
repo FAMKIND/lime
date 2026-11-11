@@ -9,6 +9,8 @@ use crate::store::LimeStore;
 use crate::testing::FakeServer;
 use crate::transport::Transport;
 
+mod link_preview_sealed;
+
 struct Party {
     store: Arc<LimeStore>,
     user: String,

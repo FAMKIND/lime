@@ -100,6 +100,30 @@ class ChatModel(
     /** Tests: sees what the composer hands over instead of the core queueing it (a test store has no account to send from); true = taken. */
     var outgoingHook: ((List<OutgoingAttachment>, String) -> Boolean)? = null
 
+    /** A message with a link card (LIME-407): the card (built on this phone) goes sealed inside the message through the core's `queue_text_with_preview`, never as a separate upload or request. */
+    var previewHook: ((String, uniffi.lime_core.OutgoingPreview) -> Boolean)? = null   // tests: what would be queued
+
+    suspend fun sendWithPreview(text: String, preview: uniffi.lime_core.OutgoingPreview) {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return
+        if (previewHook?.invoke(trimmed, preview) == true) return
+        val core = chats.core() ?: return
+        val root = replyingTo?.id
+        val queued = try {
+            withContext(Dispatchers.IO) { core.queueTextWithPreview(conversationId, trimmed, root, preview) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            banner = "Couldn’t queue the message. Try again." + (if (BuildConfig.DEBUG) " (${e::class.simpleName})" else "")
+            return
+        }
+        replyingTo = null
+        banner = null
+        if (root == null) messages = messages + queued
+        chats.deliverNow()
+        reload()
+    }
+
     suspend fun sendPhotos(items: List<OutgoingAttachment>, caption: String, what: String = "photo") {
         if (items.isEmpty()) return
         if (outgoingHook?.invoke(items, caption) == true) return
