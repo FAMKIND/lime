@@ -49,6 +49,7 @@ pub(crate) mod arrival_rules;
 pub(crate) mod jam_rules;
 pub(crate) mod moderation_rules;
 pub(crate) mod gif_rules;
+pub(crate) mod composer_rules;
 pub(crate) mod jam;
 mod handover;
 pub(crate) mod open;

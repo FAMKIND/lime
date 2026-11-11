@@ -197,7 +197,7 @@ pub fn report_group_payload(
     let chosen: Vec<&ReportGroupMessage> = messages.iter().filter(|m| ticked.contains(&m.id)).collect();
     let mut limit = 2_000usize;
     let mut trimmed = false;
-    let mut included = String::new();
+    let mut included: String;
     loop {
         let rows: Vec<Value> = chosen
             .iter()
