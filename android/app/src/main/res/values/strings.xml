@@ -87,7 +87,7 @@
     <string name="chat_title_placeholder">Chat</string>
 
     <!-- A chat (iOS ChatView.swift) -->
-    <string name="chat_message_hint">Message</string>
+    <string name="chat_message_hint">Send message\u2026</string>
     <string name="chat_send">Send</string>
     <string name="chat_replying_to">Replying to %1$s</string>
     <string name="chat_cancel_reply">Cancel reply</string>
@@ -499,4 +499,9 @@
     <string name="storage_my_gifs">My GIFs</string>
     <string name="storage_clear_gifs">Clear My GIFs</string>
     <string name="storage_clear_gifs_body">Your saved GIFs are removed from this phone. GIFs already sent stay in their chats.</string>
+    <string name="composer_plus">Add attachment</string>
+    <string name="composer_emoji">Emoji, GIFs and stickers</string>
+    <string name="composer_show_keyboard">Show keyboard</string>
+    <string name="composer_hide_keyboard">Hide keyboard</string>
+    <string name="composer_send_voice_hint">Voice message</string>
 </resources>

@@ -117,6 +117,11 @@ import com.limemessenger.lime.ui.common.Avatar
 import com.limemessenger.lime.ui.common.initialsOf
 import com.limemessenger.lime.ui.shell.Icons
 import com.limemessenger.lime.ui.theme.Lime
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import kotlinx.coroutines.launch
 import uniffi.lime_core.ConversationSummary
 import uniffi.lime_core.MessageItem
@@ -124,7 +129,9 @@ import uniffi.lime_core.messagePlainText
 
 /** A chat (iOS's `ChatView`): the header, the messages, and the composer (or Accept for a stranger's first message). The system back gesture closes it. */
 @Composable
-fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenThread: (MessageItem) -> Unit = {}, modifier: Modifier = Modifier, onOpenProfile: (String, String) -> Unit = { _, _ -> }, onOpenGroup: () -> Unit = {}, focusMessageId: String? = null) {
+fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenThread: (MessageItem) -> Unit = {}, modifier: Modifier = Modifier, onOpenProfile: (String, String) -> Unit = { _, _ -> }, onOpenGroup: () -> Unit = {}, focusMessageId: String? = null,
+    /** Photos already in the composer's draft strip (screenshots and tests: the Photo Picker cannot be driven headless). */
+    seedPhotos: List<OutgoingAttachment> = emptyList()) {
     val colors = Lime.colors
     val scope = rememberCoroutineScope()
     val summary = model.summary
@@ -224,7 +231,7 @@ fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenTh
         model.banner?.let { Text(it, color = colors.danger, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).testTag("chat-banner")) }
         if (summary != null && summary.isRequest) RequestBar(summary.title, onBlock = { blocking = true }) { scope.launch { chats.acceptRequest(summary.id) } }
         else if (summary?.groupEnded != null) EndedBar(summary.groupEnded == "left") { scope.launch { chats.removeChat(summary.id); onBack() } }
-        else if (selection == null) Composer(model, onGif = { gifPanel = true }) { text, photos -> scope.launch { if (photos.isNotEmpty()) model.sendPhotos(photos, text) else model.send(text) } }
+        else if (selection == null) Composer(model, seedPhotos, panelOpen = gifPanel, onGif = { gifPanel = true }) { text, photos -> scope.launch { if (photos.isNotEmpty()) model.sendPhotos(photos, text) else model.send(text) } }
     }
     viewer?.let { (item, index) -> PhotoViewer(item.attachments.filter { it.mime.startsWith("image/") }, index, model, onClose = { viewer = null }) }
     menuFor?.let { item ->
@@ -461,12 +468,14 @@ private class DraftPhoto(var attachment: OutgoingAttachment, val preview: ImageB
 
 /** The composer: plain text, photos from the system Photo Picker, a reply bar when replying, and send = the one lime action. */
 @Composable
-private fun Composer(model: ChatModel, onGif: () -> Unit, onSend: (String, List<OutgoingAttachment>) -> Unit) {
+private fun Composer(model: ChatModel, seedPhotos: List<OutgoingAttachment>, panelOpen: Boolean, onGif: () -> Unit, onSend: (String, List<OutgoingAttachment>) -> Unit) {
     val colors = Lime.colors
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var text by rememberSaveable { mutableStateOf("") }
-    val drafts = remember { mutableStateListOf<DraftPhoto>() }
+    val drafts = remember {
+        mutableStateListOf<DraftPhoto>().also { list -> seedPhotos.forEach { a -> AttachmentProcessing.decodeForDisplay(a.bytes, 320)?.let { list.add(DraftPhoto(a, it.asImageBitmap())) } } }
+    }
     var describing by remember { mutableStateOf<DraftPhoto?>(null) }
     var problem by remember { mutableStateOf<String?>(null) }
     val tooLarge = stringResource(R.string.photo_too_large)
@@ -510,89 +519,113 @@ private fun Composer(model: ChatModel, onGif: () -> Unit, onSend: (String, List<
         }
     }
     val reply = model.replyingTo
-    Column(Modifier.fillMaxWidth().background(colors.canvas).padding(horizontal = 8.dp, vertical = 6.dp)) {
-        if (reply != null) {
-            val name = model.summary?.members?.firstOrNull { it.id == reply.senderId }?.name?.split(" ")?.firstOrNull() ?: "you"
-            Row(Modifier.fillMaxWidth().background(colors.surface, RoundedCornerShape(12.dp)).padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
-                    Text(stringResource(R.string.chat_replying_to, name), color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.testTag("reply-bar"))
-                    Text(messagePlainText(reply.text).replace("\n", " ").ifEmpty { AttachmentFormat.summary(reply.attachments).orEmpty() }, color = colors.textSecondary, fontSize = 13.sp, maxLines = 1)
-                }
-                IconButton(onClick = { model.replyingTo = null }, Modifier.size(48.dp).testTag("reply-cancel")) {
-                    Icon(Icons.Close, contentDescription = stringResource(R.string.chat_cancel_reply), tint = colors.text)
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val focus = androidx.compose.ui.platform.LocalFocusManager.current
+    val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
+    @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+    val keyboardUp = androidx.compose.foundation.layout.WindowInsets.isImeVisible
+    var attaching by remember { mutableStateOf(false) }
+    val canSend = text.isNotBlank() || drafts.isNotEmpty()
+    val cardShape = RoundedCornerShape(26.dp)
+    // The lime pattern (iOS `ChatComposer`): ONE rounded card, the text on top at the card's full width, one tool row under it. Adding a tool never changes the field's size.
+    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 4.dp).testTag("composer-bar")) {
+        Column(
+            Modifier.fillMaxWidth().shadow(6.dp, cardShape, clip = false, ambientColor = Color.Black.copy(alpha = 0.12f), spotColor = Color.Black.copy(alpha = 0.12f))
+                .background(colors.surface, cardShape).border(1.dp, colors.hairline, cardShape).testTag("composer-card").padding(horizontal = 12.dp).padding(top = 2.dp, bottom = 4.dp),
+        ) {
+            if (reply != null) {
+                val name = model.summary?.members?.firstOrNull { it.id == reply.senderId }?.name?.split(" ")?.firstOrNull() ?: "you"
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp).background(colors.chip, RoundedCornerShape(12.dp)).padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
+                        Text(stringResource(R.string.chat_replying_to, name), color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.testTag("reply-bar"))
+                        Text(messagePlainText(reply.text).replace("\n", " ").ifEmpty { AttachmentFormat.summary(reply.attachments).orEmpty() }, color = colors.textSecondary, fontSize = 13.sp, maxLines = 1)
+                    }
+                    IconButton(onClick = { model.replyingTo = null }, Modifier.size(48.dp).testTag("reply-cancel")) {
+                        Icon(Icons.Close, contentDescription = stringResource(R.string.chat_cancel_reply), tint = colors.text)
+                    }
                 }
             }
-            Spacer(Modifier.size(6.dp))
-        }
-        if (drafts.isNotEmpty()) {
-            LazyRow(Modifier.fillMaxWidth().testTag("draft-photos"), horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 4.dp)) {
-                items(drafts.toList()) { draft ->
-                    val photo = stringResource(R.string.photo_label)
-                    val described = draft.attachment.alt.isNotEmpty()
-                    Box(Modifier.size(88.dp).semantics { contentDescription = if (described) "$photo, ${draft.attachment.alt}" else photo }) {
-                        Image(draft.preview, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)))
-                        // Alt: describe it for people who cannot see it (a 48 dp target, as iOS's "+ Alt" chip).
-                        Box(
-                            Modifier.align(Alignment.BottomStart).heightIn(min = 48.dp).widthIn(min = 48.dp)
-                                .semantics { role = Role.Button; contentDescription = if (described) "Edit description" else "Add description" }
-                                .clickable { describing = draft }.testTag("draft-describe"),
-                            contentAlignment = Alignment.BottomStart,
-                        ) {
-                            Text(
-                                if (described) stringResource(R.string.photo_alt_chip) else stringResource(R.string.photo_alt_chip_add), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(4.dp).background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
-                            )
-                        }
-                        IconButton(onClick = { drafts.remove(draft) }, Modifier.align(Alignment.TopEnd).size(48.dp).testTag("draft-remove")) {
-                            Icon(Icons.Close, contentDescription = stringResource(R.string.photo_remove), tint = Color.White, modifier = Modifier.background(Color.Black.copy(alpha = 0.6f), CircleShape).padding(4.dp))
+            if (drafts.isNotEmpty()) {
+                LazyRow(Modifier.fillMaxWidth().testTag("draft-photos"), horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp)) {
+                    items(drafts.toList()) { draft ->
+                        val photo = stringResource(R.string.photo_label)
+                        val described = draft.attachment.alt.isNotEmpty()
+                        Box(Modifier.size(88.dp).semantics { contentDescription = if (described) "$photo, ${draft.attachment.alt}" else photo }) {
+                            Image(draft.preview, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)))
+                            // Alt: describe it for people who cannot see it (a 48 dp target, as iOS's "+ Alt" chip).
+                            Box(
+                                Modifier.align(Alignment.BottomStart).heightIn(min = 48.dp).widthIn(min = 48.dp)
+                                    .semantics { role = Role.Button; contentDescription = if (described) "Edit description" else "Add description" }
+                                    .clickable { describing = draft }.testTag("draft-describe"),
+                                contentAlignment = Alignment.BottomStart,
+                            ) {
+                                Text(
+                                    if (described) stringResource(R.string.photo_alt_chip) else stringResource(R.string.photo_alt_chip_add), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(4.dp).background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
+                                )
+                            }
+                            IconButton(onClick = { drafts.remove(draft) }, Modifier.align(Alignment.TopEnd).size(48.dp).testTag("draft-remove")) {
+                                Icon(Icons.Close, contentDescription = stringResource(R.string.photo_remove), tint = Color.White, modifier = Modifier.background(Color.Black.copy(alpha = 0.6f), CircleShape).padding(4.dp))
+                            }
                         }
                     }
                 }
             }
-        }
-        problem?.let { Text(it, color = colors.danger, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 8.dp).testTag("photo-problem")) }
-        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            if (recorder.isRecording) RecordingBar(recorder, onSend = finishVoice, onCancel = { recorder.cancel() }, modifier = Modifier.weight(1f)) else {
-                IconButton(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, Modifier.size(56.dp).testTag("attach-photo")) {
-                    Icon(Icons.Photo, contentDescription = stringResource(R.string.photo_attach), tint = colors.text)
-                }
-                val gifWords = stringResource(R.string.gif_open)
-                Box(Modifier.size(56.dp).semantics { contentDescription = gifWords; role = Role.Button }.clickable(onClick = onGif).testTag("attach-gif"), contentAlignment = Alignment.Center) {
-                    Text("GIF", color = colors.text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                }
-                OutlinedTextField(
-                    value = text, onValueChange = { text = it }, modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("composer-field"),
-                    placeholder = { Text(stringResource(R.string.chat_message_hint), color = colors.textSecondary) }, maxLines = 5,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default), shape = RoundedCornerShape(24.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = colors.text, unfocusedTextColor = colors.text, focusedContainerColor = colors.surface, unfocusedContainerColor = colors.surface,
-                        focusedBorderColor = colors.text, unfocusedBorderColor = colors.hairline, cursorColor = colors.text,
-                    ),
-                )
-                IconButton(onClick = { filePicker.launch(arrayOf("*/*")) }, Modifier.size(56.dp).testTag("attach-file")) {
-                    Icon(Icons.Attach, contentDescription = stringResource(R.string.file_attach), tint = colors.text)
-                }
-            }
-            Spacer(Modifier.size(4.dp))
-            val canSend = text.isNotBlank() || drafts.isNotEmpty()
-            val sendLabel = stringResource(R.string.chat_send)
-            if (canSend) {
-                Box(
-                    Modifier.size(56.dp).background(if (canSend) colors.accent else colors.pressed, CircleShape)
-                        .then(if (canSend) Modifier.clickable(role = Role.Button) { onSend(text, drafts.map { it.attachment }); text = ""; drafts.clear() } else Modifier.semantics { role = Role.Button; disabled() })
-                        .semantics { contentDescription = sendLabel }.testTag("send-button"),
-                    contentAlignment = Alignment.Center,
-                ) { Icon(Icons.Send, contentDescription = null, tint = if (canSend) colors.accentInk else colors.textSecondary) }
-            } else if (recorder.phase != VoiceRecorder.Phase.Locked) {
-                MicButton(
-                    onPress = {
-                        if (!micAllowedNow) { micPermission.launch(android.Manifest.permission.RECORD_AUDIO); false }
-                        else { val ok = recorder.start(); if (!ok) problem = micUnavailable; ok }
+            problem?.let { Text(it, color = colors.danger, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp).testTag("photo-problem")) }
+            // The words, or the recording bar in their place.
+            if (recorder.isRecording) RecordingBar(recorder, onSend = finishVoice, onCancel = { recorder.cancel() }, modifier = Modifier.fillMaxWidth()) else {
+                val hint = stringResource(R.string.chat_message_hint)
+                androidx.compose.foundation.text.BasicTextField(
+                    value = text, onValueChange = { text = it }, maxLines = 5, minLines = 1,
+                    textStyle = androidx.compose.ui.text.TextStyle(color = colors.text, fontSize = 17.sp, lineHeight = 24.sp),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(colors.text),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).focusRequester(focusRequester).semantics { contentDescription = hint }.testTag("composer-field"),
+                    decorationBox = { inner ->
+                        Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 12.dp)) {
+                            if (text.isEmpty()) Text(hint, color = colors.textSecondary, fontSize = 17.sp, modifier = Modifier.clearAndSetSemantics {})
+                            inner()
+                        }
                     },
-                    onRelease = { if (recorder.isRecording) finishVoice() }, onLock = { recorder.lock() }, onCancel = { recorder.cancel() },
-                    onHandsFree = { if (!micAllowedNow) micPermission.launch(android.Manifest.permission.RECORD_AUDIO) else if (!recorder.start()) problem = micUnavailable else recorder.lock() },
                 )
             }
+            // The tool row: + · face · keyboard on the left, then the one right control: send (lime) with words or a draft, else the microphone.
+            if (recorder.phase != VoiceRecorder.Phase.Locked) Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.alpha(if (recorder.isRecording) 0f else 1f), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    val plusWords = stringResource(R.string.composer_plus)
+                    ToolButton(plusWords, "composer-plus", enabled = !recorder.isRecording, onClick = { attaching = true; problem = null })
+                    val emojiWords = stringResource(R.string.composer_emoji)
+                    ToolButton(emojiWords, "attach-gif", selected = panelOpen, enabled = !recorder.isRecording, onClick = onGif) { Icon(Icons.Face, null, tint = colors.text) }
+                    val keyboardWords = stringResource(if (keyboardUp) R.string.composer_hide_keyboard else R.string.composer_show_keyboard)
+                    ToolButton(keyboardWords, "composer-hide-keyboard", enabled = !recorder.isRecording, onClick = {
+                        if (keyboardUp) { keyboard?.hide(); focus.clearFocus() } else { focusRequester.requestFocus(); keyboard?.show() }
+                    }) { Icon(if (keyboardUp) Icons.KeyboardHide else Icons.Keyboard, null, tint = colors.text) }
+                }
+                Spacer(Modifier.weight(1f))
+                val sendLabel = stringResource(R.string.chat_send)
+                if (canSend && !recorder.isRecording) {
+                    Box(Modifier.size(48.dp).semantics { contentDescription = sendLabel; role = Role.Button }.clickable { onSend(text, drafts.map { it.attachment }); text = ""; drafts.clear() }.testTag("send-button"), contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(36.dp).background(colors.accent, CircleShape), contentAlignment = Alignment.Center) { Icon(Icons.Send, contentDescription = null, tint = colors.accentInk, modifier = Modifier.size(20.dp)) }
+                    }
+                } else {
+                    MicButton(
+                        onPress = {
+                            if (!micAllowedNow) { micPermission.launch(android.Manifest.permission.RECORD_AUDIO); false }
+                            else { val ok = recorder.start(); if (!ok) problem = micUnavailable; ok }
+                        },
+                        onRelease = { if (recorder.isRecording) finishVoice() }, onLock = { recorder.lock() }, onCancel = { recorder.cancel() },
+                        onHandsFree = { if (!micAllowedNow) micPermission.launch(android.Manifest.permission.RECORD_AUDIO) else if (!recorder.start()) problem = micUnavailable else recorder.lock() },
+                        modifier = Modifier.size(48.dp),
+                    )
+                }
+            }
+        }
+    }
+    // The attachment sheet (iOS `AddToMessageSheet`): Photo and File (there is no camera tool on Android yet).
+    if (attaching) @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class) androidx.compose.material3.ModalBottomSheet(onDismissRequest = { attaching = false }, containerColor = colors.canvas) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp).testTag("attach-sheet")) {
+            SheetRow(stringResource(R.string.photo_attach), Icons.Photo, "attach-photo") { attaching = false; picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
+            SheetRow(stringResource(R.string.file_attach), Icons.Attach, "attach-file") { attaching = false; filePicker.launch(arrayOf("*/*")) }
         }
     }
     describing?.let { draft ->
@@ -747,4 +780,24 @@ private fun readUpTo(stream: java.io.InputStream, limit: Int): ByteArray {
         out.write(buffer, 0, n); total += n
     }
     return out.toByteArray()
+}
+
+
+/** A 48 dp tool of the composer's row: an icon with its words for TalkBack; `selected` puts a pill behind it (the face while its panel is open, as iOS). */
+@Composable
+private fun ToolButton(words: String, tag: String, selected: Boolean = false, enabled: Boolean = true, onClick: () -> Unit, icon: @Composable () -> Unit = { Icon(Icons.Plus, null, tint = Lime.colors.text) }) {
+    Box(
+        Modifier.size(width = 48.dp, height = 48.dp).then(if (selected) Modifier.padding(vertical = 4.dp).background(Lime.colors.pressed, CircleShape) else Modifier)
+            .semantics { contentDescription = words; role = Role.Button; this.selected = selected }.clickable(enabled = enabled, onClick = onClick).testTag(tag),
+        contentAlignment = Alignment.Center,
+    ) { icon() }
+}
+
+@Composable
+private fun SheetRow(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector, tag: String, onClick: () -> Unit) {
+    val colors = Lime.colors
+    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).semantics(mergeDescendants = true) { role = Role.Button }.clickable(onClick = onClick).testTag(tag), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        Icon(icon, null, tint = colors.text)
+        Text(title, color = colors.text, fontSize = 17.sp)
+    }
 }
