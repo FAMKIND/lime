@@ -2,16 +2,16 @@ package com.limemessenger.lime.auth
 
 import android.content.Context
 
-// ANDROID DEBT: twin of ios/Lime/Core/Auth/TermsAcceptance.swift; moves into LimeCore in LIME-133
+// The version and the legal pages are the core's (LIME-400: auth_rules.rs); where the acceptance is kept stays with the platform.
 
 /** What a teacher agreed to at sign-up (LIME-283): the terms version and the date, kept on this phone only. Nothing about it is sent anywhere. */
 object TermsAcceptance {
     /** Change this when the terms change in a way people must agree to again. */
-    const val CURRENT_VERSION = "terms-2026-11"
-    const val TERMS_URL = "https://limemessenger.com/terms"
-    const val PRIVACY_URL = "https://limemessenger.com/privacy"
-    const val GUIDELINES_URL = "https://limemessenger.com/guidelines"
-    const val SAFETY_URL = "https://limemessenger.com/safety"
+    val CURRENT_VERSION: String get() = uniffi.lime_core.termsCurrentVersion()
+    val TERMS_URL: String get() = uniffi.lime_core.legalLinks().terms
+    val PRIVACY_URL: String get() = uniffi.lime_core.legalLinks().privacy
+    val GUIDELINES_URL: String get() = uniffi.lime_core.legalLinks().guidelines
+    val SAFETY_URL: String get() = uniffi.lime_core.legalLinks().safety
 
     private const val PREFS = "lime.terms"
 

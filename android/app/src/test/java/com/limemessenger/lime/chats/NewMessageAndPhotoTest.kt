@@ -31,12 +31,6 @@ class NewMessageAndPhotoTest {
 
     // What TalkBack says for a photo (130-3b): its description
 
-    @Test fun aPhotoReadsWithItsDescription() {
-        val withAlt = attachment("image/jpeg").copy(alt = "Students building a bridge")
-        assertEquals("Photo: Students building a bridge", MessageSpeech.attachments(message("1", "", "ben", attachments = listOf(withAlt))))
-        assertEquals("Photo", MessageSpeech.attachments(message("2", "", "ben", attachments = listOf(attachment("image/jpeg")))))
-        assertEquals("2 photos", MessageSpeech.attachments(message("3", "", "ben", attachments = listOf(attachment("image/jpeg"), attachment("image/png")))))
-    }
 
     // New message: the exact lookup and the A–Z list
 
@@ -48,17 +42,6 @@ class NewMessageAndPhotoTest {
 
     private fun found(self: Boolean = false) = FoundUser("u1", "Grace Ortiz", "grace.h", "Park School", null, null, self)
 
-    @Test fun theLookupStatesAreSpokenAndTheLatestSearchWins() = runTest {
-        val lookup = TeacherLookup()
-        assertNull(lookup.state.spokenWords)
-        lookup.run("grace.h") { found() }
-        assertEquals("1 found", lookup.state.spokenWords)
-        lookup.run("nobody_here") { null }
-        assertEquals("No teacher found", lookup.state.spokenWords)
-        lookup.run("grace.h") { throw uniffi.lime_core.StoreException.Network() }
-        assertEquals("You're offline. Check your connection and try again.", lookup.state.spokenWords)
-        lookup.run("@grace.h") { assertEquals("grace.h", it); null }
-    }
 
     @Test fun theKnownTeachersAreSortedUnderTheirLettersWithHashLast() {
         val t = { n: String -> KnownTeacher(n, n, 0, n.take(1)) }

@@ -2,18 +2,24 @@ package com.limemessenger.lime.auth
 
 import uniffi.lime_core.StoreException
 
-// ANDROID DEBT: twin of ios/Lime/Core/Network/ConnectionProblem.swift; moves into LimeCore in LIME-133
+// The words and the "needs sign-in" rule are the core's (LIME-400: auth_rules.rs); which failure is which stays here (these are this platform's own errors).
 
 /** Why talking to the backend failed, in words that are true. "Check your connection" is for a real connection failure only. */
-enum class ConnectionProblem(val message: String) {
-    SessionEnded("Your session has ended. Please sign in again."),
-    Offline("You're offline. Check your connection and try again."),
-    Busy("Too many requests. Wait a minute and try again."),
-    Server("lime's server had a problem. Try again in a moment."),
-    Other("Something went wrong. Try again.");
+enum class ConnectionProblem {
+    SessionEnded, Offline, Busy, Server, Other;
+
+    private val trouble: uniffi.lime_core.ConnectionTrouble get() = when (this) {
+        SessionEnded -> uniffi.lime_core.ConnectionTrouble.SESSION_ENDED
+        Offline -> uniffi.lime_core.ConnectionTrouble.OFFLINE
+        Busy -> uniffi.lime_core.ConnectionTrouble.BUSY
+        Server -> uniffi.lime_core.ConnectionTrouble.SERVER
+        Other -> uniffi.lime_core.ConnectionTrouble.OTHER
+    }
+
+    val message: String get() = uniffi.lime_core.connectionTroubleWords(trouble)
 
     /** Only an ended session needs the person to do something (sign in again). */
-    val needsSignIn: Boolean get() = this == SessionEnded
+    val needsSignIn: Boolean get() = uniffi.lime_core.connectionTroubleNeedsSignIn(trouble)
 
     companion object {
         fun from(error: Throwable): ConnectionProblem = when (error) {

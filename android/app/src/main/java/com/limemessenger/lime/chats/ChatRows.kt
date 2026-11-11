@@ -5,8 +5,8 @@ import java.time.ZoneId
 import java.util.Locale
 import uniffi.lime_core.MessageItem
 
-// ANDROID DEBT: twin of ios/Lime/Model/ChatRows.swift and the delivery words of ios/Lime/Model/Models.swift (DeliveryState) and
-// ios/Lime/Features/Chat/MessageSpeech.swift; moves into LimeCore in LIME-133
+// ANDROID DEBT: twin of ios/Lime/Model/ChatRows.swift (the grouping: it draws the day separators with the phone's locale, so it stays here);
+// the words of a message's delivery state and what TalkBack says for a message are the core's (LIME-400: message_speech_rules.rs)
 
 /** A message as the chat reads it: the core's `local_state` mapped to what the bubble says. */
 enum class DeliveryState(val raw: String) {
@@ -16,13 +16,8 @@ enum class DeliveryState(val raw: String) {
     /** Not sent to the server yet, and nothing wrong: the message is on its way by itself. */
     val isInFlight: Boolean get() = this == Sending || this == Waiting || this == Passed || this == Offline
 
-    /** The words under the bubble for the nearby-phone states (colour is never the only signal). */
-    val statusWords: String? get() = when (this) {
-        Waiting -> "Waiting for a phone nearby"
-        Passed -> "Passed to a nearby phone"
-        Offline -> "Waiting for internet"
-        else -> null
-    }
+    /** The words under the bubble for the nearby-phone states (colour is never the only signal): the core's. */
+    val statusWords: String? get() = uniffi.lime_core.deliveryStateStatusWords(raw)
 
     companion object {
         /** LimeCore's `local_state`; the older local-only states count as sent. */
@@ -98,62 +93,15 @@ sealed class ChatRow {
     }
 }
 
-/** What TalkBack says for one message as one element (LIME-130-3a): "<Sender or You>, <text or kind>, <time>, <edited>, <delivery state>, <reactions>, <replies>". */
+/** What TalkBack says for one message as one element (LIME-130-3a): "<Sender or You>, <text or kind>, <time>, <edited>, <delivery state>, <reactions>, <replies>": the core's `message_speech_label`. */
 object MessageSpeech {
-    /** `senderName` is the other person's name (null for my own messages, who read as "You"). */
+    /** `senderName` is the other person's name (null for my own messages, who read as "You"). `plainText` is kept for the callers' sake (the core reads the markup itself). */
+    @Suppress("UNUSED_PARAMETER")
     fun label(
-        message: MessageItem, senderName: String?, replyCount: Int = 0, unreplied: Int = 0, plainText: (String) -> String,
+        message: MessageItem, senderName: String?, replyCount: Int = 0, unreplied: Int = 0, plainText: (String) -> String = { it },
         clock: (Long) -> String = { MessageFormat.clock(it) },
-    ): String {
-        val parts = mutableListOf(if (message.isOwn) "You" else (senderName ?: "Someone"))
-        parts += body(message, plainText)
-        if (!message.deleted) {
-            parts += clock(message.sentAt)
-            if (message.edited) parts += "edited"
-            if (message.isOwn) stateWords(message.state)?.let { parts += it }
-            if (message.reactions.isNotEmpty()) {
-                val total = message.reactions.sumOf { it.count.toInt() }
-                parts += "$total ${if (total == 1) "reaction" else "reactions"}: " + message.reactions.joinToString(", ") { "${it.emoji} ${it.count}${if (it.mine) " (you)" else ""}" }
-            }
-            if (replyCount > 0) parts += "$replyCount ${if (replyCount == 1) "reply" else "replies"}" + (if (unreplied > 0) ", $unreplied unread" else "")
-        }
-        return parts.joinToString(", ")
-    }
+    ): String = uniffi.lime_core.messageSpeechLabel(message, senderName, replyCount.toUInt(), unreplied.toUInt(), clock(message.sentAt))
 
-    /** The words of the message, or what kind of thing it is. */
-    fun body(message: MessageItem, plainText: (String) -> String): String {
-        if (message.deleted) return "This message was deleted"
-        if (message.emergency != null) return "Emergency status"
-        val pieces = mutableListOf<String>()
-        if (message.forwarded) pieces += "Forwarded"
-        val text = plainText(message.text)
-        if (text.isNotEmpty()) pieces += text
-        if (message.attachments.isNotEmpty()) pieces += attachments(message)
-        message.linkPreview?.let { pieces += "Link: ${it.title}" }
-        return if (pieces.isEmpty()) "Message" else pieces.joinToString(", ")
-    }
-
-    /** "Photo", "3 photos", "Voice message", "File: report.pdf" … */
-    fun attachments(message: MessageItem): String {
-        val items = message.attachments
-        val images = items.filter { it.mime.startsWith("image/") }
-        val out = mutableListOf<String>()
-        if (images.size == 1) out += if (images[0].mime == "image/gif") "GIF" else if (images[0].alt.isNotEmpty()) "Photo: ${images[0].alt}" else "Photo" else if (images.size > 1) out += "${images.size} photos"
-        for (item in items.filter { !it.mime.startsWith("image/") }) out += when {
-            item.mime.startsWith("audio/") -> "Voice message"
-            item.mime.startsWith("video/") -> "Video"
-            else -> if (item.name.isEmpty()) "File" else "File: ${item.name}"
-        }
-        return out.joinToString(", ")
-    }
-
-    /** The delivery state as words (null when it says nothing). */
-    fun stateWords(state: DeliveryState): String? = when (state) {
-        DeliveryState.Sending -> "sending"
-        DeliveryState.Sent -> "sent"
-        DeliveryState.Failed -> "not sent, retry available"
-        DeliveryState.Undelivered -> "not delivered, resend available"
-        DeliveryState.Waiting, DeliveryState.Passed, DeliveryState.Offline -> state.statusWords?.lowercase()
-        DeliveryState.Received, DeliveryState.System -> null
-    }
+    /** "Photo", "Photo: <description>", "3 photos", "Voice message", "File: report.pdf" … (a photo reads with its description). */
+    fun attachments(message: MessageItem): String = uniffi.lime_core.messageSpeechAttachments(message)
 }

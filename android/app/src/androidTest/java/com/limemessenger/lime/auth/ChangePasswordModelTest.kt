@@ -1,5 +1,6 @@
 package com.limemessenger.lime.auth
 
+import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -7,7 +8,8 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** LIME-306: the change-password flow, with a fake auth (as iOS's `FakeAuthService`): every step, a wrong current password, a wrong code. */
+/** LIME-306 (moved to a device in LIME-400: `PasswordChecks` is the core's now): the change-password flow, with a fake auth (as iOS's `FakeAuthService`): every step, a wrong current password, a wrong code. */
+@org.junit.runner.RunWith(AndroidJUnit4::class)
 class ChangePasswordModelTest {
     private val fake = FakeAuthService()
     private val tokens = AuthTokens("a", "r", 0, "u")

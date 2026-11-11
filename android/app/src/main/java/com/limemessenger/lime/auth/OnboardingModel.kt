@@ -344,7 +344,7 @@ class OnboardingModel(
 
     companion object {
         const val RESEND_DELAY_MS = 30_000L
-        const val MINIMUM_PASSWORD_LENGTH = 10
+        val MINIMUM_PASSWORD_LENGTH: Int get() = uniffi.lime_core.passwordMinimumLength().toInt()
         val CODE_LENGTHS = 6..8
 
         private val reserved = setOf(
@@ -379,28 +379,21 @@ class OnboardingModel(
     }
 }
 
-/** What a new password has and lacks, for the screen's hint. */
+/** What a new password has and lacks, for the screen's hint: the core's `password_report` (LIME-400). */
 data class PasswordChecks(val password: String, val confirmation: String, val creating: Boolean) {
-    val longEnough: Boolean get() = password.length >= OnboardingModel.MINIMUM_PASSWORD_LENGTH
-    val matches: Boolean get() = !creating || (confirmation.isNotEmpty() && confirmation == password)
-    val isAcceptable: Boolean get() = longEnough && matches
+    private val report: uniffi.lime_core.PasswordReport get() = uniffi.lime_core.passwordReport(password, confirmation, creating)
+    val longEnough: Boolean get() = report.longEnough
+    val matches: Boolean get() = report.matches
+    val isAcceptable: Boolean get() = report.acceptable
 
     enum class Strength(val label: String) { TooShort("Too short"), Fair("Fair"), Good("Good"), Strong("Strong") }
 
-    val strength: Strength get() {
-        if (!longEnough) return Strength.TooShort
-        var kinds = 0
-        if (password.any { it.isLowerCase() }) kinds++
-        if (password.any { it.isUpperCase() }) kinds++
-        if (password.any { it.isDigit() }) kinds++
-        if (password.any { !it.isLetter() && !it.isDigit() }) kinds++
-        if (password.length >= 16 || kinds >= 3) return if (password.length >= 16 && kinds >= 2) Strength.Strong else Strength.Good
-        return Strength.Fair
+    val strength: Strength get() = when (report.strength) {
+        uniffi.lime_core.PasswordStrength.TOO_SHORT -> Strength.TooShort
+        uniffi.lime_core.PasswordStrength.FAIR -> Strength.Fair
+        uniffi.lime_core.PasswordStrength.GOOD -> Strength.Good
+        uniffi.lime_core.PasswordStrength.STRONG -> Strength.Strong
     }
 
-    val hint: String get() {
-        if (password.isEmpty()) return "At least 10 characters."
-        if (!longEnough) return "${OnboardingModel.MINIMUM_PASSWORD_LENGTH - password.length} more to go."
-        return "${strength.label}. A few random words make a good password."
-    }
+    val hint: String get() = report.hint
 }
