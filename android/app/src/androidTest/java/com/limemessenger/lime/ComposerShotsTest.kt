@@ -7,6 +7,10 @@ import androidx.compose.ui.test.down
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInputSelection
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.up
@@ -120,5 +124,46 @@ class ComposerShotsTest {
         show(dark = true); rule.waitUntil(5_000) { chat.messages.isNotEmpty() }
         rule.onNodeWithTag("composer-field").performTextInput("Hello")
         shot("6-dark")
+    }
+
+    private fun type(text: String) { for (ch in text) { rule.onNodeWithTag("composer-field").performTextInput(ch.toString()); rule.waitForIdle() } }
+    private fun click(tag: String) {
+        runCatching { rule.onNodeWithTag(tag, useUnmergedTree = true).performScrollTo() }   // a strip button may be past the edge: scroll it in, as a thumb would
+        rule.onNodeWithTag(tag, useUnmergedTree = true).performClick(); rule.waitForIdle()
+    }
+    private fun ready() { rule.waitUntil(5_000) { chat.messages.isNotEmpty() } }
+
+    @Test fun stripOpen() { show(); ready(); click("composer-aa"); shot("7-strip-open") }
+
+    @Test fun boldInTheField() {
+        show(); ready()
+        type("Please read this word carefully")
+        rule.onNodeWithTag("composer-field").performTextInputSelection(TextRange(12, 16))
+        rule.waitUntil(5_000) { rule.onAllNodes(hasTestTag("fmt-bold"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        click("fmt-bold"); shot("8-bold-in-field")
+    }
+
+    @Test fun aList() {
+        show(); ready()
+        click("composer-aa")
+        type("Bring to the staff meeting:\n- the unit plan\nthe exit tickets\n")
+        click("fmt-indent"); type("blank copies"); shot("9-list")
+    }
+
+    @Test fun aLink() {
+        show(); ready()
+        type("Here is the plan: limemessenger.com")
+        rule.onNodeWithTag("composer-field").performTextInputSelection(TextRange(19, 35))
+        rule.waitUntil(5_000) { rule.onAllNodes(hasTestTag("fmt-link"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        click("fmt-link"); rule.onNodeWithTag("link-url", useUnmergedTree = true).performTextInput("limemessenger.com/plan"); click("link-apply")
+        click("composer-aa"); shot("10-link")
+    }
+
+    @Test fun stripLargestFont() { show(fontScale = 2f); ready(); click("composer-aa"); type("Bold plan"); shot("11-strip-font-2") }
+
+    @Test fun stripDark() {
+        show(dark = true); ready(); click("composer-aa"); type("- one\ntwo")
+        rule.onNodeWithTag("composer-field").performTextInputSelection(TextRange(0, 3))
+        click("fmt-bold"); shot("12-strip-dark")
     }
 }

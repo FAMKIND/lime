@@ -302,6 +302,7 @@ fun main(args: Array<String>) {
                     for (m in fresh) {
                         answered += m.id
                         val words = messagePlainText(m.text).replace("\n", " ").take(40)
+                        println("markdown: " + m.text.replace("\n", "\\n"))   // what arrived, exactly (LIME-405 compares it with what Android sent)
                         val photos = m.attachments.filter { it.mime.startsWith("image/") }
                         if (photos.isNotEmpty()) {
                             // Prove the photo arrived whole: download it, decrypt it, and report how big it came out.

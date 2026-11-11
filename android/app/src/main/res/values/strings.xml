@@ -504,4 +504,22 @@
     <string name="composer_show_keyboard">Show keyboard</string>
     <string name="composer_hide_keyboard">Hide keyboard</string>
     <string name="composer_send_voice_hint">Voice message</string>
+    <string name="composer_formatting">Formatting</string>
+    <string name="fmt_bold">Bold</string>
+    <string name="fmt_italic">Italic</string>
+    <string name="fmt_underline">Underline</string>
+    <string name="fmt_strike">Strikethrough</string>
+    <string name="fmt_link">Link</string>
+    <string name="fmt_code">Code</string>
+    <string name="fmt_bullets">Bulleted list</string>
+    <string name="fmt_numbers">Numbered list</string>
+    <string name="fmt_outdent">Outdent</string>
+    <string name="fmt_indent">Indent</string>
+    <string name="fmt_close">Close formatting</string>
+    <string name="link_title">Add a link</string>
+    <string name="link_address">Web address</string>
+    <string name="link_text">Text to show</string>
+    <string name="link_apply">Add</string>
+    <string name="link_remove">Remove link</string>
+    <string name="link_error">That isn\u2019t a web address.</string>
 </resources>

@@ -18,7 +18,7 @@ for avd in ${AVDS:-lime-api36 lime-api26}; do
     ./gradlew -q installDebug installDebugAndroidTest || status=1
     # The server allows 10 device registrations per hour per account (staging's LIME_RATE_REGISTER_PER_HOUR), and every class registers Ada once, so
     # only the chat and groups tests run by default (LIME-303); STAGING_CLASSES="StagingSignInTest StagingChatTest" runs both.
-    for cls in ${STAGING_CLASSES:-StagingChatTest StagingGroupsTest StagingActionsTest StagingListTest StagingVoiceFilesTest StagingJamTest StagingJamWriteTest StagingModerationTest StagingGifTest}; do
+    for cls in ${STAGING_CLASSES:-StagingChatTest StagingGroupsTest StagingActionsTest StagingListTest StagingVoiceFilesTest StagingJamTest StagingJamWriteTest StagingModerationTest StagingGifTest StagingComposerTest}; do
       tools/staging-test-accounts.sh --push >/dev/null || status=1
       tools/partner/run reset >/dev/null || status=1
       case "$cls" in
@@ -69,6 +69,11 @@ for avd in ${AVDS:-lime-api36 lime-api26}; do
         grep -q '^jam: received article' /tmp/lime-partner.log || { status=1; echo "$cls: the partner never received the article"; }
         grep -q '^jam: edited' /tmp/lime-partner.log || { status=1; echo "$cls: the partner never saw the edit"; }
         grep -q '^jam: post removed' /tmp/lime-partner.log || { status=1; echo "$cls: the partner never saw the delete"; } ;; esac
+      case "$cls" in StagingComposerTest*)
+        # Ben must have received exactly the Markdown the core makes of what Ada formatted (bold, a list, a link).
+        grep -qF 'markdown: **bold** word' /tmp/lime-partner.log || { status=1; echo "$cls: Ben never got the bold message as **bold** word"; }
+        grep -qF 'markdown: - one\n- two' /tmp/lime-partner.log || { status=1; echo "$cls: Ben never got the list as - one, - two"; }
+        grep -qF 'markdown: see the [plan](https://limemessenger.com/plan) today' /tmp/lime-partner.log || { status=1; echo "$cls: Ben never got the link"; } ;; esac
       kill "$partner" $partner2 2>/dev/null; pkill -f "MainKt echo" 2>/dev/null; pkill -f "MainKt actions-echo" 2>/dev/null; pkill -f "MainKt jam-echo" 2>/dev/null; pkill -f "MainKt group-echo" 2>/dev/null
     done
     adb uninstall com.limemessenger.lime >/dev/null 2>&1

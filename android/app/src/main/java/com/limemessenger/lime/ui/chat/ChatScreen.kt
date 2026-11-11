@@ -117,6 +117,9 @@ import com.limemessenger.lime.ui.common.Avatar
 import com.limemessenger.lime.ui.common.initialsOf
 import com.limemessenger.lime.ui.shell.Icons
 import com.limemessenger.lime.ui.theme.Lime
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.shadow
@@ -472,7 +475,10 @@ private fun Composer(model: ChatModel, seedPhotos: List<OutgoingAttachment>, pan
     val colors = Lime.colors
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var text by rememberSaveable { mutableStateOf("") }
+    // The message being written: the field's text, and the core's document for its styles and lists (LIME-405). A draft survives a rotation as its Markdown.
+    val composer = rememberSaveable(saver = androidx.compose.runtime.saveable.Saver<ComposerModel, String>(save = { it.markdown() }, restore = { ComposerModel(it) })) { ComposerModel() }
+    var linking by remember { mutableStateOf(false) }
+    LaunchedEffect(composer) { androidx.compose.runtime.snapshotFlow { composer.textState.selection }.collect { composer.selectionMoved() } }
     val drafts = remember {
         mutableStateListOf<DraftPhoto>().also { list -> seedPhotos.forEach { a -> AttachmentProcessing.decodeForDisplay(a.bytes, 320)?.let { list.add(DraftPhoto(a, it.asImageBitmap())) } } }
     }
@@ -525,7 +531,7 @@ private fun Composer(model: ChatModel, seedPhotos: List<OutgoingAttachment>, pan
     @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
     val keyboardUp = androidx.compose.foundation.layout.WindowInsets.isImeVisible
     var attaching by remember { mutableStateOf(false) }
-    val canSend = text.isNotBlank() || drafts.isNotEmpty()
+    val canSend = composer.hasWords || drafts.isNotEmpty()
     val cardShape = RoundedCornerShape(26.dp)
     // The lime pattern (iOS `ChatComposer`): ONE rounded card, the text on top at the card's full width, one tool row under it. Adding a tool never changes the field's size.
     Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 4.dp).testTag("composer-bar")) {
@@ -575,15 +581,19 @@ private fun Composer(model: ChatModel, seedPhotos: List<OutgoingAttachment>, pan
             // The words, or the recording bar in their place.
             if (recorder.isRecording) RecordingBar(recorder, onSend = finishVoice, onCancel = { recorder.cancel() }, modifier = Modifier.fillMaxWidth()) else {
                 val hint = stringResource(R.string.chat_message_hint)
+                val output = remember(composer, colors) { composer.output(colors.link, colors.chip) }
                 androidx.compose.foundation.text.BasicTextField(
-                    value = text, onValueChange = { text = it }, maxLines = 5, minLines = 1,
+                    state = composer.textState, inputTransformation = composer.filter, outputTransformation = output,
+                    lineLimits = androidx.compose.foundation.text.input.TextFieldLineLimits.MultiLine(minHeightInLines = 1, maxHeightInLines = 5),
                     textStyle = androidx.compose.ui.text.TextStyle(color = colors.text, fontSize = 17.sp, lineHeight = 24.sp),
                     cursorBrush = androidx.compose.ui.graphics.SolidColor(colors.text),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).focusRequester(focusRequester).semantics { contentDescription = hint }.testTag("composer-field"),
-                    decorationBox = { inner ->
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).focusRequester(focusRequester).semantics { contentDescription = hint }
+                        .onPreviewKeyEvent { e -> e.key == androidx.compose.ui.input.key.Key.Backspace && e.type == androidx.compose.ui.input.key.KeyEventType.KeyDown && composer.backspaceAtStart() }
+                        .testTag("composer-field"),
+                    decorator = { inner ->
                         Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 12.dp)) {
-                            if (text.isEmpty()) Text(hint, color = colors.textSecondary, fontSize = 17.sp, modifier = Modifier.clearAndSetSemantics {})
+                            if (composer.textState.text.isEmpty()) Text(hint, color = colors.textSecondary, fontSize = 17.sp, modifier = Modifier.clearAndSetSemantics {})
                             inner()
                         }
                     },
@@ -596,6 +606,10 @@ private fun Composer(model: ChatModel, seedPhotos: List<OutgoingAttachment>, pan
                     ToolButton(plusWords, "composer-plus", enabled = !recorder.isRecording, onClick = { attaching = true; problem = null })
                     val emojiWords = stringResource(R.string.composer_emoji)
                     ToolButton(emojiWords, "attach-gif", selected = panelOpen, enabled = !recorder.isRecording, onClick = onGif) { Icon(Icons.Face, null, tint = colors.text) }
+                    val formatWords = stringResource(R.string.composer_formatting)
+                    ToolButton(formatWords, "composer-aa", selected = composer.stripShown, enabled = !recorder.isRecording, onClick = { composer.toggleStrip() }) {
+                        Text("Aa", color = colors.text, fontSize = 17.sp, fontWeight = if (composer.stripShown) FontWeight.Bold else FontWeight.Medium)
+                    }
                     val keyboardWords = stringResource(if (keyboardUp) R.string.composer_hide_keyboard else R.string.composer_show_keyboard)
                     ToolButton(keyboardWords, "composer-hide-keyboard", enabled = !recorder.isRecording, onClick = {
                         if (keyboardUp) { keyboard?.hide(); focus.clearFocus() } else { focusRequester.requestFocus(); keyboard?.show() }
@@ -604,7 +618,7 @@ private fun Composer(model: ChatModel, seedPhotos: List<OutgoingAttachment>, pan
                 Spacer(Modifier.weight(1f))
                 val sendLabel = stringResource(R.string.chat_send)
                 if (canSend && !recorder.isRecording) {
-                    Box(Modifier.size(48.dp).semantics { contentDescription = sendLabel; role = Role.Button }.clickable { onSend(text, drafts.map { it.attachment }); text = ""; drafts.clear() }.testTag("send-button"), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(48.dp).semantics { contentDescription = sendLabel; role = Role.Button }.clickable { onSend(composer.markdown(), drafts.map { it.attachment }); composer.clear(); drafts.clear() }.testTag("send-button"), contentAlignment = Alignment.Center) {
                         Box(Modifier.size(36.dp).background(colors.accent, CircleShape), contentAlignment = Alignment.Center) { Icon(Icons.Send, contentDescription = null, tint = colors.accentInk, modifier = Modifier.size(20.dp)) }
                     }
                 } else {
@@ -619,8 +633,10 @@ private fun Composer(model: ChatModel, seedPhotos: List<OutgoingAttachment>, pan
                     )
                 }
             }
+            if (composer.stripShown && !recorder.isRecording) FormattingStrip(composer, onLink = { linking = true })
         }
     }
+    if (linking) LinkDialog(composer, onDismiss = { linking = false })
     // The attachment sheet (iOS `AddToMessageSheet`): Photo and File (there is no camera tool on Android yet).
     if (attaching) @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class) androidx.compose.material3.ModalBottomSheet(onDismissRequest = { attaching = false }, containerColor = colors.canvas) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp).testTag("attach-sheet")) {

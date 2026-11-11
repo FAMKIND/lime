@@ -114,7 +114,8 @@ class ChatUiTest {
 
     @Test fun formattedTextIsDrawnAndReadAsPlainWords() {
         show(dm); val chat = dm
-        send("This is **bold** and *italic*")
+        // (Typing asterisks into the composer is plain text now, as on iOS: a message that already is Markdown comes from elsewhere, here the model.)
+        runBlocking { chat.send("This is **bold** and *italic*") }
         rule.waitUntil(5_000) { chat.messages.any { it.text.contains("**bold**") } }
         val mine = chat.messages.first { it.text.contains("**bold**") }
         rule.waitUntil(5_000) { count("message-text-${mine.id}") > 0 }

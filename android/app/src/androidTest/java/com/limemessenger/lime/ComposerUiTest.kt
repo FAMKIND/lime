@@ -91,10 +91,11 @@ class ComposerUiTest {
         rule.waitUntil(5_000) { count("composer-card") > 0 }
         assertEquals("Add attachment", words("composer-plus"))
         assertEquals("Emoji, GIFs and stickers", words("attach-gif"))
+        assertEquals("Formatting", words("composer-aa"))
         assertEquals("Show keyboard", words("composer-hide-keyboard"))
         assertEquals("Record a voice message", words("voice-mic"))
         val min = 48f * rule.density.density - 0.5f
-        for (tag in listOf("composer-plus", "attach-gif", "composer-hide-keyboard", "voice-mic")) {
+        for (tag in listOf("composer-plus", "attach-gif", "composer-aa", "composer-hide-keyboard", "voice-mic")) {
             val b = bounds(tag)
             assertTrue("$tag is ${b.width} x ${b.height}", b.width >= min && b.height >= min)
         }
@@ -135,7 +136,7 @@ class ComposerUiTest {
         show(fontScale = 2f)
         rule.waitUntil(5_000) { count("composer-card") > 0 }
         val card = bounds("composer-card")
-        for (tag in listOf("composer-plus", "attach-gif", "composer-hide-keyboard", "voice-mic")) {
+        for (tag in listOf("composer-plus", "attach-gif", "composer-aa", "composer-hide-keyboard", "voice-mic")) {
             val b = bounds(tag)
             assertTrue("$tag stays inside the card", b.left >= card.left && b.right <= card.right && b.bottom <= card.bottom + 1f)
             assertTrue("$tag is still 48 dp", b.width >= 48f * rule.density.density - 0.5f)
