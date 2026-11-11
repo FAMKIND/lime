@@ -17,6 +17,7 @@ struct ChatAppearanceSheet: View {
 }
 
 struct ChatAppearanceScreen: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
     let chatID: String
     @Environment(\.colorScheme) private var scheme
     @State private var picked: PhotosPickerItem?
@@ -93,7 +94,7 @@ struct ChatAppearanceScreen: View {
                     .overlay(alignment: .bottomTrailing) {
                         if on { Image(systemName: "checkmark.circle.fill").font(.system(size: 22)).symbolRenderingMode(.palette).foregroundStyle(Theme.canvas, Theme.text).padding(8) }
                     }
-                Text(name).font(Theme.font(.caption, weight: on ? .semibold : .regular)).foregroundStyle(Theme.text).lineLimit(1)
+                Text(name).font(Theme.font(.caption, weight: on ? .semibold : .regular)).foregroundStyle(Theme.text).lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
             }
             .contentShape(Rectangle())
         }

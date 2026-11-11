@@ -181,7 +181,7 @@ struct ChatView: View {
                 VStack(spacing: 0) {
                     if hidden > 0 {
                         Button { loadOlder(proxy: proxy, firstShown: rows.first?.id, total: all.count) } label: {
-                            Text("Earlier messages").font(Theme.font(.caption, weight: .medium)).foregroundStyle(Theme.textSecondary)
+                            Text("Earlier messages").font(Theme.font(.caption, weight: .medium)).foregroundStyle(Theme.textSecondary).wallpaperChip()
                                 .frame(maxWidth: .infinity, minHeight: 44)
                         }
                         .buttonStyle(.plain)
@@ -372,6 +372,7 @@ struct ChatView: View {
                             Text("\(count) messages deleted")
                                 .font(Theme.caption.italic())
                                 .foregroundStyle(Theme.textSecondary)
+                                .wallpaperChip()
                                 .padding(.vertical, 6).padding(.horizontal, 24)
                                 .frame(maxWidth: .infinity)
                                 .padding(.bottom, 2)
@@ -401,7 +402,7 @@ struct ChatView: View {
                     // I asked them to send again what I could not read (LIME-232): a quiet line until it arrives, then it is gone.
                     if !conversation.isGroup, let peer = conversation.members.first, store.waitingPeers.contains(peer.id) {
                         Text("Waiting for messages\u{2026}")
-                            .font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                            .font(Theme.caption).foregroundStyle(Theme.textSecondary).wallpaperChip()
                             .frame(maxWidth: .infinity).padding(.vertical, 6)
                             .accessibilityIdentifier("chat-waiting")
                     }

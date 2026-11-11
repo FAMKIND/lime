@@ -36,7 +36,7 @@ struct FieldEditorSheet: View {
         // Medium first (LIME-217d, as 225 asked); drag up for large.
         .presentationDetents([.medium, .large])
         .onAppear { focused = true }
-        .overlay { EmojiKeyboardField(isActive: $pickingEmoji) { model.pickEmoji($0); focused = true }.frame(width: 1, height: 1).opacity(0.01) }
+        .overlay { EmojiKeyboardField(isActive: $pickingEmoji) { model.pickEmoji($0); focused = true }.frame(width: 1, height: 1).opacity(0.01).accessibilityHidden(true) }
     }
 
     private var topBar: some View {
@@ -72,7 +72,7 @@ struct FieldEditorSheet: View {
                     }
                     .frame(width: 36, height: 36)
                 }
-                .accessibilityLabel("Choose an emoji").accessibilityIdentifier("editor-emoji")
+                .accessibilityLabel(model.emoji.isEmpty ? "Choose an emoji" : "Emoji \(model.emoji), change").accessibilityIdentifier("editor-emoji")
             }
             TextField(model.placeholder, text: $model.text)
                 .font(Theme.body)

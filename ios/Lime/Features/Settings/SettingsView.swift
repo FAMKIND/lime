@@ -104,6 +104,7 @@ struct SettingsView: View {
                         Link(destination: donate) {
                             SettingsRowLabel(symbol: "heart", title: "Donate to lime", showsDivider: false)
                         }
+                        .accessibilityHint("Opens in your browser")
                         .accessibilityIdentifier("settings-donate")
                     }
                 }
@@ -198,7 +199,7 @@ struct SettingsView: View {
                 }
             }
             Spacer(minLength: 0)
-            Image(systemName: "chevron.right").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.textSecondary)
+            Image(systemName: "chevron.right").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.textSecondary).accessibilityHidden(true)
         }
         .padding(18)
         .frame(maxWidth: .infinity)
@@ -227,7 +228,7 @@ struct SettingsRowLabel: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 14) {
-                Image(systemName: symbol).font(.system(size: 20)).frame(width: 28)
+                Image(systemName: symbol).font(.system(size: 20)).frame(width: 28).accessibilityHidden(true)
                     .foregroundStyle(destructive ? Theme.danger : Theme.text)
                 // At accessibility sizes the value goes under the title and wraps; at other sizes it sits beside it on one line (LIME-130-5a).
                 let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2)) : AnyLayout(HStackLayout(spacing: 8))
@@ -243,7 +244,7 @@ struct SettingsRowLabel: View {
                 }
                 if typeSize.isAccessibilitySize { Spacer(minLength: 0) }
                 Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.textSecondary.opacity(0.7))
-                    .opacity(destructive ? 0 : 1)
+                    .opacity(destructive ? 0 : 1).accessibilityHidden(true)
             }
             .padding(.horizontal, 18).frame(minHeight: 58)
             if showsDivider { Divider().overlay(Theme.hairline).padding(.leading, 60) }

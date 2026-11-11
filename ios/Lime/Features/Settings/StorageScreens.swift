@@ -78,7 +78,7 @@ struct StorageScreen: View {
                 Spacer()
                 Text(value).font(Theme.body).foregroundStyle(Theme.textSecondary).accessibilityIdentifier(id)
             }
-            .padding(.horizontal, 18).frame(minHeight: 54)
+            .padding(.horizontal, 18).frame(minHeight: 54).modifier(OneStopRow())
         }
     }
 

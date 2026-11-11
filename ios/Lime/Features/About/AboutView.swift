@@ -55,6 +55,7 @@ struct AboutView: View {
                         .accessibilityIdentifier("self-test-result")
                 case .finished(let report):
                     Text(result.passed ? "Encryption self-test: passed ✓" : "Encryption self-test: failed")
+                        .announcesWhenShown(result.passed ? "Encryption self-test: passed" : "Encryption self-test: failed")
                         .font(Theme.font(.body, weight: .semibold))
                         .foregroundStyle(Theme.text)
                         .accessibilityIdentifier("self-test-result")

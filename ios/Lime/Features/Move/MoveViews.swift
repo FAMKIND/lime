@@ -8,6 +8,8 @@ private struct MoveCodeStep: View {
     let code: String
     let onMatch: () -> Void
     let onMismatch: () -> Void
+    /// The code scales with the text size (it kept a fixed 52 pt, LIME-322).
+    @ScaledMetric(relativeTo: .largeTitle) private var codeSize: CGFloat = 52
 
     private var spaced: String { code.count == 6 ? "\(code.prefix(3)) \(code.suffix(3))" : code }
 
@@ -17,7 +19,7 @@ private struct MoveCodeStep: View {
                 .accessibilityAddTraits(.isHeader)
             Text("Look at the other phone.").font(Theme.body).foregroundStyle(Theme.textSecondary)
             Text(spaced)
-                .font(.system(size: 52, weight: .semibold, design: .rounded)).monospacedDigit()
+                .font(.system(size: codeSize, weight: .semibold, design: .rounded)).monospacedDigit()
                 .foregroundStyle(Theme.text).minimumScaleFactor(0.6).lineLimit(1)
                 .padding(.vertical, 18).frame(maxWidth: .infinity)
                 .background(Theme.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
@@ -227,7 +229,7 @@ struct MoveNewPhoneView: View {
                     Text(model.qr).font(.system(.footnote, design: .monospaced)).foregroundStyle(Theme.text)
                         .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
                         .accessibilityIdentifier("move-qr-text")
-                    Button("Copy the code") { UIPasteboard.general.string = model.qr }
+                    Button("Copy the code") { UIPasteboard.general.string = model.qr; Announce.say("Code copied") }
                         .font(Theme.body).frame(minHeight: 44).accessibilityIdentifier("move-copy")
                     Text("On your old phone, choose “Enter the code” and paste or type it.").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
                 }
@@ -339,7 +341,7 @@ private struct MoveOldPhoneFlow: View {
         case .connecting:
             VStack(spacing: 14) {
                 ProgressView()
-                Text("Looking for your new phone…").font(Theme.body).foregroundStyle(Theme.textSecondary)
+                Text("Looking for your new phone…").font(Theme.body).foregroundStyle(Theme.textSecondary).announcesWhenShown("Looking for your new phone")
                 Button("Cancel", role: .cancel) { model.cancel(); onClose() }.frame(minHeight: 44).accessibilityIdentifier("move-cancel")
             }
             .accessibilityIdentifier("move-connecting")
@@ -348,13 +350,14 @@ private struct MoveOldPhoneFlow: View {
         case .waitingForOther:
             VStack(spacing: 14) {
                 ProgressView()
-                Text("Waiting for your new phone…").font(Theme.body).foregroundStyle(Theme.textSecondary)
+                Text("Waiting for your new phone…").font(Theme.body).foregroundStyle(Theme.textSecondary).announcesWhenShown("Waiting for your new phone")
                 Button("Cancel", role: .cancel) { model.cancel(); onClose() }.frame(minHeight: 44).accessibilityIdentifier("move-cancel")
             }
         case .sending:
             MoveProgressStep(title: "Moving to your new phone", info: model.progress, onCancel: { model.cancel(); onClose() })
         case .done:
             Text("lime moved to your new phone").font(Theme.font(.title2, weight: .semibold)).foregroundStyle(Theme.text)
+                .announcesWhenShown("lime moved to your new phone")
                 .accessibilityIdentifier("move-done")
         case .failed(let failure):
             MoveFailureStep(failure: failure, retryTitle: "Try again", onRetry: onRetry, onClose: onClose)

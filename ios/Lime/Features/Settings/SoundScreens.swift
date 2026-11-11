@@ -62,7 +62,7 @@ struct AddSoundSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
-                    Text(kind == .message ? "Your message sound" : "Your call sound").font(Theme.font(.title3, weight: .bold)).foregroundStyle(Theme.text).padding(.top, 16)
+                    Text(kind == .message ? "Your message sound" : "Your call sound").font(Theme.font(.title3, weight: .bold)).foregroundStyle(Theme.text).padding(.top, 16).accessibilityAddTraits(.isHeader)
                     Text(kind == .message ? "Pick a short sound. lime keeps up to 2 seconds of it." : "Pick a sound. lime keeps up to 29 seconds of it.")
                         .font(Theme.secondary).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
                     Button { picking = true } label: {
@@ -97,7 +97,7 @@ struct AddSoundSheet: View {
                         .accessibilityIdentifier("sound-save")
                     }
                     if let problem { Text(problem).font(Theme.secondary).foregroundStyle(Theme.danger).announcesWhenShown(problem).accessibilityIdentifier("sound-problem") }
-                    Button("Cancel") { SoundPreview.shared.stop(); dismiss() }.foregroundStyle(Theme.text).accessibilityIdentifier("sound-cancel")
+                    Button("Cancel") { SoundPreview.shared.stop(); dismiss() }.foregroundStyle(Theme.text).frame(minHeight: 44).contentShape(Rectangle()).accessibilityIdentifier("sound-cancel")
                 }
                 .padding(.horizontal, 20).padding(.bottom, 32)
             }

@@ -185,8 +185,8 @@ struct InviteCard: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            Image(systemName: "person.crop.circle.badge.plus").font(.system(size: 34)).foregroundStyle(Theme.text)
-            Text("Invite a teacher").font(Theme.title).foregroundStyle(Theme.text)
+            Image(systemName: "person.crop.circle.badge.plus").font(.system(size: 34)).foregroundStyle(Theme.text).accessibilityHidden(true)
+            Text("Invite a teacher").font(Theme.title).foregroundStyle(Theme.text).accessibilityAddTraits(.isHeader)
             Text("Bring a colleague to lime. Pick them from your contacts and send the invite from your own phone.")
                 .font(Theme.secondary).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
             Button(action: action) {

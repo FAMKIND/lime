@@ -24,7 +24,7 @@ struct TextSizeScreen: View {
             } else {
                 TextPreview()
             }
-            Picker("Settings", selection: $tab) {
+            Picker("Text size or font", selection: $tab) {
                 ForEach(Tab.allCases) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented)

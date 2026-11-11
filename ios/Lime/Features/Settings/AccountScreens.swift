@@ -12,13 +12,13 @@ struct AccountScreen: View {
         SettingsPage(title: "Account") {
             SettingsCard {
                 HStack(spacing: 14) {
-                    Image(systemName: "envelope").font(.system(size: 20)).frame(width: 28).foregroundStyle(Theme.text)
+                    Image(systemName: "envelope").font(.system(size: 20)).frame(width: 28).foregroundStyle(Theme.text).accessibilityHidden(true)
                     Text("Email").font(Theme.body).foregroundStyle(Theme.text)
                     Spacer()
                     Text(session.profile?.maskedEmail ?? session.maskedEmail ?? "—").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
                         .accessibilityIdentifier("account-email")
                 }
-                .padding(.horizontal, 18).frame(minHeight: 58)
+                .padding(.horizontal, 18).frame(minHeight: 58).modifier(OneStopRow())
                 Divider().overlay(Theme.hairline).padding(.leading, 60)
                 SettingsRow(symbol: "key", title: "Change Password", route: .changePassword, id: "account-change-password")
                 Divider().overlay(Theme.hairline).padding(.leading, 60)
@@ -326,7 +326,7 @@ struct KeysScreen: View {
                         Text("Your key was set on \(Self.date(info.createdAt))").font(Theme.body).foregroundStyle(Theme.text)
                             .accessibilityIdentifier("keys-date")
                         Text(info.fingerprint).font(.system(.title3, design: .monospaced, weight: .semibold)).foregroundStyle(Theme.text)
-                            .textSelection(.enabled).accessibilityIdentifier("keys-fingerprint")
+                            .textSelection(.enabled).modifier(SpokenCharacters(text: info.fingerprint)).accessibilityIdentifier("keys-fingerprint")
                     }
                     .frame(maxWidth: .infinity, alignment: .leading).padding(18)
                 }
@@ -348,14 +348,14 @@ struct LinkedDevicesScreen: View {
         SettingsPage(title: "Linked Devices") {
             SettingsCard {
                 HStack(spacing: 14) {
-                    Image(systemName: "iphone").font(.system(size: 24)).frame(width: 32).foregroundStyle(Theme.text)
+                    Image(systemName: "iphone").font(.system(size: 24)).frame(width: 32).foregroundStyle(Theme.text).accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("This iPhone").font(Theme.title).foregroundStyle(Theme.text).accessibilityIdentifier("devices-this")
                         Text("Active now").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
                     }
                     Spacer()
                 }
-                .padding(18)
+                .padding(18).modifier(OneStopRow())
             }
             SettingsFootnote(text: "Using lime on more than one device is coming soon.")
                 .accessibilityIdentifier("devices-note")
@@ -440,20 +440,20 @@ struct AboutScreen: View {
                 Link(destination: URL(string: TermsAcceptance.termsURL)!) {
                     SettingsRowLabel(symbol: "checkmark.shield", title: "Terms of Service")
                 }
-                .accessibilityIdentifier("about-terms")
+                .accessibilityHint("Opens in your browser").accessibilityIdentifier("about-terms")
                 Link(destination: URL(string: TermsAcceptance.privacyURL)!) {
                     SettingsRowLabel(symbol: "lock", title: "Privacy Policy")
                 }
-                .accessibilityIdentifier("about-privacy")
+                .accessibilityHint("Opens in your browser").accessibilityIdentifier("about-privacy")
                 // LIME-282b
                 Link(destination: URL(string: TermsAcceptance.guidelinesURL)!) {
                     SettingsRowLabel(symbol: "person.2", title: "Community guidelines")
                 }
-                .accessibilityIdentifier("about-guidelines")
+                .accessibilityHint("Opens in your browser").accessibilityIdentifier("about-guidelines")
                 Link(destination: URL(string: TermsAcceptance.safetyURL)!) {
                     SettingsRowLabel(symbol: "lifepreserver", title: "Safety and reporting abuse", showsDivider: false)
                 }
-                .accessibilityIdentifier("about-safety")
+                .accessibilityHint("Opens in your browser").accessibilityIdentifier("about-safety")
             }
             #if DEBUG
             SettingsCard {

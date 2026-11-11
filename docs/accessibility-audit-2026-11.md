@@ -803,3 +803,46 @@ Added by LIME-321 (2026-11-11). Nothing above is changed; line numbers are this 
 | 675 | ask / deferred | renaming the tabs is a product decision; the 12 pt badge font is deferred |
 | 676 | fixed in 321 |  |
 | 678 | fixed in 321 |  |
+
+## LIME-322 status (130-m2: the minors for profile, settings, themes, onboarding, emergency, groups)
+
+Added by LIME-322 (2026-11-11). Same meaning as the table above: **already fixed** (an earlier brief), **fixed in 322**, **ask / deferred**. No row is stale.
+
+| line | status | note |
+|---|---|---|
+| 193 | already fixed | 130-7 (the guard sweep covers link on surface) |
+| 195 | already fixed | 130-7 (secondary checked on the pill fills) |
+| 197 | already fixed | 130-7 (text pairs at 4.5:1; the hairline is 3:1 only with Increase Contrast, left: nothing relies on it alone) |
+| 212 | already fixed | 130-2 (`Theme.danger` is guarded; the label is text) |
+| 215 | ask / deferred | hairline and bubble-edge colours would change the look: a design decision (nothing relies on the hairline alone) |
+| 241 | already fixed | 130-2 (away/DND colours re-chosen; shape carries it) |
+| 257 | fixed in 322 | wallpaper chips on the three quiet lines |
+| 276 | fixed in 322 | the voice message's time uses the guarded caption colour |
+| 313 | ask / deferred | the composer's font does not follow a chat's own text size; needs a signature change and a device test |
+| 339 | fixed in 322 | chips 44 pt; the count is spoken as people are picked |
+| 343 | ask / deferred | white name over a photo: contrast per photo needs a device test; a scrim on the name is a visual change |
+| 345 | fixed in 322 | the spinner is "Working" and a problem is announced |
+| 346 | fixed in 322 | names wrap at accessibility sizes (a confirmation for Reset is ask) |
+| 600 | already fixed | 130-2 |
+| 601 | fixed in 322 | the sheet title is a heading; with VoiceOver the students row is one adjustable element (the buttons stay for touch) |
+| 610 | fixed in 322 | chevrons and icons hidden; external links say "Opens in your browser" |
+| 611 | fixed in 322 | the picker is named "Text size or font" |
+| 619 | fixed in 322 | Rename and Delete are actions on the custom sounds (the footnote wording is ask) |
+| 620 | fixed in 322 | title is a heading; Cancel is 44 pt |
+| 621 | fixed in 322 | Email, Linked devices and Storage rows are one stop for VoiceOver |
+| 622 | fixed in 322 | with VoiceOver the fingerprint is read character by character (the mono font not scaling is ask) |
+| 623 | already fixed | 130-5a (`dangerFill` with white text; the error is announced and a hint) |
+| 624 | already fixed | 130-5a (announced; the visibility heading is a Section header) |
+| 625 | fixed in 322 | the emoji field overlay is hidden; the emoji button names the current emoji |
+| 636 | fixed in 322 | the blank hero action is gone (a visible pause button is ask) |
+| 637 | fixed in 322 | the name is a heading (contrast over real photos needs a device check) |
+| 638 | fixed in 322 | "Copied" announced; "See all" names its list; values wrap; the hero fade honours Reduce Motion |
+| 639 | ask / deferred | the tab label's hard-coded ", tab, 1 of N" is a wording decision (and a localisation one) |
+| 650 | fixed in 322 | Resend code keeps one name, the wait is its value (box clipping at accessibility sizes needs a device check) |
+| 651 | fixed in 322 | Terms, Privacy and Guidelines are links |
+| 652 | fixed in 322 | the welcome headline is a heading (the markdown links need a device check) |
+| 653 | fixed in 322 | the top bar grows with the text; Next says Working; the step animation honours Reduce Motion |
+| 654 | fixed in 322 | the icon is hidden; the title is a heading |
+| 665 | fixed in 322 | the code scales with the text; copy, looking, waiting and done are announced (wrapping the code is ask) |
+| 666 | fixed in 322 | card titles are headings |
+| 679 | fixed in 322 | the self-test result is announced |

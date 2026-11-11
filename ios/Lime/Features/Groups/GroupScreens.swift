@@ -47,6 +47,7 @@ struct GroupPickerScreen: View {
                 .accessibilityIdentifier("group-next")
             }
             Text(countText).font(Theme.secondary).foregroundStyle(Theme.textSecondary)
+                .onChange(of: chosen.count) { _, _ in Announce.say(countText) }
                 .accessibilityIdentifier("group-count")
                 .frame(maxWidth: .infinity)
             if !chosen.isEmpty {
@@ -61,6 +62,7 @@ struct GroupPickerScreen: View {
                                         Image(systemName: "xmark").font(.system(size: 11, weight: .bold)).foregroundStyle(Theme.textSecondary)
                                     }
                                     .padding(.leading, 6).padding(.trailing, 10).padding(.vertical, 5)
+                                    .frame(minHeight: 44)
                                     .background(Theme.surface, in: Capsule())
                                 }
                                 .buttonStyle(.plain)
