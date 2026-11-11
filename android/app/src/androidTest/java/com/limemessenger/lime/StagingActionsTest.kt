@@ -111,9 +111,9 @@ class StagingActionsTest {
         // Edit: Ada changes her message; it says edited; the partner prints it.
         longPress(mine)
         rule.onNodeWithTag("action-edit", useUnmergedTree = true).performClick()
-        rule.onNodeWithTag("edit-field", useUnmergedTree = true).performTextClearance()
-        rule.onNodeWithTag("edit-field", useUnmergedTree = true).performTextInput("Hello Ben (edited)")
-        rule.onNodeWithTag("edit-save", useUnmergedTree = true).performClick()
+        rule.onNodeWithTag("composer-field", useUnmergedTree = true).performTextClearance()
+        rule.onNodeWithTag("composer-field", useUnmergedTree = true).performTextInput("Hello Ben (edited)")
+        rule.onNodeWithTag("send-button", useUnmergedTree = true).performClick()
         rule.waitUntil(30_000) { descriptions().any { it.startsWith("You, Hello Ben (edited)") && it.contains(", edited") } }
 
         // Delete for everyone: a new message, then "This message was deleted"; the partner prints it.

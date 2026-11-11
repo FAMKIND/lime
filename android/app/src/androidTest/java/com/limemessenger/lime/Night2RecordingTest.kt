@@ -105,9 +105,9 @@ class Night2RecordingTest {
         rule.waitUntil(10_000) { count("message-actions") > 0 }
         pause(600); rule.onNodeWithTag("action-edit", useUnmergedTree = true).performClick()
         pause(600)
-        rule.onNodeWithTag("edit-field", useUnmergedTree = true).performTextClearance()
-        rule.onNodeWithTag("edit-field", useUnmergedTree = true).performTextInput("Hello team, lunch at 12:30?")
-        pause(600); rule.onNodeWithTag("edit-save", useUnmergedTree = true).performClick()
+        rule.onNodeWithTag("composer-field", useUnmergedTree = true).performTextClearance()
+        rule.onNodeWithTag("composer-field", useUnmergedTree = true).performTextInput("Hello team, lunch at 12:30?")
+        pause(600); rule.onNodeWithTag("send-button", useUnmergedTree = true).performClick()
         pause(1800); shot("5-reaction-and-edit")
 
         // A voice message (the real microphone; best effort).

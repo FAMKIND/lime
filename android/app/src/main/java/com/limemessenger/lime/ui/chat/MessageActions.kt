@@ -101,19 +101,6 @@ fun MessageActionsSheet(message: MessageItem, plan: List<MessageAction>, onReact
     }
 }
 
-/** Edit: the message's words in a small dialog; Save is off for blank words (a caption-less photo may be saved blank, as iOS). */
-@Composable
-fun EditMessageDialog(initial: String, allowBlank: Boolean, onSave: (String) -> Unit, onCancel: () -> Unit) {
-    var text by remember { mutableStateOf(initial) }
-    AlertDialog(
-        onDismissRequest = onCancel,
-        title = { Text(stringResource(R.string.message_edit_title)) },
-        text = { OutlinedTextField(value = text, onValueChange = { text = it }, modifier = Modifier.fillMaxWidth().testTag("edit-field")) },
-        confirmButton = { TextButton(onClick = { onSave(text) }, enabled = allowBlank || text.trim().isNotEmpty(), modifier = Modifier.heightIn(min = 48.dp).testTag("edit-save")) { Text(stringResource(R.string.group_save)) } },
-        dismissButton = { TextButton(onClick = onCancel, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.group_cancel)) } },
-    )
-}
-
 /** Delete: for me always; for everyone when every message allows it (the core's rule), with iOS's words. */
 @Composable
 fun DeleteMessagesDialog(count: Int, everyoneAllowed: Boolean, onDelete: (everyone: Boolean) -> Unit, onCancel: () -> Unit) {

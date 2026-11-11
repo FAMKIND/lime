@@ -219,7 +219,6 @@
     <string name="message_react_with">React with %1$s</string>
     <string name="message_reaction_chip">%1$s, %2$d. Tap to react the same.</string>
     <string name="message_reaction_mine">%1$s, %2$d, including you. Tap to remove yours.</string>
-    <string name="message_edit_title">Edit message</string>
     <string name="message_delete_title_one">Delete message?</string>
     <string name="message_delete_title_many">Delete %1$d messages?</string>
     <string name="message_delete_me">Delete for me</string>
@@ -522,4 +521,7 @@
     <string name="link_apply">Add</string>
     <string name="link_remove">Remove link</string>
     <string name="link_error">That isn\u2019t a web address.</string>
+    <string name="composer_editing">Editing</string>
+    <string name="composer_cancel_edit">Cancel editing</string>
+    <string name="composer_save">Save</string>
 </resources>

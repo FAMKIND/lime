@@ -72,10 +72,10 @@ class ComposerRichUiTest {
 
     @After fun tearDown() { store.close(); dir.deleteRecursively(); KeystoreKey.delete(alias) }
 
-    private fun show(fontScale: Float = 1f) {
+    private fun show(fontScale: Float = 1f, model: ChatModel = dm) {
         rule.setContent {
             val d = LocalDensity.current
-            CompositionLocalProvider(LocalDensity provides Density(d.density, fontScale)) { LimeTheme { ChatScreen(dm, chats, onBack = {}) } }
+            CompositionLocalProvider(LocalDensity provides Density(d.density, fontScale)) { LimeTheme { ChatScreen(model, chats, onBack = {}) } }
         }
         rule.waitUntil(5_000) { count("composer-field") > 0 }
     }
@@ -215,5 +215,44 @@ class ComposerRichUiTest {
         rule.waitForIdle()
         assertEquals("the item ended and the line before is intact", "a\n", fieldText())
         assertEquals("a", send())
+    }
+
+    /** Runs the message's TalkBack action `label` (the same code as the long-press menu's). */
+    private fun action(messageId: String, label: String) {
+        val node = rule.onNodeWithTag("message-$messageId").fetchSemanticsNode()
+        val all = node.config[androidx.compose.ui.semantics.SemanticsActions.CustomActions]
+        val act = all.firstOrNull { it.label == label } ?: throw AssertionError("no \"$label\" among ${all.map { it.label }}; state ${store.listMessages(dmId).last { it.senderId == null }.localState}")
+        rule.runOnUiThread { act.action() }
+        rule.waitForIdle()
+    }
+    private fun ownId() = store.listMessages(dmId).last { it.senderId == null }.id
+
+    // LIME-406 A (the edit itself, and that it is delivered, is the core's and `StagingActionsTest`'s; here: the composer's side)
+    private fun showEditing(markdown: String, draft: String = ""): String {
+        runBlocking { dm.send(markdown) }
+        val message = store.listMessages(dmId).last { it.senderId == null }
+        rule.setContent { LimeTheme { ChatScreen(dm, chats, onBack = {}, seedEdit = message) } }
+        rule.waitUntil(5_000) { count("edit-banner") > 0 }
+        return message.id
+    }
+
+    @Test fun editLoadsTheMessagesMarkdownWithItsFormattingAndSaveReplacesSend() {
+        showEditing("**bold** word")
+        assertEquals("the message's words, formatting kept (the bold word is drawn, not shown as asterisks)", "bold word", fieldText())
+        assertEquals("Save", words("send-button"))
+        assertEquals(0, count("voice-mic"))
+        type(" and more")
+        assertEquals("Save", words("send-button"))
+    }
+
+    @Test fun cancellingAnEditChangesNothingAndTheCancelButtonSaysSo() {
+        showEditing("keep me")
+        assertEquals("Cancel editing", words("edit-cancel"))
+        click("edit-cancel")
+        rule.waitUntil(5_000) { count("edit-banner") == 0 }
+        assertEquals("", fieldText())
+        assertEquals("keep me", store.listMessages(dmId).last { it.senderId == null }.text)
+        assertFalse(store.listMessages(dmId).last { it.senderId == null }.edited)
+        assertEquals("the microphone is back", 1, count("voice-mic"))
     }
 }

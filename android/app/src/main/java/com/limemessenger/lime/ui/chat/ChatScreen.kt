@@ -134,7 +134,9 @@ import uniffi.lime_core.messagePlainText
 @Composable
 fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenThread: (MessageItem) -> Unit = {}, modifier: Modifier = Modifier, onOpenProfile: (String, String) -> Unit = { _, _ -> }, onOpenGroup: () -> Unit = {}, focusMessageId: String? = null,
     /** Photos already in the composer's draft strip (screenshots and tests: the Photo Picker cannot be driven headless). */
-    seedPhotos: List<OutgoingAttachment> = emptyList()) {
+    seedPhotos: List<OutgoingAttachment> = emptyList(),
+    /** A message already being edited (tests: a local-only message is not offered Edit, as the core only lets a sent or sending one be edited). */
+    seedEdit: MessageItem? = null) {
     val colors = Lime.colors
     val scope = rememberCoroutineScope()
     val summary = model.summary
@@ -145,7 +147,7 @@ fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenTh
     BackHandler(enabled = viewer != null) { viewer = null }
     // Message actions (LIME-304): the menu, the edit dialog, the delete confirmation, the forward picker, and Select mode.
     var menuFor by remember { mutableStateOf<MessageItem?>(null) }
-    var editing by remember { mutableStateOf<MessageItem?>(null) }
+    var editing by remember { mutableStateOf<MessageItem?>(seedEdit) }
     var deleting by remember { mutableStateOf<List<MessageItem>>(emptyList()) }
     var forwarding by remember { mutableStateOf<List<String>?>(null) }
     var reporting by remember { mutableStateOf<uniffi.lime_core.ReportTargetInfo?>(null) }
@@ -234,16 +236,12 @@ fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenTh
         model.banner?.let { Text(it, color = colors.danger, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).testTag("chat-banner")) }
         if (summary != null && summary.isRequest) RequestBar(summary.title, onBlock = { blocking = true }) { scope.launch { chats.acceptRequest(summary.id) } }
         else if (summary?.groupEnded != null) EndedBar(summary.groupEnded == "left") { scope.launch { chats.removeChat(summary.id); onBack() } }
-        else if (selection == null) Composer(model, seedPhotos, panelOpen = gifPanel, onGif = { gifPanel = true }) { text, photos -> scope.launch { if (photos.isNotEmpty()) model.sendPhotos(photos, text) else model.send(text) } }
+        else if (selection == null) Composer(model, seedPhotos, editing = editing, onEdited = { editing = null }, onSaveEdit = { item, text -> scope.launch { model.edit(item, text) } }, panelOpen = gifPanel, onGif = { gifPanel = true }) { text, photos -> scope.launch { if (photos.isNotEmpty()) model.sendPhotos(photos, text) else model.send(text) } }
     }
     viewer?.let { (item, index) -> PhotoViewer(item.attachments.filter { it.mime.startsWith("image/") }, index, model, onClose = { viewer = null }) }
     menuFor?.let { item ->
         MessageActionsSheet(item, uniffi.lime_core.messageActions(item, false, System.currentTimeMillis()),
             onReact = { emoji -> menuFor = null; scope.launch { model.react(item, emoji) } }, onAction = { perform(it, item) }, onDismiss = { menuFor = null })
-    }
-    editing?.let { item ->
-        EditMessageDialog(item.text, allowBlank = item.attachments.isNotEmpty(),
-            onSave = { text -> editing = null; scope.launch { model.edit(item, text) } }, onCancel = { editing = null })
     }
     if (gifPanel) GifPanel(chats, onSend = { gif -> gifPanel = false; scope.launch { model.sendPhotos(listOf(gif), "", "GIF") } }, onDismiss = { gifPanel = false })
     reporting?.let { target -> com.limemessenger.lime.ui.moderation.ReportDialog(target, chats, onDismiss = { reporting = null }) }
@@ -471,13 +469,19 @@ private class DraftPhoto(var attachment: OutgoingAttachment, val preview: ImageB
 
 /** The composer: plain text, photos from the system Photo Picker, a reply bar when replying, and send = the one lime action. */
 @Composable
-private fun Composer(model: ChatModel, seedPhotos: List<OutgoingAttachment>, panelOpen: Boolean, onGif: () -> Unit, onSend: (String, List<OutgoingAttachment>) -> Unit) {
+private fun Composer(model: ChatModel, seedPhotos: List<OutgoingAttachment>, editing: MessageItem?, onEdited: () -> Unit, onSaveEdit: (MessageItem, String) -> Unit, panelOpen: Boolean, onGif: () -> Unit, onSend: (String, List<OutgoingAttachment>) -> Unit) {
     val colors = Lime.colors
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     // The message being written: the field's text, and the core's document for its styles and lists (LIME-405). A draft survives a rotation as its Markdown.
     val composer = rememberSaveable(saver = androidx.compose.runtime.saveable.Saver<ComposerModel, String>(save = { it.markdown() }, restore = { ComposerModel(it) })) { ComposerModel() }
     var linking by remember { mutableStateOf(false) }
+    // Edit (LIME-406 A): the message's Markdown goes into this same composer, with its formatting; what was being written waits and comes back when editing ends.
+    var waiting by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(editing?.id) {
+        if (editing != null) { if (waiting == null) waiting = composer.markdown(); composer.load(editing.text) }
+    }
+    val finishEdit: () -> Unit = { composer.load(waiting.orEmpty()); waiting = null; onEdited() }
     LaunchedEffect(composer) { androidx.compose.runtime.snapshotFlow { composer.textState.selection }.collect { composer.selectionMoved() } }
     val drafts = remember {
         mutableStateListOf<DraftPhoto>().also { list -> seedPhotos.forEach { a -> AttachmentProcessing.decodeForDisplay(a.bytes, 320)?.let { list.add(DraftPhoto(a, it.asImageBitmap())) } } }
@@ -531,7 +535,7 @@ private fun Composer(model: ChatModel, seedPhotos: List<OutgoingAttachment>, pan
     @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
     val keyboardUp = androidx.compose.foundation.layout.WindowInsets.isImeVisible
     var attaching by remember { mutableStateOf(false) }
-    val canSend = composer.hasWords || drafts.isNotEmpty()
+    val canSend = if (editing != null) (composer.hasWords || editing.attachments.isNotEmpty()) else (composer.hasWords || drafts.isNotEmpty())
     val cardShape = RoundedCornerShape(26.dp)
     // The lime pattern (iOS `ChatComposer`): ONE rounded card, the text on top at the card's full width, one tool row under it. Adding a tool never changes the field's size.
     Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 4.dp).testTag("composer-bar")) {
@@ -539,6 +543,17 @@ private fun Composer(model: ChatModel, seedPhotos: List<OutgoingAttachment>, pan
             Modifier.fillMaxWidth().shadow(6.dp, cardShape, clip = false, ambientColor = Color.Black.copy(alpha = 0.12f), spotColor = Color.Black.copy(alpha = 0.12f))
                 .background(colors.surface, cardShape).border(1.dp, colors.hairline, cardShape).testTag("composer-card").padding(horizontal = 12.dp).padding(top = 2.dp, bottom = 4.dp),
         ) {
+            if (editing != null) {
+                val editWords = stringResource(R.string.composer_editing)
+                val cancelWords = stringResource(R.string.composer_cancel_edit)
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp).background(colors.chip, RoundedCornerShape(12.dp)).padding(start = 12.dp).testTag("edit-banner"), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f).padding(vertical = 8.dp).semantics(mergeDescendants = true) {}) {
+                        Text(editWords, color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Text(messagePlainText(editing.text).replace("\n", " ").ifEmpty { AttachmentFormat.summary(editing.attachments).orEmpty() }, color = colors.textSecondary, fontSize = 13.sp, maxLines = 1)
+                    }
+                    IconButton(onClick = finishEdit, Modifier.size(48.dp).semantics { contentDescription = cancelWords }.testTag("edit-cancel")) { Icon(Icons.Close, contentDescription = null, tint = colors.text) }
+                }
+            }
             if (reply != null) {
                 val name = model.summary?.members?.firstOrNull { it.id == reply.senderId }?.name?.split(" ")?.firstOrNull() ?: "you"
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp).background(colors.chip, RoundedCornerShape(12.dp)).padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -603,9 +618,9 @@ private fun Composer(model: ChatModel, seedPhotos: List<OutgoingAttachment>, pan
             if (recorder.phase != VoiceRecorder.Phase.Locked) Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.alpha(if (recorder.isRecording) 0f else 1f), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                     val plusWords = stringResource(R.string.composer_plus)
-                    ToolButton(plusWords, "composer-plus", enabled = !recorder.isRecording, onClick = { attaching = true; problem = null })
+                    ToolButton(plusWords, "composer-plus", enabled = !recorder.isRecording && editing == null, onClick = { attaching = true; problem = null })
                     val emojiWords = stringResource(R.string.composer_emoji)
-                    ToolButton(emojiWords, "attach-gif", selected = panelOpen, enabled = !recorder.isRecording, onClick = onGif) { Icon(Icons.Face, null, tint = colors.text) }
+                    ToolButton(emojiWords, "attach-gif", selected = panelOpen, enabled = !recorder.isRecording && editing == null, onClick = onGif) { Icon(Icons.Face, null, tint = colors.text) }
                     val formatWords = stringResource(R.string.composer_formatting)
                     ToolButton(formatWords, "composer-aa", selected = composer.stripShown, enabled = !recorder.isRecording, onClick = { composer.toggleStrip() }) {
                         Text("Aa", color = colors.text, fontSize = 17.sp, fontWeight = if (composer.stripShown) FontWeight.Bold else FontWeight.Medium)
@@ -616,12 +631,12 @@ private fun Composer(model: ChatModel, seedPhotos: List<OutgoingAttachment>, pan
                     }) { Icon(if (keyboardUp) Icons.KeyboardHide else Icons.Keyboard, null, tint = colors.text) }
                 }
                 Spacer(Modifier.weight(1f))
-                val sendLabel = stringResource(R.string.chat_send)
+                val sendLabel = stringResource(if (editing != null) R.string.composer_save else R.string.chat_send)
                 if (canSend && !recorder.isRecording) {
-                    Box(Modifier.size(48.dp).semantics { contentDescription = sendLabel; role = Role.Button }.clickable { onSend(composer.markdown(), drafts.map { it.attachment }); composer.clear(); drafts.clear() }.testTag("send-button"), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(48.dp).semantics { contentDescription = sendLabel; role = Role.Button }.clickable { if (editing != null) { onSaveEdit(editing, composer.markdown()); finishEdit() } else { onSend(composer.markdown(), drafts.map { it.attachment }); composer.clear(); drafts.clear() } }.testTag("send-button"), contentAlignment = Alignment.Center) {
                         Box(Modifier.size(36.dp).background(colors.accent, CircleShape), contentAlignment = Alignment.Center) { Icon(Icons.Send, contentDescription = null, tint = colors.accentInk, modifier = Modifier.size(20.dp)) }
                     }
-                } else {
+                } else if (editing == null) {
                     MicButton(
                         onPress = {
                             if (!micAllowedNow) { micPermission.launch(android.Manifest.permission.RECORD_AUDIO); false }
