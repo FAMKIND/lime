@@ -117,6 +117,9 @@ import com.limemessenger.lime.ui.common.Avatar
 import com.limemessenger.lime.ui.common.initialsOf
 import com.limemessenger.lime.ui.shell.Icons
 import com.limemessenger.lime.ui.theme.Lime
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -236,7 +239,7 @@ fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenTh
         model.banner?.let { Text(it, color = colors.danger, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).testTag("chat-banner")) }
         if (summary != null && summary.isRequest) RequestBar(summary.title, onBlock = { blocking = true }) { scope.launch { chats.acceptRequest(summary.id) } }
         else if (summary?.groupEnded != null) EndedBar(summary.groupEnded == "left") { scope.launch { chats.removeChat(summary.id); onBack() } }
-        else if (selection == null) Composer(model, seedPhotos, editing = editing, onEdited = { editing = null }, onSaveEdit = { item, text -> scope.launch { model.edit(item, text) } }, panelOpen = gifPanel, onGif = { gifPanel = true }) { text, photos -> scope.launch { if (photos.isNotEmpty()) model.sendPhotos(photos, text) else model.send(text) } }
+        else if (selection == null) Composer(model, chats, seedPhotos, editing = editing, onEdited = { editing = null }, onSaveEdit = { item, text -> scope.launch { model.edit(item, text) } }, panelOpen = gifPanel, onGif = { gifPanel = true }) { text, photos -> scope.launch { if (photos.isNotEmpty()) model.sendPhotos(photos, text) else model.send(text) } }
     }
     viewer?.let { (item, index) -> PhotoViewer(item.attachments.filter { it.mime.startsWith("image/") }, index, model, onClose = { viewer = null }) }
     menuFor?.let { item ->
@@ -469,7 +472,7 @@ private class DraftPhoto(var attachment: OutgoingAttachment, val preview: ImageB
 
 /** The composer: plain text, photos from the system Photo Picker, a reply bar when replying, and send = the one lime action. */
 @Composable
-private fun Composer(model: ChatModel, seedPhotos: List<OutgoingAttachment>, editing: MessageItem?, onEdited: () -> Unit, onSaveEdit: (MessageItem, String) -> Unit, panelOpen: Boolean, onGif: () -> Unit, onSend: (String, List<OutgoingAttachment>) -> Unit) {
+private fun Composer(model: ChatModel, chats: ChatsModel, seedPhotos: List<OutgoingAttachment>, editing: MessageItem?, onEdited: () -> Unit, onSaveEdit: (MessageItem, String) -> Unit, panelOpen: Boolean, onGif: () -> Unit, onSend: (String, List<OutgoingAttachment>) -> Unit) {
     val colors = Lime.colors
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -482,6 +485,21 @@ private fun Composer(model: ChatModel, seedPhotos: List<OutgoingAttachment>, edi
         if (editing != null) { if (waiting == null) waiting = composer.markdown(); composer.load(editing.text) }
     }
     val finishEdit: () -> Unit = { composer.load(waiting.orEmpty()); waiting = null; onEdited() }
+    // @mentions (LIME-406 B): in a group, "@" offers its people (and @everyone to an owner or admin).
+    val summaryNow = model.summary
+    val isGroup = summaryNow?.isGroup == true
+    val people = remember(summaryNow?.members, isGroup) { if (!isGroup) emptyList() else summaryNow!!.members.map { uniffi.lime_core.MentionPerson(it.id, it.name, it.label, it.username) } }
+    var mentionEveryone by remember { mutableStateOf(false) }
+    LaunchedEffect(model.conversationId, isGroup) {
+        mentionEveryone = false
+        if (isGroup) {
+            val role = chats.core()?.let { core -> withContext(Dispatchers.IO) { runCatching { core.groupDetails(model.conversationId) }.getOrNull() } }?.myRole
+            mentionEveryone = role == "owner" || role == "admin"
+        }
+    }
+    LaunchedEffect(composer, people, mentionEveryone) { androidx.compose.runtime.snapshotFlow { composer.doc to composer.textState.selection }.collect { composer.updateMentions(people, mentionEveryone) } }
+    var barTop by remember { mutableStateOf(0f) }
+    val statusTop = with(androidx.compose.ui.platform.LocalDensity.current) { androidx.compose.foundation.layout.WindowInsets.statusBars.getTop(this).toDp() }
     LaunchedEffect(composer) { androidx.compose.runtime.snapshotFlow { composer.textState.selection }.collect { composer.selectionMoved() } }
     val drafts = remember {
         mutableStateListOf<DraftPhoto>().also { list -> seedPhotos.forEach { a -> AttachmentProcessing.decodeForDisplay(a.bytes, 320)?.let { list.add(DraftPhoto(a, it.asImageBitmap())) } } }
@@ -538,7 +556,9 @@ private fun Composer(model: ChatModel, seedPhotos: List<OutgoingAttachment>, edi
     val canSend = if (editing != null) (composer.hasWords || editing.attachments.isNotEmpty()) else (composer.hasWords || drafts.isNotEmpty())
     val cardShape = RoundedCornerShape(26.dp)
     // The lime pattern (iOS `ChatComposer`): ONE rounded card, the text on top at the card's full width, one tool row under it. Adding a tool never changes the field's size.
-    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 4.dp).testTag("composer-bar")) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 4.dp).onGloballyPositioned { barTop = it.positionInWindow().y }.testTag("composer-bar")) {
+        // The @ list floats over the messages above the card (a window of its own): the card keeps its height. Its room is what there is under the header.
+        MentionPanel(composer.suggestions, room = with(androidx.compose.ui.platform.LocalDensity.current) { barTop.toDp() } - statusTop - 56.dp - 8.dp, onPick = { composer.pick(it) })
         Column(
             Modifier.fillMaxWidth().shadow(6.dp, cardShape, clip = false, ambientColor = Color.Black.copy(alpha = 0.12f), spotColor = Color.Black.copy(alpha = 0.12f))
                 .background(colors.surface, cardShape).border(1.dp, colors.hairline, cardShape).testTag("composer-card").padding(horizontal = 12.dp).padding(top = 2.dp, bottom = 4.dp),

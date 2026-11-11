@@ -524,4 +524,7 @@
     <string name="composer_editing">Editing</string>
     <string name="composer_cancel_edit">Cancel editing</string>
     <string name="composer_save">Save</string>
+    <string name="mention_suggestions">Suggestions, %1$d people</string>
+    <string name="mention_suggestions_one">Suggestions, 1 person</string>
+    <string name="mention_everyone_spoken">Everyone, notify the group</string>
 </resources>

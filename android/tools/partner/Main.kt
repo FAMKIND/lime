@@ -369,6 +369,7 @@ fun main(args: Array<String>) {
                         for (m in fresh) {
                             answered += m.id
                             val words = messagePlainText(m.text).replace("\n", " ").take(40)
+                            println("markdown: " + m.text.replace("\n", "\\n"))   // what arrived, exactly (LIME-406 B compares a mention's markup)
                             store.queueText(c.id, "$personaName here: got \"$words\"")
                             store.deliverQueued(http, freshToken(http, tokens))
                             println("replied in a group")

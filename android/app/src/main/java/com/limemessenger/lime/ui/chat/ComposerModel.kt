@@ -28,7 +28,15 @@ import uniffi.lime_core.composerBackspace
 import uniffi.lime_core.composerEmpty
 import uniffi.lime_core.composerEnter
 import uniffi.lime_core.composerFormatState
-import uniffi.lime_core.composerFromMarkdown
+import uniffi.lime_core.composerFromMarkdownWithMentions
+import uniffi.lime_core.composerExpandToMentions
+import uniffi.lime_core.composerInsertMention
+import uniffi.lime_core.composerMentionTrigger
+import uniffi.lime_core.composerMentionsToMarkdown
+import uniffi.lime_core.mentionSuggestions
+import uniffi.lime_core.MentionPerson
+import uniffi.lime_core.MentionSuggestion
+import uniffi.lime_core.MentionTrigger
 import uniffi.lime_core.composerMarkers
 import uniffi.lime_core.composerReplace
 import uniffi.lime_core.composerSetLink
@@ -76,7 +84,7 @@ class ComposerModel(markdown: String = "") {
 
     /** Puts a message's Markdown into the field (a draft, or a sent message to edit). */
     fun load(markdown: String) {
-        doc = composerFromMarkdown(markdown)
+        doc = composerFromMarkdownWithMentions(markdown)
         textState.edit { replace(0, length, doc.text); placeCursorAtEnd() }
         typing = null
         started = null
@@ -90,7 +98,7 @@ class ComposerModel(markdown: String = "") {
     }
 
     /** What to send: the canonical Markdown (a plain message has no markup but the escapes of a character that would read as one). */
-    fun markdown(): String = composerToMarkdown(doc).trim()
+    fun markdown(): String = composerMentionsToMarkdown(doc).trim()
 
     val hasWords: Boolean get() = composerToMarkdown(doc).isNotBlank()
 
@@ -126,8 +134,14 @@ class ComposerModel(markdown: String = "") {
         while (prefix < shortest && before[prefix] == after[prefix]) prefix++
         var suffix = 0
         while (suffix < shortest - prefix && before[before.length - 1 - suffix] == after[after.length - 1 - suffix]) suffix++
-        val removed = before.substring(prefix, before.length - suffix)
+        var removed = before.substring(prefix, before.length - suffix)
         val inserted = after.substring(prefix, after.length - suffix)
+        // A mention is one unit: an edit that touches any of it takes all of it (the new text then stands where it was).
+        val whole = composerExpandToMentions(doc, u(prefix), u(prefix + removed.length))
+        if (whole.start.toInt() != prefix || whole.end.toInt() != prefix + removed.length) {
+            prefix = whole.start.toInt()
+            removed = before.substring(prefix, whole.end.toInt())
+        }
         // A caret just before the inserted text's end keeps repeated letters honest ("aa" typed into "a").
         val style = typing ?: composerStyleAt(doc, u(prefix))
         val wasStarted = started
@@ -162,6 +176,34 @@ class ComposerModel(markdown: String = "") {
         val edit = composerBackspace(doc, 0u) ?: return false
         doc = edit.doc
         return true
+    }
+
+    // ---- @mentions (LIME-406 B)
+
+    /** The "@word" being typed, and who it can be (empty: no list). */
+    var suggestions by mutableStateOf<List<MentionSuggestion>>(emptyList())
+        private set
+    private var trigger: MentionTrigger? = null
+
+    /** Looks at the caret: opens, narrows or closes the list of people "@" offers. `people` empty (a chat with one person, or none) keeps it closed. */
+    fun updateMentions(people: List<MentionPerson>, everyone: Boolean) {
+        val s = selection
+        val t = if (people.isEmpty() || !s.collapsed) null else composerMentionTrigger(doc, u(s.min))
+        val found = if (t == null) emptyList() else mentionSuggestions(t.query, people, everyone, 30u)
+        trigger = t.takeIf { found.isNotEmpty() }
+        if (found != suggestions) suggestions = found
+    }
+
+    fun dismissMentions() { trigger = null; suggestions = emptyList() }
+
+    /** Puts the chosen person in place of the "@word", with a space after it. */
+    fun pick(choice: MentionSuggestion) {
+        val t = trigger ?: return
+        val edit = composerInsertMention(doc, t.start, t.end, choice.name, choice.id)
+        doc = edit.doc
+        textState.edit { replace(0, length, edit.doc.text); selection = TextRange(edit.selectionEnd.toInt()) }
+        announcement = "Mentioned ${choice.name}"
+        dismissMentions()
     }
 
     // ---- the strip
@@ -274,14 +316,16 @@ class ComposerModel(markdown: String = "") {
             val e = shifted(run.end.toInt(), false)
             if (e <= s) continue
             val st = run.style
+            val mention = run.link?.startsWith("mention:") == true
+            val link = run.link != null && !mention
             val decoration = listOfNotNull(
-                if (st.underline || run.link != null) TextDecoration.Underline else null, if (st.strike) TextDecoration.LineThrough else null,
+                if (st.underline || link) TextDecoration.Underline else null, if (st.strike) TextDecoration.LineThrough else null,
             )
             buffer.addStyle(
                 SpanStyle(
-                    fontWeight = if (st.bold) FontWeight.Bold else null, fontStyle = if (st.italic) FontStyle.Italic else null,
+                    fontWeight = if (st.bold || mention) FontWeight.Bold else null, fontStyle = if (st.italic) FontStyle.Italic else null,
                     textDecoration = decoration.takeIf { it.isNotEmpty() }?.let { TextDecoration.combine(it) }, fontFamily = if (st.code) FontFamily.Monospace else null,
-                    color = if (run.link != null) linkColor else Color.Unspecified,
+                    color = if (link) linkColor else Color.Unspecified,
                 ),
                 s, e,
             )

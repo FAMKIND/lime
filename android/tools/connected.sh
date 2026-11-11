@@ -18,11 +18,11 @@ for avd in ${AVDS:-lime-api36 lime-api26}; do
     ./gradlew -q installDebug installDebugAndroidTest || status=1
     # The server allows 10 device registrations per hour per account (staging's LIME_RATE_REGISTER_PER_HOUR), and every class registers Ada once, so
     # only the chat and groups tests run by default (LIME-303); STAGING_CLASSES="StagingSignInTest StagingChatTest" runs both.
-    for cls in ${STAGING_CLASSES:-StagingChatTest StagingGroupsTest StagingActionsTest StagingListTest StagingVoiceFilesTest StagingJamTest StagingJamWriteTest StagingModerationTest StagingGifTest StagingComposerTest}; do
+    for cls in ${STAGING_CLASSES:-StagingChatTest StagingGroupsTest StagingActionsTest StagingListTest StagingVoiceFilesTest StagingJamTest StagingJamWriteTest StagingModerationTest StagingGifTest StagingComposerTest StagingMentionTest}; do
       tools/staging-test-accounts.sh --push >/dev/null || status=1
       tools/partner/run reset >/dev/null || status=1
       case "$cls" in
-        StagingGroupsTest*)
+        StagingGroupsTest*|StagingMentionTest*)
           # Groups (LIME-303): Ben and Cleo both answer in every group and accept invitations (a fresh store each).
           tools/partner/run reset --as cleo >/dev/null || status=1
           tools/partner/run group-echo >/tmp/lime-partner.log 2>&1 &
@@ -74,6 +74,9 @@ for avd in ${AVDS:-lime-api36 lime-api26}; do
         grep -qF 'markdown: **bold** word' /tmp/lime-partner.log || { status=1; echo "$cls: Ben never got the bold message as **bold** word"; }
         grep -qF 'markdown: - one\n- two' /tmp/lime-partner.log || { status=1; echo "$cls: Ben never got the list as - one, - two"; }
         grep -qF 'markdown: see the [plan](https://limemessenger.com/plan) today' /tmp/lime-partner.log || { status=1; echo "$cls: Ben never got the link"; } ;; esac
+      case "$cls" in StagingMentionTest*)
+        # Ben must have received the mention as the core's markup: [@Ben Android](mention:<his id>).
+        grep -Eq 'markdown: hi \[@Ben Android\]\(mention:[0-9a-f-]+\) there' /tmp/lime-partner.log || { status=1; echo "$cls: Ben never got the mention as [@Ben Android](mention:<id>)"; } ;; esac
       kill "$partner" $partner2 2>/dev/null; pkill -f "MainKt echo" 2>/dev/null; pkill -f "MainKt actions-echo" 2>/dev/null; pkill -f "MainKt jam-echo" 2>/dev/null; pkill -f "MainKt group-echo" 2>/dev/null
     done
     adb uninstall com.limemessenger.lime >/dev/null 2>&1
