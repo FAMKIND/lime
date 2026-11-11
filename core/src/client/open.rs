@@ -22,6 +22,10 @@ use super::jam::SeriesInfo;
 /// What the writer's device signs, in front of the row's text.
 pub(crate) const OPEN_LABEL: &str = "lime-open-post-v1\n";
 
+/// The most the signed text of an open post may be: the server takes 200 KiB (`MAX_PAYLOAD_BYTES` in `supabase/functions/_shared/openPosts.ts`), and the
+/// words and files need room beside the transcripts.
+const OPEN_PAYLOAD_BUDGET: usize = 190 * 1024;
+
 /// How many open deliveries one pass makes.
 const OPEN_PER_PASS: usize = 5;
 
@@ -31,6 +35,12 @@ pub struct OpenFileRef {
     pub id: String,
     pub url: String,
     pub mime: String,
+    /// The writer's description of a photo (LIME-130-6b-2), or empty. Part of the signed text, public like the rest of an open post by the writer's choice.
+    #[uniffi(default = "")]
+    pub alt: String,
+    /// The writer's transcript of an audio or video file, or empty. Left out when it would not fit the open copy's size limit.
+    #[uniffi(default = "")]
+    pub transcript: String,
 }
 
 /// An open post, **verified** (its signature, certificate and author checked on this phone).
@@ -165,10 +175,14 @@ impl LimeStore {
             (Some(s), "article") => s.kept_files.iter().map(|n| *n as usize).collect(),
             _ => (0..attachments.len()).collect(),
         };
-        let files: Vec<(String, String, u64)> = kept
+        // Each file with its description and transcript, which the writer wrote for anyone to read (they are in the signed text below).
+        let files: Vec<(String, String, u64, String, String)> = kept
             .iter()
             .filter_map(|i| attachments.get(*i))
-            .filter_map(|a| Some((a.get("id")?.as_str()?.to_owned(), a.get("mime")?.as_str()?.to_owned(), a.get("size").and_then(Value::as_u64).unwrap_or(0))))
+            .filter_map(|a| {
+                let text = |k: &str| a.get(k).and_then(Value::as_str).unwrap_or("").to_owned();
+                Some((a.get("id")?.as_str()?.to_owned(), a.get("mime")?.as_str()?.to_owned(), a.get("size").and_then(Value::as_u64).unwrap_or(0), text("alt"), text("transcript")))
+            })
             .collect();
         let markdown = split.as_ref().map(|s| s.markdown.clone()).unwrap_or_else(|| row.markdown.clone());
         let has_rest = split.as_ref().is_some_and(|s| s.has_rest);
@@ -194,7 +208,7 @@ impl LimeStore {
             "title": row.title,
             "subtitle": row.subtitle,
             "markdown": markdown,
-            "attachments": files.iter().map(|(id, mime, size)| json!({ "id": id, "mime": mime, "size": size })).collect::<Vec<_>>(),
+            "attachments": files.iter().map(|(id, mime, size, alt, _)| { let mut f = json!({ "id": id, "mime": mime, "size": size }); if !alt.is_empty() { f["alt"] = json!(alt); } f }).collect::<Vec<_>>(),
             "topics": topics,
             "preview_of": if split.is_some() { json!(post_id) } else { Value::Null },
             "has_rest": has_rest,
@@ -204,9 +218,17 @@ impl LimeStore {
         if let Some(series) = row.series.as_deref().and_then(|s| serde_json::from_str::<Value>(s).ok()) {
             payload["series"] = series;
         }
+        // Transcripts go in while the whole signed text stays under what the server takes (`MAX_PAYLOAD_BYTES`, 200 KiB, less a margin): one that would
+        // not fit is left out of the open copy (the subscribers' copy keeps it).
+        for (i, (_, _, _, _, transcript)) in files.iter().enumerate() {
+            if transcript.is_empty() { continue }
+            let mut with = payload.clone();
+            with["attachments"][i]["transcript"] = json!(transcript);
+            if with.to_string().len() <= OPEN_PAYLOAD_BUDGET { payload = with; }
+        }
         let text = payload.to_string();
         let signature = state.account.sign(format!("{OPEN_LABEL}{text}").as_bytes()).to_base64();
-        let files_json = json!(files.iter().map(|(id, mime, _)| json!({ "id": id, "mime": mime })).collect::<Vec<_>>()).to_string();
+        let files_json = json!(files.iter().map(|(id, mime, _, _, _)| json!({ "id": id, "mime": mime })).collect::<Vec<_>>()).to_string();
         jam_store::put_open_job(conn, &OpenJob { post_id: post_id.into(), action, version, payload: Some(text), signature: Some(signature), cert: Some(state.cert().to_json().to_string()), files: files_json, attempts: 0 })?;
         conn.execute("UPDATE jam_posts SET open_version = ?2, open_live = 1 WHERE post_id = ?1", params![post_id, version]).map_err(db_err)?;
         Ok(())
@@ -462,7 +484,14 @@ impl LimeStore {
                     .filter_map(|f| {
                         let id = f.get("id")?.as_str()?;
                         let url = urls.iter().find(|(i, _)| i == id)?.1.clone();
-                        Some(OpenFileRef { id: id.to_owned(), url, mime: f.get("mime")?.as_str()?.to_owned() })
+                        let text = |k: &str| f.get(k).and_then(Value::as_str);
+                        Some(OpenFileRef {
+                            id: id.to_owned(),
+                            url,
+                            mime: f.get("mime")?.as_str()?.to_owned(),
+                            alt: text("alt").map(crate::store::attachments::clean_alt).unwrap_or_default(),
+                            transcript: text("transcript").map(crate::store::attachments::clean_transcript).unwrap_or_default(),
+                        })
                     })
                     .collect()
             })

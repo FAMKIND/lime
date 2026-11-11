@@ -171,6 +171,22 @@ final class CoEditSession {
 
     func notePicture(local: Int, image: UIImage) { previews[local] = image }
 
+    /// The block that shows this local picture in the shared draft, if the editor's words have reached it (LIME-130-6b-2).
+    private func imageBlock(local: Int) -> DraftBlock? {
+        guard let number = number(forLocal: local) else { return nil }
+        return store.coeditBlocks(draftID).first { $0.kind == "image" && $0.attachment == number }
+    }
+
+    /// A picture's description in the shared draft: every author's phone gets it, and the published article carries it.
+    func setAlt(local: Int, _ text: String) {
+        guard let block = imageBlock(local: local) else { return }
+        store.coeditSetAlt(draftID, block: block.id, text)
+    }
+
+    func alt(local: Int) -> String { imageBlock(local: local)?.alt ?? "" }
+
+    func setCoverAlt(_ text: String) { store.coeditSetCoverAlt(draftID, text) }
+
     /// Post Markdown (the draft's) as editor text: pictures by this phone's numbers and drawn; pictures other authors added get a place in the list
     /// and are fetched if this phone does not have them yet.
     func render(markdown: String) -> NSMutableAttributedString {

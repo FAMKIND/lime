@@ -156,6 +156,14 @@ pub struct JamSubscriberInfo {
     pub status: String,
 }
 
+/// What the writer changed about a file the post already has (LIME-130-6b-2).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct JamFileDetails {
+    pub attachment_id: String,
+    pub alt: String,
+    pub transcript: String,
+}
+
 /// One file of a jam post, as the app shows it before it is downloaded.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct JamAttachmentInfo {
@@ -644,6 +652,13 @@ impl LimeStore {
     /// A picture whose block the new text no longer has is dropped from the post's files (its blob released, the later numbers closed up, its captions
     /// with it). Who it is shown as and its co-authors stay. The old blob is released on the server.
     pub fn edit_jam_post(&self, post_id: String, title: String, subtitle: String, markdown: String, added: Vec<OutgoingAttachment>, display_as: String, remove_cover: bool, coauthors: Option<Vec<String>>) -> Result<(), StoreError> {
+        self.edit_jam_post_with_details(post_id, title, subtitle, markdown, added, display_as, remove_cover, coauthors, Vec::new())
+    }
+
+    /// `edit_jam_post`, and the description or transcript of files the post already has (LIME-130-6b-2): each entry names a kept file by id and sets its
+    /// description (any file) and transcript (audio and video), or clears them with empty text. A file that is not in the post is ignored.
+    #[allow(clippy::too_many_arguments)]
+    pub fn edit_jam_post_with_details(&self, post_id: String, title: String, subtitle: String, markdown: String, added: Vec<OutgoingAttachment>, display_as: String, remove_cover: bool, coauthors: Option<Vec<String>>, details: Vec<JamFileDetails>) -> Result<(), StoreError> {
         // Who it is shown as written by can change too (LIME-201): `jam` or `person`, anything else is `person` (as when publishing).
         let display_as = if display_as == "jam" { "jam" } else { "person" };
         let state = self.load_or_create_account()?;
@@ -708,6 +723,16 @@ impl LimeStore {
                     if !dropped.contains(&i) {
                         map.insert(i as u32, kept.len() as u32);
                         kept.push(value.clone());
+                    }
+                }
+                // A kept file's description and transcript, as the writer changed them.
+                for value in kept.iter_mut() {
+                    let Some(detail) = value.get("id").and_then(Value::as_str).and_then(|id| details.iter().find(|d| d.attachment_id == id)) else { continue };
+                    let alt = crate::store::attachments::clean_alt(&detail.alt);
+                    if alt.is_empty() { value.as_object_mut().map(|o| o.remove("alt")); } else { value["alt"] = json!(alt); }
+                    if value.get("mime").and_then(Value::as_str).is_some_and(|m| m.starts_with("audio/") || m.starts_with("video/")) {
+                        let transcript = crate::store::attachments::clean_transcript(&detail.transcript);
+                        if transcript.is_empty() { value.as_object_mut().map(|o| o.remove("transcript")); } else { value["transcript"] = json!(transcript); }
                     }
                 }
                 // Captions follow their media to its new number.

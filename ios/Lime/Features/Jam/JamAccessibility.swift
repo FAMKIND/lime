@@ -76,8 +76,8 @@ enum JamPhotoLabel {
 
 /// What a picture being described is, in the composer (LIME-130-6b).
 enum DescribeTarget: Identifiable, Equatable {
-    case photo(Int), articleFile(Int), cover
-    var id: String { switch self { case .photo(let i): "photo-\(i)"; case .articleFile(let i): "file-\(i)"; case .cover: "cover" } }
+    case photo(Int), articleFile(Int), cover, existing(String)
+    var id: String { switch self { case .photo(let i): "photo-\(i)"; case .articleFile(let i): "file-\(i)"; case .cover: "cover"; case .existing(let id): "existing-\(id)" } }
 }
 
 /// The "+ Alt" / "Alt" pill on a picture (the same words as the chat composer's): 44 pt, with a spoken name that says what it describes.

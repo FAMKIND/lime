@@ -77,6 +77,37 @@ final class Jam188bUITests: LimeUITestCase {
         XCTAssertEqual(photo.label, "A red kite over the field", "the reader hears the description")
     }
 
+    /// LIME-130-6b-2: editing a published post, a photo it already has can be described, and the reader reads the description.
+    func testEditingAPublishedPostCanDescribeItsPhoto() {
+        let app = launch("jam")
+        app.buttons["new-jam-post"].tap()
+        write(app, "Field trip photos")
+        app.buttons["jam-add-photo"].tap()
+        XCTAssertTrue(any(app, "jam-photo-0").waitForExistence(timeout: 8))
+        postNow(app)
+        let post = card(app, containing: "Field trip photos")
+        XCTAssertTrue(post.waitForExistence(timeout: 8))
+        let photo = app.descendants(matching: .any).matching(identifier: "jam-row-photo-0").firstMatch
+        XCTAssertTrue(photo.waitForExistence(timeout: 8))
+        XCTAssertEqual(photo.label, "Photo", "no description yet")
+        // The card's menu: Edit.
+        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'card-more-'")).firstMatch.tap()
+        app.buttons["Edit"].tap()
+        let pill = app.buttons["Add description to picture 1"]
+        XCTAssertTrue(pill.waitForExistence(timeout: 8), "the post's own photo has a + Alt pill when it is edited")
+        pill.tap()
+        let field = any(app, "description-field")
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("The class at the pond")
+        app.buttons["description-save"].tap()
+        XCTAssertTrue(app.buttons["Edit description of picture 1"].waitForExistence(timeout: 5))
+        postNow(app, id: "jam-update")
+        let after = app.descendants(matching: .any).matching(identifier: "jam-row-photo-0").firstMatch
+        XCTAssertTrue(after.waitForExistence(timeout: 10))
+        XCTAssertEqual(after.label, "The class at the pond", "the reader hears it")
+    }
+
     func testAQuickPostWithThreePhotosPostsAndTheTextSitsAtTheTop() {
         let app = launch("jam")
         app.buttons["new-jam-post"].tap()

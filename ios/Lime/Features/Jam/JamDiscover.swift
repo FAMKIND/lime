@@ -317,7 +317,7 @@ struct OpenInlineImage: View {
                     default: RoundedRectangle(cornerRadius: JamMedia.radius, style: .continuous).fill(Theme.surface).frame(height: 180).overlay { ProgressView() }
                     }
                 }
-                .accessibilityLabel(caption.isEmpty ? "Photo" : "Photo, \(caption)")
+                .accessibilityLabel(JamPhotoLabel.label(alt: file.alt.isEmpty ? (caption.isEmpty ? "" : "Photo, \(caption)") : file.alt))
             }
             if !caption.isEmpty { Text(caption).font(Theme.caption).foregroundStyle(Theme.textSecondary) }
         }

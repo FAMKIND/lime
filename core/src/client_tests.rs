@@ -7207,6 +7207,7 @@ fn an_everyone_post_is_published_signed_and_a_stranger_verifies_it() {
     assert_eq!((open.title.as_str(), open.kind.as_str(), open.author_id.as_str(), open.version, open.pinned), ("Equal parts", "article", "alice", 1, false));
     assert!(open.markdown.contains("equal parts") && open.preview_of.is_none() && !open.has_rest);
     assert_eq!((open.files.len(), open.files[0].mime.as_str()), (1, "image/jpeg"));
+    assert_eq!((open.files[0].alt.as_str(), open.files[0].transcript.as_str()), ("", ""), "a copy with no description or transcript reads empty (as every open copy written before them)");
     assert_eq!(open.topics, vec!["Maths".to_owned(), "Grade 4".to_owned()]);
     // The encrypted post is still the subscribers' copy, and it says its audience.
     join_jam(&alice, &bob, &jam, &transport);
@@ -8884,4 +8885,67 @@ fn a_long_transcript_fits_in_a_post_and_a_post_with_too_many_is_refused_not_cut(
     // Ten of them would make the post's sealed blob bigger than one chunk: refused whole, never half-sent.
     let many: Vec<_> = (0..10).map(|n| clip(n as u8, &long)).collect();
     assert!(alice.store.publish_jam_post(jam, "record".into(), "Too much".into(), String::new(), "About it".into(), "free".into(), many, vec![]).is_err());
+}
+
+#[test]
+fn an_everyone_posts_descriptions_and_transcripts_are_in_its_signed_text_and_a_transcript_too_big_for_the_open_copy_is_left_out() {
+    let server = open_server();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let jam = new_jam(&alice);
+    let photo = crate::OutgoingAttachment { alt: "A red kite over the school field".into(), ..pic(3, 900) };
+    let plain = pic(4, 900);
+    let audio = crate::OutgoingAttachment { name: "Recording.m4a".into(), mime: "audio/mp4".into(), duration_ms: Some(4000), width: None, height: None, transcript: "Welcome back. Today we count by fives.".into(), ..pic(5, 600) };
+    let post = alice.store.publish_jam_post_with(jam.clone(), "record".into(), "Counting".into(), String::new(), "About it".into(), "free".into(), vec![audio, photo, plain], vec![], "person".into(), options("everyone", None)).unwrap();
+    deliver(&alice, &transport);
+    let open = bob.store.fetch_open_post(transport.clone(), post.clone()).unwrap();
+    assert_eq!(open.files[0].transcript, "Welcome back. Today we count by fives.", "the transcript is in the open copy");
+    assert_eq!(open.files[0].alt, "");
+    assert_eq!(open.files[1].alt, "A red kite over the school field", "the description is in the open copy");
+    assert_eq!(open.files[2].alt, "", "none stays none");
+    // The copy for subscribers is the same one it always was.
+    // A transcript that would push the signed text past the server's limit is left out of the open copy, and the post still goes.
+    let big = crate::OutgoingAttachment { name: "Recording.m4a".into(), mime: "audio/mp4".into(), duration_ms: Some(4000), width: None, height: None, transcript: "é".repeat(100_000), ..pic(6, 600) };
+    let big_post = alice.store.publish_jam_post_with(jam, "record".into(), "Long".into(), String::new(), "About it".into(), "free".into(), vec![big], vec![], "person".into(), options("everyone", None)).unwrap();
+    deliver(&alice, &transport);
+    let long = bob.store.fetch_open_post(transport.clone(), big_post.clone()).unwrap();
+    assert_eq!(long.files[0].transcript, "", "left out of the open copy: it does not fit");
+}
+
+#[test]
+fn an_edit_can_describe_a_photo_and_add_a_transcript_to_files_the_post_already_has() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let jam = new_jam(&alice);
+    join_jam(&alice, &bob, &jam, &transport);
+    let audio = crate::OutgoingAttachment { name: "Recording.m4a".into(), mime: "audio/mp4".into(), duration_ms: Some(4000), width: None, height: None, ..pic(7, 600) };
+    let post = alice.store.publish_jam_post(jam.clone(), "record".into(), "Songs".into(), String::new(), "About it".into(), "free".into(), vec![audio, pic(8, 500)], vec![]).unwrap();
+    for _ in 0..4 {
+        catch_up(&alice, &[&bob], &transport);
+    }
+    let ids: Vec<String> = bob.store.list_jam_attachments(post.clone()).unwrap().into_iter().map(|a| a.attachment_id).collect();
+    let details = vec![
+        crate::client::jam::JamFileDetails { attachment_id: ids[0].clone(), alt: String::new(), transcript: "Hello class.\u{7}".into() },
+        crate::client::jam::JamFileDetails { attachment_id: ids[1].clone(), alt: "  A lime on a desk ".into(), transcript: "not for a photo".into() },
+        crate::client::jam::JamFileDetails { attachment_id: "not-in-this-post".into(), alt: "x".into(), transcript: "x".into() },
+    ];
+    alice.store.edit_jam_post_with_details(post.clone(), "Songs".into(), String::new(), "About it".into(), vec![], "person".into(), false, None, details).unwrap();
+    for _ in 0..5 {
+        catch_up(&alice, &[&bob], &transport);
+    }
+    for p in [&alice, &bob] {
+        let files = p.store.list_jam_attachments(post.clone()).unwrap();
+        assert_eq!(files.iter().map(|f| f.attachment_id.clone()).collect::<Vec<_>>(), ids, "the same files, not re-sent");
+        assert_eq!(files[0].transcript, "Hello class.", "the recording's transcript");
+        assert_eq!(files[1].alt, "A lime on a desk", "the picture's description, trimmed");
+        assert_eq!(files[1].transcript, "", "a photo takes no transcript");
+    }
+    // Clearing: empty text removes them.
+    let clear = vec![crate::client::jam::JamFileDetails { attachment_id: ids[1].clone(), alt: String::new(), transcript: String::new() }];
+    alice.store.edit_jam_post_with_details(post.clone(), "Songs".into(), String::new(), "About it".into(), vec![], "person".into(), false, None, clear).unwrap();
+    for _ in 0..5 {
+        catch_up(&alice, &[&bob], &transport);
+    }
+    assert_eq!(bob.store.list_jam_attachments(post).unwrap()[1].alt, "");
 }

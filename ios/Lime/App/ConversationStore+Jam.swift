@@ -254,13 +254,13 @@ extension ConversationStore {
     }
 
     /// Edits a post of mine in place (LIME-195): its words, title and subtitle; the subscribers get the new text and see "Edited".
-    func editJamPost(_ post: JamPostInfo, title: String, subtitle: String, markdown: String, added: [OutgoingAttachment] = [], displayAs: String? = nil, removeCover: Bool = false, coauthors: [String]? = nil) async -> Bool {
+    func editJamPost(_ post: JamPostInfo, title: String, subtitle: String, markdown: String, added: [OutgoingAttachment] = [], displayAs: String? = nil, removeCover: Bool = false, coauthors: [String]? = nil, details: [JamFileDetails] = []) async -> Bool {
         let displayAs = displayAs ?? post.displayAs
         #if DEBUG
-        if isDemo { demoEdit(post.postId, title: title, subtitle: subtitle, markdown: markdown, displayAs: displayAs, added: added, removeCover: removeCover); jamEngagement += 1; return true }
+        if isDemo { demoEdit(post.postId, title: title, subtitle: subtitle, markdown: markdown, displayAs: displayAs, added: added, removeCover: removeCover, details: details); jamEngagement += 1; return true }
         #endif
         guard let core else { return false }
-        do { try await Task.detached(priority: .userInitiated) { try core.editJamPost(postId: post.postId, title: title, subtitle: subtitle, markdown: markdown, added: added, displayAs: displayAs, removeCover: removeCover, coauthors: coauthors) }.value }
+        do { try await Task.detached(priority: .userInitiated) { try core.editJamPostWithDetails(postId: post.postId, title: title, subtitle: subtitle, markdown: markdown, added: added, displayAs: displayAs, removeCover: removeCover, coauthors: coauthors, details: details) }.value }
         catch { CallDiagnostics.shared.log("jam edit failed: \(error)"); return false }
         refreshJams()
         await deliverNow()
