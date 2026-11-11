@@ -629,6 +629,10 @@ private fun Composer(model: ChatModel, chats: ChatsModel, seedPhotos: List<Outgo
                 }
             }
             problem?.let { Text(it, color = colors.danger, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp).testTag("photo-problem")) }
+            // "/" and words: the GIFs and stickers that match, above the field (LIME-406 D). A tap sends it and clears the field.
+            if (editing == null && !recorder.isRecording && composer.textState.text.startsWith("/")) {
+                GifSlashStrip(chats, composer.textState.text.toString().drop(1).trim(), onPick = { gif -> composer.clear(); scope.launch { model.sendPhotos(listOf(gif), "", "GIF") } })
+            }
             // The words, or the recording bar in their place.
             if (recorder.isRecording) RecordingBar(recorder, onSend = finishVoice, onCancel = { recorder.cancel() }, modifier = Modifier.fillMaxWidth()) else {
                 val hint = stringResource(R.string.chat_message_hint)

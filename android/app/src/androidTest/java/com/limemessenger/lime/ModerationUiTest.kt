@@ -89,6 +89,7 @@ class ModerationUiTest {
         fun words(id: String) = rule.onNodeWithTag("report-message-$id", useUnmergedTree = true).fetchSemanticsNode().config[SemanticsProperties.ContentDescription].joinToString()
         assertEquals("Include message from Ada: First words, on", words("a"))
         rule.onNodeWithTag("report-message-a", useUnmergedTree = true).performClick()
+        rule.waitUntil(5_000) { words("a") == "Include message from Ada: First words, off" }   // (a slow phone redraws a moment after the tap)
         assertEquals("Include message from Ada: First words, off", words("a"))
         assertEquals("Include message from Cleo: Second words, on", words("b"))
         assertEquals(1, count("report-group-leave"))

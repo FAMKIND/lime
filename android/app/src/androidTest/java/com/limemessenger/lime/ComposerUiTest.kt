@@ -8,6 +8,7 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.longClick
@@ -47,6 +48,7 @@ class ComposerUiTest {
     private lateinit var store: LimeStore
     private lateinit var chats: ChatsModel
     private lateinit var dm: ChatModel
+    private lateinit var dmId: String
     private val alias = "lime.test.composer"
 
     @Before fun setUp() {
@@ -55,6 +57,7 @@ class ComposerUiTest {
         val storage = StorageBootstrap(File(dir, "data"), secrets)
         store = storage.open(storage.space("composer-user")).store
         val id = store.startDm("ben-test", "Ben Test")
+        dmId = id
         chats = ChatsModel(store = { store }, transport = { null }, token = { "t" }, staleToken = { "t" })
         runBlocking { chats.reload() }
         dm = ChatModel(id, chats, accountSignedIn = false)
@@ -164,5 +167,49 @@ class ComposerUiTest {
         rule.onNodeWithTag("composer-collapse", useUnmergedTree = true).performClick()
         rule.waitUntil(5_000) { count("composer-expand") > 0 }
         assertEquals("back to five lines", collapsed, bounds("composer-field").height, 2f)
+    }
+
+    // LIME-406 D
+    private val tiny = android.util.Base64.decode("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", android.util.Base64.DEFAULT)
+    private fun fieldText() = rule.onNodeWithTag("composer-field").fetchSemanticsNode().config[SemanticsProperties.EditableText].text
+
+    @Test fun aSlashAndWordsShowTheMatchingGifsAndStickersAndATapSendsOneAndClearsTheField() {
+        val id = store.addMyGif(tiny, "cat typing", "", "", 1u, 1u)
+        show()
+        rule.waitUntil(5_000) { count("composer-field") > 0 }
+        rule.onNodeWithTag("composer-field").performTextInput("hello /cat")
+        rule.waitForIdle()
+        assertEquals("not at the start: no strip", 0, count("gif-slash-strip"))
+        rule.onNodeWithTag("composer-field").performTextClearance()
+        rule.onNodeWithTag("composer-field").performTextInput("/cat")
+        rule.waitUntil(5_000) { count("gif-slash-$id") > 0 }
+        assertEquals("GIF: cat typing", rule.onNodeWithTag("gif-slash-$id", useUnmergedTree = true).fetchSemanticsNode().config[SemanticsProperties.ContentDescription].joinToString())
+        rule.onNodeWithTag("composer-field").performTextClearance()
+        rule.onNodeWithTag("composer-field").performTextInput("/thank")
+        rule.waitUntil(5_000) { count("gif-slash-sticker-thank-you") > 0 }
+        assertEquals(0, count("gif-slash-$id"))
+        assertEquals("lime sticker: Thank you!", rule.onNodeWithTag("gif-slash-sticker-thank-you", useUnmergedTree = true).fetchSemanticsNode().config[SemanticsProperties.ContentDescription].joinToString())
+        rule.onNodeWithTag("composer-field").performTextClearance()
+        rule.onNodeWithTag("composer-field").performTextInput("/zzzz")
+        rule.waitUntil(5_000) { count("gif-slash-empty") > 0 }
+        rule.onNodeWithTag("composer-field").performTextClearance()
+        rule.onNodeWithTag("composer-field").performTextInput("/cat")
+        rule.waitUntil(5_000) { count("gif-slash-$id") > 0 }
+        val sent = mutableListOf<uniffi.lime_core.OutgoingAttachment>()
+        dm.outgoingHook = { items, _ -> sent += items; true }   // (what would be queued: a local-only chat cannot send files)
+        rule.onNodeWithTag("gif-slash-$id", useUnmergedTree = true).performClick()
+        rule.waitUntil(10_000) { sent.isNotEmpty() }
+        assertEquals(listOf("image/gif"), sent.map { it.mime })
+        rule.waitUntil(5_000) { fieldText().isEmpty() }
+        assertEquals("the strip goes with the slash", 0, count("gif-slash-strip"))
+    }
+
+    @Test fun aBareSlashOffersTheRecentGifsThenStickers() {
+        val id = store.addMyGif(tiny, "wave", "", "", 1u, 1u)
+        show()
+        rule.waitUntil(5_000) { count("composer-field") > 0 }
+        rule.onNodeWithTag("composer-field").performTextInput("/")
+        rule.waitUntil(5_000) { count("gif-slash-$id") > 0 }
+        assertTrue("stickers fill the rest", rule.onAllNodes(hasTestTag("gif-slash-sticker-hi"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() || count("gif-slash-strip") > 0)
     }
 }

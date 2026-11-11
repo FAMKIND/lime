@@ -52,6 +52,7 @@ class ComposerShotsTest {
     private lateinit var store: LimeStore
     private lateinit var chats: ChatsModel
     private lateinit var chat: ChatModel
+    private lateinit var groupChat: ChatModel
     private val alias = "lime.test.composer.shots"
 
     @Before fun setUp() {
@@ -63,6 +64,7 @@ class ComposerShotsTest {
         chats = ChatsModel(store = { store }, transport = { null }, token = { "t" }, staleToken = { "t" })
         runBlocking { chats.reload() }
         chat = ChatModel(chats.chats.first { it.title == "Autumn Reyes" }.id, chats, accountSignedIn = false)
+        groupChat = ChatModel(chats.conversations.first { it.isGroup }.id, chats, accountSignedIn = false)
     }
 
     @After fun tearDown() { store.close(); dir.deleteRecursively(); KeystoreKey.delete(alias) }
@@ -84,12 +86,12 @@ class ComposerShotsTest {
         val out = ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it) }.toByteArray()
         return OutgoingAttachment(out, "a.jpg", "image/jpeg", 240u, 160u, null, ByteArray(0), ByteArray(0), "")
     }
-    private fun show(fontScale: Float = 1f, dark: Boolean = false, photos: List<OutgoingAttachment> = emptyList()) = rule.setContent {
+    private fun show(fontScale: Float = 1f, dark: Boolean = false, photos: List<OutgoingAttachment> = emptyList(), model: ChatModel = chat, edit: uniffi.lime_core.MessageItem? = null) = rule.setContent {
         val d = LocalDensity.current
         CompositionLocalProvider(LocalDensity provides Density(d.density, fontScale), LocalVoiceCapture provides { FakeMic() }) {
-            LimeTheme(dark = dark) { ChatScreen(chat, chats, onBack = {}, seedPhotos = photos) }
+            LimeTheme(dark = dark) { ChatScreen(model, chats, onBack = {}, seedPhotos = photos, seedEdit = edit) }
         }
-        androidx.compose.runtime.LaunchedEffect(Unit) { chat.reload() }
+        androidx.compose.runtime.LaunchedEffect(Unit) { model.reload() }
     }
 
     @Test fun empty() { show(); rule.waitUntil(5_000) { chat.messages.isNotEmpty() }; shot("1-empty") }
@@ -165,5 +167,54 @@ class ComposerShotsTest {
         show(dark = true); ready(); click("composer-aa"); type("- one\ntwo")
         rule.onNodeWithTag("composer-field").performTextInputSelection(TextRange(0, 3))
         click("fmt-bold"); shot("12-strip-dark")
+    }
+
+    private fun ready(m: ChatModel) { rule.waitUntil(5_000) { m.messages.isNotEmpty() } }
+    private val tiny = android.util.Base64.decode("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", android.util.Base64.DEFAULT)
+
+    @Test fun mentionPanel() { show(model = groupChat); ready(groupChat); type("Thanks @"); rule.waitUntil(5_000) { rule.onAllNodes(hasTestTag("mention-suggestions"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }; shot("13-mention-panel") }
+
+    @Test fun mentionPanelDark() { show(dark = true, model = groupChat); ready(groupChat); type("@"); rule.waitUntil(5_000) { rule.onAllNodes(hasTestTag("mention-suggestions"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }; shot("13b-mention-panel-dark") }
+
+    @Test fun expandedDraft() {
+        show(); ready(chat)
+        rule.onNodeWithTag("composer-field").performTextInput((1..14).joinToString("\n") { "Agenda item $it for Friday" })
+        rule.waitUntil(5_000) { rule.onAllNodes(hasTestTag("composer-expand"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        shot("14a-long-draft-collapsed"); click("composer-expand"); shot("14-expanded")
+    }
+
+    /** Run with the emulator rotated to landscape (`tools/shots-406.sh` does that for this one test). */
+    @Test fun landscapeExpanded() {
+        show(); ready(chat)
+        rule.onNodeWithTag("composer-field").performTextInput((1..14).joinToString("\n") { "Agenda item $it for Friday" })
+        rule.waitUntil(5_000) { rule.onAllNodes(hasTestTag("composer-expand"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        click("composer-expand"); shot("15-landscape-expanded")
+    }
+
+    @Test fun editingBanner() {
+        runBlocking { chat.send("**Bold** plan for Friday") }
+        val mine = store.listMessages(chat.conversationId).last { it.senderId == null }
+        show(model = chat, edit = mine); rule.waitUntil(5_000) { rule.onAllNodes(hasTestTag("edit-banner"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        shot("16-editing-banner")
+    }
+
+    @Test fun editingBannerLargestFontDark() {
+        runBlocking { chat.send("**Bold** plan for Friday") }
+        val mine = store.listMessages(chat.conversationId).last { it.senderId == null }
+        show(fontScale = 2f, dark = true, model = chat, edit = mine); rule.waitUntil(5_000) { rule.onAllNodes(hasTestTag("edit-banner"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        shot("16b-editing-font-2-dark")
+    }
+
+    @Test fun slashStrip() {
+        store.addMyGif(tiny, "cat typing", "", "", 1u, 1u)
+        show(); ready(chat); type("/c")
+        rule.waitUntil(5_000) { rule.onAllNodes(hasTestTag("gif-slash-strip"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        shot("17-slash-strip")
+    }
+
+    @Test fun slashStripFontDark() {
+        show(fontScale = 2f, dark = true); ready(chat); type("/thank")
+        rule.waitUntil(5_000) { rule.onAllNodes(hasTestTag("gif-slash-strip"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        shot("17b-slash-font-2-dark")
     }
 }
