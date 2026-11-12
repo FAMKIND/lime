@@ -10816,3 +10816,10 @@ Settings, profile and groups: the 13 majors (audit rows 341, 342, 344, 609, 612â
 - **Installed (this commit):** the 13 mini and the iPad (4). Jean's 12 mini was unavailable (error 4016).
 - **For the user (gate):** per the brief's table and steps 1â€“4.
 - **For plot:** nothing blocking. Counting messages instead of chats would be 325b. LIME-324 is next.
+
+## LIME-SYNC-1 (iOS check)
+
+`git pull --ff-only` to `26fefc8` (plan files untouched), `ios/generate.sh`, `core/build-ios.sh` (xcframework rebuilt from the merged core).
+- iOS Debug build (simulator): OK. Release build (device): OK. `check-warnings.sh`: 0 warnings in Lime's own sources.
+- Unit tests (`LimeTests`, 13 mini simulator): 751 run, 10 skipped, 0 failed (747 before + 4 from LIME-325).
+- Not run: the UI suite (no iOS code changed by the merge; the next brief runs its classes).
