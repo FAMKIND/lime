@@ -568,4 +568,23 @@
     <string name="video_downloading">Downloading\u2026</string>
     <string name="video_player_close">Close video</string>
     <string name="video_unavailable">That video couldn\u2019t be opened. Try again.</string>
+    <!-- LIME-412: the jam's picture, sending progress, filter, stickers -->
+    <string name="jam_picture_none">No picture yet</string>
+    <string name="jam_picture_set">Your jam\u2019s picture</string>
+    <string name="jam_picture_add">Add picture</string>
+    <string name="jam_picture_change">Change picture</string>
+    <string name="jam_picture_remove">Remove</string>
+    <string name="jam_picture_failed">That picture couldn\u2019t be set. Try another one.</string>
+    <string name="jam_sending_progress">Sending to %1$d of %2$d</string>
+    <string name="jam_filter">Filter</string>
+    <string name="jam_filter_count">Filter (%1$d)</string>
+    <string name="jam_filter_media">Media</string>
+    <string name="jam_filter_any">Any</string>
+    <string name="jam_filter_coauthored">Co-authored</string>
+    <string name="jam_filter_subscribed">Subscribed</string>
+    <string name="jam_filter_bands">Bands</string>
+    <string name="jam_filter_clear">Clear</string>
+    <string name="jam_filter_done">Done</string>
+    <string name="storage_show_stickers">Show lime\u2019s stickers</string>
+    <string name="storage_show_stickers_note">24 animated stickers drawn by lime, at the top of the GIF button and when you type /. They are part of the app.</string>
 </resources>

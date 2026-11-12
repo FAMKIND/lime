@@ -173,7 +173,7 @@ private fun SignedIn(session: AccountSession) {
     } else if (person != null) {
         PersonProfileScreen(person.first, person.second, chats, onBack = { personProfile = null }, jam = jam, onBlocked = { personProfile = null; openId = null })
     } else if (postOpen != null) {
-        JamReaderScreen(postOpen, jam, myId = session.userId, onEdit = { compose = com.limemessenger.lime.ui.jam.ComposeRoute(if (it.kind == "article") "article" else "quick", editing = it); jamPost = null }, onBack = { jamPost = null })
+        JamReaderScreen(postOpen, jam, myId = session.userId, chats = chats, onEdit = { compose = com.limemessenger.lime.ui.jam.ComposeRoute(if (it.kind == "article") "article" else "quick", editing = it); jamPost = null }, onBack = { jamPost = null })
     } else if (yourJam) {
         com.limemessenger.lime.ui.jam.YourJamScreen(jam, jamDrafts, onBack = { yourJam = false }, onCompose = { compose = it })
     } else if (chatModel != null && groupModel != null && groupInfoOpen) {

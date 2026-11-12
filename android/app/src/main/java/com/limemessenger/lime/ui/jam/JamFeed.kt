@@ -1,5 +1,6 @@
 package com.limemessenger.lime.ui.jam
 
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -104,6 +105,7 @@ fun JamFeedScreen(model: JamModel, modifier: Modifier = Modifier, onYours: (() -
 @Composable
 private fun SegmentRow(model: JamModel) {
     val colors = Lime.colors
+    var sheet by remember { mutableStateOf(false) }
     val segments = uniffi.lime_core.jamSegments().filter { it != JamFeedSegment.DRAFTS && it != JamFeedSegment.DISCOVER }
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         segments.forEach { segment ->
@@ -112,6 +114,49 @@ private fun SegmentRow(model: JamModel) {
             Pill(title, on, "jam-segment-$title") { model.segment = segment; model.savedOnly = false }
         }
         Pill(stringResource(R.string.jam_segment_saved), model.savedOnly, "jam-segment-saved") { model.savedOnly = !model.savedOnly }
+        val count = model.activeFilters
+        Pill(if (count > 0) stringResource(R.string.jam_filter_count, count) else stringResource(R.string.jam_filter), count > 0, "jam-filter-button") { sheet = true }
+    }
+    if (sheet) JamFilterSheet(model, onDismiss = { sheet = false })
+}
+
+/** The feed's filter sheet (iOS's, LIME-412): a media kind, Co-authored, Subscribed, Bands and Saved, with Clear; the rule is the core's `jam_filter_matches`. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun JamFilterSheet(model: JamModel, onDismiss: () -> Unit) {
+    val colors = Lime.colors
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, containerColor = colors.canvas) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp).testTag("jam-filter-sheet"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(stringResource(R.string.jam_filter), color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
+            Text(stringResource(R.string.jam_filter_media), color = colors.textSecondary, fontSize = 14.sp)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Pill(stringResource(R.string.jam_filter_any), model.mediaFilter == null, "jam-filter-media-any") { model.mediaFilter = null }
+                listOf(uniffi.lime_core.JamFeedMedia.PHOTOS, uniffi.lime_core.JamFeedMedia.VIDEO, uniffi.lime_core.JamFeedMedia.AUDIO).forEach { media ->
+                    val title = uniffi.lime_core.jamMediaTitle(media)
+                    Pill(title, model.mediaFilter == media, "jam-filter-media-$title") { model.mediaFilter = if (model.mediaFilter == media) null else media }
+                }
+            }
+            FilterToggle(stringResource(R.string.jam_filter_coauthored), model.coauthoredOnly, "jam-filter-coauthored") { model.coauthoredOnly = it }
+            FilterToggle(stringResource(R.string.jam_filter_subscribed), model.subscribedOnly, "jam-filter-subscribed") { model.subscribedOnly = it }
+            FilterToggle(stringResource(R.string.jam_filter_bands), model.bandsOnly, "jam-filter-bands") { model.bandsOnly = it }
+            FilterToggle(stringResource(R.string.jam_segment_saved), model.savedOnly, "jam-filter-saved") { model.savedOnly = it }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.material3.TextButton({ model.clearFilters() }, Modifier.heightIn(min = 48.dp).testTag("jam-filter-clear"), enabled = model.activeFilters > 0) { Text(stringResource(R.string.jam_filter_clear), color = colors.text) }
+                androidx.compose.material3.TextButton(onDismiss, Modifier.heightIn(min = 48.dp).testTag("jam-filter-done")) { Text(stringResource(R.string.jam_filter_done), color = colors.text, fontWeight = FontWeight.SemiBold) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FilterToggle(title: String, on: Boolean, tag: String, onChange: (Boolean) -> Unit) {
+    val colors = Lime.colors
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 52.dp).toggleable(on, role = Role.Switch, onValueChange = onChange).testTag(tag),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(title, color = colors.text, fontSize = 17.sp, modifier = Modifier.weight(1f))
+        androidx.compose.material3.Switch(checked = on, onCheckedChange = null)
     }
 }
 
@@ -178,7 +223,7 @@ private fun PostCard(post: JamPostInfo, model: JamModel, player: com.limemesseng
 
 /** Reading one post: the title, subtitle and byline, the post's Markdown with its photos in place (the writer's descriptions for TalkBack), a recording's player, then ♥ and the comments. */
 @Composable
-fun JamReaderScreen(post: JamPostInfo, model: JamModel, myId: String? = null, onEdit: ((JamPostInfo) -> Unit)? = null, onBack: () -> Unit) {
+fun JamReaderScreen(post: JamPostInfo, model: JamModel, myId: String? = null, onEdit: ((JamPostInfo) -> Unit)? = null, chats: com.limemessenger.lime.chats.ChatsModel? = null, onBack: () -> Unit) {
     val colors = Lime.colors
     val context = androidx.compose.ui.platform.LocalContext.current
     val player = remember { com.limemessenger.lime.chats.VoicePlayer(context.applicationContext) }
@@ -187,6 +232,9 @@ fun JamReaderScreen(post: JamPostInfo, model: JamModel, myId: String? = null, on
     val saved = post.postId in model.saved
     val scope = rememberCoroutineScope()
     var confirmDelete by remember { mutableStateOf(false) }
+    // Report a post or a comment (LIME-412; LIME-401's sheet and reasons; the core makes the target: `report_target_post`, `report_target_comment`).
+    var reporting by remember { mutableStateOf<uniffi.lime_core.ReportTargetInfo?>(null) }
+    val hasChat = { author: String -> chats?.conversations?.any { it.id == "dm:$author" } == true }
     Column(Modifier.fillMaxSize().background(colors.canvas).systemBarsPadding().imePadding()) {
         Row(Modifier.fillMaxWidth().heightIn(min = 64.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack, Modifier.size(56.dp).testTag("jam-reader-back")) { Icon(Icons.Back, stringResource(R.string.chat_back), tint = colors.text) }
@@ -196,6 +244,10 @@ fun JamReaderScreen(post: JamPostInfo, model: JamModel, myId: String? = null, on
                 if (onEdit != null) androidx.compose.material3.TextButton({ onEdit(post) }, Modifier.heightIn(min = 48.dp).testTag("jam-reader-edit")) { Text(stringResource(R.string.jam_post_menu_edit), color = colors.text) }
                 androidx.compose.material3.TextButton({ confirmDelete = true }, Modifier.heightIn(min = 48.dp).testTag("jam-reader-delete")) { Text(stringResource(R.string.jam_post_menu_delete), color = colors.danger) }
             }
+            if (!model.isMine(post) && chats != null) androidx.compose.material3.TextButton({
+                val blob = runCatching { model.blobIdOf(post.postId) }.getOrNull().orEmpty()
+                reporting = uniffi.lime_core.reportTargetPost(post, model.authorName(post) ?: "", blob, hasChat(post.author))
+            }, Modifier.heightIn(min = 48.dp).testTag("jam-reader-report")) { Text(stringResource(R.string.report_title), color = colors.text) }
             val saveWords = stringResource(if (saved) R.string.jam_saved else R.string.jam_save)
             Box(Modifier.size(56.dp).semantics { contentDescription = saveWords; role = Role.Button; selected = saved }.clickable { model.toggleSaved(post.postId) }.testTag("jam-reader-save"), contentAlignment = Alignment.Center) {
                 Icon(if (saved) Icons.BookmarkFilled else Icons.Bookmark, null, tint = colors.text)
@@ -214,9 +266,10 @@ fun JamReaderScreen(post: JamPostInfo, model: JamModel, myId: String? = null, on
             )
             // A quick post keeps its photos as a row under the words (an article puts them in the text).
             if (post.kind == "quick") images.forEach { JamPhoto(post, it, "", model) }
-            JamEngagementSection(post, model, myId)
+            JamEngagementSection(post, model, myId, onReportComment = if (chats == null) null else { c -> reporting = uniffi.lime_core.reportTargetComment(c, model.teacherName(c.author), hasChat(c.author)) })
         }
     }
+    reporting?.let { target -> if (chats != null) com.limemessenger.lime.ui.moderation.ReportDialog(target, chats, onDismiss = { reporting = null }) }
     if (confirmDelete) androidx.compose.material3.AlertDialog(
         onDismissRequest = { confirmDelete = false }, containerColor = colors.canvas,
         title = { Text(stringResource(R.string.jam_delete_title), color = colors.text) },

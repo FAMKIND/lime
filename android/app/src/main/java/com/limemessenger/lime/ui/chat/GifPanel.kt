@@ -85,7 +85,8 @@ fun GifPanel(chats: ChatsModel, onSend: (OutgoingAttachment) -> Unit, onDismiss:
     val colors = Lime.colors
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    var stickers by remember { mutableStateOf(true) }
+    val stickersAllowed = remember { StickerPack.shown(context) }
+    var stickers by remember { mutableStateOf(stickersAllowed) }
     var query by remember { mutableStateOf("") }
     var version by remember { mutableIntStateOf(0) }
     var adding by remember { mutableStateOf<ByteArray?>(null) }
@@ -111,7 +112,7 @@ fun GifPanel(chats: ChatsModel, onSend: (OutgoingAttachment) -> Unit, onDismiss:
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 16.dp).testTag("gif-panel"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Tab(stringResource(R.string.gif_tab_gifs), !stickers, "gif-tab-gifs") { stickers = false }
-                Tab(stringResource(R.string.gif_tab_stickers), stickers, "gif-tab-stickers") { stickers = true }
+                if (stickersAllowed) Tab(stringResource(R.string.gif_tab_stickers), stickers, "gif-tab-stickers") { stickers = true }
             }
             OutlinedTextField(
                 value = query, onValueChange = { query = it.take(80) }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("gif-search"),

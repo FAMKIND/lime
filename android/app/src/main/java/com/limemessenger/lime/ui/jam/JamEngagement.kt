@@ -90,7 +90,7 @@ fun JamCommentCount(post: JamPostInfo, model: JamModel, onClick: () -> Unit, mod
 
 /** The post page's response part: "20 likes · 3 comments", a place to leave a comment, and the comments. */
 @Composable
-fun JamEngagementSection(post: JamPostInfo, model: JamModel, myId: String?) {
+fun JamEngagementSection(post: JamPostInfo, model: JamModel, myId: String?, onReportComment: ((JamCommentInfo) -> Unit)? = null) {
     val colors = Lime.colors
     val scope = rememberCoroutineScope()
     var comments by remember { mutableStateOf<List<JamCommentInfo>>(emptyList()) }
@@ -134,16 +134,16 @@ fun JamEngagementSection(post: JamPostInfo, model: JamModel, myId: String?) {
         if (failed) Text(stringResource(R.string.jam_comment_failed), color = colors.danger, fontSize = 14.sp, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("jam-comment-failed"))
         val tops = comments.filter { it.parentId == null }
         tops.forEach { top ->
-            CommentRow(top, model, myId, indent = false, onReply = { replyingTo = top }) { scope.launch { model.deleteComment(post.postId, it); comments = model.comments(post.postId) } }
+            CommentRow(top, model, myId, indent = false, onReply = { replyingTo = top }, onReport = onReportComment) { scope.launch { model.deleteComment(post.postId, it); comments = model.comments(post.postId) } }
             comments.filter { it.parentId == top.commentId }.forEach { reply ->
-                CommentRow(reply, model, myId, indent = true, onReply = { replyingTo = top }) { scope.launch { model.deleteComment(post.postId, it); comments = model.comments(post.postId) } }
+                CommentRow(reply, model, myId, indent = true, onReply = { replyingTo = top }, onReport = onReportComment) { scope.launch { model.deleteComment(post.postId, it); comments = model.comments(post.postId) } }
             }
         }
     }
 }
 
 @Composable
-private fun CommentRow(comment: JamCommentInfo, model: JamModel, myId: String?, indent: Boolean, onReply: () -> Unit, onDelete: (String) -> Unit) {
+private fun CommentRow(comment: JamCommentInfo, model: JamModel, myId: String?, indent: Boolean, onReply: () -> Unit, onReport: ((JamCommentInfo) -> Unit)?, onDelete: (String) -> Unit) {
     val colors = Lime.colors
     val name = if (comment.mine) stringResource(R.string.jam_you) else model.teacherName(comment.author)
     val pending = comment.state == "pending"
@@ -160,6 +160,7 @@ private fun CommentRow(comment: JamCommentInfo, model: JamModel, myId: String?, 
         }
         Column(horizontalAlignment = Alignment.End) {
             if (!pending) TextButton(onClick = onReply, Modifier.heightIn(min = 48.dp).testTag("jam-comment-reply-${comment.commentId}")) { Text(stringResource(R.string.chat_reply), color = colors.text, fontSize = 14.sp) }
+            if (!comment.mine && !pending && onReport != null) TextButton(onClick = { onReport(comment) }, Modifier.heightIn(min = 48.dp).testTag("jam-comment-report-${comment.commentId}")) { Text(stringResource(R.string.report_title), color = colors.textSecondary, fontSize = 14.sp) }
             if (comment.mine) TextButton(onClick = { onDelete(comment.commentId) }, Modifier.heightIn(min = 48.dp).testTag("jam-comment-delete-${comment.commentId}")) { Text(stringResource(R.string.message_action_delete), color = colors.danger, fontSize = 14.sp) }
         }
     }

@@ -37,6 +37,11 @@ object GifFiles {
 
 /** lime's own 24 stickers: animated GIFs drawn by lime and shipped in the app (`assets/stickers`, copied from `ios/Lime/Resources/Stickers`). Nothing is downloaded. */
 object StickerPack {
+    private const val PREFS = "lime.stickers"
+    /** "Show lime's stickers" (iOS `lime.showStickers`, on by default): off hides them from the GIF panel and the "/" strip. Kept on this phone only. */
+    fun shown(context: Context): Boolean = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean("lime.showStickers", true)
+    fun setShown(context: Context, on: Boolean) { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean("lime.showStickers", on).apply() }
+
     fun entries(context: Context): List<StickerEntry> = runCatching {
         val pack = JSONObject(context.assets.open("stickers/pack.json").bufferedReader().use { it.readText() }).getJSONArray("stickers")
         (0 until pack.length()).map { i ->

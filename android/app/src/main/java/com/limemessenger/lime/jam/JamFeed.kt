@@ -76,12 +76,24 @@ class JamModel(
     var saved by mutableStateOf(savedStore.all())
         private set
 
-    /** The posts the segment and the filter let through. */
+    /** The filter sheet's choices (LIME-412; the core's `JamFeedFilter`): a media kind, Co-authored, Subscribed, Bands, and Saved (which the pill below also toggles). */
+    var mediaFilter by mutableStateOf<uniffi.lime_core.JamFeedMedia?>(null)
+    var coauthoredOnly by mutableStateOf(false)
+    var subscribedOnly by mutableStateOf(false)
+    var bandsOnly by mutableStateOf(false)
+    /** The kinds of each post's files (`image`, `video`, `audio`, `file`), for the media filter. */
+    private val fileKinds = mutableStateMapOf<String, List<String>>()
+
+    val filter: uniffi.lime_core.JamFeedFilter get() = JamFeedFilter(mediaFilter, coauthoredOnly, subscribedOnly, bandsOnly, savedOnly)
+    val activeFilters: Int get() = uniffi.lime_core.jamFilterActiveCount(filter).toInt()
+    fun clearFilters() { mediaFilter = null; coauthoredOnly = false; subscribedOnly = false; bandsOnly = false; savedOnly = false }
+
+    /** The posts the segment and the filters let through. */
     val shown: List<JamPostInfo> get() {
-        val filter = JamFeedFilter(null, false, false, false, savedOnly)
+        val filter = filter
         return posts.filter { post ->
             uniffi.lime_core.jamFilterMatches(
-                post.kind, emptyList(), post.coauthors.isNotEmpty(), post.displayAs == "jam", !isMine(post), post.postId in saved, segment, filter,
+                post.kind, fileKinds[post.postId].orEmpty(), post.coauthors.isNotEmpty(), post.displayAs == "jam", !isMine(post), post.postId in saved, segment, filter,
             )
         }
     }
@@ -117,6 +129,7 @@ class JamModel(
         val core = store() ?: return
         val fresh = withContext(Dispatchers.IO) { posts.mapNotNull { p -> runCatching { core.jamPostCounts(p.postId) }.getOrNull() } }
         fresh.forEach { counts[it.postId] = it }
+        withContext(Dispatchers.IO) { posts.forEach { p -> runCatching { core.listJamAttachments(p.postId) }.getOrNull()?.let { list -> fileKinds[p.postId] = list.map { it.kind } } } }
     }
 
     fun countsOf(postId: String): JamCountsInfo = counts[postId] ?: JamCountsInfo(postId, 0u, 0u, 0u, emptyList(), false, false)
@@ -237,6 +250,39 @@ class JamModel(
         val result = withContext(Dispatchers.IO) { runCatching { block(core) } }
         if (result.isSuccess) { reload(); env?.deliver?.invoke() }
         return result
+    }
+
+    /** The server blob that holds a post now (the core's `jam_post_blob_id`), for a report's "Hide post". */
+    fun blobIdOf(postId: String): String? = store()?.jamPostBlobId(postId)
+
+    /** How much of what is queued for my jam has gone out (the core's `jam_send_progress`): pending and total, both zero when nothing waits. */
+    suspend fun sendProgress(jamId: String): uniffi.lime_core.JamSendProgress? {
+        val core = store() ?: return null
+        return withContext(Dispatchers.IO) { runCatching { core.jamSendProgress(jamId) }.getOrNull() }
+    }
+
+    /** My jam's public picture, if this phone holds one (the core's cache). */
+    fun picture(jamId: String): ByteArray? = runCatching { store()?.jamPicture(jamId) }.getOrNull()
+
+    /** Puts a picture (a JPEG of at most 1 MiB) on my jam's page: the core sends it to the server (public, like the title) and keeps a copy. */
+    suspend fun setPicture(jamId: String, jpeg: ByteArray): Boolean {
+        val core = store() ?: return false
+        val e = env ?: return false
+        val link = e.transport() ?: return false
+        val token = runCatching { e.token() }.getOrNull() ?: return false
+        val ok = withContext(Dispatchers.IO) { runCatching { core.setJamPicture(link, token, jamId, jpeg) }.isSuccess }
+        if (ok) reload()
+        return ok
+    }
+
+    suspend fun removePicture(jamId: String): Boolean {
+        val core = store() ?: return false
+        val e = env ?: return false
+        val link = e.transport() ?: return false
+        val token = runCatching { e.token() }.getOrNull() ?: return false
+        val ok = withContext(Dispatchers.IO) { runCatching { core.removeJamPicture(link, token, jamId) }.isSuccess }
+        if (ok) reload()
+        return ok
     }
 
     suspend fun createJam(title: String, about: String, topics: List<String>): Boolean = writing { it.createJam(title.trim(), about.trim(), topics) }.isSuccess

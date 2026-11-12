@@ -1,6 +1,8 @@
 package com.limemessenger.lime.ui.jam
 
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.ui.draw.clip
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -95,6 +97,8 @@ fun YourJamScreen(model: JamModel, drafts: JamDrafts, onBack: () -> Unit, onComp
             Text(stringResource(R.string.jam_yours), color = colors.text, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            if (jam != null) JamSendProgressLine(jam.jamId, model)
+            if (jam != null && !editing) JamPictureSection(jam, model)
             if (jam == null || editing) {
                 if (jam == null) Text(stringResource(R.string.jam_create_intro), color = colors.textSecondary, fontSize = 16.sp)
                 var title by remember(jam?.jamId) { mutableStateOf(jam?.title.orEmpty()) }
@@ -398,5 +402,74 @@ private fun Tool(words: String, glyph: String, tag: String, onClick: () -> Unit)
     val colors = Lime.colors
     Box(Modifier.size(48.dp).background(colors.chip, RoundedCornerShape(12.dp)).semantics { contentDescription = words; role = Role.Button }.clickable(onClick = onClick).testTag(tag), contentAlignment = Alignment.Center) {
         Text(glyph, color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+
+/** My jam's picture (LIME-412; iOS `OrgEdit` "Add picture"/"Change picture"/"Remove"): shown on the jam's page; chosen with the Photo Picker, scaled to a JPEG under 1 MiB by this phone. Public like the title. */
+@Composable
+private fun JamPictureSection(jam: uniffi.lime_core.JamInfo, model: JamModel) {
+    val colors = Lime.colors
+    val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var version by remember(jam.jamId) { mutableStateOf(0) }
+    var failed by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    val bytes = remember(jam.jamId, version, model.reloads) { model.picture(jam.jamId) }
+    val bitmap = remember(bytes) { bytes?.let { com.limemessenger.lime.chats.AttachmentProcessing.decodeForDisplay(it, 640) }?.asImageBitmap() }
+    val picker = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) scope.launch {
+            busy = true; failed = false
+            val jpeg = withContext(Dispatchers.IO) { com.limemessenger.lime.chats.AttachmentProcessing.decodeUpright(context.contentResolver, uri)?.let { jamPictureJpeg(it) } }
+            failed = jpeg == null || !model.setPicture(jam.jamId, jpeg)
+            version++; busy = false
+        }
+    }
+    val pictureWords = stringResource(if (bitmap != null) R.string.jam_picture_set else R.string.jam_picture_none)
+    Column(Modifier.fillMaxWidth().testTag("jam-picture-section"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(
+            Modifier.fillMaxWidth().aspectRatio(1.9f).clip(RoundedCornerShape(16.dp)).background(colors.surface).semantics { contentDescription = pictureWords }.testTag("jam-picture"),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (bitmap != null) androidx.compose.foundation.Image(bitmap, null, contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            else Text(stringResource(R.string.jam_picture_none), color = colors.textSecondary, fontSize = 14.sp)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            androidx.compose.material3.TextButton({ picker.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly)) }, Modifier.heightIn(min = 48.dp).testTag("jam-picture-add"), enabled = !busy) {
+                Text(stringResource(if (bitmap != null) R.string.jam_picture_change else R.string.jam_picture_add), color = colors.text, fontWeight = FontWeight.SemiBold)
+            }
+            if (bitmap != null) androidx.compose.material3.TextButton({ scope.launch { busy = true; failed = !model.removePicture(jam.jamId); version++; busy = false } }, Modifier.heightIn(min = 48.dp).testTag("jam-picture-remove"), enabled = !busy) {
+                Text(stringResource(R.string.jam_picture_remove), color = colors.danger)
+            }
+        }
+        if (failed) Text(stringResource(R.string.jam_picture_failed), color = colors.danger, fontSize = 14.sp, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("jam-picture-failed"))
+    }
+}
+
+/** A jam picture as a JPEG of at most 1 MiB (the core's limit): 1600 px on the long edge, the quality stepped down until it fits. */
+internal fun jamPictureJpeg(source: android.graphics.Bitmap): ByteArray? {
+    val drawn = com.limemessenger.lime.chats.AttachmentProcessing.redraw(source, 1600)
+    var quality = 85
+    while (quality >= 35) {
+        val data = com.limemessenger.lime.chats.AttachmentProcessing.jpeg(drawn, quality)
+        if (data.size <= 1024 * 1024) return data
+        quality -= 10
+    }
+    return null
+}
+
+
+/** "Sending to 412 of 1,000" while a post is still going out to subscribers (LIME-412; the core's `jam_send_progress`), read again every two seconds while this screen is open. */
+@Composable
+private fun JamSendProgressLine(jamId: String, model: JamModel) {
+    val colors = Lime.colors
+    var progress by remember(jamId) { mutableStateOf<uniffi.lime_core.JamSendProgress?>(null) }
+    LaunchedEffect(jamId) {
+        while (true) { progress = model.sendProgress(jamId); kotlinx.coroutines.delay(2_000) }
+    }
+    val p = progress
+    if (p != null && p.pending > 0u) {
+        val words = stringResource(R.string.jam_sending_progress, (p.total - p.pending).toInt(), p.total.toInt())
+        Text(words, color = colors.textSecondary, fontSize = 14.sp, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("jam-send-progress"))
     }
 }

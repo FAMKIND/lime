@@ -271,6 +271,11 @@ fun StorageScreen(chats: ChatsModel, prefs: MediaPrefs, onBack: () -> Unit) {
             ValueRow(stringResource(R.string.storage_media), friendlyBytes(u?.mediaBytes?.toLong() ?: 0), "storage-media")
         }
         Footnote(stringResource(R.string.storage_note))
+        // lime's own stickers (LIME-412; iOS "Show lime's stickers" in My GIFs): on by default; off hides them from the GIF button and the "/" strip.
+        val stickerContext = androidx.compose.ui.platform.LocalContext.current
+        var showStickers by remember { mutableStateOf(com.limemessenger.lime.chats.StickerPack.shown(stickerContext)) }
+        SettingsCardColumn { ToggleRow(stringResource(R.string.storage_show_stickers), showStickers, "storage-show-stickers") { showStickers = it; com.limemessenger.lime.chats.StickerPack.setShown(stickerContext, it) } }
+        Footnote(stringResource(R.string.storage_show_stickers_note))
         // My GIFs (LIME-313): how many, their size, and Clear (they live in this phone's store, not in a chat).
         SettingsCardColumn {
             ValueRow(stringResource(R.string.storage_my_gifs), "${gifs?.count ?: 0} · ${friendlyBytes(gifs?.bytes?.toLong() ?: 0)}", "storage-gifs")

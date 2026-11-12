@@ -53,7 +53,7 @@ fun GifSlashStrip(chats: ChatsModel, query: String, onPick: (OutgoingAttachment)
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val pack = androidx.compose.runtime.remember { StickerPack.entries(context) }
-    val stickers = uniffi.lime_core.stickerMatching(query, pack, true)
+    val stickers = if (StickerPack.shown(context)) uniffi.lime_core.stickerMatching(query, pack, true) else emptyList()
     val gifs by produceState<List<MyGif>?>(null, query) {
         val core = chats.core()
         val keep = if (query.isEmpty()) 12 else maxOf(0, 12 - minOf(12, stickers.size))
