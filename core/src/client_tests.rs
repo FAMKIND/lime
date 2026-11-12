@@ -9,6 +9,7 @@ use crate::store::LimeStore;
 use crate::testing::FakeServer;
 use crate::transport::Transport;
 
+mod android_interop;
 mod link_preview_sealed;
 
 struct Party {
