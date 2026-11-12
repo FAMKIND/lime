@@ -8,6 +8,7 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
@@ -139,13 +140,13 @@ class LinkPreviewUiTest {
         type("the plan")
         rule.onNodeWithTag("composer-field").performTextInputSelection(TextRange(0, 8))
         rule.waitUntil(5_000) { count("fmt-link") > 0 }
-        rule.onNodeWithTag("fmt-link", useUnmergedTree = true).performClick()
+        rule.onNodeWithTag("fmt-link", useUnmergedTree = true).performScrollTo().performClick()
         rule.waitUntil(5_000) { count("link-url") > 0 }
         rule.onNodeWithTag("link-url", useUnmergedTree = true).performTextInput("example.org/plan")
         rule.onNodeWithTag("link-apply", useUnmergedTree = true).performClick()
         rule.waitUntil(8_000) { count("link-draft") > 0 }
         assertEquals(listOf("https://example.org/plan"), asked.distinct())
-        rule.onNodeWithTag("fmt-link", useUnmergedTree = true).performClick()
+        rule.onNodeWithTag("fmt-link", useUnmergedTree = true).performScrollTo().performClick()
         rule.waitUntil(5_000) { count("link-remove") > 0 }
         rule.onNodeWithTag("link-remove", useUnmergedTree = true).performClick()
         rule.waitUntil(5_000) { count("link-draft") == 0 }

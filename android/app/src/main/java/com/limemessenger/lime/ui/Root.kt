@@ -126,6 +126,7 @@ private fun SignedIn(session: AccountSession) {
     var personProfile by remember { mutableStateOf<Pair<String, String>?>(null) }
     var jamPost by remember { mutableStateOf<uniffi.lime_core.JamPostInfo?>(null) }
     var yourJam by remember { mutableStateOf(false) }
+    var bandPage by remember { mutableStateOf<String?>(null) }
     var shellTab by rememberSaveable { mutableStateOf(com.limemessenger.lime.ui.shell.Tab.Link) }
     var compose by remember { mutableStateOf<com.limemessenger.lime.ui.jam.ComposeRoute?>(null) }
     // Unpublished posts stay on this phone, in this account's own folder.
@@ -152,7 +153,8 @@ private fun SignedIn(session: AccountSession) {
     LaunchedEffect(chats.revision) { arrivals.check(chats.conversations, openId) }
     val groupModel = remember(openId) { openId?.let { GroupModel(chats, it) } }
     BackHandler(enabled = jamPost != null && compose == null) { jamPost = null }
-    BackHandler(enabled = yourJam && compose == null && jamPost == null) { yourJam = false }
+    BackHandler(enabled = bandPage != null && jamPost == null) { bandPage = null }
+    BackHandler(enabled = yourJam && bandPage == null && compose == null && jamPost == null) { yourJam = false }
     BackHandler(enabled = personProfile != null) { personProfile = null }
     BackHandler(enabled = threadRoot != null) { threadRoot = null }
     BackHandler(enabled = openId == null && searchOpen) { searchOpen = false }
@@ -174,8 +176,10 @@ private fun SignedIn(session: AccountSession) {
         PersonProfileScreen(person.first, person.second, chats, onBack = { personProfile = null }, jam = jam, onBlocked = { personProfile = null; openId = null })
     } else if (postOpen != null) {
         JamReaderScreen(postOpen, jam, myId = session.userId, chats = chats, onEdit = { compose = com.limemessenger.lime.ui.jam.ComposeRoute(if (it.kind == "article") "article" else "quick", editing = it); jamPost = null }, onBack = { jamPost = null })
+    } else if (bandPage != null && jam.myJams.any { it.jamId == bandPage }) {
+        com.limemessenger.lime.ui.band.BandScreen(jam.myJams.first { it.jamId == bandPage }, jam, onBack = { bandPage = null }, onOpenPost = { jamPost = it })
     } else if (yourJam) {
-        com.limemessenger.lime.ui.jam.YourJamScreen(jam, jamDrafts, onBack = { yourJam = false }, onCompose = { compose = it })
+        com.limemessenger.lime.ui.jam.YourJamScreen(jam, jamDrafts, onBack = { yourJam = false }, onCompose = { compose = it }, onOpenBand = { bandPage = it })
     } else if (chatModel != null && groupModel != null && groupInfoOpen) {
         GroupDetailsScreen(chats, groupModel, chats.myName, chats.myTone, onBack = { groupInfoOpen = false }, onLeft = { groupInfoOpen = false; openId = null })
     } else if (chatModel != null && root != null) {

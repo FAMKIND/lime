@@ -81,7 +81,7 @@ class ComposeRoute(val kind: String, val draftId: String? = null, val editing: J
  * remove one, edit the jam or end it. One lime button on the screen: Create, or Write a post.
  */
 @Composable
-fun YourJamScreen(model: JamModel, drafts: JamDrafts, onBack: () -> Unit, onCompose: (ComposeRoute) -> Unit) {
+fun YourJamScreen(model: JamModel, drafts: JamDrafts, onBack: () -> Unit, onCompose: (ComposeRoute) -> Unit, onOpenBand: ((String) -> Unit)? = null) {
     val colors = Lime.colors
     val scope = rememberCoroutineScope()
     val jam = model.mine()
@@ -142,6 +142,7 @@ fun YourJamScreen(model: JamModel, drafts: JamDrafts, onBack: () -> Unit, onComp
             } else {
                 Text(jam.title, color = colors.text, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() }.testTag("jam-yours-title"))
                 if (jam.about.isNotEmpty()) Text(jam.about, color = colors.textSecondary, fontSize = 16.sp)
+                if (onOpenBand != null && model.isBand(jam)) OutlineButton(stringResource(R.string.band_open_page), "band-open-page") { onOpenBand(jam.jamId) }
                 TextButton({ editing = true }, Modifier.heightIn(min = 48.dp).testTag("jam-yours-edit")) { Text(stringResource(R.string.jam_edit_jam), color = colors.text) }
                 PrimaryButton(stringResource(R.string.jam_write_post), { onCompose(ComposeRoute("quick")) }, Modifier.testTag("jam-write-post"))
                 OutlineButton(stringResource(R.string.jam_write_article), "jam-write-article") { onCompose(ComposeRoute("article")) }

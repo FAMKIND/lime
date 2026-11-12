@@ -58,7 +58,10 @@ class JamModel(
     private val env: JamEnv? = null,
     /** Bookmarks: the ids of saved posts (kept on this phone only). */
     private val savedStore: SavedPosts = SavedPosts.None,
+    /** The band calls (members, roles, invite, join); the core's unless a test gives its own. */
+    bandsBackend: BandBackend? = null,
 ) {
+    val bands: BandBackend = bandsBackend ?: CoreBandBackend(store) { env?.deliver?.invoke() }
     var posts by mutableStateOf<List<JamPostInfo>>(emptyList())
         private set
     var jams by mutableStateOf<List<JamInfo>>(emptyList())

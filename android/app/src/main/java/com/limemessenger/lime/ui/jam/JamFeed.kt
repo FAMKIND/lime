@@ -76,6 +76,9 @@ fun JamFeedScreen(model: JamModel, modifier: Modifier = Modifier, onYours: (() -
     Column(modifier.fillMaxSize().background(colors.canvas)) {
         Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.tab_jam), color = colors.text, fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f).semantics { heading() })
+            var joining by remember { mutableStateOf(false) }
+            if (onYours != null) androidx.compose.material3.TextButton({ joining = true }, Modifier.heightIn(min = 48.dp).testTag("band-join-open")) { Text(stringResource(R.string.band_join), color = colors.text) }
+            if (joining) com.limemessenger.lime.ui.band.BandJoinDialog(model, onDismiss = { joining = false })
             if (onYours != null) androidx.compose.material3.TextButton(onYours, Modifier.heightIn(min = 48.dp).testTag("jam-yours-open")) { Text(stringResource(R.string.jam_yours), color = colors.text, fontWeight = FontWeight.SemiBold) }
         }
         SegmentRow(model)
