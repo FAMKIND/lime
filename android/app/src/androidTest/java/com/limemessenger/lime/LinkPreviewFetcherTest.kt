@@ -83,10 +83,12 @@ class LinkPreviewFetcherTest {
     }
 
     private val opened = AtomicInteger(0)
+    private val resolved = AtomicInteger(0)
+    private val pinnedTo = CopyOnWriteArrayList<String>()
     /** The fetcher with a connection that goes to the fake server (path and query kept) and policies that let it through. */
     private fun fetcher() = LinkPreviewFetcher(
-        open = { url -> opened.incrementAndGet(); URL("http://127.0.0.1:${server.localPort}${url.file}").openConnection() as HttpURLConnection },
-        resolve = { listOf("93.184.216.34") }, addressAllowed = { true }, target = { it },
+        connect = { _, ip, _, _ -> opened.incrementAndGet(); pinnedTo += ip; java.net.Socket("127.0.0.1", server.localPort) },
+        resolve = { resolved.incrementAndGet(); listOf("93.184.216.34") }, addressAllowed = { true }, target = { it },
     )
     private fun make(path: String) = runBlocking { fetcher().make("https://example.org$path") }
 
@@ -130,8 +132,8 @@ class LinkPreviewFetcherTest {
 
     @Test fun aPicturePastTwoMegabytesIsLeftOutButTheCardStays() {
         val big = LinkPreviewFetcher(
-            open = { url -> URL("http://127.0.0.1:${server.localPort}${url.file.replace("/cover.png", "/bigpicture.png")}").openConnection() as HttpURLConnection },
-            resolve = { listOf("93.184.216.34") }, addressAllowed = { true }, target = { it },
+            connect = { _, _, _, _ -> java.net.Socket("127.0.0.1", server.localPort) },
+            resolve = { listOf("93.184.216.34") }, addressAllowed = { true }, target = { it.replace("/cover.png", "/bigpicture.png") },
         )
         val card = runBlocking { big.make("https://example.org/page") }
         assertNotNull(card)
@@ -140,14 +142,14 @@ class LinkPreviewFetcherTest {
 
     @Test fun anAddressOnThisPhonesOwnNetworkIsNeverConnectedTo() {
         // The real rules: the address itself ...
-        val real = LinkPreviewFetcher(open = { opened.incrementAndGet(); it.openConnection() as HttpURLConnection })
+        val real = LinkPreviewFetcher(connect = { _, _, _, _ -> opened.incrementAndGet(); java.net.Socket("127.0.0.1", server.localPort) })
         for (address in listOf("http://127.0.0.1:${server.localPort}/page", "https://localhost/page", "https://192.168.1.1/", "https://10.0.0.1/", "https://[::1]/", "https://printer.local/", "ftp://example.org/x")) {
             assertNull(address, runBlocking { real.make(address) })
         }
         assertEquals("not one connection was opened", 0, opened.get())
         assertEquals("and the server saw none", 0, connections.get())
         // ... and a public name that resolves to a private address (DNS pointing inside).
-        val rebinding = LinkPreviewFetcher(open = { opened.incrementAndGet(); it.openConnection() as HttpURLConnection }, resolve = { listOf("93.184.216.34", "192.168.1.5") })
+        val rebinding = LinkPreviewFetcher(connect = { _, _, _, _ -> opened.incrementAndGet(); java.net.Socket("127.0.0.1", server.localPort) }, resolve = { listOf("93.184.216.34", "192.168.1.5") })
         assertNull(runBlocking { rebinding.make("https://example.org/page") })
         assertEquals(0, opened.get())
     }
@@ -156,10 +158,41 @@ class LinkPreviewFetcherTest {
         // The first hop is a public name; its Location points at the phone's own network: the fetcher checks it again and stops.
         val hop = AtomicInteger(0)
         val f = LinkPreviewFetcher(
-            open = { url -> hop.incrementAndGet(); URL("http://127.0.0.1:${server.localPort}/redirect-private").openConnection() as HttpURLConnection },
-            resolve = { listOf("93.184.216.34") },
+            connect = { _, _, _, _ -> hop.incrementAndGet(); java.net.Socket("127.0.0.1", server.localPort) },
+            resolve = { listOf("93.184.216.34") }, target = { if (it.contains("/start")) "https://example.org/redirect-private" else uniffi.lime_core.linkPreviewTarget(it) },
         )
         assertNull(runBlocking { f.make("https://example.org/start") })
         assertEquals("one request went out (the first hop) and no second", 1, hop.get())
+    }
+
+    // ---- LIME-408: the address is checked once and then used
+
+    @Test fun theNameIsResolvedOnceAndTheConnectionGoesToTheCheckedAddress() {
+        val card = make("/page")   // a page with a picture: two fetches, so two lookups, one each
+        assertNotNull(card)
+        assertEquals("one lookup per fetch (page, picture), never a second one inside a fetch", 2, resolved.get())
+        assertEquals("every connection was told the checked address itself", listOf("93.184.216.34", "93.184.216.34"), pinnedTo.toList())
+    }
+
+    @Test fun aNameThatAnswersPublicFirstAndLoopbackSecondFetchesNothing() {
+        val sneaky = LinkPreviewFetcher(connect = { _, _, _, _ -> opened.incrementAndGet(); java.net.Socket("127.0.0.1", server.localPort) }, resolve = { listOf("93.184.216.34", "127.0.0.1") })
+        assertNull(runBlocking { sneaky.make("https://example.org/page") })
+        assertEquals("no connection at all", 0, opened.get())
+        assertEquals(0, connections.get())
+        // The other order, and a name whose answer changes between two lookups (the first public, the second inside): only the first is ever used, so there is nothing to change.
+        val answers = java.util.concurrent.atomic.AtomicInteger(0)
+        val flipping = LinkPreviewFetcher(connect = { _, ip, _, _ -> pinnedTo += "flip:$ip"; java.net.Socket("127.0.0.1", server.localPort) },
+            resolve = { if (answers.getAndIncrement() == 0) listOf("93.184.216.34") else listOf("127.0.0.1") }, addressAllowed = { it != "127.0.0.1" }, target = { it })
+        assertNotNull(runBlocking { flipping.make("https://example.org/page") })
+        assertEquals("the page's connection used the first (checked) answer", "flip:93.184.216.34", pinnedTo.first { it.startsWith("flip:") })
+    }
+
+    @Test fun aPeerThatTurnsOutPrivateAfterTheConnectionIsRefusedBeforeAnyByteIsSent() {
+        // The default connection to a public-looking address that is really this phone's own server: the address check passes (a stand-in rule), the connected peer fails it.
+        val calls = AtomicInteger(0)
+        val f = LinkPreviewFetcher(resolve = { listOf("127.0.0.1") }, addressAllowed = { calls.incrementAndGet() == 1 }, target = { "https://127.0.0.1:${server.localPort}/page" })
+        assertNull(runBlocking { f.make("https://example.org/page") })
+        assertEquals("the second check (the connected peer) ran and said no", 2, calls.get())
+        assertTrue("the server saw the connection but not one byte of a request: $requests", requests.all { it.isBlank() })
     }
 }
