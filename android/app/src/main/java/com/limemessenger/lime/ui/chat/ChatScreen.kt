@@ -489,10 +489,10 @@ private fun Composer(model: ChatModel, chats: ChatsModel, seedPhotos: List<Outgo
         if (editing != null) { if (waiting == null) waiting = composer.markdown(); composer.load(editing.text) }
     }
     val finishEdit: () -> Unit = { composer.load(waiting.orEmpty()); waiting = null; onEdited() }
-    // @mentions (LIME-406 B): in a group, "@" offers its people (and @everyone to an owner or admin).
+    // @mentions (LIME-406 B, 408): "@" offers the chat's people (in a 1:1, the other person, as iOS), and @everyone to a group's owner or admin.
     val summaryNow = model.summary
     val isGroup = summaryNow?.isGroup == true
-    val people = remember(summaryNow?.members, isGroup) { if (!isGroup) emptyList() else summaryNow!!.members.map { uniffi.lime_core.MentionPerson(it.id, it.name, it.label, it.username) } }
+    val people = remember(summaryNow?.members) { (summaryNow?.members ?: emptyList()).map { uniffi.lime_core.MentionPerson(it.id, it.name, it.label, it.username) } }
     var mentionEveryone by remember { mutableStateOf(false) }
     LaunchedEffect(model.conversationId, isGroup) {
         mentionEveryone = false

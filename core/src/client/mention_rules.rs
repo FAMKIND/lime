@@ -305,6 +305,16 @@ mod tests {
         assert_eq!(mention_suggestions("".into(), many, false, 30).len(), 30, "a group of 500 shows the best 30, not all");
     }
 
+    // LIME-408: iOS offers a 1:1 chat's one other person (`conversation.members`), and "@everyone" only to a group's owner or admin (the app passes false in a 1:1).
+    #[test]
+    fn a_one_to_one_chat_offers_the_other_person_and_never_everyone() {
+        let other = vec![person("b", "Ben Android", None, Some("ben_android"))];
+        assert_eq!(ids(&mention_suggestions("".into(), other.clone(), false, 30)), ["b"]);
+        assert_eq!(ids(&mention_suggestions("be".into(), other.clone(), false, 30)), ["b"]);
+        assert_eq!(ids(&mention_suggestions("ever".into(), other.clone(), false, 30)), Vec::<&str>::new(), "no @everyone without the flag");
+        assert_eq!(ids(&mention_suggestions("zz".into(), other, false, 30)), Vec::<&str>::new());
+    }
+
     #[test]
     fn the_at_word_before_the_caret_is_a_trigger_only_at_a_word_start() {
         let doc = typed("hello @be");

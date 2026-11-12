@@ -88,7 +88,7 @@ class ComposerMentionUiTest {
     private fun bounds(tag: String) = rule.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
     private val members get() = chats.conversations.first { it.isGroup }.members
 
-    @Test fun anAtInAGroupOffersItsPeopleAndOneToOneOffersNone() {
+    @Test fun anAtInAGroupOffersItsPeople() {
         show(group)
         val before = bounds("composer-card")
         type("@")
@@ -99,11 +99,19 @@ class ComposerMentionUiTest {
         assertEquals("the card keeps its height while the list shows (the keyboard moves it, the list does not)", before.height, bounds("composer-card").height, 1f)
     }
 
-    @Test fun noListInAOneToOneChat() {
+    @Test fun aOneToOneChatOffersTheOtherPersonAndNeverEveryone() {
         show(dm)
+        val other = chats.conversations.first { it.id == dm.conversationId }.members
+        assertEquals("a 1:1 has one other person", 1, other.size)
         type("@")
+        rule.waitUntil(5_000) { count("mention-suggestions") > 0 }
+        assertEquals(1, count("mention-suggestion-${other.single().id}"))
+        assertEquals("@everyone is for a group's owner or admin", 0, count("mention-suggestion-everyone"))
+        val label = rule.onNodeWithTag("mention-suggestions", useUnmergedTree = true).fetchSemanticsNode().config[SemanticsProperties.ContentDescription].joinToString()
+        assertEquals("Suggestions, 1 person", label)
+        rule.onNodeWithTag("mention-suggestion-${other.single().id}", useUnmergedTree = true).performClick()
         rule.waitForIdle()
-        assertEquals(0, count("mention-suggestions"))
+        assertEquals("@${other.single().name} ", fieldText())
     }
 
     @Test fun aTappedPersonIsPutInWholeDeletedWholeAndSentAsMarkup() {
