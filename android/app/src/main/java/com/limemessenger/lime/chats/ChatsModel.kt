@@ -76,6 +76,9 @@ class ChatsModel(
 
     val unreadChatCount: Int get() = chats.count { it.isUnread }
 
+    /** The chats that are unread besides `id` (LIME-409: the number beside a chat's Back; iOS LIME-325): the Messages tab's count (chats, not messages; muted counted as the tab does), minus this chat when it is unread. */
+    fun otherUnreadChats(id: String): Int = countOtherUnread(chats.map { it.id to it.isUnread }, id)
+
     suspend fun reload() {
         val core = store() ?: return
         try {
@@ -164,3 +167,7 @@ class ChatsModel(
         const val FOREGROUND_INTERVAL_MS = 5_000L
     }
 }
+
+
+/** `unread` = (chat id, is it unread) for every chat of the Messages list: how many are unread besides `current`. */
+fun countOtherUnread(unread: List<Pair<String, Boolean>>, current: String): Int = unread.count { it.second && it.first != current }

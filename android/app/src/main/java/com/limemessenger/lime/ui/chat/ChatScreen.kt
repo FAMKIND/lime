@@ -86,6 +86,7 @@ import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -210,7 +211,7 @@ fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenTh
         val chosen = selection
         if (chosen != null) SelectionBar(chosen.size, onCancel = { selection = null },
             onForward = { forwarding = chosen.toList() }, onDelete = { deleting = model.messages.filter { it.id in chosen } })
-        else Header(summary, chats.myName, chats.myTone, onBack, onOpenGroup) { m -> onOpenProfile(m.id, m.name) }
+        else Header(summary, chats.myName, chats.myTone, chats.otherUnreadChats(model.conversationId), onBack, onOpenGroup) { m -> onOpenProfile(m.id, m.name) }
         LazyColumn(Modifier.weight(1f).fillMaxWidth().testTag("chat-messages"), state = listState, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp)) {
             items(rows, key = { it.id }) { row ->
                 when (row) {
@@ -279,13 +280,11 @@ private fun SelectionBar(count: Int, onCancel: () -> Unit, onForward: () -> Unit
 }
 
 @Composable
-private fun Header(summary: ConversationSummary?, myName: String, myTone: Int, onBack: () -> Unit, onGroup: () -> Unit, onProfile: (uniffi.lime_core.MemberInfo) -> Unit) {
+internal fun Header(summary: ConversationSummary?, myName: String, myTone: Int, otherUnread: Int, onBack: () -> Unit, onGroup: () -> Unit, onProfile: (uniffi.lime_core.MemberInfo) -> Unit) {
     val colors = Lime.colors
     val first = summary?.members?.firstOrNull()
     Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onBack, Modifier.size(56.dp).testTag("chat-back")) {
-            Icon(Icons.Back, contentDescription = stringResource(R.string.chat_back), tint = colors.text)
-        }
+        BackWithCount(otherUnread, onBack)
         // In a one-to-one chat the avatar and the name open the person's profile.
         val opensProfile = summary != null && !summary.isGroup && first != null
         // In a group they open the group's details (not once it has ended: nothing there can change).
@@ -307,6 +306,27 @@ private fun Header(summary: ConversationSummary?, myName: String, myTone: Int, o
                 modifier = Modifier.padding(start = 12.dp).weight(1f).semantics { heading() }.testTag("chat-title"),
             )
         }
+    }
+}
+
+/**
+ * The chat's Back (LIME-409; iOS LIME-325): the arrow, and beside it the number of OTHER unread chats in the lime pill the list uses ("99+" past 99); the arrow alone when there are none.
+ * One TalkBack stop: "Back", state "3 unread chats". The capsule is 48 dp tall at least, widens with the number and with the font size, and never clips.
+ */
+@Composable
+fun BackWithCount(otherUnread: Int, onBack: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = Lime.colors
+    val back = stringResource(R.string.chat_back)
+    val state = if (otherUnread > 0) androidx.compose.ui.res.pluralStringResource(R.plurals.chat_back_unread, otherUnread, otherUnread) else null
+    Row(
+        modifier.heightIn(min = 56.dp).widthIn(min = 56.dp)
+            .clickable(onClick = onBack)
+            .clearAndSetSemantics { contentDescription = back; role = Role.Button; if (state != null) stateDescription = state; testTag = "chat-back" }
+            .padding(start = 16.dp, end = if (otherUnread > 0) 8.dp else 16.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Icon(Icons.Back, contentDescription = null, tint = colors.text)
+        if (otherUnread > 0) com.limemessenger.lime.ui.chats.CountBadge(otherUnread, Modifier.testTag("chat-back-count"))
     }
 }
 

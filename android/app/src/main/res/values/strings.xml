@@ -108,6 +108,10 @@
     <string name="chat_request_bar">%1$s isn\'t in your chats yet. Accept to reply.</string>
     <string name="chat_accept">Accept</string>
     <string name="chat_back">Back</string>
+    <plurals name="chat_back_unread">
+        <item quantity="one">%d unread chat</item>
+        <item quantity="other">%d unread chats</item>
+    </plurals>
     <string name="chat_thread_title">Replies</string>
     <string name="requests_title">Requests</string>
     <string name="requests_one">1 person wants to message you</string>
