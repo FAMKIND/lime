@@ -1,5 +1,40 @@
 # TEND-ANDROID.md
 
+## Prototype notes, night 4 (LIME-413, 2026-11-12 ~03:40)
+
+**What you have now:** night 3 plus **the chat's Back with the number of other unread chats, video messages (record with CameraX, send sealed, play with Media3), a release build that works (R8, 16 KB-clean AAB, signing hook, a real launcher icon), the jam leftovers (Report on a post or comment, the jam picture, the sending-progress line, the feed's Filter sheet, Show stickers)**, @mentions in 1:1 chats and a link-preview fetch with no DNS race (LIME-408, just before the night), and the tests that hold the link-preview client's guards in place. Everything proved on the API 36 emulator (staging with Ben and Cleo where it needs a partner); a green plain pass on API 26 and 36 per brief.
+
+**Watch/see:** `~/Desktop/lime-android-night4/` (outside the repo): `film/night4-walkthrough.mp4` (about 3 minutes: Ada's chat with Ben while Cleo writes: the Back count; record a video, preview, add, send; Ben answers with a clip; play it; the jam Filter sheet) with its screenshots `film/1…12`; `409/` (the Back with 0, 3, 99+, 200% font, dark); `411/` (the **release** APK's welcome screen, the **lime launcher icon** in the app drawer, light and dark); `412/` (the Filter sheet, the post reader with Report, the report sheet; light, dark, 200% font); `failures/` (the copied reports of every failed run, with what they were).
+
+**How to play (10 minutes):**
+1. As before (emulator; `android/tools/staging-test-accounts.sh --push`; `cd android && ./gradlew installDebug`; Use a test account → Ada). Run Ben and Cleo as partners: `android/tools/partner/run reset && android/tools/partner/run echo` and, in another terminal, `android/tools/partner/run reset --as cleo && android/tools/partner/run echo --as cleo`.
+2. Message Ben and Cleo ("hello"), open Ben's chat and wait: when Cleo answers, **Back shows a green 1** (try it with more chats; it counts chats, not messages, and says "99+" past 99).
+3. In Ben's chat: **+ → Video** (the first time lime explains and asks for the camera and microphone) → Record (3+ seconds) → Stop → **Add to message** → Send. Ben sends the clip back: tap it to download and play it. (The emulator's camera is a moving test pattern.)
+4. jam tab: the **Filter** pill (Media, Co-authored, Subscribed, Bands, Saved). In a post by someone else: **Report** on the reader's top bar and on each comment. My jam → **Add picture**. Settings → Storage → **Show lime's stickers**.
+5. Release: `cd android && ./gradlew bundleRelease` (the AAB; signed with `~/.lime/android-test-upload.jks` through `~/.lime/android-signing.properties`), `tools/check-release-clean.sh`, and the whole suite against the minified build: `GRADLE_TASK=connectedReleaseLikeAndroidTest tools/connected.sh -Plime.testBuildType=releaseLike -Pandroid.testInstrumentationRunnerArguments.notClass=com.limemessenger.lime.LinkPreviewTlsTest`.
+
+**What landed, per brief (commits on `android`):**
+| Brief | What | Commit |
+|---|---|---|
+| 408 (before the night) | @mentions in 1:1 chats; the link-preview fetch resolves once and connects to the checked address | `a5f0762`, `caddf4a` |
+| 409 | the chat's Back shows the number of other unread chats | `6e26198` |
+| 410 | the link-preview client's TLS/chunked/limit tests (4 small fixes found) + composer edges | `eaab6ef` |
+| 314 | video messages | `60b3109` |
+| 411 | the release build: R8, 16 KB, signing, launcher icon | `a18be0d` |
+| 412 | the jam leftovers (items 1–5) | `cbcf2ff` |
+| 315 | bands: the survey and a proposed split (no code) | `26c4519` |
+| 413 | this recording and these notes | (the commit that carries this block) |
+
+**Not built (of the night's list):** **bands** (315: a survey with a split into three briefs); in 412, **the Block-with-Cleo staging proof**; in 314, **picking a video from the gallery** (and its transcode), **video transcripts**, and **recording on the API 26 emulator** (its camera cannot be bound by CameraX); in 410, **Backspace at the start of a non-empty list item** is still unverified; plus everything older (calls, push, mesh, co-editing, podcast recording, series, Everyone posts, emergency, account deletion, move).
+
+**Core rules added tonight:** **none** (no core change at all tonight; LIME-408's and 407's `link_preview_rules.rs` / `mention_rules.rs` were earlier). **Dependencies added (AndroidX only):** CameraX 1.6.2 (core, camera2, lifecycle, video, view), Media3 1.11.1 (exoplayer, ui); **JNA 5.14.0 → 5.19.1** (16 KB alignment).
+**Kotlin twins still on Android (for LIME-133):** as night 3 plus `VideoProcessing` (the poster/thumbnail and size limits are Kotlin: the core has the file limit but not iOS's `VideoProcessing` numbers: 3 minutes, 50 MB less 256 KB, a 30 KB poster), `countOtherUnread` (one line over the core's `is_unread`).
+
+**Choices to confirm:** (1) the Back's number also shows when a chat was opened from a profile, search or a notification; (2) video is added to the draft (as iOS) and sent with the message; recording only (no gallery pick); the front camera first, the back one when there is none (the emulator has none); (3) the hardware-keyboard **undo/redo are off** in the composer (the field's undo put text back without the core's document, so the message could differ from what was shown); (4) the **icon**: the lime mark on the light lime `#e4f9be` (the mark's own dark outline gives the edge): a placeholder for your art; (5) the **release test key** is `~/.lime/android-test-upload.jks` (password in `~/.lime/android-signing.properties`), **not** the Play upload key; (6) "Show lime's stickers" lives in Settings → Storage (iOS: My GIFs); (7) a jam picture is public like the title (iOS the same); (8) the releaseLike proof keeps Kotlin/Compose/AndroidX-core whole (so Compose's R8 safety is not proved, JNA/UniFFI's is).
+**Known failures / caveats:** (1) **two one-off API 36 plain failures with lost reports** (night 3 and the start of tonight: the second took 7 min 50 s, probably a hang); `connected.sh` now copies a failing report itself. (2) Recording was **never run on API 26** (CameraX cannot bind there; two tests skip with a reason). (3) The link-preview fetch is **still untested against the real internet from an automated test** (one by-hand run on three public URLs worked). (4) No staging report was sent tonight (nothing for the moderation queue to clear). (5) The **themed (monochrome) icon** layer was not shown (the emulator's launcher has no setting). (6) The first shot `2-back-count` of the film is covered by the arrival banner; `7-video-bubbles` shows the Back with its 1.
+**Found while testing, all fixed:** the malformed chunk size that gave a bare-host card, the per-read (not whole) timeout, the unbounded header section, the keyboard undo that desynced the composer, CameraX binding off the main thread, three lint errors in the new video code, and the releaseLike test wiring (Kotlin/Compose/AndroidX classes R8 removed).
+**How to replay the film:** `android/tools/record-night4.sh [<out dir>] [<avd>]` (`android/tools/shots-409.sh`, `shots-412.sh` for the screenshots that need no partner).
+
 ## Prototype notes, night 3 (LIME-316, 2026-11-11 ~05:40)
 
 **What you have now:** night 2 plus **jam reading and writing, Report and Block, GIFs and stickers**, and the Android debt moved into core; each proved on staging with Ben as the partner on the API 36 emulator (green plain pass on API 26 and 36).
