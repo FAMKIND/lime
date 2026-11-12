@@ -19,7 +19,7 @@ for avd in ${AVDS:-lime-api36 lime-api26}; do
     ./gradlew -q installDebug installDebugAndroidTest || status=1
     # The server allows 10 device registrations per hour per account (staging's LIME_RATE_REGISTER_PER_HOUR), and every class registers Ada once, so
     # only the chat and groups tests run by default (LIME-303); STAGING_CLASSES="StagingSignInTest StagingChatTest" runs both.
-    for cls in ${STAGING_CLASSES:-StagingChatTest StagingGroupsTest StagingActionsTest StagingListTest StagingVoiceFilesTest StagingJamTest StagingJamWriteTest StagingModerationTest StagingGifTest StagingComposerTest StagingMentionTest StagingLinkPreviewTest}; do
+    for cls in ${STAGING_CLASSES:-StagingChatTest StagingGroupsTest StagingActionsTest StagingListTest StagingVoiceFilesTest StagingJamTest StagingJamWriteTest StagingModerationTest StagingGifTest StagingComposerTest StagingMentionTest StagingLinkPreviewTest StagingVideoTest}; do
       tools/staging-test-accounts.sh --push >/dev/null || status=1
       tools/partner/run reset >/dev/null || status=1
       case "$cls" in
@@ -79,6 +79,9 @@ for avd in ${AVDS:-lime-api36 lime-api26}; do
         mkdir -p "$HOME/Desktop/lime-android-407"; adb exec-out run-as com.limemessenger.lime cat files/shots/15-link-bubble-real-chat.png > "$HOME/Desktop/lime-android-407/15-link-bubble-real-chat.png" 2>/dev/null
         # Ben must have received the card's fields (and the picture, decrypted): url, title, site, bytes.
         grep -Eq '^preview: https://example.org/lesson\|Fractions made visible\|example.org\|[1-9][0-9]* bytes' /tmp/lime-partner.log || { status=1; echo "$cls: Ben never got the card fields"; } ;; esac
+      case "$cls" in StagingVideoTest*)
+        # Ben must have downloaded and decrypted Ada's video whole: type, size, length, size in pixels, a poster and a thumbnail.
+        grep -Eq '^video: video/mp4\|[1-9][0-9]* bytes\|[1-9][0-9]* ms\|[1-9][0-9]*x[1-9][0-9]*\|poster [1-9][0-9]* bytes\|thumb [0-9]+ bytes' /tmp/lime-partner.log || { status=1; echo "$cls: Ben never got the video whole"; } ;; esac
       case "$cls" in StagingMentionTest*)
         # Ben must have received the mention as the core's markup: [@Ben Android](mention:<his id>).
         grep -Eq 'markdown: hi \[@Ben Android\]\(mention:[0-9a-f-]+\) there' /tmp/lime-partner.log || { status=1; echo "$cls: Ben never got the mention as [@Ben Android](mention:<id>)"; } ;; esac

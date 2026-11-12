@@ -63,6 +63,14 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.biometric)
+    // LIME-314: video messages. CameraX records; Media3 (ExoPlayer) plays. Both are AndroidX: no Google Play services, no analytics.
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.video)
+    implementation(libs.androidx.camera.view)
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.ui)
     implementation(libs.kotlinx.coroutines.android)
     implementation("net.java.dev.jna:jna:${libs.versions.jna.get()}@aar")
 

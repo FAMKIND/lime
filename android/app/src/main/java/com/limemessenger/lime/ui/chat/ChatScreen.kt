@@ -23,6 +23,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -438,6 +439,7 @@ private fun MessageBubble(
                             item.attachments.filter { !it.mime.startsWith("image/") }.forEach { a ->
                                 val ink = if (own) colors.ownInk else colors.text
                                 if (a.mime.startsWith("audio/")) com.limemessenger.lime.ui.chat.VoiceCard(a, voice, voiceNext, voiceData, ink)
+                                else if (a.mime.startsWith("video/")) com.limemessenger.lime.ui.chat.VideoTile(a, model)
                                 else com.limemessenger.lime.ui.chat.FileCard(a, model, ink)
                             }
                         }
@@ -544,6 +546,7 @@ private fun Composer(model: ChatModel, chats: ChatsModel, seedPhotos: List<Outgo
         mutableStateListOf<DraftPhoto>().also { list -> seedPhotos.forEach { a -> AttachmentProcessing.decodeForDisplay(a.bytes, 320)?.let { list.add(DraftPhoto(a, it.asImageBitmap())) } } }
     }
     var describing by remember { mutableStateOf<DraftPhoto?>(null) }
+    var recordingVideo by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf<String?>(null) }
     val tooLarge = stringResource(R.string.photo_too_large)
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(AttachmentProcessing.MAX_PER_MESSAGE)) { uris ->
@@ -646,6 +649,9 @@ private fun Composer(model: ChatModel, chats: ChatsModel, seedPhotos: List<Outgo
             if (drafts.isNotEmpty()) {
                 LazyRow(Modifier.fillMaxWidth().testTag("draft-photos"), horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp)) {
                     items(drafts.toList()) { draft ->
+                      if (draft.attachment.mime.startsWith("video/")) {
+                        VideoDraftThumb(draft.preview.asAndroidBitmap(), (draft.attachment.durationMs ?: 0u).toDouble() / 1000.0, { drafts.remove(draft) }, stringResource(R.string.photo_remove))
+                      } else {
                         val photo = stringResource(R.string.photo_label)
                         val described = draft.attachment.alt.isNotEmpty()
                         Box(Modifier.size(88.dp).semantics { contentDescription = if (described) "$photo, ${draft.attachment.alt}" else photo }) {
@@ -666,6 +672,7 @@ private fun Composer(model: ChatModel, chats: ChatsModel, seedPhotos: List<Outgo
                                 Icon(Icons.Close, contentDescription = stringResource(R.string.photo_remove), tint = Color.White, modifier = Modifier.background(Color.Black.copy(alpha = 0.6f), CircleShape).padding(4.dp))
                             }
                         }
+                      }
                     }
                 }
             }
@@ -748,10 +755,18 @@ private fun Composer(model: ChatModel, chats: ChatsModel, seedPhotos: List<Outgo
         }
     }
     if (linking) LinkDialog(composer, onDismiss = { linking = false })
+    if (recordingVideo) VideoRecorderScreen(
+        onClose = { recordingVideo = false },
+        onUse = { made ->
+            drafts.add(DraftPhoto(made.attachment, (made.poster ?: android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888)).asImageBitmap()))
+            recordingVideo = false
+        },
+    )
     // The attachment sheet (iOS `AddToMessageSheet`): Photo and File (there is no camera tool on Android yet).
     if (attaching) @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class) androidx.compose.material3.ModalBottomSheet(onDismissRequest = { attaching = false }, containerColor = colors.canvas) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp).testTag("attach-sheet")) {
             SheetRow(stringResource(R.string.photo_attach), Icons.Photo, "attach-photo") { attaching = false; picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
+            SheetRow(stringResource(R.string.video_attach), Icons.Video, "attach-video") { attaching = false; recordingVideo = true }
             SheetRow(stringResource(R.string.file_attach), Icons.Attach, "attach-file") { attaching = false; filePicker.launch(arrayOf("*/*")) }
         }
     }

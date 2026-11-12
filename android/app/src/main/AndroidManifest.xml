@@ -6,6 +6,9 @@
     <!-- Only when a voice message is recorded: asked at the first press of the microphone button, never before. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.front" android:required="false" />
     <application
         android:label="lime"
         android:allowBackup="false"

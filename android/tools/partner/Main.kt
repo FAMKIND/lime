@@ -285,6 +285,14 @@ fun main(args: Array<String>) {
             val all = store.listConversations()
             println("conversations: ${all.size}; with Ada: ${all.any { it.id == dm }}")
         }
+        "video" -> {
+            // `partner video <file.mp4>`: sends that clip to Ada as a video message (LIME-314).
+            val path = args.getOrNull(1) ?: error("usage: partner video <file.mp4>")
+            val bytes = java.io.File(path).readBytes()
+            store.sendAttachments(dm, "", listOf(OutgoingAttachment(bytes, "Video.mp4", "video/mp4", 640u, 360u, 3000u, ByteArray(0), ByteArray(0), "")), null)
+            store.deliverQueued(http, freshToken(http, tokens))
+            println("sent a video (${bytes.size} bytes)")
+        }
         "echo", "actions-echo" -> {
             // `actions-echo` (LIME-304) also reacts 👍 to each new message and prints "edited: …" / "deleted: …" when Ada changes one.
             val actions = command == "actions-echo"
@@ -316,6 +324,14 @@ fun main(args: Array<String>) {
                             val sizes = photos.map { p -> store.downloadAttachment(http, freshToken(http, tokens), p.id); store.attachmentData(p.id)?.size ?: -1 }
                             store.queueText(dm, "$personaName here: got ${photos.size} photo${if (photos.size == 1) "" else "s"} (${sizes.joinToString { "$it bytes" }})" + (if (words.isNotEmpty()) " and \"$words\"" else ""))
                             store.sendAttachments(dm, "Ben's photo", listOf(generatedPhoto()), null)
+                        } else if (m.attachments.any { it.mime.startsWith("video/") }) {
+                            // LIME-314: prove the video arrived whole (downloaded, decrypted), say what it is, and answer with the same clip so Ada's phone can play Ben's.
+                            val v = m.attachments.first { it.mime.startsWith("video/") }
+                            store.downloadAttachment(http, freshToken(http, tokens), v.id)
+                            val data = store.attachmentData(v.id)
+                            println("video: ${v.mime}|${data?.size ?: -1} bytes|${v.durationMs ?: 0u} ms|${v.width ?: 0u}x${v.height ?: 0u}|poster ${v.poster.size} bytes|thumb ${v.thumb.size} bytes")
+                            store.queueText(dm, "$personaName here: got a video (${data?.size ?: -1} bytes)")
+                            if (data != null) store.sendAttachments(dm, "", listOf(OutgoingAttachment(data, "Video.mp4", "video/mp4", v.width, v.height, v.durationMs, v.thumb, v.poster, "")), null)
                         } else if (m.attachments.any { it.mime.startsWith("audio/") }) {
                             // Prove the voice message arrived whole, say how long it is, and answer with one of our own.
                             val v = m.attachments.first { it.mime.startsWith("audio/") }

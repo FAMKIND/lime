@@ -542,4 +542,30 @@
     <string name="link_open_title">Open this link?</string>
     <string name="link_open_body">It does not use a secure connection:\n%1$s</string>
     <string name="link_open">Open</string>
+    <!-- LIME-314: video messages -->
+    <string name="video_attach">Video</string>
+    <string name="video_explain_title">Record a video message</string>
+    <string name="video_explain_body">lime uses your camera and microphone only while you record a video message. The video is sent encrypted, and nothing is kept on this phone after it is sent.</string>
+    <string name="video_allow">Allow camera and microphone</string>
+    <string name="video_denied_body">lime can\u2019t record without the camera and microphone. You can turn them on for lime in your phone\u2019s settings.</string>
+    <string name="video_open_settings">Open settings</string>
+    <string name="video_close">Close</string>
+    <string name="video_record">Record</string>
+    <string name="video_stop">Stop recording</string>
+    <string name="video_flip">Switch camera</string>
+    <string name="video_timer">%1$s of %2$s</string>
+    <string name="video_last_seconds">%1$d seconds left</string>
+    <string name="video_retake">Retake</string>
+    <string name="video_send">Add to message</string>
+    <string name="video_preparing">Preparing video\u2026</string>
+    <string name="video_failed">That video couldn\u2019t be recorded. Try again.</string>
+    <string name="video_too_long">That video is %1$s long. Videos can be up to 3 minutes.</string>
+    <string name="video_too_large">That video is too large to send (the limit is 50 MB). Try a shorter one.</string>
+    <string name="video_unreadable">That video couldn\u2019t be read.</string>
+    <string name="video_label">Video, %1$s</string>
+    <string name="video_draft_label">Video, %1$s, ready to send</string>
+    <string name="video_play">Play video</string>
+    <string name="video_downloading">Downloading\u2026</string>
+    <string name="video_player_close">Close video</string>
+    <string name="video_unavailable">That video couldn\u2019t be opened. Try again.</string>
 </resources>
