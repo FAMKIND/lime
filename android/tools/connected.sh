@@ -36,6 +36,9 @@ for avd in ${AVDS:-lime-api36 lime-api26}; do
           tools/partner/run actions-echo >/tmp/lime-partner.log 2>&1 &
           partner=$!
           partner2= ;;
+        StagingBandTest*)
+          # LIME-315c: Ben has no partner process yet: it starts when Ada logs her band's invite link (below).
+          partner=; partner2= ;;
         StagingJamWriteTest*|StagingJamPictureTest*)
           # Jam writing (LIME-312): Ben follows Ada's jam when she creates it, says what arrives, and comments on each new post.
           tools/partner/run jam-echo >/tmp/lime-partner.log 2>&1 &
@@ -52,7 +55,29 @@ for avd in ${AVDS:-lime-api36 lime-api26}; do
           partner=$!
           partner2= ;;
       esac
-      out="$(adb shell am instrument -w -e annotation com.limemessenger.lime.Staging -e class com.limemessenger.lime.$cls com.limemessenger.lime.test/androidx.test.runner.AndroidJUnitRunner)"
+      if [ "$cls" = "StagingBandTest" ]; then
+        # The test logs "BAND_TEST link=<invite link>" once Ada has made her band; then Ben joins by it.
+        adb logcat -c
+        adb shell am instrument -w -e annotation com.limemessenger.lime.Staging -e class com.limemessenger.lime.$cls com.limemessenger.lime.test/androidx.test.runner.AndroidJUnitRunner > /tmp/lime-band-instrument.out 2>&1 &
+        inst=$!
+        link=""
+        for _ in $(seq 1 150); do
+          link="$(adb logcat -d -s BAND_TEST:E 2>/dev/null | grep -o 'link=https://[^ ]*' | tail -1 | sed 's/^link=//' | tr -d '\r')"
+          [ -n "$link" ] && break
+          kill -0 "$inst" 2>/dev/null || break
+          sleep 3
+        done
+        if [ -n "$link" ]; then
+          tools/partner/run band-join "$link" >/tmp/lime-partner.log 2>&1 &
+          partner=$!
+        else
+          echo "$cls: Ada never logged an invite link"
+        fi
+        wait "$inst"
+        out="$(cat /tmp/lime-band-instrument.out)"
+      else
+        out="$(adb shell am instrument -w -e annotation com.limemessenger.lime.Staging -e class com.limemessenger.lime.$cls com.limemessenger.lime.test/androidx.test.runner.AndroidJUnitRunner)"
+      fi
       echo "$cls: $(echo "$out" | grep -E '^(OK|FAILURES)' | head -1)"
       echo "$out" | grep -q "^OK" || { status=1; echo "$out" | head -12; }
       # Groups: the partners must have seen Ada leave.
@@ -80,6 +105,11 @@ for avd in ${AVDS:-lime-api36 lime-api26}; do
         mkdir -p "$HOME/Desktop/lime-android-407"; adb exec-out run-as com.limemessenger.lime cat files/shots/15-link-bubble-real-chat.png > "$HOME/Desktop/lime-android-407/15-link-bubble-real-chat.png" 2>/dev/null
         # Ben must have received the card's fields (and the picture, decrypted): url, title, site, bytes.
         grep -Eq '^preview: https://example.org/lesson\|Fractions made visible\|example.org\|[1-9][0-9]* bytes' /tmp/lime-partner.log || { status=1; echo "$cls: Ben never got the card fields"; } ;; esac
+      case "$cls" in StagingBandTest*)
+        # Ben joined by the invite, was listed with his role (made a Writer by Ada) and received the band's post, shown as the band (LIME-315c).
+        grep -q '^band: joined\|^band: join state joined' /tmp/lime-partner.log || { status=1; echo "$cls: Ben never joined the band"; }
+        grep -q '^band: my role writer' /tmp/lime-partner.log || { status=1; echo "$cls: Ben never saw himself a writer"; }
+        grep -Eq '^band: received quick "A post from the band" as jam by "Staff Room Band"' /tmp/lime-partner.log || { status=1; echo "$cls: Ben never received the band post as the band"; } ;; esac
       case "$cls" in StagingJamPictureTest*)
         # Ben fetched Ada's PUBLIC jam picture from her page and said how big it is (LIME-412b).
         grep -Eq "^jam: Ada's jam picture [1-9][0-9]* bytes" /tmp/lime-partner.log || { status=1; echo "$cls: Ben never fetched the jam picture"; } ;; esac
@@ -89,7 +119,7 @@ for avd in ${AVDS:-lime-api36 lime-api26}; do
       case "$cls" in StagingMentionTest*)
         # Ben must have received the mention as the core's markup: [@Ben Android](mention:<his id>).
         grep -Eq 'markdown: hi \[@Ben Android\]\(mention:[0-9a-f-]+\) there' /tmp/lime-partner.log || { status=1; echo "$cls: Ben never got the mention as [@Ben Android](mention:<id>)"; } ;; esac
-      kill "$partner" $partner2 2>/dev/null; pkill -f "MainKt echo" 2>/dev/null; pkill -f "MainKt actions-echo" 2>/dev/null; pkill -f "MainKt jam-echo" 2>/dev/null; pkill -f "MainKt group-echo" 2>/dev/null
+      kill "$partner" $partner2 2>/dev/null; pkill -f "MainKt echo" 2>/dev/null; pkill -f "MainKt actions-echo" 2>/dev/null; pkill -f "MainKt jam-echo" 2>/dev/null; pkill -f "MainKt band-join" 2>/dev/null; pkill -f "MainKt group-echo" 2>/dev/null
     done
     adb uninstall com.limemessenger.lime >/dev/null 2>&1
     adb uninstall com.limemessenger.lime.test >/dev/null 2>&1

@@ -242,7 +242,10 @@ fun BandInviteSheet(jam: JamInfo, model: JamModel, onDismiss: () -> Unit) {
     LaunchedEffect(jam.jamId) { code = model.bands.inviteCode(jam.jamId); loaded = true }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = colors.canvas) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp).testTag("band-invite"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(stringResource(R.string.band_invite_title), color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.band_invite_title), color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f).semantics { heading() })
+                TextButton(onDismiss, Modifier.heightIn(min = 48.dp).testTag("band-invite-close")) { Text(stringResource(R.string.band_join_done), color = colors.text) }
+            }
             val c = code
             if (c != null) {
                 val link = BandLinks.link(c)
