@@ -308,12 +308,19 @@ fun main(args: Array<String>) {
             println("band: invite for jam ${invite.jamId.take(8)}")
             val noted = mutableSetOf<String>()
             var asked = false
+            val startedAt = System.currentTimeMillis()
             println("band-join: listening as $personaName (Ctrl-C to stop)")
             while (true) {
                 try {
                     store.sync(http, freshToken(http, tokens))
                     store.listConversations().filter { it.requestState == "pending" }.forEach { runCatching { store.acceptRequest(it.id) } }
-                    if (!asked) { store.joinOrg(code); asked = true; println("band: asked to join") }
+                    // Only once the chat with Ada is accepted: the join travels as a sealed message and needs Ben's session with her (LIME-315c: it was sent too early the first time).
+                    val chatReady = store.listConversations().any { it.id == dm && it.requestState != "pending" }
+                    val chats = store.listConversations().joinToString(" ") { it.id.take(14) + ":" + it.requestState }
+                    if (noted.add("chats:$chats")) println("band: chats [$chats]")
+                    // (If the chat never becomes ready, ask anyway after about 40 s: the log then says which of the two it was.)
+                    if (!asked && (chatReady || System.currentTimeMillis() - startedAt > 40_000)) { store.joinOrg(code); asked = true; println("band: asked to join (chat ready: $chatReady)") }
+                    if (!asked && noted.add("waiting-chat")) println("band: waiting for the chat with Ada before asking to join")
                     val state = store.orgJoinState(invite.jamId)
                     if (noted.add("state:$state")) println("band: join state $state")
                     if (state == "joined") {

@@ -20,7 +20,7 @@ for avd in ${AVDS:-lime-api36 lime-api26}; do
     ./gradlew -q installDebug installDebugAndroidTest || status=1
     # The server allows 10 device registrations per hour per account (staging's LIME_RATE_REGISTER_PER_HOUR), and every class registers Ada once, so
     # only the chat and groups tests run by default (LIME-303); STAGING_CLASSES="StagingSignInTest StagingChatTest" runs both.
-    for cls in ${STAGING_CLASSES:-StagingChatTest StagingGroupsTest StagingActionsTest StagingListTest StagingVoiceFilesTest StagingJamTest StagingJamWriteTest StagingModerationTest StagingGifTest StagingComposerTest StagingMentionTest StagingLinkPreviewTest StagingVideoTest StagingBlockGroupTest StagingJamPictureTest}; do
+    for cls in ${STAGING_CLASSES:-StagingChatTest StagingGroupsTest StagingActionsTest StagingListTest StagingVoiceFilesTest StagingJamTest StagingJamWriteTest StagingModerationTest StagingGifTest StagingComposerTest StagingMentionTest StagingLinkPreviewTest StagingVideoTest StagingBlockGroupTest StagingJamPictureTest StagingBandTest}; do
       tools/staging-test-accounts.sh --push >/dev/null || status=1
       tools/partner/run reset >/dev/null || status=1
       case "$cls" in
@@ -37,8 +37,11 @@ for avd in ${AVDS:-lime-api36 lime-api26}; do
           partner=$!
           partner2= ;;
         StagingBandTest*)
-          # LIME-315c: Ben has no partner process yet: it starts when Ada logs her band's invite link (below).
-          partner=; partner2= ;;
+          # LIME-315c: Ben must have a device BEFORE Ada's first message (a message to a teacher with no device is lost): a plain `echo` runs until Ada logs her band's invite link (below),
+          # then `band-join` takes over on the same store.
+          tools/partner/run echo >/tmp/lime-partner-echo.log 2>&1 &
+          partner=$!
+          partner2= ;;
         StagingJamWriteTest*|StagingJamPictureTest*)
           # Jam writing (LIME-312): Ben follows Ada's jam when she creates it, says what arrives, and comments on each new post.
           tools/partner/run jam-echo >/tmp/lime-partner.log 2>&1 &
@@ -68,6 +71,7 @@ for avd in ${AVDS:-lime-api36 lime-api26}; do
           sleep 3
         done
         if [ -n "$link" ]; then
+          kill "$partner" 2>/dev/null; pkill -f "MainKt echo" 2>/dev/null; sleep 3
           tools/partner/run band-join "$link" >/tmp/lime-partner.log 2>&1 &
           partner=$!
         else
