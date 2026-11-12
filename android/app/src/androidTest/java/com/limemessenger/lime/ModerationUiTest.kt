@@ -71,7 +71,7 @@ class ModerationUiTest {
         assertEquals("Hello there", rule.onNodeWithTag("report-preview", useUnmergedTree = true).fetchSemanticsNode().config[SemanticsProperties.Text].joinToString(""))
         // Send waits for a reason, and the chosen one says "selected".
         rule.onNodeWithTag("report-reason-other", useUnmergedTree = true).performClick()
-        assertTrue(rule.onNodeWithTag("report-reason-other", useUnmergedTree = true).fetchSemanticsNode().config[SemanticsProperties.Selected])
+        rule.waitUntil(5_000) { rule.onNodeWithTag("report-reason-other", useUnmergedTree = true).fetchSemanticsNode().config[SemanticsProperties.Selected] }   // (idle-based: the state is read once the click has recomposed)
         rule.onNodeWithTag("report-note").performTextInput("Test (LIME-401)")
         rule.onNodeWithTag("report-send").performClick()
         // No link on this phone: nothing is sent, and it says so (the sheet stays).

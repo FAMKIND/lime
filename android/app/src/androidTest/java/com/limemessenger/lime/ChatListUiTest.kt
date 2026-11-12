@@ -108,13 +108,16 @@ class ChatListUiTest {
         show()
         rule.waitUntil(5_000) { model.chats.size >= 4 }
         rule.onNodeWithTag("chat-filter-unread").performClick()
-        rule.waitUntil(5_000) { model.shownChats.size == 2 }
+        rule.waitForIdle()   // idle, not a clock: the filter is applied and drawn once the UI is idle
+        assertEquals(2, model.shownChats.size)
         assertEquals(setOf("Journey Park", "Autumn Reyes"), model.shownChats.map { it.title }.toSet())
         runBlocking { model.chats.filter { it.unread > 0u }.forEach { model.markRead(it.id) } }
-        rule.waitUntil(5_000) { count("filtered-empty") > 0 }
+        rule.waitForIdle()
+        assertTrue("with nothing unread the filtered list says so", count("filtered-empty") > 0)
         rule.onNodeWithTag("filtered-empty").assertIsDisplayed()
         rule.onNodeWithTag("chat-filter-all").performClick()
-        rule.waitUntil(5_000) { model.shownChats.size >= 4 }
+        rule.waitForIdle()
+        assertTrue(model.shownChats.size >= 4)
         assertFalse(model.unreadOnly)
     }
 

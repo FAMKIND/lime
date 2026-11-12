@@ -4,6 +4,7 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -86,8 +87,10 @@ class BandsUiTest {
         assertTrue("Create is off without a name", androidx.compose.ui.semantics.SemanticsProperties.Disabled in rule.onNodeWithTag("band-make", useUnmergedTree = true).fetchSemanticsNode().config)
         rule.onNodeWithTag("band-name", useUnmergedTree = true).performTextInput("The Staff Room")
         rule.waitUntil(5_000) { androidx.compose.ui.semantics.SemanticsProperties.Disabled !in rule.onNodeWithTag("band-make", useUnmergedTree = true).fetchSemanticsNode().config }
-        rule.onNodeWithTag("band-make", useUnmergedTree = true).performClick()
-        rule.waitUntil(5_000) { count("band-failed") > 0 }   // no account in this store: the core refuses, the screen says so (never a crash)
+        rule.onNodeWithTag("band-make", useUnmergedTree = true).performScrollTo().performClick()   // the button is at the foot of a scrolling form: a click only lands when it is in view
+        try { rule.waitUntil(5_000) { count("band-failed") > 0 } } catch (e: Throwable) {   // no account in this store: the core refuses, the screen says so (never a crash)
+            throw AssertionError("no failure line; the screen: " + rule.onAllNodes(androidx.compose.ui.test.isRoot(), useUnmergedTree = true).fetchSemanticsNodes().joinToString(" || ") { n -> n.children.joinToString { c -> (if (androidx.compose.ui.semantics.SemanticsProperties.TestTag in c.config) c.config[androidx.compose.ui.semantics.SemanticsProperties.TestTag] else "?") } }, e)
+        }
     }
 
     @Test fun postAsOffersMyOwnSpaceAndEachBandAndPublishesToTheChosenOneWithItsDisplay() {
