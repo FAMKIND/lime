@@ -589,4 +589,20 @@
     <string name="jam_filter_done">Done</string>
     <string name="storage_show_stickers">Show lime\u2019s stickers</string>
     <string name="storage_show_stickers_note">24 animated stickers drawn by lime, at the top of the GIF button and when you type /. They are part of the app.</string>
+    <!-- LIME-315a: bands -->
+    <string name="jam_switch_words">%1$s, switch jam</string>
+    <string name="jam_switch_title">Your jams</string>
+    <string name="jam_kind_yours">Your own jam</string>
+    <string name="jam_kind_band">Band</string>
+    <string name="jam_post_as">Post as</string>
+    <string name="jam_post_as_me">Me</string>
+    <string name="band_create">Create a band</string>
+    <string name="band_name_hint">What is your band called?</string>
+    <string name="band_about_hint">What will you share? (optional)</string>
+    <string name="band_public_note">The picture, name and about are public.</string>
+    <string name="band_explainer_title">Band together.</string>
+    <string name="band_explainer">A band is teachers playing together: a school team, a co-op, a union, a publication.</string>
+    <string name="band_make">Create</string>
+    <string name="band_creating">Creating\u2026</string>
+    <string name="band_failed">Could not make it. Try again.</string>
 </resources>

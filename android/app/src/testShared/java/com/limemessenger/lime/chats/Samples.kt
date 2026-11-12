@@ -28,8 +28,8 @@ object Samples {
         activityAt, reaction, id, title, group, pinned, unread.toUInt(), request, false, last, members, null, false, null, null, null, marked, lastIsReply,
     )
 
-    fun jam(id: String = "jam1", title: String = "Bell Ringer", mine: Boolean = false, status: String = "active") =
-        JamInfo(id, "grp:$id", "writer1", title, "", emptyList(), emptyList(), mine, status, false, false, null, null, 0u, 0u, 1_000L)
+    fun jam(id: String = "jam1", title: String = "Bell Ringer", mine: Boolean = false, status: String = "active", created: Long = 1_000L, ended: Boolean = false) =
+        JamInfo(id, "grp:$id", "writer1", title, "", emptyList(), emptyList(), mine, status, ended, false, null, null, 0u, 0u, created)
 
     fun jamPost(
         id: String, jamId: String = "jam1", author: String = "writer1", at: Long = 1_000L, kind: String = "quick", title: String = "", subtitle: String = "",

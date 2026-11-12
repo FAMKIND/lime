@@ -1,6 +1,7 @@
 package com.limemessenger.lime.ui.jam
 
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.ui.semantics.selected
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.ui.draw.clip
 import androidx.activity.result.PickVisualMediaRequest
@@ -92,10 +93,27 @@ fun YourJamScreen(model: JamModel, drafts: JamDrafts, onBack: () -> Unit, onComp
     LaunchedEffect(jam?.jamId, model.reloads) { subscribers = jam?.let { model.subscribers(it.jamId) }.orEmpty().filter { it.status == "active" } }
     LaunchedEffect(Unit) { draftList = drafts.list() }
     Column(Modifier.fillMaxSize().background(colors.canvas).systemBarsPadding().imePadding().testTag("jam-yours")) {
+        var switching by remember { mutableStateOf(false) }
+        var creatingBand by remember { mutableStateOf(false) }
         Row(Modifier.fillMaxWidth().heightIn(min = 64.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack, Modifier.size(56.dp).testTag("jam-yours-back")) { Icon(Icons.Back, stringResource(R.string.chat_back), tint = colors.text) }
             Text(stringResource(R.string.jam_yours), color = colors.text, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
+            // Only when there is more than one jam: a pill with the current jam's name that opens the list (LIME-315a).
+            if (model.myJams.size > 1 && jam != null) {
+                Spacer(Modifier.weight(1f))
+                val switchWords = stringResource(R.string.jam_switch_words, jam.title)
+                Row(
+                    Modifier.padding(end = 12.dp).heightIn(min = 48.dp).clip(RoundedCornerShape(24.dp)).background(colors.surface).clickable { switching = true }
+                        .semantics { contentDescription = switchWords; role = Role.Button }.padding(horizontal = 14.dp).testTag("jam-switcher"),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(jam.title, color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, modifier = Modifier.widthIn(max = 160.dp))
+                    Text("\u25BE", color = colors.textSecondary, fontSize = 14.sp)
+                }
+            }
         }
+        if (switching) JamSwitcherSheet(model, onDismiss = { switching = false })
+        if (creatingBand) CreateBandScreen(model, onClose = { creatingBand = false })
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             if (jam != null) JamSendProgressLine(jam.jamId, model)
             if (jam != null && !editing) JamPictureSection(jam, model)
@@ -127,6 +145,7 @@ fun YourJamScreen(model: JamModel, drafts: JamDrafts, onBack: () -> Unit, onComp
                 TextButton({ editing = true }, Modifier.heightIn(min = 48.dp).testTag("jam-yours-edit")) { Text(stringResource(R.string.jam_edit_jam), color = colors.text) }
                 PrimaryButton(stringResource(R.string.jam_write_post), { onCompose(ComposeRoute("quick")) }, Modifier.testTag("jam-write-post"))
                 OutlineButton(stringResource(R.string.jam_write_article), "jam-write-article") { onCompose(ComposeRoute("article")) }
+                OutlineButton(stringResource(R.string.band_create), "band-create-open") { creatingBand = true }
                 if (draftList.isNotEmpty()) {
                     Section(stringResource(R.string.jam_drafts))
                     draftList.forEach { d ->
@@ -219,6 +238,7 @@ fun JamComposeScreen(model: JamModel, drafts: JamDrafts, route: ComposeRoute, on
     var body by remember { mutableStateOf(TextFieldValue(editing?.markdown ?: start?.words.orEmpty())) }
     val photos = remember { mutableStateListOf<PhotoDraft>() }
     var step by remember { mutableStateOf(1) }
+    var postAsId by remember { mutableStateOf<String?>(null) }
     var working by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf<String?>(null) }
     var describing by remember { mutableStateOf<PhotoDraft?>(null) }
@@ -302,6 +322,23 @@ fun JamComposeScreen(model: JamModel, drafts: JamDrafts, route: ComposeRoute, on
                     Text(summary, color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 3)
                     if (subtitle.isNotBlank()) Text(subtitle, color = colors.textSecondary, fontSize = 15.sp)
                 }
+                // Post as (LIME-315a; iOS beside Audience): only when there is more than one place to post: my own space, or a band of mine.
+                val places = model.myJams
+                if (places.size > 1 && editing == null) {
+                    Text(stringResource(R.string.jam_post_as), color = colors.textSecondary, fontSize = 14.sp)
+                    places.forEach { place ->
+                        val on = (postAsId ?: model.mine()?.jamId) == place.jamId
+                        val label = if (model.isBand(place)) place.title else stringResource(R.string.jam_post_as_me)
+                        Row(
+                            Modifier.fillMaxWidth().heightIn(min = 52.dp).semantics(mergeDescendants = true) { role = Role.RadioButton; selected = on; contentDescription = label }
+                                .clickable { postAsId = place.jamId }.testTag("jam-postas-${place.jamId}"),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(label, color = colors.text, fontSize = 17.sp, modifier = Modifier.weight(1f))
+                            if (on) Icon(Icons.Check, null, tint = colors.text)
+                        }
+                    }
+                }
                 val audience = stringResource(R.string.jam_audience); val subs = stringResource(R.string.jam_audience_subscribers)
                 Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).semantics(mergeDescendants = true) { contentDescription = "$audience, $subs" }.testTag("jam-before-audience"), verticalAlignment = Alignment.CenterVertically) {
                     Text(audience, color = colors.text, fontSize = 17.sp, modifier = Modifier.weight(1f))
@@ -313,11 +350,11 @@ fun JamComposeScreen(model: JamModel, drafts: JamDrafts, route: ComposeRoute, on
                     {
                         scope.launch {
                             working = true; problem = null
-                            val jam = model.mine()
+                            val jam = model.myJams.firstOrNull { it.jamId == postAsId } ?: model.mine()
                             val ok = when {
                                 editing != null -> model.editPost(editing, title, subtitle, body.text)
                                 jam == null -> false
-                                else -> model.publish(jam.jamId, route.kind, title, subtitle, body.text, photos.map { it.attachment }) != null
+                                else -> model.publish(jam.jamId, route.kind, title, subtitle, body.text, photos.map { it.attachment }, displayAs = if (model.isBand(jam)) "jam" else "person") != null
                             }
                             working = false
                             if (ok) { drafts.delete(draftId); onDone() } else problem = failed
@@ -471,5 +508,99 @@ private fun JamSendProgressLine(jamId: String, model: JamModel) {
     if (p != null && p.pending > 0u) {
         val words = stringResource(R.string.jam_sending_progress, (p.total - p.pending).toInt(), p.total.toInt())
         Text(words, color = colors.textSecondary, fontSize = 14.sp, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("jam-send-progress"))
+    }
+}
+
+
+/** The list of my jams (LIME-315a): my own space and each band, the current one ticked; choosing one makes the Your jam page and the next post about it. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun JamSwitcherSheet(model: JamModel, onDismiss: () -> Unit) {
+    val colors = Lime.colors
+    val current = model.mine()?.jamId
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, containerColor = colors.canvas) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp).testTag("jam-switcher-sheet")) {
+            Text(stringResource(R.string.jam_switch_title), color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp).semantics { heading() })
+            model.myJams.forEach { jam ->
+                val on = jam.jamId == current
+                val kind = stringResource(if (model.isBand(jam)) R.string.jam_kind_band else R.string.jam_kind_yours)
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 56.dp).semantics(mergeDescendants = true) { role = Role.RadioButton; selected = on; contentDescription = "${jam.title}, $kind" }
+                        .clickable { model.chosenJamId = jam.jamId; onDismiss() }.testTag("jam-switch-${jam.jamId}"),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(jam.title, color = colors.text, fontSize = 17.sp)
+                        Text(kind, color = colors.textSecondary, fontSize = 13.sp)
+                    }
+                    if (on) Icon(Icons.Check, null, tint = colors.text)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Making a band (LIME-315a; iOS `CreatePublicationSheet`): a picture (Photo Picker, optional), the name (required, 60), an optional about (500) and the tags; "The picture, name and about are public."
+ * The core makes it a second jam of mine (`create_jam`) with its members group opened (`org_start`), so it can be posted as at once; it ends on the new band's page.
+ */
+@Composable
+fun CreateBandScreen(model: JamModel, onClose: () -> Unit) {
+    val colors = Lime.colors
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    var name by remember { mutableStateOf("") }
+    var about by remember { mutableStateOf("") }
+    var topics by remember { mutableStateOf("") }
+    var picture by remember { mutableStateOf<ByteArray?>(null) }
+    var preview by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+    var making by remember { mutableStateOf(false) }
+    var failed by remember { mutableStateOf(false) }
+    val picker = rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) scope.launch {
+            val jpeg = withContext(Dispatchers.IO) { AttachmentProcessing.decodeUpright(context.contentResolver, uri)?.let { jamPictureJpeg(it) } }
+            picture = jpeg
+            preview = jpeg?.let { AttachmentProcessing.decodeForDisplay(it, 400) }?.asImageBitmap()
+        }
+    }
+    androidx.compose.ui.window.Dialog(onDismissRequest = { if (!making) onClose() }, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+        Column(Modifier.fillMaxSize().background(colors.canvas).systemBarsPadding().imePadding().testTag("band-create")) {
+            Row(Modifier.fillMaxWidth().heightIn(min = 64.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { if (!making) onClose() }, Modifier.size(56.dp).testTag("band-create-close")) { Icon(Icons.Close, stringResource(R.string.settings_close), tint = colors.text) }
+                Text(stringResource(R.string.band_create), color = colors.text, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
+            }
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Box(
+                    Modifier.size(104.dp).align(Alignment.CenterHorizontally).clip(RoundedCornerShape(29.dp)).background(colors.surface).clickable { picker.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly)) }
+                        .semantics { role = Role.Button; contentDescription = "Band picture" }.testTag("band-picture"),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    val shown = preview
+                    if (shown != null) androidx.compose.foundation.Image(shown, null, contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                    else Text(name.trim().take(1).uppercase().ifEmpty { "B" }, color = colors.textSecondary, fontSize = 40.sp, fontWeight = FontWeight.Bold)
+                }
+                Field(name, { name = it.take(60) }, stringResource(R.string.band_name_hint), "band-name", singleLine = true)
+                Text("${name.trim().length}/60", color = colors.textSecondary, fontSize = 12.sp)
+                Field(about, { about = it.take(500) }, stringResource(R.string.band_about_hint), "band-about", minLines = 3)
+                Field(topics, { topics = it.take(240) }, stringResource(R.string.jam_field_topics), "band-topics", singleLine = true)
+                Text(stringResource(R.string.band_public_note), color = colors.textSecondary, fontSize = 13.sp, modifier = Modifier.testTag("band-public-note"))
+                Text(stringResource(R.string.band_explainer_title), color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.band_explainer), color = colors.textSecondary, fontSize = 13.sp, modifier = Modifier.testTag("band-explainer"))
+                if (failed) Text(stringResource(R.string.band_failed), color = colors.danger, fontSize = 14.sp, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("band-failed"))
+                PrimaryButton(
+                    stringResource(if (making) R.string.band_creating else R.string.band_make),
+                    {
+                        scope.launch {
+                            making = true; failed = false
+                            val list = topics.split(",").map { it.trim() }.filter { it.isNotEmpty() }.take(8)
+                            val id = model.createBand(name, about, list, picture)
+                            making = false
+                            if (id != null) onClose() else failed = true
+                        }
+                    },
+                    Modifier.testTag("band-make"), enabled = name.isNotBlank() && !making,
+                )
+            }
+        }
     }
 }

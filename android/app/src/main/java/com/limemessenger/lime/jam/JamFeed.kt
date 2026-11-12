@@ -243,7 +243,32 @@ class JamModel(
     // ---- writing (LIME-312): my jam, my posts, my subscribers. Everything is sent after it is saved (the core queues it; `deliver` sends it).
 
     /** My live jam, if I have one (a teacher has one profile jam; bands are a later brief). */
-    fun mine(): JamInfo? = jams.firstOrNull { it.mine && !it.ended }
+    /**
+     * My jams (LIME-315a): **my own space first** (the oldest jam I write: the core's rule `jam_own_space_id`), then my bands, oldest first. A teacher with one jam has a list of one and sees no change.
+     */
+    val myJams: List<JamInfo> get() {
+        val live = jams.filter { it.mine && !it.ended }
+        val own = uniffi.lime_core.jamOwnSpaceId(jams.filter { it.mine })
+        return live.sortedWith(compareBy<JamInfo>({ if (it.jamId == own) 0 else 1 }, { it.created }, { it.jamId }))
+    }
+
+    /** The jam the Your jam page and a new post are about: my choice this session, else my own space. */
+    var chosenJamId by mutableStateOf<String?>(null)
+
+    fun mine(): JamInfo? = myJams.let { list -> list.firstOrNull { it.jamId == chosenJamId } ?: list.firstOrNull() }
+
+    /** True for a jam of mine that is a band (not my own space). */
+    fun isBand(jam: JamInfo): Boolean = jam.mine && jam.jamId != uniffi.lime_core.jamOwnSpaceId(jams.filter { it.mine })
+
+    /** Makes a band: a second jam of mine (the core's `create_jam`), its members group opened so I can post as it (`org_start`), and its picture when I chose one. The band's id, or null when the core refused. */
+    suspend fun createBand(title: String, about: String, topics: List<String>, picture: ByteArray?): String? {
+        val created = writing { it.createJam(title.trim(), about.trim(), topics) }.getOrNull() ?: return null
+        val jamId = created.removePrefix("jam:")
+        writing { it.orgStart(jamId) }
+        if (picture != null) setPicture(jamId, picture)
+        chosenJamId = jamId
+        return jamId
+    }
 
     private suspend fun <T> writing(block: (LimeStore) -> T): Result<T> {
         val core = store() ?: return Result.failure(IllegalStateException("no store"))
@@ -290,8 +315,11 @@ class JamModel(
     suspend fun endJam(jamId: String): Boolean = writing { it.endJam(jamId) }.isSuccess
 
     /** Publishes a post for my subscribers, as iOS does: the free tier (every subscriber is free: lime has no paid tier) with the audience "subscribers" (the audience choices for open posts are not on Android yet). The new post's id, or null when the core refused it (too long, too many files). */
-    suspend fun publish(jamId: String, kind: String, title: String, subtitle: String, markdown: String, files: List<uniffi.lime_core.OutgoingAttachment>): String? =
-        writing { it.publishJamPostWith(jamId, kind, title.trim(), subtitle.trim(), markdown, "free", files, emptyList(), "person", uniffi.lime_core.PostOptions("subscribers", null, emptyList())) }.getOrNull()
+    /** Tests: what would be published (jam id, display_as); true = handled, nothing goes to the core. */
+    var publishHook: ((String, String) -> Boolean)? = null
+
+    suspend fun publish(jamId: String, kind: String, title: String, subtitle: String, markdown: String, files: List<uniffi.lime_core.OutgoingAttachment>, displayAs: String = "person"): String? =
+        if (publishHook?.invoke(jamId, displayAs) == true) "hooked" else writing { it.publishJamPostWith(jamId, kind, title.trim(), subtitle.trim(), markdown, "free", files, emptyList(), displayAs, uniffi.lime_core.PostOptions("subscribers", null, emptyList())) }.getOrNull()
 
     suspend fun editPost(post: JamPostInfo, title: String, subtitle: String, markdown: String): Boolean =
         writing { it.editJamPost(post.postId, title.trim(), subtitle.trim(), markdown, emptyList(), "", false, null) }.isSuccess
