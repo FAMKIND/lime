@@ -10805,3 +10805,14 @@ Settings, profile and groups: the 13 majors (audit rows 341, 342, 344, 609, 612�
 - **Installed:** iPad (4) and Jean's 12 mini. The 13 mini phone did not show in `devicectl` (only its simulator), so not installed.
 - **For the user (gate, 13 mini):** VoiceOver on the jam feed, an open post and the player's controls: names, "Saved", announcements read well; largest text: feed cards and the filter don't clip.
 - **For plot:** LIME-324 = the open rows above; 407 needs your decision.
+
+## LIME-325
+
+**Brief:** the chat's Back shows how many other chats are unread (‹ 3).
+- **Change:** `ConversationStore.otherUnreadChats(in:excluding:)` (pure: non-request chats that are unread, minus this one; the Messages tab's rule, muted counted as the tab counts them). `ChatView` has `showsUnreadOnBack` (default false); only the Messages tab's chat destination (`RootView.swift` link tab) passes true. Other openers (search/notification `ChatTarget`, Calls and Jam tabs, threads) show no number because Back doesn't lead to the list; there is no iPad split view in this app. The Back is one element: label "Back", value "3 unread chats" / "1 unread chat" (no value at 0), `.isButton`; `CountBadge` in the glass capsule (widens only with a number, animated with `Motion`, grows with Dynamic Type). Over 99 reads "99+" via `CountBadge.text`.
+- **Tests:** `BackUnread325Tests` (4 unit: this chat excluded, none = 0, requests not counted, 121 → "99+"); `BackUnread325UITests` (label "Back", value = the tab's count minus this chat, spoken form).
+- **Gate (iOS):** `check-warnings.sh` 0; Release device build OK; unit 4 new pass; UI classes that tap `back-button` (ChatOpens, TabBar, Profile, Fix231, Messages, Wallpaper277k, Publication254): 60 run, 1 failed under load (`testBackFromAThreadKeepsThePlaceInTheChat`), passed when `ChatOpensUITests` re-ran alone (8 passed).
+- **Screenshots:** `docs/qa-shots/325/` light, dark, largest text. The sample chats have no other unread chats, so these show the **0 state only** (chevron alone); the 3 and 99+ looks are not shot (99+ is unit-tested as text). Look at them on the phone.
+- **Installed (this commit):** the 13 mini and the iPad (4). Jean's 12 mini was unavailable (error 4016).
+- **For the user (gate):** per the brief's table and steps 1–4.
+- **For plot:** nothing blocking. Counting messages instead of chats would be 325b. LIME-324 is next.

@@ -138,7 +138,7 @@ private struct SignedInView: View {
         NavigationStack(path: path) {
             MessagesView().callMiniPlayerInset()
                 .navigationDestination(for: Conversation.ID.self) { id in
-                    ChatView(conversationID: id).toolbar(.hidden, for: .tabBar)
+                    ChatView(conversationID: id, showsUnreadOnBack: true).toolbar(.hidden, for: .tabBar)
                 }
                 .navigationDestination(for: GroupTarget.self) { target in
                     GroupDetailsView(target: target).callMiniPlayerInset().toolbar(.hidden, for: .tabBar)

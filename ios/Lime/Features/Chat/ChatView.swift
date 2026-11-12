@@ -5,6 +5,8 @@ struct ChatView: View {
     @Environment(\.dynamicTypeSize) private var globalTypeSize
     let conversationID: Conversation.ID
     /// Opened from a search result: scroll to this message and highlight it for a moment.
+    /// True only where Back leads to the Messages list (LIME-325): the number of other unread chats sits beside the chevron.
+    var showsUnreadOnBack = false
     var focusMessageID: String? = nil
     /// The words of the search that led here: highlighted in the chat like find does.
     var focusWords: [String] = []
@@ -580,14 +582,23 @@ struct ChatView: View {
 
     private func header(_ conversation: Conversation) -> some View {
         HStack(spacing: 8) {
+            let others = showsUnreadOnBack ? store.otherUnreadChats(excluding: conversationID) : 0
             Button { dismiss() } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 18))
-                    .foregroundStyle(Theme.text)
-                    .frame(width: 48, height: 48)
-                    .limeGlass()
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 18))
+                        .foregroundStyle(Theme.text)
+                    if others > 0 { CountBadge(count: others) }
+                }
+                .padding(.horizontal, others > 0 ? 12 : 0)
+                .frame(minWidth: 48, minHeight: 48)
+                .limeGlass()
+                .animation(Motion.animation(.easeOut(duration: 0.2)), value: others)
             }
+            .accessibilityElement(children: .ignore)
             .accessibilityLabel("Back")
+            .accessibilityValue(others == 0 ? "" : others == 1 ? "1 unread chat" : "\(others) unread chats")
+            .accessibilityAddTraits(.isButton)
             .accessibilityIdentifier("back-button")
 
             titlePill(conversation)
