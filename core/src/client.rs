@@ -52,6 +52,7 @@ pub(crate) mod gif_rules;
 pub(crate) mod composer_rules;
 pub(crate) mod mention_rules;
 pub(crate) mod link_preview_rules;
+pub(crate) mod composer_history_rules;
 pub(crate) mod jam;
 mod handover;
 pub(crate) mod open;

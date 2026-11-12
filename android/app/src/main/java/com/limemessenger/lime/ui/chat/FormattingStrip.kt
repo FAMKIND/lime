@@ -61,6 +61,8 @@ fun FormattingStrip(model: ComposerModel, onLink: () -> Unit, modifier: Modifier
             Letter("I", stringResource(R.string.fmt_italic), "fmt-italic", on.italic, italic = true) { model.toggle(ComposerStyleKind.ITALIC) }
             Letter("U", stringResource(R.string.fmt_underline), "fmt-underline", on.underline, underline = true) { model.toggle(ComposerStyleKind.UNDERLINE) }
             Letter("S", stringResource(R.string.fmt_strike), "fmt-strike", on.strike, strike = true) { model.toggle(ComposerStyleKind.STRIKE) }
+            Symbol(Icons.Undo, stringResource(R.string.fmt_undo), "fmt-undo", false, enabled = model.canUndo) { model.undo() }
+            Symbol(Icons.Redo, stringResource(R.string.fmt_redo), "fmt-redo", false, enabled = model.canRedo) { model.redo() }
             Symbol(Icons.Link, stringResource(R.string.fmt_link), "fmt-link", on.link, onClick = onLink)
             Symbol(Icons.CodeInline, stringResource(R.string.fmt_code), "fmt-code", on.code) { model.toggleCode() }
             Symbol(Icons.ListBullet, stringResource(R.string.fmt_bullets), "fmt-bullets", on.bullets) { model.toggleList(ComposerLineKind.BULLET) }

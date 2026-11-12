@@ -267,19 +267,76 @@ class ComposerRichUiTest {
         assertEquals("- one\n- xb", send())
     }
 
-    @Test fun undoWithTheKeyboardShortcutAfterBoldChangesNothingAndTheFieldAndTheMessageAgree() {
-        // What was found: the field's own undo changed the text WITHOUT the core's document hearing of it (the field read "h" and the message sent was "**hi**").
-        // Fixed here: the undo/redo shortcuts are swallowed, so the text, the bold and the sent message can never disagree.
+    private fun enabled(tag: String) = androidx.compose.ui.semantics.SemanticsProperties.Disabled !in rule.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().config
+    private fun ctrlZ(shift: Boolean = false) = field().performKeyInput {
+        keyDown(androidx.compose.ui.input.key.Key.CtrlLeft); if (shift) keyDown(androidx.compose.ui.input.key.Key.ShiftLeft)
+        pressKey(androidx.compose.ui.input.key.Key.Z)
+        if (shift) keyUp(androidx.compose.ui.input.key.Key.ShiftLeft); keyUp(androidx.compose.ui.input.key.Key.CtrlLeft)
+    }
+
+    @Test fun undoAfterBoldTakesTheBoldBackAndRedoBringsItBackAndTheFieldAndTheMessageAlwaysAgree() {
+        // LIME-414 (night 4 had turned undo off: the field's own undo changed the text without the document). Now the core's history undoes text AND styles in one step.
         show()
-        type("hi")
-        field().performTextInputSelection(TextRange(0, 2))
+        type("hello")
+        field().performTextInputSelection(TextRange(0, 5))
         rule.waitUntil(5_000) { count("fmt-bold") > 0 }
         click("fmt-bold")
         assertTrue(selected("fmt-bold"))
-        field().performKeyInput { keyDown(androidx.compose.ui.input.key.Key.CtrlLeft); pressKey(androidx.compose.ui.input.key.Key.Z); keyUp(androidx.compose.ui.input.key.Key.CtrlLeft) }
+        ctrlZ()
         rule.waitForIdle()
-        assertEquals("hi", fieldText())
-        assertTrue("the bold is still on", selected("fmt-bold"))
-        assertEquals("**hi**", send())
+        assertEquals("hello", fieldText())
+        assertTrue("the bold is off again", !selected("fmt-bold"))
+        ctrlZ(shift = true)
+        rule.waitForIdle()
+        assertEquals("hello", fieldText())
+        assertTrue("redo brings the bold back", selected("fmt-bold"))
+        assertEquals("**hello**", send())
+    }
+
+    @Test fun undoAndRedoButtonsAreInTheStripWithTheirEnabledStateAndDoTheSame() {
+        show()
+        click("composer-aa")
+        rule.waitUntil(5_000) { count("fmt-undo") > 0 }
+        assertTrue("nothing to undo yet", !enabled("fmt-undo")); assertTrue(!enabled("fmt-redo"))
+        assertEquals("Undo", words("fmt-undo")); assertEquals("Redo", words("fmt-redo"))
+        type("hello")
+        assertTrue("typing can be undone", enabled("fmt-undo"))
+        click("fmt-undo")
+        assertEquals("the whole run of typing is one step", "", fieldText())
+        assertTrue(enabled("fmt-redo")); assertTrue(!enabled("fmt-undo"))
+        click("fmt-redo")
+        assertEquals("hello", fieldText())
+        assertTrue("a new edit clears redo", run { type("!"); !enabled("fmt-redo") })
+        assertEquals("hello!", send())
+    }
+
+    @Test fun aListAndReturnAreStepsOfTheirOwnAndUndoTakesThemBackOneAtATime() {
+        show()
+        type("- one")
+        assertEquals("\u2022 one", fieldText())
+        type("\ntwo")
+        assertEquals("\u2022 one\n\u2022 two", fieldText())
+        ctrlZ()   // the typed "two"
+        rule.waitForIdle()
+        assertEquals("\u2022 one\n\u2022 ", fieldText())
+        ctrlZ()   // Return
+        rule.waitForIdle()
+        assertEquals("\u2022 one", fieldText())
+        ctrlZ(); ctrlZ()   // the typing of "one", then the "- " that made the list: back to nothing
+        rule.waitForIdle()
+        assertEquals("", fieldText())
+        ctrlZ(shift = true); ctrlZ(shift = true); ctrlZ(shift = true); ctrlZ(shift = true)
+        rule.waitForIdle()
+        assertEquals("redo walks all the way forward, list levels included", "\u2022 one\n\u2022 two", fieldText())
+        assertEquals("- one\n- two", send())
+    }
+
+    @Test fun sendingStartsWithAnEmptyHistory() {
+        show()
+        type("hi")
+        send()
+        click("composer-aa")
+        rule.waitUntil(5_000) { count("fmt-undo") > 0 }
+        assertTrue("nothing to undo after a send", !enabled("fmt-undo"))
     }
 }

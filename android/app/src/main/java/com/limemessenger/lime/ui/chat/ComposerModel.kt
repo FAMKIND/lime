@@ -47,6 +47,16 @@ import uniffi.lime_core.composerToggleCode
 import uniffi.lime_core.composerToggleList
 import uniffi.lime_core.composerToggleStyle
 import uniffi.lime_core.composerUndoAutoStart
+import uniffi.lime_core.ComposerHistory
+import uniffi.lime_core.ComposerSnapshot
+import uniffi.lime_core.ComposerStepKind
+import uniffi.lime_core.composerHistoryCanRedo
+import uniffi.lime_core.composerHistoryCanUndo
+import uniffi.lime_core.composerHistoryEmpty
+import uniffi.lime_core.composerHistoryPush
+import uniffi.lime_core.composerHistoryRedo
+import uniffi.lime_core.composerHistoryUndo
+import uniffi.lime_core.composerStepKind
 
 /**
  * The composer's message (LIME-405; iOS `RichComposerModel` over `ComposerDocument`): the field's [TextFieldState] is the truth for the text and the selection, and the core's
@@ -54,12 +64,46 @@ import uniffi.lime_core.composerUndoAutoStart
  * (typing, delete, paste, Return, Backspace at an item's start, a typed "- "), and every button of the strip changes the document by the core's own functions; the field then
  * draws the document ([decorate]). Nothing here decides what a list or a style is: that is the core.
  */
-class ComposerModel(markdown: String = "") {
+class ComposerModel(markdown: String = "", private val clock: () -> Long = { System.currentTimeMillis() }) {
     val textState = TextFieldState()
 
     /** What the core holds for the field's text (the same text), with its styles and line kinds. */
     var doc by mutableStateOf(composerEmpty())
         private set
+
+    /**
+     * Undo and redo (LIME-414; iOS `RichComposerModel.undo`): the core's [ComposerHistory] holds the states before each step; a step puts back the document (text, styles, list levels) AND the
+     * caret in ONE move, so the field and the document never disagree. A run of typing is one step, an action of the strip, a paste, Return or a mention is a step of its own (the core's rule).
+     * The field's own undo stays off: it is the thing that put text back without the document.
+     */
+    var history by mutableStateOf(composerHistoryEmpty())
+        private set
+    val canUndo: Boolean get() = composerHistoryCanUndo(history)
+    val canRedo: Boolean get() = composerHistoryCanRedo(history)
+
+    private fun snapshot() = ComposerSnapshot(doc, u(textState.selection.start), u(textState.selection.end))
+    private fun record(kind: ComposerStepKind) { history = composerHistoryPush(history, snapshot(), kind, clock()) }
+
+    fun undo() {
+        val step = composerHistoryUndo(history, snapshot()) ?: return
+        history = step.history
+        restore(step.snapshot)
+        announcement = "Undone"
+    }
+
+    fun redo() {
+        val step = composerHistoryRedo(history, snapshot()) ?: return
+        history = step.history
+        restore(step.snapshot)
+        announcement = "Redone"
+    }
+
+    private fun restore(to: ComposerSnapshot) {
+        doc = to.doc
+        typing = null
+        started = null
+        textState.edit { replace(0, length, to.doc.text); selection = TextRange(to.selectionStart.toInt().coerceAtMost(length), to.selectionEnd.toInt().coerceAtMost(length)) }
+    }
 
     /** A style chosen at a caret to type with (Bold pressed with nothing selected); it ends with the next character or when the caret moves. */
     var typing by mutableStateOf<ComposerStyle?>(null)
@@ -85,12 +129,14 @@ class ComposerModel(markdown: String = "") {
     /** Puts a message's Markdown into the field (a draft, or a sent message to edit). */
     fun load(markdown: String) {
         doc = composerFromMarkdownWithMentions(markdown)
+        history = composerHistoryEmpty()
         textState.edit { replace(0, length, doc.text); placeCursorAtEnd() }
         typing = null
         started = null
     }
 
     fun clear() {
+        history = composerHistoryEmpty()
         doc = composerEmpty()
         textState.edit { replace(0, length, "") }
         typing = null
@@ -143,6 +189,7 @@ class ComposerModel(markdown: String = "") {
             removed = before.substring(prefix, whole.end.toInt())
         }
         // A caret just before the inserted text's end keeps repeated letters honest ("aa" typed into "a").
+        record(composerStepKind(removed, inserted))   // the state before this edit is one step (typing joins the run before it)
         val style = typing ?: composerStyleAt(doc, u(prefix))
         val wasStarted = started
         started = null
@@ -200,6 +247,7 @@ class ComposerModel(markdown: String = "") {
     fun pick(choice: MentionSuggestion) {
         val t = trigger ?: return
         val edit = composerInsertMention(doc, t.start, t.end, choice.name, choice.id)
+        record(ComposerStepKind.OTHER)
         doc = edit.doc
         textState.edit { replace(0, length, edit.doc.text); selection = TextRange(edit.selectionEnd.toInt()) }
         announcement = "Mentioned ${choice.name}"
@@ -232,6 +280,7 @@ class ComposerModel(markdown: String = "") {
             typingAt = s.min
             announce(kind, when (kind) { ComposerStyleKind.BOLD -> next.bold; ComposerStyleKind.ITALIC -> next.italic; ComposerStyleKind.UNDERLINE -> next.underline; ComposerStyleKind.STRIKE -> next.strike; ComposerStyleKind.CODE -> next.code })
         } else {
+            record(ComposerStepKind.OTHER)
             doc = composerToggleStyle(doc, u(s.min), u(s.max), kind)
             val on = pressed().let { when (kind) { ComposerStyleKind.BOLD -> it.bold; ComposerStyleKind.ITALIC -> it.italic; ComposerStyleKind.UNDERLINE -> it.underline; ComposerStyleKind.STRIKE -> it.strike; ComposerStyleKind.CODE -> it.code } }
             announce(kind, on)
@@ -249,6 +298,7 @@ class ComposerModel(markdown: String = "") {
         val inline = !s.collapsed && !textState.text.substring(s.min, s.max).contains('\n')
         if (inline || (s.collapsed && doc.lines.getOrNull(lineAt(s.min))?.kind != ComposerLineKind.CODE)) toggle(ComposerStyleKind.CODE)
         else {
+            record(ComposerStepKind.OTHER)
             doc = composerToggleCode(doc, u(s.min), u(s.max))
             announcement = if (pressed().code || doc.lines.any { it.kind == ComposerLineKind.CODE }) "Code block on" else "Code block off"
         }
@@ -256,6 +306,7 @@ class ComposerModel(markdown: String = "") {
 
     fun toggleList(kind: ComposerLineKind) {
         val s = selection
+        record(ComposerStepKind.OTHER)
         doc = composerToggleList(doc, u(s.min), u(s.max), kind)
         val on = if (kind == ComposerLineKind.BULLET) pressed().bullets else pressed().numbers
         announcement = "${if (kind == ComposerLineKind.BULLET) "Bulleted" else "Numbered"} list ${if (on) "on" else "off"}"
@@ -263,6 +314,7 @@ class ComposerModel(markdown: String = "") {
 
     fun shift(indent: Boolean) {
         val s = selection
+        record(ComposerStepKind.OTHER)
         doc = composerShiftList(doc, u(s.min), u(s.max), indent)
         announcement = if (indent) "Indented" else "Outdented"
     }
@@ -272,10 +324,12 @@ class ComposerModel(markdown: String = "") {
         val url = uniffi.lime_core.composerLinkUrl(address) ?: return false
         val s = selection
         if (!s.collapsed) {
+            record(ComposerStepKind.OTHER)
             doc = composerSetLink(doc, u(s.min), u(s.max), url)
             return true
         }
         val label = words.trim().ifEmpty { return false }
+        record(ComposerStepKind.OTHER)
         val edit = composerReplace(doc, u(s.min), u(s.min), label, composerStyleAt(doc, u(s.min)))
         doc = composerSetLink(edit.doc, u(s.min), edit.selectionEnd, url)
         textState.edit { replace(s.min, s.min, label); selection = TextRange(s.min + label.length) }
@@ -284,7 +338,7 @@ class ComposerModel(markdown: String = "") {
 
     fun removeLink() {
         val s = selection
-        if (!s.collapsed) doc = composerSetLink(doc, u(s.min), u(s.max), null)
+        if (!s.collapsed) { record(ComposerStepKind.OTHER); doc = composerSetLink(doc, u(s.min), u(s.max), null) }
     }
 
     private fun lineAt(offset: Int): Int = textState.text.substring(0, offset.coerceIn(0, textState.text.length)).count { it == '\n' }

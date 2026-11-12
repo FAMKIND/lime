@@ -512,6 +512,8 @@
     <string name="fmt_italic">Italic</string>
     <string name="fmt_underline">Underline</string>
     <string name="fmt_strike">Strikethrough</string>
+    <string name="fmt_undo">Undo</string>
+    <string name="fmt_redo">Redo</string>
     <string name="fmt_link">Link</string>
     <string name="fmt_code">Code</string>
     <string name="fmt_bullets">Bulleted list</string>
