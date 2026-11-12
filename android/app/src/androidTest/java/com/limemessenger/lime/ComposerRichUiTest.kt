@@ -255,4 +255,31 @@ class ComposerRichUiTest {
         assertFalse(store.listMessages(dmId).last { it.senderId == null }.edited)
         assertEquals("the microphone is back", 1, count("voice-mic"))
     }
+
+    // ---- LIME-410: the composer's edges
+
+    @Test fun aCaretAtTheStartOfAListItemTypesInsideTheItemWithoutANewMarker() {
+        show()
+        type("- one\nb")
+        field().performKeyInput { pressKey(androidx.compose.ui.input.key.Key.DirectionLeft) }; rule.waitForIdle()
+        type("x")
+        assertEquals("the text goes in front of the item's words and the marker is not doubled", "\u2022 one\n\u2022 xb", fieldText())
+        assertEquals("- one\n- xb", send())
+    }
+
+    @Test fun undoWithTheKeyboardShortcutAfterBoldChangesNothingAndTheFieldAndTheMessageAgree() {
+        // What was found: the field's own undo changed the text WITHOUT the core's document hearing of it (the field read "h" and the message sent was "**hi**").
+        // Fixed here: the undo/redo shortcuts are swallowed, so the text, the bold and the sent message can never disagree.
+        show()
+        type("hi")
+        field().performTextInputSelection(TextRange(0, 2))
+        rule.waitUntil(5_000) { count("fmt-bold") > 0 }
+        click("fmt-bold")
+        assertTrue(selected("fmt-bold"))
+        field().performKeyInput { keyDown(androidx.compose.ui.input.key.Key.CtrlLeft); pressKey(androidx.compose.ui.input.key.Key.Z); keyUp(androidx.compose.ui.input.key.Key.CtrlLeft) }
+        rule.waitForIdle()
+        assertEquals("hi", fieldText())
+        assertTrue("the bold is still on", selected("fmt-bold"))
+        assertEquals("**hi**", send())
+    }
 }

@@ -127,6 +127,8 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.shadow
@@ -686,7 +688,11 @@ private fun Composer(model: ChatModel, chats: ChatsModel, seedPhotos: List<Outgo
                     cursorBrush = androidx.compose.ui.graphics.SolidColor(colors.text),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
                     modifier = Modifier.fillMaxWidth().then(if (expanded) Modifier.height(expandedDp.dp) else Modifier.heightIn(min = 48.dp, max = capDp.dp)).focusRequester(focusRequester).semantics { contentDescription = hint }
-                        .onPreviewKeyEvent { e -> e.key == androidx.compose.ui.input.key.Key.Backspace && e.type == androidx.compose.ui.input.key.KeyEventType.KeyDown && composer.backspaceAtStart() }
+                        .onPreviewKeyEvent { e ->
+                            // Undo/redo shortcuts of a hardware keyboard are swallowed (LIME-410): the field's own undo puts text back WITHOUT the core's document hearing of it, so what the person saw and what was sent would differ.
+                            if (e.type == androidx.compose.ui.input.key.KeyEventType.KeyDown && (e.isCtrlPressed || e.isMetaPressed) && (e.key == androidx.compose.ui.input.key.Key.Z || e.key == androidx.compose.ui.input.key.Key.Y)) true
+                            else e.key == androidx.compose.ui.input.key.Key.Backspace && e.type == androidx.compose.ui.input.key.KeyEventType.KeyDown && composer.backspaceAtStart()
+                        }
                         .testTag("composer-field"),
                     decorator = { inner ->
                         Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 12.dp)) {

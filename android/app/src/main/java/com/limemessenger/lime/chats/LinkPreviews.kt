@@ -88,13 +88,14 @@ open class LinkPreviewFetcher(
             val socket = (connect ?: ::pinnedTls).invoke(url.host, addresses.first(), port, timeoutMs)
             try {
                 socket.soTimeout = timeoutMs
+                val deadline = System.nanoTime() + timeoutMs * 1_000_000L   // the whole exchange, not each read: a server that drips one byte at a time cannot hold this open
                 val hostHeader = if (url.port > 0 && url.port != 443) "${url.host}:${url.port}" else url.host
                 val path = (url.file.ifEmpty { "/" }).let { if (it.startsWith("/")) it else "/$it" }
                 socket.getOutputStream().apply {
                     write("GET $path HTTP/1.1\r\nHost: $hostHeader\r\nUser-Agent: $USER_AGENT\r\nAccept: */*\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n".toByteArray(Charsets.ISO_8859_1))
                     flush()
                 }
-                val input = java.io.BufferedInputStream(socket.getInputStream(), 8 * 1024)
+                val input = java.io.BufferedInputStream(DeadlineInput(socket, deadline), 8 * 1024)
                 val code = readStatus(input) ?: return null
                 val headers = readHeaders(input) ?: return null
                 if (code in 300..399) {
@@ -156,13 +157,29 @@ open class LinkPreviewFetcher(
 
     private fun readHeaders(input: InputStream): Map<String, String>? {
         val map = HashMap<String, String>()
+        var size = 0
         repeat(100) {
             val line = readLine(input) ?: return null
+            size += line.length + 2
+            if (size > MAX_HEADER_BYTES) return null   // a header section past 16 KB is not a web page
             if (line.isEmpty()) return map
             val i = line.indexOf(':')
             if (i > 0) map.putIfAbsent(line.substring(0, i).trim().lowercase(), line.substring(i + 1).trim())
         }
         return null
+    }
+
+    /** The socket's input, where every read may take only what is left of the whole exchange's time (a read that would pass the deadline times out). */
+    private class DeadlineInput(private val socket: Socket, private val deadline: Long) : InputStream() {
+        private val inner = socket.getInputStream()
+        private fun arm() {
+            val left = (deadline - System.nanoTime()) / 1_000_000L
+            if (left <= 0) throw java.net.SocketTimeoutException("the exchange took too long")
+            socket.soTimeout = minOf(left, Int.MAX_VALUE.toLong()).toInt()
+        }
+        override fun read(): Int { arm(); return inner.read() }
+        override fun read(b: ByteArray, off: Int, len: Int): Int { arm(); return inner.read(b, off, len) }
+        override fun close() = inner.close()
     }
 
     /** The body of a `Transfer-Encoding: chunked` reply, de-chunked (extensions and trailers ignored). */
@@ -174,7 +191,7 @@ open class LinkPreviewFetcher(
             if (done) return -1
             if (left == 0L) {
                 val size = (readLine(input) ?: return -1).substringBefore(';').trim().toLongOrNull(16)
-                if (size == null) { done = true; return -1 }
+                if (size == null || size < 0) throw java.io.IOException("malformed chunk size")   // not a web server's reply: no card (LIME-410: it used to end quietly and give the host as a title)
                 if (size == 0L) { done = true; return -1 }
                 left = size
             }
@@ -225,5 +242,5 @@ open class LinkPreviewFetcher(
         return null
     }
 
-    private companion object { const val USER_AGENT = "limeMessenger-link-preview" }
+    private companion object { const val USER_AGENT = "limeMessenger-link-preview"; const val MAX_HEADER_BYTES = 16 * 1024 }
 }

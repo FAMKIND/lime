@@ -32,6 +32,7 @@ class LinkPreviewFetcherTest {
     private lateinit var server: ServerSocket
     private val requests = CopyOnWriteArrayList<String>()
     private val connections = AtomicInteger(0)
+    private val bigWritten = AtomicInteger(0)
     private var running = true
     private val png: ByteArray = ByteArrayOutputStream().also { out ->
         Bitmap.createBitmap(1200, 630, Bitmap.Config.ARGB_8888).also { Canvas(it).drawColor(0xFF4CAF50.toInt()) }.compress(Bitmap.CompressFormat.PNG, 100, out)
@@ -77,6 +78,32 @@ class LinkPreviewFetcherTest {
                 out.write("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: ${head2.size + body.size}\r\nConnection: close\r\n\r\n".toByteArray()); out.write(head2); runCatching { out.write(body) }
             }
             "/redirect-private" -> redirect("https://192.168.1.1/admin")
+            "/loop" -> redirect("https://example.org/loop")
+            "/chunked" -> {
+                val html = """<html><head><meta property="og:title" content="Chunked title"><meta property="og:site_name" content="Chunky"></head><body>x</body></html>"""
+                out.write("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n".toByteArray())
+                val bytes = html.toByteArray()
+                var at = 0
+                while (at < bytes.size) { val n = minOf(17, bytes.size - at); out.write("${Integer.toHexString(n)};ext=1\r\n".toByteArray()); out.write(bytes, at, n); out.write("\r\n".toByteArray()); at += n }
+                out.write("0\r\n\r\n".toByteArray()); out.flush()
+            }
+            "/chunked-big" -> {
+                // The first chunk holds the head; the second claims 2 GB and sends 1 MB: the reader stops at its 512 KB cap and still has the card.
+                val head2 = """<html><head><meta property="og:title" content="Cut at the cap"><meta property="og:site_name" content="Big"></head><body>""".toByteArray()
+                out.write("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n".toByteArray())
+                out.write("${Integer.toHexString(head2.size)}\r\n".toByteArray()); out.write(head2); out.write("\r\n7fffffff\r\n".toByteArray())
+                val piece = ByteArray(64 * 1024) { 'x'.code.toByte() }
+                bigWritten.set(0)
+                runCatching { repeat(128) { out.write(piece); out.flush(); bigWritten.addAndGet(piece.size); Thread.sleep(20) } }   // 8 MB offered over ~2.5 s; a reader with a cap closes after ~0.5 MB
+            }
+            "/chunked-bad" -> { out.write("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\nzzzz\r\n<html>".toByteArray()); out.flush(); Thread.sleep(20_000) }
+            "/silent" -> Thread.sleep(20_000)
+            "/drip" -> {
+                out.write("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n".toByteArray()); out.flush()
+                repeat(40) { out.write('x'.code); out.flush(); Thread.sleep(1_000) }
+            }
+            "/bigheader" -> { out.write(("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nX-Big: " + "a".repeat(20 * 1024) + "\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").toByteArray()); out.flush() }
+            "/manyheaders" -> { out.write(("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n" + (1..30).joinToString("") { "X-$it: " + "b".repeat(700) + "\r\n" } + "Content-Length: 0\r\nConnection: close\r\n\r\n").toByteArray()); out.flush() }
             "/notitle" -> send("200 OK", "text/html", "<html><head></head><body>x</body></html>".toByteArray())
             else -> send("404 Not Found", "text/plain", "no".toByteArray())
         }
@@ -194,5 +221,55 @@ class LinkPreviewFetcherTest {
         assertNull(runBlocking { f.make("https://example.org/page") })
         assertEquals("the second check (the connected peer) ran and said no", 2, calls.get())
         assertTrue("the server saw the connection but not one byte of a request: $requests", requests.all { it.isBlank() })
+    }
+
+    // ---- LIME-410: the edges of the hand-written HTTP client
+
+    @Test fun aChunkedReplyIsDeChunkedAndExtensionsAreIgnored() {
+        val card = make("/chunked")
+        assertNotNull(card)
+        assertEquals("Chunked title", card!!.title)
+        assertEquals("Chunky", card.site)
+    }
+
+    @Test fun aChunkThatClaimsMoreThanTheCapStopsAtTheCapAndTheCardStays() {
+        val started = System.nanoTime()
+        val card = make("/chunked-big")
+        assertNotNull("the start of the page is enough for the card", card)
+        assertEquals("Cut at the cap", card!!.title)
+        assertTrue("it did not wait for 2 GB", (System.nanoTime() - started) / 1_000_000 < 6_000)
+        Thread.sleep(1_500)   // the server keeps offering; once the client has closed its writes fail and the count stops
+        assertTrue("the client stopped reading at its cap: the server managed to send only ${bigWritten.get()} of 8 MB", bigWritten.get() < 4 * 1024 * 1024)
+    }
+
+    @Test fun aMalformedChunkSizeGivesNoCardAndNeverHangs() {
+        val started = System.nanoTime()
+        assertNull(make("/chunked-bad"))
+        assertTrue("answered at once though the server keeps the connection open", (System.nanoTime() - started) / 1_000_000 < 6_000)
+    }
+
+    @Test fun aServerThatNeverAnswersIsGivenUpOnAtTheTimeout() {
+        val started = System.nanoTime()
+        assertNull(make("/silent"))
+        val took = (System.nanoTime() - started) / 1_000_000
+        assertTrue("gave up after the page timeout (8 s), took $took ms", took in 6_000..14_000)
+    }
+
+    @Test fun aServerThatDripsOneByteAtATimeCannotHoldTheFetchPastTheTimeout() {
+        val started = System.nanoTime()
+        assertNull("a page that is still arriving when the time is up is not used", make("/drip"))
+        val took = (System.nanoTime() - started) / 1_000_000
+        assertTrue("the whole exchange is bounded, not each read: took $took ms", took < 14_000)
+    }
+
+    @Test fun aHeaderSectionPastSixteenKilobytesIsRefused() {
+        assertNull("one header line of 20 KB", make("/bigheader"))
+        assertNull("thirty headers of 700 bytes (21 KB in all)", make("/manyheaders"))
+    }
+
+    @Test fun aRedirectLoopStopsAfterThreeRedirects() {
+        val before = connections.get()
+        assertNull(runBlocking { LinkPreviewFetcher(connect = { _, _, _, _ -> java.net.Socket("127.0.0.1", server.localPort) }, resolve = { listOf("93.184.216.34") }, addressAllowed = { true }, target = { it }).make("https://example.org/loop") })
+        assertTrue("at most the first request and three redirects: ${connections.get() - before}", connections.get() - before <= 4)
     }
 }
