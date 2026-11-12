@@ -95,15 +95,18 @@ struct JamPage: View {
                 Button { Task { await store.answerCoauthorRequest(request, accept: true) } } label: {
                     Text("Accept").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.accentInk).padding(.horizontal, 18).frame(minHeight: 44).background(Theme.accent, in: Capsule())
                 }
+                .accessibilityLabel("Accept, \(request.title)")
                 .accessibilityIdentifier("jam-request-accept-\(request.postId)")
                 Button { Task { await store.answerCoauthorRequest(request, accept: false) } } label: {
                     Text("Decline").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).padding(.horizontal, 18).frame(minHeight: 44).background(Theme.surface, in: Capsule())
                 }
+                .accessibilityLabel("Decline, \(request.title)")
                 .accessibilityIdentifier("jam-request-decline-\(request.postId)")
             }
         }
         .padding(14).frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .onAppear { Announce.say("\(store.teacherName(request.writer)) added you as co-author of \u{201C}\(request.title)\u{201D}") }
     }
 
     private var feed: some View {
@@ -164,7 +167,7 @@ struct JamPage: View {
                     ForEach(shown, id: \.postId) { post in
                         JamPostCard(post: post, place: .feed(store.jamSegment))
                             .background(store.jamHighlight == post.postId ? Theme.accent.opacity(0.14) : Color.clear)
-                            .animation(.easeOut(duration: 0.4), value: store.jamHighlight)
+                            .animation(Motion.animation(.easeOut(duration: 0.4)), value: store.jamHighlight)
                             .id(post.postId)
                             .onAppear { if post.postId == shown.last?.postId, list.count > shown.count { store.jamVisibleCount += 20 } }
                         Divider().overlay(Theme.hairline)
@@ -175,10 +178,12 @@ struct JamPage: View {
             .padding(.bottom, FloatingPlus.size + 32)
         }
         .accessibilityIdentifier("jam-feed")
+        // The number of posts is said when it changes: a filter, a segment, or the feed arriving (LIME-323).
+        .onChange(of: list.count) { _, n in if store.isLoaded { Announce.say("\(n) \(n == 1 ? "post" : "posts")") } }
         .onChange(of: store.jamScrollTarget) { _, target in
             guard let target else { return }
             if let index = list.firstIndex(where: { $0.postId == target }), index >= store.jamVisibleCount { store.jamVisibleCount = index + 5 }
-            withAnimation { proxy.scrollTo(target, anchor: .top) }
+            withMotion { proxy.scrollTo(target, anchor: .top) }
             store.jamScrollTarget = nil
         }
         }
@@ -201,6 +206,7 @@ struct JamPostCard: View {
     @State private var cut = false
     /// Redraws the card (and what VoiceOver reads) when Save changes.
     @AppStorage(JamSaved.key) private var savedList = ""
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         let writer = store.teacher(post.author)
@@ -226,7 +232,7 @@ struct JamPostCard: View {
                 .accessibilityIdentifier("jam-post-\(post.postId)")
             }
             if post.kind == "quick", cut, !expanded {
-                Button { withAnimation { expanded = true } } label: { Text("more").font(Theme.secondary).foregroundStyle(Theme.textSecondary).frame(minHeight: 44, alignment: .leading) }
+                Button { withMotion { expanded = true }; Announce.say("Showing the whole post") } label: { Text("more").font(Theme.secondary).foregroundStyle(Theme.textSecondary).frame(minHeight: 44, alignment: .leading) }
                     .buttonStyle(.plain).accessibilityLabel("more").accessibilityHint("Shows the whole post").accessibilityIdentifier("jam-more-\(post.postId)")
             }
             if post.state == "ready", post.kind != "article" { JamAttachmentsView(postID: post.postId, compact: true) }
@@ -238,7 +244,7 @@ struct JamPostCard: View {
             HStack(spacing: 0) {
                 // New comments on my own post (LIME-189c): a quiet dot.
                 if store.isMyJamPost(post), store.jamCounts(post.postId).unseen {
-                    Circle().fill(Theme.accent).frame(width: 9, height: 9).accessibilityLabel("New comments").accessibilityIdentifier("jam-unseen-\(post.postId)")
+                    Circle().fill(Theme.accent).frame(width: 9, height: 9).accessibilityLabel("New comments").accessibilityHidden(CallControlsPolicy.voiceOverRunning || CallControlsPolicy.switchControlRunning).accessibilityIdentifier("jam-unseen-\(post.postId)")
                 }
                 JamPostMenu(post: post)
             }
@@ -260,7 +266,8 @@ struct JamPostCard: View {
             title: post.title, subtitle: post.kind == "quick" ? "" : post.subtitle, text: post.plain,
             series: post.series.map { "\($0.partLabel) of the series \($0.title)" },
             saved: saved, likes: Int(counts.likes), liked: counts.likedByMe, comments: Int(counts.comments),
-            coverAlt: store.jamAttachments(post.postId).first(where: JamCover.isCover)?.alt ?? "")
+            coverAlt: store.jamAttachments(post.postId).first(where: JamCover.isCover)?.alt ?? "",
+            newComments: store.isMyJamPost(post) && counts.unseen)
         return JamCardStop(
             active: CallControlsPolicy.voiceOverRunning || CallControlsPolicy.switchControlRunning,
             label: label, hint: isArticle ? "Opens the article" : "Opens the post",
@@ -287,7 +294,7 @@ struct JamPostCard: View {
                 .buttonStyle(.plain).accessibilityLabel(asJam ? "\(name), by \(writer.name)" : name).accessibilityHint("Opens their profile").accessibilityIdentifier("jam-card-avatar-\(post.postId)")
                 VStack(alignment: .leading, spacing: 0) {
                     Button { if asJam { Task { if let page = await store.jamPageInfo(for: post) { store.openOrg(page, isMe: store.isMyJamPost(post)) } } } else { openWriter(writer) } } label: {
-                        Text(name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
+                        Text(name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(typeSize.isAccessibilitySize ? nil : 1)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("\(asJam ? name + ", by " + writer.name : name), \(JamDates.text(post.created))").accessibilityHint(asJam ? "Opens its page" : "Opens their profile")
@@ -295,12 +302,12 @@ struct JamPostCard: View {
                     // One line: "by Shem Rajoon · with Jean Chung · Oct 21 · Edited", cut with … (the full details are on the post's page).
                     HStack(spacing: 4) {
                         if asJam {
-                            Button { openWriter(writer) } label: { Text("by \(writer.name)").font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1).fixedSize() }
+                            Button { openWriter(writer) } label: { Text("by \(writer.name)").font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(typeSize.isAccessibilitySize ? nil : 1).fixedSize(horizontal: !typeSize.isAccessibilitySize, vertical: true) }
                                 .buttonStyle(.plain).accessibilityIdentifier("jam-card-by-\(post.postId)")
                             Text("\u{00B7}").font(Theme.caption).foregroundStyle(Theme.textSecondary)
                         }
                         Button { openPost() } label: {
-                            Text(detail).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1).truncationMode(.tail).frame(minHeight: 20, alignment: .leading)
+                            Text(detail).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(typeSize.isAccessibilitySize ? nil : 1).truncationMode(.tail).frame(minHeight: 20, alignment: .leading)
                         }
                         .buttonStyle(.plain).accessibilityLabel(detail).accessibilityHint("Opens the post").accessibilityIdentifier("jam-card-byline-\(post.postId)")
                         if post.audience == "everyone" { openGlobe }
@@ -313,7 +320,7 @@ struct JamPostCard: View {
             .onTapGesture { openPost() }
         } else {
             HStack(spacing: 4) {
-                Text([store.byline(post), JamDates.short(post.created), post.editedAt > 0 ? "Edited" : nil].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                Text([store.byline(post), JamDates.short(post.created), post.editedAt > 0 ? "Edited" : nil].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(typeSize.isAccessibilitySize ? nil : 1)
                     .accessibilityIdentifier("jam-card-byline-\(post.postId)")
                 if post.audience == "everyone" { openGlobe }
                 if post.tier == "members" { membersLabel }

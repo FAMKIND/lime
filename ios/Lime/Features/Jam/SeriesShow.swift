@@ -407,7 +407,7 @@ struct EditSeriesSheet: View {
             SheetHeader(title: "Edit series", leading: .close { dismiss() }) {
                 Button { save() } label: {
                     Text(saving ? "Saving\u{2026}" : "Save").font(Theme.title).foregroundStyle(Theme.accentInk).padding(.horizontal, 18).frame(minHeight: 44)
-                        .background(Theme.accent.opacity(canSave ? 1 : 0.4), in: Capsule()).opacity(canSave ? 1 : 0.6)
+                        .background(Theme.accent.opacity(canSave ? 1 : 0.4), in: Capsule())
                 }
                 .disabled(!canSave).accessibilityIdentifier("series-edit-save")
             }

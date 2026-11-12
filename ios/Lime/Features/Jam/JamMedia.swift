@@ -512,7 +512,7 @@ struct JamVideoScreen: View {
                     .frame(maxWidth: geo.size.width * 0.82, maxHeight: max(geo.size.height - 32, 60))
                     .frame(width: geo.size.width, height: geo.size.height)
                     .animation(reduceMotion ? nil : .spring(duration: 0.35), value: playing)
-                    .accessibilityLabel("Cover").accessibilityHidden(false).accessibilityIdentifier("jam-audio-cover")
+                    .accessibilityHidden(true).accessibilityIdentifier("jam-audio-cover")
             }
         }
         .frame(minHeight: 120)
@@ -596,7 +596,7 @@ struct JamVideoScreen: View {
             Spacer(minLength: 0)
             if !store.isFollowing(post.jamId), post.author != store.meProvider().id {
                 Button { Task { if let page = await store.jamPage(of: post.author) { await store.subscribe(to: page) } } } label: {
-                    Text("Subscribe").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.accentInk).padding(.horizontal, 14).frame(minHeight: 36).background(Theme.accent, in: Capsule())
+                    Text("Subscribe").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.accentInk).padding(.horizontal, 14).frame(minHeight: 44).background(Theme.accent, in: Capsule())
                 }
                 .accessibilityIdentifier("jam-video-subscribe")
             }
@@ -626,7 +626,7 @@ struct JamVideoScreen: View {
                     Spacer(minLength: 0)
                     if !store.isFollowing(post.jamId), post.author != store.meProvider().id {
                         Button { Task { if let page = await store.jamPage(of: post.author) { await store.subscribe(to: page) } } } label: {
-                            Text("Subscribe").font(Theme.font(.caption, weight: .semibold)).foregroundStyle(Theme.accentInk).padding(.horizontal, 10).frame(minHeight: 28).background(Theme.accent, in: Capsule())
+                            Text("Subscribe").font(Theme.font(.caption, weight: .semibold)).foregroundStyle(Theme.accentInk).padding(.horizontal, 10).frame(minHeight: 44).background(Theme.accent, in: Capsule())
                         }
                         .accessibilityIdentifier("jam-video-subscribe")
                     }

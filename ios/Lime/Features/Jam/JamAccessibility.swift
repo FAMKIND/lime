@@ -4,7 +4,7 @@ import SwiftUI
 enum JamCardSpeech {
     /// "Mei Lin, Oct 22, Unread, Title, Subtitle, first words, Part 2 of the series X, Saved, 3 likes, 2 comments".
     static func label(author: String, time: String, unread: Bool, title: String, subtitle: String, text: String, series: String?,
-                      saved: Bool, likes: Int, liked: Bool, comments: Int, coverAlt: String = "") -> String {
+                      saved: Bool, likes: Int, liked: Bool, comments: Int, coverAlt: String = "", newComments: Bool = false) -> String {
         var parts = [author, time]
         if unread { parts.append("Unread") }
         for words in [title, subtitle] where !words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { parts.append(words) }
@@ -14,6 +14,7 @@ enum JamCardSpeech {
         if !cover.isEmpty { parts.append("Cover: \(cover)") }
         if let series { parts.append(series) }
         if saved { parts.append("Saved") }
+        if newComments { parts.append("New comments") }
         if likes > 0 { parts.append("\(likes) \(likes == 1 ? "like" : "likes")\(liked ? ", you liked it" : "")") } else if liked { parts.append("You liked it") }
         if comments > 0 { parts.append("\(comments) \(comments == 1 ? "comment" : "comments")") }
         return parts.filter { !$0.isEmpty }.joined(separator: ", ")

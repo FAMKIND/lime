@@ -244,7 +244,7 @@ struct NewBandGroupSheet: View {
             SheetHeader(title: "New group", leading: .close { dismiss() }) {
                 Button { create() } label: {
                     Text(making ? "Creating\u{2026}" : "Create").font(Theme.title).foregroundStyle(Theme.accentInk).padding(.horizontal, 18).frame(minHeight: 44)
-                        .background(Theme.accent.opacity(canCreate ? 1 : 0.4), in: Capsule()).opacity(canCreate ? 1 : 0.6)
+                        .background(Theme.accent.opacity(canCreate ? 1 : 0.4), in: Capsule())
                 }
                 .disabled(!canCreate).accessibilityIdentifier("org-group-create")
             }

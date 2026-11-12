@@ -10794,3 +10794,14 @@ Settings, profile and groups: the 13 majors (audit rows 341, 342, 344, 609, 612�
 - **Gate (iOS):** `check-warnings.sh` 0; Release build OK; unit 747 run, 0 failures; the full UI suite on 3 simulator clones (77 min): **529 passed, 0 failed, nothing to re-run**. No new tests (label, trait and size fixes; the existing tests that read these labels still pass because the spoken-only changes are VoiceOver-only).
 - **For the user (gate, 13 mini, VoiceOver on):** Settings top to bottom, each row one stop with its value (Account's Email, Storage's rows); Safety Numbers reads the fingerprint character by character; a custom sound has Rename and Delete in the actions rotor; a group's details; your profile and its edit; the Emergency sheet's students row swipes up and down. Largest text: Settings rows, onboarding and Move's code do not clip. Reduce Transparency: the sheets are solid (already so since 130-2).
 - **For plot:** the 4 asks above (215, 313, 343, 639) for the user; 323 and 324 (jam) can reuse `Motion` and the new helpers.
+
+## LIME-323
+
+**Brief:** 130-m3, first 31 jam minors plus rows 362, 363, 366, 367 (35 rows). Status table: `## LIME-323 status` in `docs/accessibility-audit-2026-11.md`.
+- **Counts:** fixed 17, already fixed 7, partly fixed 3 (362, 366, 367), open 8 (207, 395, 396, 401, 406, 407, 420, 363). Nothing stale.
+- **What changed (smallest change each):** feed: unseen dot hidden under VoiceOver/Switch Control, "New comments" in the card label, name/byline wrap at accessibility sizes, request cards announce and carry the post title, post count and empty result announced, highlight fade and "more" honour Reduce Motion; Save reads "Saved" (menu and options row, icons hidden); read-aloud announces Listening/Paused/Stopped/Finished; reading speed has a value; find field named; jam name is a heading; audio cover not an element; Subscribe pills 44 pt; comments: Reply and ⋯ 44 pt, "Reply to NAME", rows read "Comment by"/"Reply by"; stacked opacity removed on three disabled primary buttons.
+- **Ask list:** 407 (skip intervals differ: 10/10 lock screen vs −10/+30 on screen; which is right?). The other open rows (207, 395, 396, 401, 406, 420, 363 and the rest of 362/366/367) fall to LIME-324.
+- **Gate (iOS):** `check-warnings.sh` 0; Release device build OK; unit 747 run, 0 failures; full UI suite on 3 clones (79 min): 550 run, 2 failed under load, both passed re-run one at a time (the 161/162-character subtitle typing race in Jam188b; the dock-hide test). No new tests.
+- **Installed:** iPad (4) and Jean's 12 mini. The 13 mini phone did not show in `devicectl` (only its simulator), so not installed.
+- **For the user (gate, 13 mini):** VoiceOver on the jam feed, an open post and the player's controls: names, "Saved", announcements read well; largest text: feed cards and the filter don't clip.
+- **For plot:** LIME-324 = the open rows above; 407 needs your decision.

@@ -80,7 +80,7 @@ struct FilteredEmpty: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            Text(text).font(Theme.body).foregroundStyle(Theme.textSecondary)
+            Text(text).font(Theme.body).foregroundStyle(Theme.textSecondary).announcesWhenShown(text)
             Button(action: clear) {
                 Text("Clear filters").font(Theme.title).foregroundStyle(Theme.text)
                     .padding(.horizontal, 22).frame(minHeight: 44).background(Theme.surface, in: Capsule())

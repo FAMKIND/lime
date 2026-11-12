@@ -846,3 +846,46 @@ Added by LIME-322 (2026-11-11). Same meaning as the table above: **already fixed
 | 665 | fixed in 322 | the code scales with the text; copy, looking, waiting and done are announced (wrapping the code is ask) |
 | 666 | fixed in 322 | card titles are headings |
 | 679 | fixed in 322 | the self-test result is announced |
+
+
+## LIME-323 status
+
+First 31 jam minors plus rows 362, 363, 366, 367 (jam files). Line numbers are the audit's.
+
+| Row | Status | Note |
+|---|---|---|
+| 207 | open | prompt and unplayed-waveform contrast: carried to LIME-324 |
+| 369 | already fixed | the tap cards carry the button trait or inner Buttons; the link card too |
+| 379 | fixed | the dot is hidden under VoiceOver and Switch Control; the card label says "New comments" (mine only) |
+| 380 | fixed | name, "by" and byline wrap at accessibility sizes |
+| 381 | fixed | request cards announce who added you; Accept/Decline carry the post title |
+| 382 | fixed | post count announced after load; the empty result is announced when shown |
+| 383 | fixed | same: the filtered count and the empty state are announced |
+| 384 | fixed | the highlight fade honours Reduce Motion |
+| 385 | fixed | "Showing the whole post" is announced; the expansion honours Reduce Motion |
+| 386 | fixed | the spoken label is "Saved" (menu and options row); the icons are hidden |
+| 394 | already fixed | the card-level tap is not an element; the cover, title and pill are the Buttons |
+| 395 | open | org name truncation and the fixed 96 pt cover: carried to LIME-324 |
+| 396 | open | scrubber height and unplayed-bar contrast: carried to LIME-324 |
+| 398 | fixed | "Reading speed" now has a spoken value |
+| 399 | fixed | read-aloud announces Listening, Paused, Stopped and Finished (player queue start is open, LIME-324) |
+| 401 | open | scrim behind the caption and elapsed time: carried to LIME-324 |
+| 404 | fixed | the audio cover is no longer an element |
+| 405 | fixed | Subscribe pills are 44 pt |
+| 406 | open | marquee runs forever with motion allowed: carried to LIME-324 |
+| 407 | open | skip intervals differ between lock screen and screen; a choice: ask |
+| 417 | already fixed | the top bar is hidden from VoiceOver while it is off screen |
+| 418 | fixed | the jam name line is a heading |
+| 419 | fixed | the find field has a name |
+| 420 | open | selection by border plus .isSelected: carried to LIME-324 |
+| 421 | already fixed | destructive rows use Theme.danger (guarded to 4.5:1); the icon scales |
+| 422 | fixed | see 399 |
+| 423 | already fixed | the export carries alt text |
+| 424 | already fixed | Remove uses Theme.danger and a labelled name |
+| 425 | already fixed | photo tiles say their alt text when there is one |
+| 433 | fixed | Reply and ⋯ are 44 pt; both say whose comment |
+| 435 | fixed | each row reads "Comment by" or "Reply by"; Reply says "Reply to NAME" |
+| 362 | partly fixed | feed, highlight, expand, scroll: done; Discover, player tint, cursor tag: carried to LIME-324 |
+| 363 | open | fixed icon sizes in 60+ places (options row done): carried to LIME-324 |
+| 366 | partly fixed | stacked opacity removed in CreatePublication, EditSeriesSheet, NewBandGroupSheet; BeforePublish, OrgFieldSheet and the dummy buttons: LIME-324 |
+| 367 | partly fixed | options rows hide their icons; JamReader and OrgGroupsTab: LIME-324 |
