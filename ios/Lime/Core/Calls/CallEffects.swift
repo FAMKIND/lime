@@ -119,11 +119,16 @@ struct CallEffectsButton: View {
                 .accessibilityIdentifier(id)
             }
         }
+        // Reduce Motion changes arrive as a notification (LIME-321: it was re-read every second); the slower look below is for the camera, which can come on late.
+        .onReceive(NotificationCenter.default.publisher(for: UIAccessibility.reduceMotionStatusDidChangeNotification)) { _ in
+            let now = support()
+            if now != current { current = now }
+        }
         .task {
             while !Task.isCancelled {
                 let now = support()
                 if now != current { current = now }
-                try? await Task.sleep(for: .seconds(1))
+                try? await Task.sleep(for: .seconds(3))
             }
         }
     }

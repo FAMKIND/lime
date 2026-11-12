@@ -101,8 +101,7 @@ struct MessagesView: View {
                         .onLongPressGesture(minimumDuration: 0.6) { showAbout = true }
                         #endif
                 }
-                .accessibilityLabel("lime menu")
-                .accessibilityHint("Press and hold for About lime")
+                .accessibilityLabel("lime menu")   // (the press and hold for About exists only in Debug builds, so no hint)
             }
             // One glass bubble for search and your avatar (LIME-255).
             ToolbarItem(placement: .topBarTrailing) {
@@ -111,7 +110,7 @@ struct MessagesView: View {
                         .accessibilityLabel("Search")
                         .accessibilityIdentifier("messages-search-button")
                     Button { store.openMyProfile() } label: { AvatarView(person: session.mePerson, size: 30, showsStatus: true, badgeKeepsColours: true).frame(minWidth: 44, minHeight: 44).contentShape(Rectangle()) }
-                        .accessibilityLabel("Settings")
+                        .accessibilityLabel("Your profile")
                         .accessibilityIdentifier("settings-button")
                 }
                 .fixedSize()
@@ -139,7 +138,7 @@ struct MessagesView: View {
         ScrollViewReader { proxy in
             listBody(top: top, bottom: bottom)
                 .onChange(of: store.retap[.link, default: 0]) { _, _ in
-                    withAnimation { if let first = store.chats.first?.id { proxy.scrollTo(first, anchor: .top) } }
+                    withMotion { if let first = store.chats.first?.id { proxy.scrollTo(first, anchor: .top) } }
                 }
         }
     }
@@ -258,7 +257,7 @@ struct MessagesView: View {
         .task(id: store.path.count) { if store.path.isEmpty { await store.reload() } }
         .accessibilityIdentifier("messages-list")
         .refreshable { await store.pullToRefresh() }
-        .animation(.snappy, value: shownChats.map(\.id))
+        .animation(Motion.animation(.snappy), value: shownChats.map(\.id))
         .confirmSheet(muteTitle, isPresented: Binding(get: { muting != nil }, set: { if !$0 { muting = nil } })) {
             ForEach(AppMuteDuration.allCases) { duration in
                 Button(duration.title) {
@@ -476,6 +475,7 @@ private struct EmptyChatsView: View {
                 Text("No chats yet")
                     .font(Theme.font(.title2, weight: .bold))
                     .foregroundStyle(Theme.text)
+                    .accessibilityAddTraits(.isHeader)
                     .accessibilityIdentifier("empty-title")
                 Text("Get started")
                     .font(Theme.body)
@@ -535,7 +535,7 @@ private struct RecoveryNotice: View {
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .padding(.horizontal, 8)
         .padding(.bottom, 8)
-        .onAppear { store.recoveryNoticeAppeared() }
+        .onAppear { store.recoveryNoticeAppeared(); Announce.say("lime couldn\u{2019}t open the data saved on this phone, so it started fresh.") }
     }
 }
 
@@ -557,7 +557,6 @@ struct TopControls: View {
                     .limeGlass()
             }
             .accessibilityLabel("lime menu")
-            .accessibilityHint("Press and hold for About lime")
             #if DEBUG
             .simultaneousGesture(LongPressGesture(minimumDuration: 0.6).onEnded { _ in onAbout() })
             #endif
@@ -572,9 +571,9 @@ struct TopControls: View {
                 .accessibilityLabel("Search")
                 .accessibilityIdentifier(searchID)
                 Button(action: onSettings) {
-                    AvatarView(person: session.mePerson, size: 36, showsStatus: true)
+                    AvatarView(person: session.mePerson, size: 36, showsStatus: true).frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
                 }
-                .accessibilityLabel("Settings")
+                .accessibilityLabel("Your profile")
                 .accessibilityIdentifier("settings-button")
             }
             .padding(.horizontal, 8).padding(.vertical, 2)
@@ -666,6 +665,7 @@ struct ConversationRow: View {
     var leadingInset: CGFloat = 0
     var trailingInset: CGFloat = 0
     @Environment(NotificationCoordinator.self) private var notifications
+    @Environment(ConversationStore.self) private var store
     @Environment(\.dynamicTypeSize) private var typeSize
     @ScaledMetric(relativeTo: .body) private var scaledAvatar: CGFloat = 52
     /// The picture grows with the text, but not past a size where it would crowd the words out (LIME-168).
@@ -677,6 +677,11 @@ struct ConversationRow: View {
     private var line: ListPreview { ListPreview.make(conversation) }
     private var preview: String { line.plain }
     private var time: String { MessageFormat.listTime(conversation.activityAt ?? conversation.lastMessage?.date) }
+    /// The person's status, read with the row (their badge is drawn on the avatar, which the row's one element hides): ", Away" (LIME-321).
+    private var statusWords: String {
+        guard !conversation.isGroup, let id = conversation.members.first?.id, let status = store.status(of: id) else { return "" }
+        return ", \(status.state.title)"
+    }
     /// My private label for the person (a one-to-one chat).
     private var label: String? { conversation.isGroup ? nil : conversation.members.first?.label }
     /// A picture or video in the newest message: its tiny thumbnail goes at the trailing edge.
@@ -757,7 +762,7 @@ struct ConversationRow: View {
         .padding(.vertical, 15)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(conversation.title)\(label.map { " (\($0))" } ?? "")\(conversation.isPinned ? ", pinned" : "")\(notifications.settings.isMuted(conversation.id) ? ", muted" : ""), \(preview), \(time)\(conversation.isUnread ? ", \(conversation.unreadCount) unread" : "")")
+        .accessibilityLabel("\(conversation.title)\(label.map { " (\($0))" } ?? "")\(statusWords)\(conversation.isPinned ? ", pinned" : "")\(notifications.settings.isMuted(conversation.id) ? ", muted" : ""), \(preview), \(time)\(conversation.isUnread ? ", \(conversation.unreadCount) unread" : "")")
         .accessibilityAddTraits(.isButton)
     }
 
@@ -856,6 +861,8 @@ struct CountBadge: View {
     let count: Int
     var size: CGFloat = 22
     var font: Font = Theme.font(.caption, weight: .semibold)
+    /// The badge grows with the text so a digit is never clipped at accessibility sizes (LIME-321).
+    @ScaledMetric(relativeTo: .caption) private var scale: CGFloat = 1
 
     nonisolated static func text(_ count: Int) -> String { count > 99 ? "99+" : "\(count)" }
 
@@ -865,9 +872,9 @@ struct CountBadge: View {
             .font(font)
             .foregroundStyle(Theme.accentInk)
             .lineLimit(1).minimumScaleFactor(0.8)
-            .frame(width: text.count == 1 ? size : nil, height: size)
+            .frame(width: text.count == 1 ? size * scale : nil, height: size * scale)
             .padding(.horizontal, text.count == 1 ? 0 : 7)
-            .frame(minWidth: size)
+            .frame(minWidth: size * scale)
             .background(Theme.accent, in: Capsule())
     }
 }

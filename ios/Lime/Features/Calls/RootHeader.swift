@@ -39,7 +39,7 @@ struct RootHeader: ViewModifier {
                                     .accessibilityLabel("Search")
                                     .accessibilityIdentifier(searchID)
                                 Button { store.openMyProfile() } label: { AvatarView(person: session.mePerson, size: 30, showsStatus: true, badgeKeepsColours: true).frame(minWidth: 44, minHeight: 44).contentShape(Rectangle()) }
-                                    .accessibilityLabel("Settings")
+                                    .accessibilityLabel("Your profile")   // it opens your profile, which has Settings in it (LIME-321)
                                     .accessibilityIdentifier("settings-button")
                             }
                             .fixedSize()

@@ -199,8 +199,9 @@ struct ProfilePhotoScreen: View {
                     row("trash", "Remove Photo", id: "photo-remove", destructive: true) { remove() }
                 }
             }
-            if busy { ProgressView().padding(.top, 4).accessibilityIdentifier("photo-busy") }
+            if busy { ProgressView().padding(.top, 4).accessibilityLabel("Working").announcesWhenShown("Working").accessibilityIdentifier("photo-busy") }
             SettingsFootnote(text: problem ?? "Your photo is cropped to a circle and shrunk on this iPhone. Location and camera details are never uploaded.")
+                .modifier(AnnouncesProblem(problem: problem))
             SettingsCard {
                 choice(.everyone, "Everyone on lime", detail: "Any signed-in teacher who sees your profile can see your photo. lime's servers keep a copy of the picture.", id: "photo-vis-everyone")
                 Divider().overlay(Theme.hairline).padding(.leading, 18)

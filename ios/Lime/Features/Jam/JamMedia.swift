@@ -373,7 +373,7 @@ struct JamVideoScreen: View {
         }
         .sheet(isPresented: $sharing) { if let post { JamShareSheet(post: post) } }
         .reportSheet($reporting)
-        .sheet(isPresented: $transcript) { TranscriptSheet(cues: shownCues) }
+        .sheet(isPresented: $transcript) { TranscriptSheet(cues: shownCues, writerText: file.transcript) }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("jam-video-screen")
     }
@@ -433,7 +433,7 @@ struct JamVideoScreen: View {
                 }
                 Section {
                     if !shownCues.isEmpty, !isAudio { Toggle(isOn: $captionsOn) { Label("Closed captions", systemImage: "captions.bubble") }.accessibilityIdentifier("jam-video-captions-toggle") }
-                    if !shownCues.isEmpty { Button { transcript = true } label: { Label("Transcript", systemImage: "text.alignleft") }.accessibilityIdentifier("jam-video-transcript") }
+                    if !shownCues.isEmpty || !file.transcript.isEmpty { Button { transcript = true } label: { Label("Transcript", systemImage: "text.alignleft") }.accessibilityIdentifier("jam-video-transcript") }
                     if !isAudio { Toggle(isOn: $autoAdvance) { Label("Auto-advance", systemImage: "forward.end") }.accessibilityIdentifier("jam-video-autoadvance") }
                 }
                 Section {
@@ -512,7 +512,7 @@ struct JamVideoScreen: View {
                     .frame(maxWidth: geo.size.width * 0.82, maxHeight: max(geo.size.height - 32, 60))
                     .frame(width: geo.size.width, height: geo.size.height)
                     .animation(reduceMotion ? nil : .spring(duration: 0.35), value: playing)
-                    .accessibilityLabel("Cover").accessibilityHidden(false).accessibilityIdentifier("jam-audio-cover")
+                    .accessibilityHidden(true).accessibilityIdentifier("jam-audio-cover")
             }
         }
         .frame(minHeight: 120)
@@ -596,7 +596,7 @@ struct JamVideoScreen: View {
             Spacer(minLength: 0)
             if !store.isFollowing(post.jamId), post.author != store.meProvider().id {
                 Button { Task { if let page = await store.jamPage(of: post.author) { await store.subscribe(to: page) } } } label: {
-                    Text("Subscribe").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.accentInk).padding(.horizontal, 14).frame(minHeight: 36).background(Theme.accent, in: Capsule())
+                    Text("Subscribe").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.accentInk).padding(.horizontal, 14).frame(minHeight: 44).background(Theme.accent, in: Capsule())
                 }
                 .accessibilityIdentifier("jam-video-subscribe")
             }
@@ -626,7 +626,7 @@ struct JamVideoScreen: View {
                     Spacer(minLength: 0)
                     if !store.isFollowing(post.jamId), post.author != store.meProvider().id {
                         Button { Task { if let page = await store.jamPage(of: post.author) { await store.subscribe(to: page) } } } label: {
-                            Text("Subscribe").font(Theme.font(.caption, weight: .semibold)).foregroundStyle(Theme.accentInk).padding(.horizontal, 10).frame(minHeight: 28).background(Theme.accent, in: Capsule())
+                            Text("Subscribe").font(Theme.font(.caption, weight: .semibold)).foregroundStyle(Theme.accentInk).padding(.horizontal, 10).frame(minHeight: 44).background(Theme.accent, in: Capsule())
                         }
                         .accessibilityIdentifier("jam-video-subscribe")
                     }
@@ -845,12 +845,15 @@ struct JamShareSheet: View {
 /// The whole of a video's or recording's words, readable (and for VoiceOver) in one place.
 struct TranscriptSheet: View {
     let cues: [CaptionCue]
+    /// The transcript the writer published (LIME-130-6b). When there is one it is shown, labelled, instead of the captions' lines.
+    var writerText = ""
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                Text(cues.map(\.text).joined(separator: "\n")).font(Theme.body).foregroundStyle(Theme.text).frame(maxWidth: .infinity, alignment: .leading).padding(20)
+                if !writerText.isEmpty { Text("Transcript from the writer").font(Theme.font(.caption, weight: .semibold)).foregroundStyle(Theme.textSecondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.top, 16).accessibilityAddTraits(.isHeader) }
+                Text(writerText.isEmpty ? cues.map(\.text).joined(separator: "\n") : writerText).font(Theme.body).foregroundStyle(Theme.text).frame(maxWidth: .infinity, alignment: .leading).padding(20)
                     .accessibilityIdentifier("jam-transcript-text")
             }
             .background(Theme.canvas)

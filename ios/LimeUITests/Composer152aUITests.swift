@@ -58,6 +58,6 @@ final class Composer152aUITests: LimeUITestCase {
         XCTAssertTrue(title.waitForExistence(timeout: 10))
         title.tap()
         XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "profile-screen").firstMatch.waitForExistence(timeout: 5), "your profile opens")
-        XCTAssertTrue(app.buttons["profile-sign-out"].waitForExistence(timeout: 5) || app.staticTexts["Shem Rajoon"].exists, "and it is yours")
+        XCTAssertTrue(app.buttons["profile-edit"].waitForExistence(timeout: 5), "and it is yours: only your own profile has Edit profile (the page no longer has Sign out, and the demo teacher is not Shem)")
     }
 }

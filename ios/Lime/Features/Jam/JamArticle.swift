@@ -316,7 +316,7 @@ struct JamArticlePage: View {
                 HStack(spacing: 10) {
                     BylineAvatar(people: store.bylinePeople(post), jam: post.displayAs == "jam" ? store.jamTitle(post.jamId) : nil, jamId: post.displayAs == "jam" ? post.jamId : nil, size: 40)
                     VStack(alignment: .leading, spacing: 0) {
-                        Text(post.displayAs == "jam" ? store.jamTitle(post.jamId) : writer.name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
+                        Text(post.displayAs == "jam" ? store.jamTitle(post.jamId) : writer.name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).accessibilityAddTraits(.isHeader)
                         // Who it is by, on its own line; the date is the line under (LIME-222).
                         Text([post.displayAs == "jam" ? "by \(writer.name)" : nil, store.byline(post)].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.secondary).foregroundStyle(Theme.textSecondary)
                             .accessibilityIdentifier("jam-reader-byline")
@@ -513,6 +513,7 @@ struct JamArticlePage: View {
         return HStack(spacing: 8) {
             TextField("Search in post", text: $query).textFieldStyle(.plain).padding(.horizontal, 12).frame(minHeight: 44).background(Theme.surface, in: Capsule())
                 .onChange(of: query) { _, _ in matchIndex = 0; jump(counts) }
+                .accessibilityLabel("Search in post")
                 .accessibilityIdentifier("jam-article-find-field")
             Text(total == 0 ? (query.isEmpty ? "" : "0 of 0") : "\(matchIndex + 1) of \(total)").font(Theme.secondary.monospacedDigit()).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("jam-article-find-count")
                 .accessibilityLabel(total == 0 ? "No matches" : "\(matchIndex + 1) of \(total)")
@@ -724,15 +725,16 @@ struct ReaderOptionsSheet: View {
     private func row(_ symbol: String, _ title: String, chevron: Bool = false, id: String, destructive: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 16) {
-                Image(systemName: symbol).font(.system(size: 20)).frame(width: 28).foregroundStyle(destructive ? Theme.danger : Theme.text)
+                Image(systemName: symbol).font(Theme.body).frame(minWidth: 28).foregroundStyle(destructive ? Theme.danger : Theme.text).accessibilityHidden(true)
                 Text(title).font(Theme.body).foregroundStyle(destructive ? Theme.danger : Theme.text).multilineTextAlignment(.leading)
                 Spacer()
-                if chevron { Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.textSecondary) }
+                if chevron { Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.textSecondary).accessibilityHidden(true) }
             }
             .padding(.horizontal, 20).frame(minHeight: 56)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(title.replacingOccurrences(of: " \u{2713}", with: ""))   // "Saved", not "Saved check mark" (LIME-323)
         .accessibilityHint(chevron ? "Opens" : "")
         .accessibilityIdentifier(id)
     }
@@ -773,10 +775,12 @@ final class ArticleSpeaker: NSObject, AVSpeechSynthesizerDelegate {
         active = true
         paused = false
         synthesizer.speak(utterance)
+        Announce.say("Listening")
     }
 
     func toggle() {
         if paused { synthesizer.continueSpeaking(); paused = false } else { synthesizer.pauseSpeaking(at: .word); paused = true }
+        Announce.say(paused ? "Paused" : "Listening")
     }
 
     func cycleSpeed() {
@@ -784,13 +788,15 @@ final class ArticleSpeaker: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     func stop() {
+        let wasActive = active
         synthesizer.stopSpeaking(at: .immediate)
+        if wasActive { Announce.say("Stopped listening") }
         active = false
         paused = false
     }
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        Task { @MainActor in self.active = false; self.paused = false }
+        Task { @MainActor in self.active = false; self.paused = false; Announce.say("Finished reading") }
     }
 }
 
@@ -806,7 +812,8 @@ enum ArticlePrint {
         for (index, file) in files.enumerated() where file.kind == "image" {
             if let data = await store.jamAttachmentData(post.postId, file.attachmentId) { images[index] = data.base64EncodedString() }
         }
-        let html = Self.html(post: post, writer: store.authorName(post), face: face, images: images)
+        let alts = Dictionary(uniqueKeysWithValues: store.jamAttachments(post.postId).enumerated().map { ($0.offset, $0.element.alt) })
+        let html = Self.html(post: post, writer: store.authorName(post), face: face, images: images, alts: alts)
         let formatter = UIMarkupTextPrintFormatter(markupText: html)
         formatter.perPageContentInsets = UIEdgeInsets(top: 54, left: 54, bottom: 54, right: 54)
         let info = UIPrintInfo(dictionary: nil)
@@ -835,7 +842,7 @@ enum ArticlePrint {
         }.joined()
     }
 
-    static func html(post: JamPostInfo, writer: String, face: ReaderFont, images: [Int: String]) -> String {
+    static func html(post: JamPostInfo, writer: String, face: ReaderFont, images: [Int: String], alts: [Int: String] = [:]) -> String {
         let family: String
         switch face {
         case .newYork: family = "'New York', Georgia, serif"
@@ -855,7 +862,7 @@ enum ArticlePrint {
             case .divider: body += "<hr>"
             case .freewall: break
             case .image(let caption, let index):
-                if let data = images[index] { body += "<figure><img src=\"data:image/jpeg;base64,\(data)\" style=\"max-width:100%\"><figcaption>\(escape(caption))</figcaption></figure>" }
+                if let data = images[index] { body += "<figure><img src=\"data:image/jpeg;base64,\(data)\" alt=\"\(escape(alts[index] ?? "").replacingOccurrences(of: "\"", with: "&quot;"))\" style=\"max-width:100%\"><figcaption>\(escape(caption))</figcaption></figure>" }
             }
         }
         return "<html><body style=\"font-family:\(family);font-size:13pt;line-height:1.5\"><h1>\(escape(post.title))</h1><p style=\"color:#555\">\(escape(post.subtitle))</p><p style=\"color:#555\">\(escape(writer)) \u{00B7} \(escape(JamDates.text(post.created)))</p><hr>\(body)</body></html>"

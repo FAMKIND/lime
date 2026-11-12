@@ -35,7 +35,7 @@ struct OnboardingScaffold<Content: View>: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
-            .frame(height: 60)
+            .frame(minHeight: 60)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -240,6 +240,7 @@ struct NextButton: View {
         }
         .disabled(!isEnabled)
         .accessibilityLabel("Next")
+        .accessibilityValue(isBusy ? "Working" : "")
         .accessibilityIdentifier("next-button")
     }
 }

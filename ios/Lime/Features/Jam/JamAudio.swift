@@ -153,6 +153,7 @@ struct JamAudioCard: View {
             Text(VoiceFormat.clock(max(controller.duration - controller.position, 0))).font(Theme.caption.monospacedDigit()).foregroundStyle(Theme.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .trailing).padding(.trailing, 38)
                 .accessibilityLabel("Length \(PodcastFormat.spoken(Double(file.durationMs ?? 0) / 1000))").accessibilityIdentifier("jam-audio-length")
+            ReadTranscriptButton(text: file.transcript)
             // The card says so too, not only the player (LIME-130-6a).
             if controller.failed {
                 Text("Couldn\u{2019}t play this recording.").font(Theme.caption).foregroundStyle(Theme.danger)
@@ -252,7 +253,7 @@ struct AudioMiniPlayer: View {
                 Button { speaker.cycleSpeed() } label: {
                     Text(speaker.rate == 1 ? "1\u{00D7}" : speaker.rate == 1.25 ? "1.25\u{00D7}" : "1.5\u{00D7}").font(Theme.font(.subheadline, weight: .bold)).foregroundStyle(Theme.text).frame(minWidth: 44, minHeight: 44)
                 }
-                .accessibilityLabel("Reading speed").accessibilityIdentifier("speech-mini-speed")
+                .accessibilityLabel("Reading speed").accessibilityValue(speaker.rate == 1 ? "Normal" : speaker.rate == 1.25 ? "1.25 times" : "1.5 times").accessibilityIdentifier("speech-mini-speed")
                 Button { speaker.toggle() } label: { Image(systemName: speaker.paused ? "play.fill" : "pause.fill").font(.system(size: 18)).foregroundStyle(Theme.text).frame(width: 44, height: 44) }
                     .accessibilityLabel(speaker.paused ? "Play" : "Pause").accessibilityIdentifier("speech-mini-play")
                 Button { speaker.stop() } label: { Image(systemName: "xmark").font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.text).frame(width: 44, height: 44) }

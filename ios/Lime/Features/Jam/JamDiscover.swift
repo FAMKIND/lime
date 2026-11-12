@@ -309,7 +309,10 @@ struct OpenInlineImage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if let file, let url = store.openFileURL(file.url) {
+            if let file, file.mime.hasPrefix("audio/") || file.mime.hasPrefix("video/") {
+                // A recording or video of an open post: the writer's transcript, when they gave one (LIME-130-6b-2, LIME-321). There is no player here.
+                ReadTranscriptButton(text: file.transcript)
+            } else if let file, let url = store.openFileURL(file.url) {
                 AsyncImage(url: url) { phase in
                     switch phase {
                     case .success(let image): image.resizable().scaledToFit().frame(maxWidth: JamMedia.maxColumn).jamMediaClip()
@@ -317,7 +320,7 @@ struct OpenInlineImage: View {
                     default: RoundedRectangle(cornerRadius: JamMedia.radius, style: .continuous).fill(Theme.surface).frame(height: 180).overlay { ProgressView() }
                     }
                 }
-                .accessibilityLabel(caption.isEmpty ? "Photo" : "Photo, \(caption)")
+                .accessibilityLabel(JamPhotoLabel.label(alt: file.alt.isEmpty ? (caption.isEmpty ? "" : "Photo, \(caption)") : file.alt))
             }
             if !caption.isEmpty { Text(caption).font(Theme.caption).foregroundStyle(Theme.textSecondary) }
         }

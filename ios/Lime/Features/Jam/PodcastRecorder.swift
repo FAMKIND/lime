@@ -243,6 +243,12 @@ struct PodcastRecorder: View {
     @State private var capture = PodcastCapture()
     @State private var take = TakePlayer()
     @State private var clip: OutgoingAttachment?
+    @State private var transcribing = false
+    /// The cover being described, and the description of the cover the post already has (LIME-130-6b-2).
+    @State private var describingCover = false
+    @State private var existingCoverAlt = ""
+    @State private var originalCoverAlt = ""
+    @State private var originalTranscript = ""
     @State private var shown = false
     @State private var preparing = false
     @State private var seconds: TimeInterval = 0
@@ -338,6 +344,12 @@ struct PodcastRecorder: View {
             if let words = RecorderSpeech.change(wasRecording: isRecording, isRecording: isRecording, wasPaused: was, isPaused: now, elapsed: lastElapsed) { Announce.say(words) }
         }
         .onChange(of: elapsed) { _, now in if isRecording { lastElapsed = now } }
+        .sheet(isPresented: $transcribing) { TranscriptEditSheet(text: (clip ?? editClip)?.transcript ?? "") { if clip != nil { clip?.transcript = $0 } else { editClip?.transcript = $0 } } }
+        .sheet(isPresented: $describingCover) {
+            PhotoDescriptionSheet(draft: DraftAttachment(outgoing: OutgoingAttachment(bytes: cover?.bytes ?? Data(), name: JamCover.name, mime: "image/jpeg", width: nil, height: nil, durationMs: nil, thumb: Data(), poster: Data(), alt: cover?.alt ?? existingCoverAlt), preview: coverImage)) { text in
+                if cover != nil { cover?.alt = text } else { existingCoverAlt = text }
+            }
+        }
         .alert("Can\u{2019}t record", isPresented: Binding(get: { problem != nil }, set: { if !$0 { problem = nil } })) {
             Button("OK", role: .cancel) {}
         } message: { Text(problem ?? "") }
@@ -557,7 +569,9 @@ struct PodcastRecorder: View {
             guard let editing, editClip == nil, clip == nil else { return }
             let files = store.jamAttachments(editing.postId)
             if let media = files.first(where: { $0.kind == "video" || $0.kind == "audio" }), let data = await store.jamAttachmentData(editing.postId, media.attachmentId) {
-                editClip = OutgoingAttachment(bytes: data, name: media.name, mime: media.mime, width: media.width, height: media.height, durationMs: media.durationMs, thumb: media.thumb, poster: media.poster)
+                editClip = OutgoingAttachment(bytes: data, name: media.name, mime: media.mime, width: media.width, height: media.height, durationMs: media.durationMs, thumb: media.thumb, poster: media.poster, alt: "", transcript: media.transcript)
+                originalTranscript = media.transcript
+                if let stored = files.first(where: JamCover.isCover) { existingCoverAlt = stored.alt; originalCoverAlt = stored.alt }
             }
             try? await Task.sleep(for: .milliseconds(300))
             if !details.isEmpty { descModel.textView?.attributedText = ComposerDocument.attributed(fromMarkdown: details, post: true); descModel.didEdit() }
@@ -755,6 +769,9 @@ struct PodcastRecorder: View {
                     .padding(.horizontal, 14).frame(minHeight: 44).background(Theme.surface, in: Capsule())
             }
             .accessibilityIdentifier("podcast-add-cover")
+            if hasCover {
+                AltPill(described: !(cover?.alt ?? existingCoverAlt).isEmpty, what: "the cover") { describingCover = true }
+            }
         }
     }
 
@@ -785,6 +802,14 @@ struct PodcastRecorder: View {
                 }
             }
             .frame(minHeight: 120).accessibilityIdentifier("podcast-description").id(Line.details)
+            // A transcript the writer types or pastes, for people who cannot hear or watch it (LIME-130-6b).
+            if previewClip != nil {
+                Button { transcribing = true } label: {
+                    Label(((clip ?? editClip)?.transcript ?? "").isEmpty ? "Add transcript" : "Edit transcript", systemImage: "text.alignleft").font(Theme.secondary).foregroundStyle(Theme.text)
+                        .padding(.horizontal, 14).frame(minHeight: 44).background(Theme.surface, in: Capsule())
+                }
+                .buttonStyle(.plain).accessibilityIdentifier("podcast-add-transcript")
+            }
         }
     }
 
@@ -1238,9 +1263,11 @@ struct PodcastRecorder: View {
         var added: [OutgoingAttachment] = []
         if let clip {
             added.append(clip)
-            if clip.mime.hasPrefix("video/") || clip.mime.hasPrefix("audio/"), clip.durationMs.map({ Int($0) / 1000 <= CaptionMaker.maxSeconds }) ?? true {
+            let seconds = clip.durationMs.map { Double($0) / 1000 }
+            let possible = demo ? true : await CaptionMaker.canMake(seconds: seconds)
+            if clip.mime.hasPrefix("video/") || clip.mime.hasPrefix("audio/"), possible {
                 let ext = clip.mime.hasPrefix("video/") ? "mp4" : "m4a"
-                if let cues = await CaptionMaker.make(bytes: clip.bytes, fileExtension: ext, demo: demo), !cues.isEmpty {
+                if let cues = (await CaptionMaker.make(bytes: clip.bytes, fileExtension: ext, seconds: seconds, demo: demo))?.cues, !cues.isEmpty {
                     // Named for the recording's place among the added files; the core renames it for the recording's real number.
                     added.append(OutgoingAttachment(bytes: Data(captionsToVtt(cues: cues).utf8), name: captionFileName(index: 0), mime: "text/vtt", width: nil, height: nil, durationMs: nil, thumb: Data(), poster: Data()))
                 }
@@ -1248,8 +1275,17 @@ struct PodcastRecorder: View {
         }
         if let cover { added.append(cover) }
         let hosts = coauthors.map(\.id)
+        // A transcript or cover description changed on the files the post already has (a new take or cover carries its own).
+        var changed: [JamFileDetails] = []
+        let own = store.jamAttachments(editing.postId)
+        if clip == nil, let media = own.first(where: { $0.kind == "video" || $0.kind == "audio" }), let current = editClip?.transcript, current != originalTranscript {
+            changed.append(JamFileDetails(attachmentId: media.attachmentId, alt: media.alt, transcript: current))
+        }
+        if cover == nil, !removeCover, let stored = own.first(where: JamCover.isCover), existingCoverAlt != originalCoverAlt {
+            changed.append(JamFileDetails(attachmentId: stored.attachmentId, alt: existingCoverAlt, transcript: ""))
+        }
         let ok = await store.editJamPost(editing, title: title, subtitle: subtitle, markdown: details, added: added, displayAs: postAsJam == nil ? "person" : "jam",
-                                         removeCover: removeCover && cover == nil, coauthors: Set(hosts) == Set(initialHosts) ? nil : hosts)
+                                         removeCover: removeCover && cover == nil, coauthors: Set(hosts) == Set(initialHosts) ? nil : hosts, details: changed)
         // Joining or leaving a series is a change of its own (the core seals the post again).
         var seriesOK = ok && series != editing.series ? await store.setPostSeries(editing, to: series) : true
         // Who can read it, and its tags, were chosen on "Before you publish" (LIME-241).
@@ -1373,6 +1409,6 @@ enum TrimExport {
             let from = min(thumb.count - 1, Int(start / total * Double(thumb.count))), to = max(from + 1, min(thumb.count, Int(end / total * Double(thumb.count))))
             thumb = Data(thumb[from..<to])
         }
-        return OutgoingAttachment(bytes: data, name: clip.name, mime: clip.mime, width: clip.width, height: clip.height, durationMs: UInt32((end - start) * 1000), thumb: thumb, poster: clip.poster)
+        return OutgoingAttachment(bytes: data, name: clip.name, mime: clip.mime, width: clip.width, height: clip.height, durationMs: UInt32((end - start) * 1000), thumb: thumb, poster: clip.poster, alt: clip.alt, transcript: clip.transcript)
     }
 }

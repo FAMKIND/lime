@@ -41,11 +41,11 @@ struct ThreadView: View {
             let needed = ThreadWindow.covering(index: replyIndex, replies: messages.count - 1, window: replyWindow)
             if needed != replyWindow {
                 replyWindow = needed
-                Task { try? await Task.sleep(for: .milliseconds(80)); withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(id, anchor: .center) } }
+                Task { try? await Task.sleep(for: .milliseconds(80)); withMotion(.easeInOut(duration: 0.25)) { proxy.scrollTo(id, anchor: .center) } }
                 return
             }
         }
-        withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(id, anchor: .center) }
+        withMotion(.easeInOut(duration: 0.25)) { proxy.scrollTo(id, anchor: .center) }
     }
     private var conversation: Conversation? { store.conversation(target.conversationID) }
 
@@ -66,6 +66,7 @@ struct ThreadView: View {
                             }
                             .padding(.vertical, 10)
                             .accessibilityElement(children: .combine)
+                            .accessibilityAddTraits(.isHeader)
                             let hidden = ThreadWindow.hidden(replies: messages.count - 1, window: replyWindow)
                             if hidden > 0 {
                                 Button { replyWindow = ThreadWindow.grown(window: replyWindow, replies: messages.count - 1) } label: {
@@ -101,7 +102,7 @@ struct ThreadView: View {
                 .onChange(of: messages.count) { _, count in
                     // A reply arrived: show it. The root message loading (0 to 1) is not a reply: it keeps its first line at the top.
                     if count > 1 {
-                        withAnimation { proxy.scrollTo("bottom") }
+                        withMotion { proxy.scrollTo("bottom") }
                         // A reply from someone else is read out (the same as in a chat).
                         if let last = messages.last, !last.isOwn, !last.deleted {
                             let name = conversation?.members.first { $0.id == last.senderID }?.name ?? "Reply"
@@ -194,7 +195,7 @@ struct ThreadView: View {
                 highlightedID = focus
                 scrollRequest = UUID()
                 try? await Task.sleep(for: .seconds(4))
-                if highlightedID == focus { withAnimation { highlightedID = nil } }
+                if highlightedID == focus { withMotion { highlightedID = nil } }
             }
         }
         .onAppear { notifications.viewing = ViewingTarget(conversationID: target.conversationID, threadRoot: target.rootID) }
@@ -257,11 +258,12 @@ struct ThreadView: View {
                     if let last = hits.last { highlightedID = last.messageID; findScroll = last.messageID } else { highlightedID = nil }
                 }
             Text(findStatus).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                .onChange(of: findStatus) { _, now in if !now.isEmpty { Announce.say(now) } }
                 .accessibilityIdentifier("replies-find-count")
-            Button { step(by: -1) } label: { Image(systemName: "chevron.up").frame(width: 32, height: 36) }
+            Button { step(by: -1) } label: { Image(systemName: "chevron.up").frame(minWidth: 44, minHeight: 44) }
                 .disabled(findIndex <= 0 || findHits.isEmpty)
                 .accessibilityLabel("Previous match").accessibilityIdentifier("replies-find-up")
-            Button { step(by: 1) } label: { Image(systemName: "chevron.down").frame(width: 32, height: 36) }
+            Button { step(by: 1) } label: { Image(systemName: "chevron.down").frame(minWidth: 44, minHeight: 44) }
                 .disabled(findIndex >= findHits.count - 1 || findHits.isEmpty)
                 .accessibilityLabel("Next match").accessibilityIdentifier("replies-find-down")
             Button("Done") { stopFinding() }

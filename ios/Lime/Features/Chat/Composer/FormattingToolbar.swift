@@ -36,7 +36,7 @@ struct FormattingToolbar: View {
                 .padding(.horizontal, 6)
             }
             .accessibilityIdentifier("fmt-scroll")
-            .frame(height: 46)
+            .frame(minHeight: 46)
             .limeGlass(in: Capsule())
             Button { model.closeToolbar() } label: {
                 Image(systemName: "xmark").font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.text)
@@ -87,7 +87,7 @@ struct FormattingToolbar: View {
             // Active is a faint fill and the icon in heavier ink, so it reads without a strong circle.
             content()
                 .fontWeight(on ? .bold : .regular)
-                .frame(width: 42, height: 38)
+                .frame(width: 44, height: 44)
                 .background(on ? Theme.pressed : Color.clear, in: Capsule())
         }
         .buttonStyle(.plain)
@@ -112,10 +112,11 @@ struct LinkSheet: View {
             HStack {
                 Button("Cancel") { dismiss() }.foregroundStyle(Theme.text).accessibilityIdentifier("link-cancel")
                 Spacer()
-                Text("Add link").font(Theme.title).foregroundStyle(Theme.text)
+                Text("Add link").font(Theme.title).foregroundStyle(Theme.text).accessibilityAddTraits(.isHeader)
                 Spacer()
                 Button("Add") { add() }.font(Theme.title).foregroundStyle(Theme.text)
                     .disabled(address.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .accessibilityHint(address.trimmingCharacters(in: .whitespaces).isEmpty ? "Type an address first" : "")
                     .accessibilityIdentifier("link-apply")
             }
             TextField("Address (https://…)", text: $address)

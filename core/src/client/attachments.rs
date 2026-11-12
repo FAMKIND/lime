@@ -23,6 +23,9 @@ pub struct OutgoingAttachment {
     /// A photo's description (at most 250 characters), or empty. It travels inside the encrypted message.
     #[uniffi(default = "")]
     pub alt: String,
+    /// What an audio or video file says, written by the sender (at most 100,000 characters), or empty. Only a jam post carries it (LIME-130-6b).
+    #[uniffi(default = "")]
+    pub transcript: String,
 }
 
 /// How far a transfer has got.
@@ -78,6 +81,7 @@ impl LimeStore {
                 thumb: item.thumb,
                 poster: item.poster,
                 alt: files::clean_alt(&item.alt),
+                transcript: String::new(),   // a transcript is for a jam post; a chat message has its own (on this phone) (LIME-130-3b)
             };
             prepared.push((descriptor, item.bytes));
         }
@@ -369,6 +373,7 @@ impl LimeStore {
                 thumb: Vec::new(),
                 poster: Vec::new(),
                 alt: String::new(),
+        transcript: String::new(),
             };
             (descriptor, Some(preview.image.clone()))
         });

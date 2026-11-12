@@ -9,6 +9,9 @@ struct LocalDraft: Codable, Identifiable, Equatable {
         var file: String
         var name: String, mime: String
         var width: UInt32?, height: UInt32?, durationMs: UInt32?
+        /// A photo's or the cover's description and a recording's transcript (LIME-130-6b-2). Optional, so a draft saved before them still opens (empty).
+        var alt: String?
+        var transcript: String?
     }
 
     var id: String
@@ -105,7 +108,8 @@ final class LocalDrafts: @unchecked Sendable {
     func outgoing(_ draft: LocalDraft, _ item: LocalDraft.Item, thumb: Data = Data(), poster: Data = Data()) -> OutgoingAttachment? {
         guard let bytes = data(draft, item.file) else { return nil }
         return OutgoingAttachment(bytes: bytes, name: item.name, mime: item.mime, width: item.width, height: item.height, durationMs: item.durationMs,
-                                  thumb: data(draft, item.file + ".thumb") ?? thumb, poster: data(draft, item.file + ".poster") ?? poster)
+                                  thumb: data(draft, item.file + ".thumb") ?? thumb, poster: data(draft, item.file + ".poster") ?? poster,
+                                  alt: item.alt ?? "", transcript: item.transcript ?? "")
     }
 
     /// The item and the files that keep an attachment (its thumbnail and poster too).
@@ -113,6 +117,7 @@ final class LocalDrafts: @unchecked Sendable {
         var files = [file: attachment.bytes]
         if !attachment.thumb.isEmpty { files[file + ".thumb"] = attachment.thumb }
         if !attachment.poster.isEmpty { files[file + ".poster"] = attachment.poster }
-        return (LocalDraft.Item(file: file, name: attachment.name, mime: attachment.mime, width: attachment.width, height: attachment.height, durationMs: attachment.durationMs), files)
+        return (LocalDraft.Item(file: file, name: attachment.name, mime: attachment.mime, width: attachment.width, height: attachment.height, durationMs: attachment.durationMs,
+                                    alt: attachment.alt.isEmpty ? nil : attachment.alt, transcript: attachment.transcript.isEmpty ? nil : attachment.transcript), files)
     }
 }

@@ -48,6 +48,8 @@ struct NotificationsScreen: View {
                             SoundPreview.shared.play(messageSound: .custom(item.id))
                         }
                         .contextMenu { customMenu(item) }
+                        .accessibilityAction(named: "Rename") { renameText = item.name; renaming = item }
+                        .accessibilityAction(named: "Delete") { deleteSound(item) }
                     }
                     choice("Add your own…", selected: false, id: "sound-add-message", last: true) { adding = .message }
                 }
@@ -59,6 +61,8 @@ struct NotificationsScreen: View {
                     ForEach(sounds.items(of: .call)) { item in
                         choice(item.name, selected: settings.callSound == .custom(item.id), id: "callsound-custom-\(item.id)", last: false) { settings.callSound = .custom(item.id) }
                             .contextMenu { customMenu(item) }
+                        .accessibilityAction(named: "Rename") { renameText = item.name; renaming = item }
+                        .accessibilityAction(named: "Delete") { deleteSound(item) }
                     }
                     choice("Add your own…", selected: false, id: "sound-add-call", last: true) { adding = .call }
                 }
@@ -81,11 +85,13 @@ struct NotificationsScreen: View {
     @ViewBuilder
     private func customMenu(_ item: CustomSounds.Item) -> some View {
         Button { renameText = item.name; renaming = item } label: { Label("Rename", systemImage: "pencil") }
-        Button(role: .destructive) {
-            if notifications.settings.sound == .custom(item.id) { notifications.settings.sound = .limeChime }
-            if notifications.settings.callSound == .custom(item.id) { notifications.settings.callSound = .limeSteelpan }
-            sounds.delete(item.id)
-        } label: { Label("Delete", systemImage: "trash") }
+        Button(role: .destructive) { deleteSound(item) } label: { Label("Delete", systemImage: "trash") }
+    }
+
+    private func deleteSound(_ item: CustomSounds.Item) {
+        if notifications.settings.sound == .custom(item.id) { notifications.settings.sound = .limeChime }
+        if notifications.settings.callSound == .custom(item.id) { notifications.settings.callSound = .limeSteelpan }
+        sounds.delete(item.id)
     }
 
     /// What iOS allows: ask (explainer first), or send the person to iOS Settings when it was refused.

@@ -125,7 +125,7 @@ struct ModerationReportScreen: View {
 
     private func card<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(Theme.font(.footnote, weight: .semibold)).foregroundStyle(Theme.textSecondary)
+            Text(title).font(Theme.font(.footnote, weight: .semibold)).foregroundStyle(Theme.textSecondary).accessibilityAddTraits(.isHeader)
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading).padding(14)

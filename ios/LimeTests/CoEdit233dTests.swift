@@ -11,7 +11,7 @@ final class CoEdit233dTests: XCTestCase {
     }
 
     private func block(_ id: String, _ kind: String, _ words: String) -> DraftBlock {
-        DraftBlock(id: id, kind: kind, level: 0, ordered: false, number: 0, attachment: 0, caption: "", url: "", colour: "",
+        DraftBlock(id: id, kind: kind, level: 0, ordered: false, number: 0, attachment: 0, caption: "", alt: "", url: "", colour: "",
                    spans: [Span(text: words, bold: false, italic: false, underline: false, strike: false, code: false, link: nil, mention: nil)])
     }
 

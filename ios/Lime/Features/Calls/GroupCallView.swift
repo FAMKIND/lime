@@ -16,6 +16,8 @@ struct GroupCallView: View {
     @State private var areaSize: CGSize = .zero
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    /// When the screen opens with VoiceOver or Switch Control on, focus starts on Mute, not the picture behind it (LIME-321, as the 1:1 call does).
+    @AccessibilityFocusState private var focusMute: Bool
     /// A clear view over the whole screen that system Picture in Picture grows its window from.
     @State private var pipAnchor: UIView?
 
@@ -25,6 +27,11 @@ struct GroupCallView: View {
         let tiles = call.tiles
         VStack(spacing: 0) {
             header.padding(.top, windowControlsMargin).accessibilitySortPriority(3)
+                .task {
+                    guard CallControlsPolicy.voiceOverRunning || CallControlsPolicy.switchControlRunning else { return }
+                    try? await Task.sleep(for: .milliseconds(500))
+                    focusMute = true
+                }
             tileArea(tiles)
                 .padding(.horizontal, 8)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -254,6 +261,7 @@ struct GroupCallView: View {
 
     @ViewBuilder private func buttons(size: CGFloat, leave: Bool = true) -> some View {
         control(call.muted ? "mic.slash.fill" : "mic.fill", label: call.muted ? "Unmute" : "Mute", on: call.muted, id: "group-call-mute", size: size) { Task { await call.setMuted(!call.muted) } }
+            .accessibilityFocused($focusMute)
         if call.video {
             control(call.cameraOn ? "video.fill" : "video.slash.fill", label: call.cameraOn ? "Turn camera off" : "Turn camera on", on: !call.cameraOn, id: "group-call-camera", size: size) { Task { await call.toggleCamera() } }
             control("arrow.triangle.2.circlepath.camera", label: "Flip camera", on: false, id: "group-call-flip", size: size) { Task { await call.flipCamera() } }
@@ -281,7 +289,7 @@ struct GroupCallView: View {
     private func control(_ symbol: String, label: String, on: Bool, id: String, size: CGFloat, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol).font(.system(size: size * 0.36)).foregroundStyle(on ? Color.black : Color.white)
-                .frame(width: size, height: size).background(on ? Color.white : Color.white.opacity(0.18), in: Circle())
+                .frame(width: size, height: size).callRoundBackground(lit: on)
         }
         .accessibilityLabel(label)
         .accessibilityIdentifier(id)
@@ -477,11 +485,11 @@ struct GroupIncomingBanner: View {
                 if ring.video {
                     // A video call: join with the camera or with sound only.
                     Button("Voice") { Task { await store.groupCalls.acceptIncoming(withVideo: false) } }
-                        .frame(minWidth: 44, minHeight: 44).accessibilityIdentifier("group-call-join-voice")
+                        .frame(minWidth: 44, minHeight: 44).accessibilityHint("Joins with sound only").accessibilityIdentifier("group-call-join-voice")
                 }
                 Button(ring.video ? "Video" : "Join") { Task { await store.groupCalls.acceptIncoming(withVideo: ring.video) } }
                     .buttonStyle(.borderedProminent).tint(Theme.accent).foregroundStyle(Theme.accentInk)
-                    .frame(minHeight: 44).accessibilityIdentifier("group-call-join")
+                    .frame(minHeight: 44).accessibilityHint(ring.video ? "Joins with the camera" : "").accessibilityIdentifier("group-call-join")
             }
             .padding(14)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -516,7 +524,7 @@ struct GroupInviteSheet: View {
             let people = summary?.people ?? []
             let count = Int(summary?.info.participantCount ?? 0)
             VStack(spacing: 14) {
-                Capsule().fill(.secondary.opacity(0.4)).frame(width: 36, height: 5).padding(.top, 8)
+                Capsule().fill(.secondary.opacity(0.4)).frame(width: 36, height: 5).padding(.top, 8).accessibilityHidden(true)
                 if let chat = store.conversation(invite.conversationID) { ConversationAvatar(conversation: chat, size: 56) }
                 Text(count == 1 ? "1 person is in a call" : (count == 0 ? "A call has started" : "\(count) people are in a call"))
                     .font(Theme.title).foregroundStyle(Theme.text).multilineTextAlignment(.center)

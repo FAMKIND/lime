@@ -194,8 +194,8 @@ struct JamEngagementSection: View {
                 if pending {
                     Text(stale ? "Not delivered yet" : "Waiting for \(writer)\u{2019}s phone").font(Theme.caption).foregroundStyle(soft).accessibilityIdentifier("jam-comment-pending")
                 } else {
-                    Button { replyingTo = comment; focused = true } label: { Text("Reply").font(Theme.caption.weight(.semibold)).foregroundStyle(soft).frame(minHeight: 32) }
-                        .buttonStyle(.plain).accessibilityIdentifier("jam-reply-\(comment.commentId)")
+                    Button { replyingTo = comment; focused = true } label: { Text("Reply").font(Theme.caption.weight(.semibold)).foregroundStyle(soft).frame(minHeight: 44) }
+                        .buttonStyle(.plain).accessibilityLabel("Reply to \(person.name)").accessibilityIdentifier("jam-reply-\(comment.commentId)")
                 }
             }
             Spacer(minLength: 0)
@@ -205,12 +205,13 @@ struct JamEngagementSection: View {
                 if comment.mine { Button(role: .destructive) { Task { await store.jamDeleteComment(comment.commentId, postID: post.postId) } } label: { Label("Delete", systemImage: "trash") }.accessibilityIdentifier("jam-comment-delete") }
                 else if mineJam { Button(role: .destructive) { Task { await store.jamDeleteComment(comment.commentId, postID: post.postId) } } label: { Label("Remove", systemImage: "trash") }.accessibilityIdentifier("jam-comment-remove") }
             } label: {
-                Image(systemName: "ellipsis").foregroundStyle(soft).frame(width: 36, height: 36).contentShape(Rectangle())
+                Image(systemName: "ellipsis").foregroundStyle(soft).frame(width: 44, height: 44).contentShape(Rectangle())
             }
-            .accessibilityLabel("Comment options").accessibilityIdentifier("jam-comment-more-\(comment.commentId)")
+            .accessibilityLabel("Comment options, \(person.name)").accessibilityIdentifier("jam-comment-more-\(comment.commentId)")
         }
         .opacity(pending ? 0.6 : 1)
         .accessibilityElement(children: .contain)
+        .accessibilityLabel(comment.parentId == nil ? "Comment by \(person.name)" : "Reply by \(person.name)")
         .accessibilityIdentifier("jam-comment-row-\(comment.commentId)")
     }
 }

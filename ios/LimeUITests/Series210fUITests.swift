@@ -38,7 +38,7 @@ final class Series210fUITests: LimeUITestCase {
         let title = app.textFields["jam-article-title"].exists ? app.textFields["jam-article-title"] : app.textViews["jam-article-title"]
         XCTAssertTrue(title.waitForExistence(timeout: 8))
         XCTAssertFalse(any(app, "jam-series").exists, "the series is on step 2, not while writing")
-        title.tap(); title.typeText("Halves\n\n")
+        title.tap(); title.typeText("Halves\n"); focusArticleBody(app)
         let body = app.textViews["composer-field"]
         XCTAssertTrue(body.waitForExistence(timeout: 5))
         body.tap(); body.typeText("Cut it in two")

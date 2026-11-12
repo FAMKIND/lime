@@ -152,6 +152,7 @@ struct MessageActionsHost: ViewModifier {
     @ScaledMetric(relativeTo: .caption) private var nameRowHeight: CGFloat = 22
     /// The actions list is as wide as its text needs, up to the screen.
     @ScaledMetric(relativeTo: .body) private var menuWidth: CGFloat = MessageMenuLayout.menuWidth
+    @ScaledMetric(relativeTo: .title) private var reactionEmoji: CGFloat = 28
 
     func body(content: Content) -> some View {
         content
@@ -266,10 +267,14 @@ struct MessageActionsHost: ViewModifier {
     private func menu(for message: Message) -> some View {
         GeometryReader { geo in
             let area = geo.frame(in: .global)
+            // The actions never take so much that the message is left less than 120 pt: a taller list scrolls inside its own frame, below the message
+            // (at the largest text size it used to start above the message's end, LIME-321).
+            let nameRow = showsName(message) ? nameRowHeight : 0
+            let menuCap = max(120, min(geo.size.height * 0.55, geo.size.height - reactionSize.height - nameRow - 2 * MessageMenuLayout.gap - 120))
             let placement = state.menuFrame == .zero ? nil : MessageMenuLayout.place(
                 bubble: state.menuFrame.offsetBy(dx: -area.minX, dy: -area.minY),
-                nameHeight: showsName(message) ? nameRowHeight : 0,
-                bar: reactionSize, menu: actionsSize,
+                nameHeight: nameRow,
+                bar: reactionSize, menu: CGSize(width: actionsSize.width, height: min(actionsSize.height, menuCap)),
                 in: CGRect(origin: .zero, size: geo.size))
             ZStack(alignment: .topLeading) {
                 backdrop
@@ -280,7 +285,7 @@ struct MessageActionsHost: ViewModifier {
                         .position(x: placement.bar.midX, y: placement.bar.midY)
                     // The menu's rows grow with the text size; a list taller than the room beside the message scrolls (LIME-130-3a).
                     actionsMenu(message).frame(width: min(menuWidth, geo.size.width - 2 * MessageMenuLayout.margin))
-                        .frame(maxHeight: geo.size.height * 0.55).fixedSize(horizontal: false, vertical: true)
+                        .frame(maxHeight: menuCap).fixedSize(horizontal: false, vertical: true)
                         .onGeometryChange(for: CGSize.self) { $0.size } action: { actionsSize = $0 }
                         .position(x: placement.menu.midX, y: placement.menu.midY)
                         .accessibilityElement(children: .contain).accessibilityIdentifier("message-actions")
@@ -348,11 +353,12 @@ struct MessageActionsHost: ViewModifier {
                                 state.menu = nil
                                 Task { await store.toggleReaction(emoji, on: message, in: conversationID) }
                             } label: {
-                                Text(emoji).font(.system(size: 28)).frame(width: 40, height: 44)
+                                Text(emoji).font(.system(size: reactionEmoji)).frame(width: 44, height: 44)
                                     .background(mine ? Theme.accent : Color.clear, in: Circle())
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel("React with \(emoji)")
+                            .accessibilityAddTraits(mine ? .isSelected : [])   // the fill is not the only sign (LIME-321)
                             .accessibilityIdentifier("react-\(emoji)")
                         }
                         Button {
@@ -361,7 +367,7 @@ struct MessageActionsHost: ViewModifier {
                         } label: {
                             // A plain plus in a circle the size of the emoji (LIME-278d).
                             Image(systemName: "plus").font(.system(size: 22, weight: .semibold)).foregroundStyle(Theme.text)
-                                .frame(width: 40, height: 44)
+                                .frame(width: 44, height: 44)
                                 .background(Theme.surface, in: Circle().inset(by: 2))
                         }
                         .buttonStyle(.plain)
@@ -387,7 +393,7 @@ struct MessageActionsHost: ViewModifier {
                                 Text("This file is no longer available").font(Theme.caption)
                             }
                             Spacer()
-                            Image(systemName: action.symbol).font(.system(size: 17))
+                            Image(systemName: action.symbol).font(Theme.body)
                         }
                         .foregroundStyle(Theme.textSecondary)
                         .padding(.horizontal, 16).frame(minHeight: 48)
@@ -414,7 +420,7 @@ struct MessageActionsHost: ViewModifier {
                 HStack(spacing: 12) {
                     Text(title).font(Theme.body)
                     Spacer()
-                    Image(systemName: symbol).font(.system(size: 17))
+                    Image(systemName: symbol).font(Theme.body)
                 }
                 .foregroundStyle(destructive ? Theme.danger : Theme.text)
                 .padding(.horizontal, 16).frame(minHeight: 48).contentShape(Rectangle())
@@ -447,7 +453,7 @@ struct EditMessageSheet: View {
             HStack {
                 Button("Cancel") { finish(false) }.foregroundStyle(Theme.text).accessibilityIdentifier("edit-cancel")
                 Spacer()
-                Text("Edit message").font(Theme.title).foregroundStyle(Theme.text)
+                Text("Edit message").font(Theme.title).foregroundStyle(Theme.text).accessibilityAddTraits(.isHeader)
                 Spacer()
                 Button("Save") { finish(true) }.font(Theme.title).foregroundStyle(Theme.text)
                     .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty).accessibilityIdentifier("edit-save")
@@ -481,7 +487,7 @@ struct EmojiPickerSheet: View {
             HStack {
                 Button("Cancel") { finish(nil) }.foregroundStyle(Theme.text).accessibilityIdentifier("emoji-cancel")
                 Spacer()
-                Text("React").font(Theme.title).foregroundStyle(Theme.text)
+                Text("React").font(Theme.title).foregroundStyle(Theme.text).accessibilityAddTraits(.isHeader)
                 Spacer()
                 Color.clear.frame(width: 60, height: 1)
             }
@@ -499,7 +505,7 @@ struct EmojiPickerSheet: View {
                     .frame(maxWidth: .infinity, minHeight: 48).background(Theme.surface, in: Capsule())
             }
             .accessibilityIdentifier("emoji-search-all")
-            EmojiKeyboardField(isActive: $systemKeyboard) { finish($0) }.frame(width: 1, height: 1).opacity(0.01)
+            EmojiKeyboardField(isActive: $systemKeyboard) { finish($0) }.frame(width: 1, height: 1).opacity(0.01).accessibilityHidden(true)
         }
         .padding(20)
         .background(Theme.canvas.ignoresSafeArea())
@@ -509,6 +515,7 @@ struct EmojiPickerSheet: View {
 
 /// Every reaction on a message with who reacted; tap your own to remove it.
 struct ReactorsSheet: View {
+    @ScaledMetric(relativeTo: .title) private var reactorEmoji: CGFloat = 30
     let chips: [ReactionChip]
     /// A person by the name the reaction lists ("You" is me); nil falls back to initials in a colour from the name.
     var person: (String) -> Person? = { _ in nil }
@@ -518,7 +525,7 @@ struct ReactorsSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Reactions").font(Theme.title).foregroundStyle(Theme.text)
+                Text("Reactions").font(Theme.title).foregroundStyle(Theme.text).accessibilityAddTraits(.isHeader)
                 Spacer()
                 Button("Done") { finish() }.foregroundStyle(Theme.text).accessibilityIdentifier("reactors-done")
             }
@@ -527,7 +534,7 @@ struct ReactorsSheet: View {
                     ForEach(chips) { chip in
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 8) {
-                                Text(chip.emoji).font(.system(size: 30))
+                                Text(chip.emoji).font(.system(size: reactorEmoji))
                                 Text("\(chip.count)").font(Theme.title).foregroundStyle(Theme.textSecondary)
                                 Spacer(minLength: 8)
                                 // The people who used it, stacked (Apple's tapback card).
@@ -549,13 +556,13 @@ struct ReactorsSheet: View {
                                             Spacer()
                                             Text("Tap to remove").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
                                         }
-                                        .frame(minHeight: 36)
+                                        .frame(minHeight: 44)
                                         .contentShape(Rectangle())
                                     }
                                     .buttonStyle(.plain)
                                     .accessibilityIdentifier("reactor-remove-\(chip.emoji)")
                                 } else {
-                                    Text(name).font(Theme.body).foregroundStyle(Theme.text).frame(minHeight: 36, alignment: .leading)
+                                    Text(name).font(Theme.body).foregroundStyle(Theme.text).frame(minHeight: 44, alignment: .leading)
                                         .accessibilityIdentifier("reactor-\(name)")
                                 }
                             }
@@ -608,6 +615,7 @@ struct SelectionBar: View {
 /// Forward: pick up to five chats or groups (checkmarks, with the chosen ones as chips) and send. Each forward is a new message
 /// labelled "Forwarded"; it never names who first wrote it.
 struct ForwardSheet: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
     let messageIDs: [Message.ID]
     var finish: (_ sent: Bool) -> Void
     @Environment(ConversationStore.self) private var store
@@ -628,7 +636,7 @@ struct ForwardSheet: View {
             HStack {
                 Button("Cancel") { finish(false) }.foregroundStyle(Theme.text).accessibilityIdentifier("forward-cancel")
                 Spacer()
-                Text("Forward").font(Theme.title).foregroundStyle(Theme.text)
+                Text("Forward").font(Theme.title).foregroundStyle(Theme.text).accessibilityAddTraits(.isHeader)
                 Spacer()
                 Button("Send") { send() }
                     .font(Theme.title).foregroundStyle(chosen.isEmpty ? Theme.textSecondary : Theme.text)
@@ -643,10 +651,10 @@ struct ForwardSheet: View {
                             if let chat = store.conversation(id) {
                                 Button { toggle(id) } label: {
                                     HStack(spacing: 4) {
-                                        Text(chat.title).font(Theme.secondary).lineLimit(1)
+                                        Text(chat.title).font(Theme.secondary).lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
                                         Image(systemName: "xmark").font(.system(size: 10, weight: .bold))
                                     }
-                                    .foregroundStyle(Theme.text).padding(.horizontal, 10).frame(minHeight: 30)
+                                    .foregroundStyle(Theme.text).padding(.horizontal, 10).frame(minHeight: 44)
                                     .background(Theme.pressed, in: Capsule())
                                 }
                                 .buttonStyle(.plain)
@@ -665,7 +673,7 @@ struct ForwardSheet: View {
                         Button { toggle(chat.id) } label: {
                             HStack(spacing: 14) {
                                 ConversationAvatar(conversation: chat, size: 44)
-                                Text(chat.title).font(Theme.body).foregroundStyle(Theme.text).lineLimit(1)
+                                Text(chat.title).font(Theme.body).foregroundStyle(Theme.text).lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
                                 Spacer(minLength: 8)
                                 Image(systemName: on ? "checkmark.circle.fill" : "circle")
                                     .font(.system(size: 24)).foregroundStyle(on ? Theme.text : Theme.textSecondary.opacity(0.7))

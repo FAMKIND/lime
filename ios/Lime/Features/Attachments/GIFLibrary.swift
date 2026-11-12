@@ -157,7 +157,7 @@ struct MyGIFsSheet: View {
                         .accessibilityIdentifier("gif-search")
                 }
                 .padding(.horizontal, 14).frame(minHeight: 44).background(Theme.surface, in: Capsule()).padding(.horizontal, 16).padding(.top, 8)
-                if let notice { Text(notice).font(Theme.caption).foregroundStyle(Theme.textSecondary).padding(.top, 8).accessibilityIdentifier("gif-notice") }
+                if let notice { Text(notice).font(Theme.caption).foregroundStyle(Theme.textSecondary).padding(.top, 8).announcesWhenShown(notice).accessibilityIdentifier("gif-notice") }
                 ScrollView {
                     if !stickers.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {

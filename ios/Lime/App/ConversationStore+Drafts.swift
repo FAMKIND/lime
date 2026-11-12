@@ -103,6 +103,9 @@ extension ConversationStore {
     func coeditPublished(_ id: String, postID: String) { try? draftCore?.draftMarkPublished(draftId: id, postId: postID); Task { await flushDrafts() } }
 
     func coeditSeen(_ id: String) { try? draftCore?.markDraftSeen(draftId: id) }
+    /// An image block's description and the cover's, in the shared draft (LIME-130-6b-2): every author's phone gets them, and a published article carries them.
+    func coeditSetAlt(_ id: String, block: String, _ text: String) { try? draftCore?.draftSetBlockAlt(draftId: id, blockId: block, alt: text) }
+    func coeditSetCoverAlt(_ id: String, _ text: String) { try? draftCore?.draftSetCoverAlt(draftId: id, alt: text) }
     func coeditBlocks(_ id: String) -> [DraftBlock] { (try? draftCore?.draftBlocks(draftId: id)) ?? [] }
     /// The people (ids) who write the draft, me included, not those who left or were removed.
     func coeditAuthors(_ id: String) -> [String] { ((try? draftCore?.draftAuthors(draftId: id)) ?? []).filter { $0.status == "active" }.map(\.userId) }

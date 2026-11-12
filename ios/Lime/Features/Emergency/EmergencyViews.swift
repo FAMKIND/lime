@@ -74,7 +74,7 @@ struct EmergencySheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 HStack {
-                    Text(EmergencyCopy.label).font(Theme.font(.body, weight: .bold)).tracking(1.4).foregroundStyle(Theme.danger)
+                    Text(EmergencyCopy.label).font(Theme.font(.body, weight: .bold)).tracking(1.4).foregroundStyle(Theme.danger).accessibilityAddTraits(.isHeader)
                     Spacer()
                     Button("Close") { dismiss() }.font(Theme.body).frame(minWidth: 60, minHeight: 60)
                         .accessibilityIdentifier("emergency-close")
@@ -127,6 +127,10 @@ struct EmergencySheet: View {
                         .accessibilityLabel("\(students) students")
                     stepButton("plus", label: "More students", id: "emergency-students-plus") { students = min(9999, students + 1) }
                 }
+                // With VoiceOver the row is one adjustable element: swipe up or down to change the number (the buttons stay for touch).
+                .modifier(AdjustableRow(label: "Students with me", value: "\(students)") { direction in
+                    students = direction == .increment ? min(9999, students + 1) : max(0, students - 1)
+                })
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Where").font(Theme.secondary).foregroundStyle(Theme.textSecondary)

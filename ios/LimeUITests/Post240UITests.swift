@@ -44,7 +44,7 @@ final class Post240UITests: LimeUITestCase {
         let title = app.textFields["jam-article-title"].exists ? app.textFields["jam-article-title"] : app.textViews["jam-article-title"]
         XCTAssertTrue(title.waitForExistence(timeout: 8))
         XCTAssertFalse(app.buttons["jam-next"].isEnabled)
-        title.tap(); title.typeText("Wholes\n\n")
+        title.tap(); title.typeText("Wholes\n"); focusArticleBody(app)
         let body = app.textViews["composer-field"]
         body.tap(); body.typeText("And parts")
         app.buttons["jam-next"].tap()

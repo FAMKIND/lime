@@ -355,6 +355,12 @@ final class ConversationStore {
     var chats: [Conversation] { conversations.filter { !$0.isRequest } }
     var requests: [Conversation] { conversations.filter(\.isRequest) }
 
+    /// The number on a chat's Back (LIME-325): the Messages tab's count (unread chats, not messages; muted ones count as the tab counts them) without this chat.
+    nonisolated static func otherUnreadChats(in conversations: [Conversation], excluding id: Conversation.ID) -> Int {
+        conversations.filter { !$0.isRequest && $0.isUnread && $0.id != id }.count
+    }
+    func otherUnreadChats(excluding id: Conversation.ID) -> Int { Self.otherUnreadChats(in: conversations, excluding: id) }
+
     /// Where the database lives (tests use a temporary folder; nil is Application Support).
     private let storageLocation: StorageBootstrap.Location?
     /// The signed-in account whose space is open (LIME-268); nil is the old single store (the demo, tests and phones before accounts had spaces).

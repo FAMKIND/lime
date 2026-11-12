@@ -44,7 +44,7 @@ struct KeepsNewestAboveKeyboard: ViewModifier {
                     if atNewest { stickUntil = now.addingTimeInterval(1.0) }
                     guard now < stickUntil, let newestID else { return }
                     // With the keyboard's animation, and once more when it has settled.
-                    withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(newestID, anchor: .bottom) }
+                    withMotion(.easeOut(duration: 0.25)) { proxy.scrollTo(newestID, anchor: .bottom) }
                     Task {
                         try? await Task.sleep(for: .milliseconds(350))
                         proxy.scrollTo(newestID, anchor: .bottom)

@@ -198,6 +198,7 @@ struct AddToMessageSheet: View {
             if media.access == .limited {
                 Button("Manage") { manage() }
                     .font(Theme.secondary).foregroundStyle(Theme.textSecondary)
+                    .frame(minHeight: 44).contentShape(Rectangle())
                     .padding(.top, 10).accessibilityIdentifier("add-manage")
             }
             if !selected.isEmpty {
@@ -277,7 +278,7 @@ struct AddToMessageSheet: View {
                     .buttonStyle(.plain).accessibilityIdentifier("composer-take-photo")
                 }
                 ForEach(Array(media.items.enumerated()), id: \.element.id) { index, item in
-                    RecentTile(media: media, item: item, side: Self.tile, isSelected: selected.contains(item.id)) {
+                    RecentTile(media: media, item: item, side: Self.tile, isSelected: selected.contains(item.id), position: "\(index + 1) of \(media.items.count)") {
                         if let at = selected.firstIndex(of: item.id) { selected.remove(at: at) }
                         else if selected.count < room { selected.append(item.id) }
                     }
@@ -295,6 +296,8 @@ private struct RecentTile: View {
     let item: RecentItem
     let side: CGFloat
     let isSelected: Bool
+    /// Its place in the list ("3 of 40"), so the tiles read differently one from another (LIME-321).
+    var position = ""
     let toggle: () -> Void
     @State private var image: UIImage?
 
@@ -314,13 +317,14 @@ private struct RecentTile: View {
             }
             .overlay(alignment: .topTrailing) {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 22)).foregroundStyle(isSelected ? Theme.accent : Color.white.opacity(0.9))
+                    .font(.system(size: 22)).foregroundStyle(isSelected ? Theme.accent : Color.white)
+                    .background(Circle().fill(.black.opacity(0.35)))   // the ring shows on a white photo too (LIME-321)
                     .shadow(radius: 2).padding(6)
             }
             .overlay { if isSelected { RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Theme.accent, lineWidth: 3) } }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(item.isVideo ? "Video, \(Self.clock(item.duration))" : "Photo")
+        .accessibilityLabel((item.isVideo ? "Video, \(Self.clock(item.duration))" : "Photo") + (position.isEmpty ? "" : ", \(position)"))
         .accessibilityValue(isSelected ? "Selected" : "")
         .task(id: item.id) { image = await media.thumbnail(for: item) }
     }

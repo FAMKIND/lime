@@ -312,7 +312,7 @@ struct ProfileView: View {
             ProfileHeroBackground(image: shown.image, cacheKey: shown.key, isDefault: heroImage == nil, screenHeight: screen, videoURL: heroVideo, playVideo: videoMayPlay,
                                   onVideoReady: { heroVideoReady = $0 }, ambient: ambientSpec, awaitingAmbient: Hero.style == .ambient && ambientSpec == nil, exposedForTests: store.isDemo)
                 .padding(.top, -inset).padding(.bottom, -8).padding(.leading, -(16 + windowSideInsets.leading)).padding(.trailing, -(16 + windowSideInsets.trailing))
-                .animation(.easeInOut(duration: 0.25), value: shown.key)
+                .animation(Motion.animation(.easeInOut(duration: 0.25)), value: shown.key)
                 #if DEBUG
                 .overlay(alignment: .topLeading) { if let toneChosen { Color.clear.frame(width: 1, height: 1).accessibilityElement().accessibilityIdentifier("profile-hero-tone-\(toneChosen)") } }
                 #endif
@@ -472,6 +472,7 @@ struct ProfileView: View {
             avatar.padding(.top, 12)
             let nameLine = HStack(spacing: 6) {
                 Text(displayName).font(Theme.font(.title2, weight: .semibold)).foregroundStyle(primary)
+                    .accessibilityAddTraits(.isHeader)
                     .accessibilityIdentifier("profile-name")
                 if conversation?.verified == true {
                     Image(systemName: "checkmark.seal.fill").foregroundStyle(primary).font(Theme.font(.callout)).accessibilityLabel("Verified in person")
@@ -497,7 +498,7 @@ struct ProfileView: View {
                 Text(statusLine).font(Theme.secondary).foregroundStyle(secondary).accessibilityIdentifier("profile-status")
             }
         }
-        .accessibilityAction(named: heroVideo == nil ? "" : (backgroundPaused ? "Play background" : "Pause background")) { if heroVideo != nil { backgroundPaused.toggle() } }
+        .accessibilityActions { if heroVideo != nil { Button(backgroundPaused ? "Play background" : "Pause background") { backgroundPaused.toggle() } } }
     }
 
     /// The avatar with the status dot at its bottom right; on your own profile it is the button for the status picker.
@@ -707,6 +708,7 @@ struct ProfileView: View {
                     row("At", value: "@\(username)", id: "profile-handle") {
                         UIPasteboard.general.string = username
                         copied = true
+                        Announce.say("Copied")
                         Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
                     }
                 }
@@ -764,7 +766,7 @@ struct ProfileView: View {
         HStack {
             Text(title == "At" ? "Username" : title).font(Theme.body).foregroundStyle(Theme.text)
             Spacer(minLength: 12)
-            Text(value).font(Theme.body).foregroundStyle(Theme.textSecondary).lineLimit(1)
+            Text(value).font(Theme.body).foregroundStyle(Theme.textSecondary).lineLimit(3)
         }
         .padding(.horizontal, 18).frame(minHeight: 50)
         .contentShape(Rectangle())
@@ -818,6 +820,7 @@ struct ProfileView: View {
                 NavigationLink(value: SharedListRoute(conversationID: route.sharedConversation, sender: sharedSender, kind: key, title: title)) {
                     Text("See all").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
                 }
+                .accessibilityLabel("See all \(title)")
                 .accessibilityIdentifier("profile-see-all-\(key.rawValue)")
             }
         }

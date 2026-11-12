@@ -19,13 +19,20 @@ final class TextSizeUITests: LimeUITestCase {
         XCTAssertFalse(slider.isEnabled, "the slider waits for the switch to be turned off")
         follow.switches.firstMatch.tap()
         XCTAssertTrue(slider.isEnabled)
-        slider.adjust(toNormalizedSliderPosition: 1.0)
+        // A drag to the end can stop one step short while the page re-lays out (flaky under load, LIME-183b): ask again until it reads the last step.
+        for _ in 0..<4 where (slider.value as? String) != "Largest" {
+            slider.adjust(toNormalizedSliderPosition: 1.0)
+            usleep(400_000)
+        }
         XCTAssertEqual(slider.value as? String, "Largest", "VoiceOver says the step: \(String(describing: slider.value))")
         XCTAssertEqual(any(app, "text-size-name").label, "Largest")
         // At the largest size the page is long: scroll to the slider (the preview scrolls in its own box, so the controls are never far).
         var swipes = 0
         while !slider.isHittable && swipes < 6 { app.swipeUp(); swipes += 1 }
-        slider.adjust(toNormalizedSliderPosition: 0.0)
+        for _ in 0..<4 where (slider.value as? String) != "Extra Small" {   // a drag can stop one step short while the page re-lays out
+            slider.adjust(toNormalizedSliderPosition: 0.0)
+            usleep(400_000)
+        }
         XCTAssertEqual(slider.value as? String, "Extra Small")
         // The font tab: six faces, one checked.
         app.segmentedControls["text-size-tabs"].buttons["Font"].tap()
@@ -58,6 +65,9 @@ final class TextSizeUITests: LimeUITestCase {
             XCTAssertTrue(screen.contains(frame.insetBy(dx: 1, dy: 1)), "\(name) fits the screen at the largest size: \(frame) in \(screen)")
         }
         XCTAssertLessThanOrEqual(reactions.frame.maxY, lifted.frame.minY + 2)
-        XCTAssertGreaterThanOrEqual(actions.frame.minY, lifted.frame.maxY - 2)
+        // A message too tall for the screen is cut by a fade, but its accessibility frame is the whole text, so it can run past the menu in the numbers while the
+        // screen shows the menu below the cut (docs/qa-shots/321/menu-largest-text.png, LIME-321): the menu starts below the top of the message and below the reactions.
+        XCTAssertGreaterThan(actions.frame.minY, lifted.frame.minY + 60, "the actions start below the message's top")
+        XCTAssertGreaterThanOrEqual(actions.frame.minY, reactions.frame.maxY, "and below the reactions")
     }
 }

@@ -2085,6 +2085,7 @@ fn pic(seed: u8, size: usize) -> crate::OutgoingAttachment {
         thumb: vec![seed; 300],
         poster: Vec::new(),
         alt: String::new(),
+        transcript: String::new(),
     }
 }
 
@@ -2241,6 +2242,7 @@ fn a_videos_poster_travels_inside_the_message_the_budget_drops_the_last_ones_and
         thumb: vec![seed; 400],
         poster: vec![seed; poster],
         alt: String::new(),
+        transcript: String::new(),
     };
     let chat = format!("dm:{}", bob.user);
     // A poster over its bound is refused at the sender.
@@ -2310,6 +2312,7 @@ fn an_interrupted_download_resumes_with_only_the_missing_chunks_and_reports_prog
         thumb: vec![9; 400],
         poster: Vec::new(),
         alt: String::new(),
+        transcript: String::new(),
     };
     alice.store.send_attachments(format!("dm:{}", bob.user), "".into(), vec![video.clone()], None).unwrap();
     deliver(&alice, &transport);
@@ -2376,6 +2379,7 @@ fn an_upload_reports_progress_and_a_voice_note_carries_its_waveform_and_duration
         thumb: (0..64u8).map(|i| i * 2).collect(),   // the waveform: one byte per bar
         poster: Vec::new(),
         alt: String::new(),
+        transcript: String::new(),
     };
     let sent = alice.store.send_attachments(format!("dm:{}", bob.user), "".into(), vec![voice.clone()], None).unwrap();
     assert_eq!(sent.text, "");
@@ -5481,6 +5485,7 @@ fn a_post_with_a_photo_and_a_file_reaches_a_late_subscriber_who_downloads_both_w
     let file = b"Permission slip, version 3".to_vec();
     let attachment = |bytes: Vec<u8>, name: &str, mime: &str| crate::OutgoingAttachment {
         bytes, name: name.into(), mime: mime.into(), width: None, height: None, duration_ms: None, thumb: vec![], poster: vec![], alt: String::new(),
+        transcript: String::new(),
     };
     let post = alice
         .store
@@ -5630,7 +5635,7 @@ fn quick_posts_articles_and_recordings_keep_their_kind_and_the_rules_for_each_ho
     let publish_as = |kind: &str, title: &str, subtitle: &str, body: &str, files: Vec<crate::OutgoingAttachment>| {
         alice.store.publish_jam_post(jam.clone(), kind.into(), title.into(), subtitle.into(), body.into(), "free".into(), files, vec![])
     };
-    let clip = |mime: &str| crate::OutgoingAttachment { bytes: vec![7; 5000], name: "clip".into(), mime: mime.into(), width: None, height: None, duration_ms: Some(10_000), thumb: vec![], poster: vec![], alt: String::new() };
+    let clip = |mime: &str| crate::OutgoingAttachment { bytes: vec![7; 5000], name: "clip".into(), mime: mime.into(), width: None, height: None, duration_ms: Some(10_000), thumb: vec![], poster: vec![], alt: String::new(), transcript: String::new() };
     // The rules: an article needs a title; a quick post needs words or a file and has no title; a recording needs a video or voice clip.
     assert!(publish_as("article", "", "", "words", vec![]).is_err(), "an article needs a title");
     assert!(publish_as("quick", "", "", "", vec![]).is_err(), "a quick post needs something");
@@ -5678,7 +5683,7 @@ fn an_article_carries_its_photos_where_they_were_put_and_a_subtitle_has_a_limit(
     let (bob, _) = party(&server, "bob", 2);
     let jam = new_jam(&alice);
     join_jam(&alice, &bob, &jam, &transport);
-    let photo = |n: u8| crate::OutgoingAttachment { bytes: vec![n; 1_200_000], name: "Photo.jpg".into(), mime: "image/jpeg".into(), width: Some(2048), height: Some(1536), duration_ms: None, thumb: vec![9; 1800], poster: vec![], alt: String::new() };
+    let photo = |n: u8| crate::OutgoingAttachment { bytes: vec![n; 1_200_000], name: "Photo.jpg".into(), mime: "image/jpeg".into(), width: Some(2048), height: Some(1536), duration_ms: None, thumb: vec![9; 1800], poster: vec![], alt: String::new(), transcript: String::new() };
     let body = "Intro\n\n![First](attachment:0)\n\nMiddle\n\n![](attachment:1)\n\n![Last one](attachment:2)\n\nEnd";
     let id = alice.store.publish_jam_post(jam.clone(), "article".into(), "Fold, cut, compare".into(), "Photos in place".into(), body.into(), "free".into(), (1..=5).map(photo).collect(), vec![]).unwrap();
     catch_up(&alice, &[&bob], &transport);
@@ -5743,7 +5748,7 @@ fn an_accepted_co_host_of_a_video_podcast_shown_as_the_jam_reaches_the_writer_an
     let (carol, _) = party(&server, "carol", 3);
     let jam = new_jam(&alice);
     join_jam(&alice, &bob, &jam, &transport);
-    let video = crate::OutgoingAttachment { bytes: vec![7; 5_000], name: "Video.mp4".into(), mime: "video/mp4".into(), width: Some(720), height: Some(1280), duration_ms: Some(6_000), thumb: vec![7; 400], poster: vec![7; 2_000], alt: String::new() };
+    let video = crate::OutgoingAttachment { bytes: vec![7; 5_000], name: "Video.mp4".into(), mime: "video/mp4".into(), width: Some(720), height: Some(1280), duration_ms: Some(6_000), thumb: vec![7; 400], poster: vec![7; 2_000], alt: String::new(), transcript: String::new() };
     let post = alice
         .store
         .publish_jam_post_as(jam.clone(), "record".into(), "Sway".into(), String::new(), String::new(), "free".into(), vec![video], vec![carol.user.clone()], "jam".into())
@@ -7103,7 +7108,7 @@ fn a_picture_added_by_a_co_author_is_in_the_writers_published_post() {
     // Bob adds a picture and puts it in the text; it is uploaded once and its key goes to Alice.
     let picture = pic(7, 20_000);
     let number = bob.store.draft_add_file(id.clone(), picture.clone()).unwrap();
-    bob.store.draft_insert_block(id.clone(), 1, crate::drafts::DraftBlockInput { kind: "image".into(), level: 0, ordered: false, number: 0, attachment: number, caption: "Bob's picture".into(), url: String::new(), colour: String::new(), spans: vec![] }).unwrap();
+    bob.store.draft_insert_block(id.clone(), 1, crate::drafts::DraftBlockInput { kind: "image".into(), level: 0, ordered: false, number: 0, attachment: number, caption: "Bob's picture".into(), alt: String::new(), url: String::new(), colour: String::new(), spans: vec![] }).unwrap();
     allow_flush(&bob); deliver(&bob, &transport); sync(&alice, &transport);
     let files = alice.store.draft_files(id.clone()).unwrap();
     assert_eq!(files.len(), 1);
@@ -7204,6 +7209,7 @@ fn an_everyone_post_is_published_signed_and_a_stranger_verifies_it() {
     assert_eq!((open.title.as_str(), open.kind.as_str(), open.author_id.as_str(), open.version, open.pinned), ("Equal parts", "article", "alice", 1, false));
     assert!(open.markdown.contains("equal parts") && open.preview_of.is_none() && !open.has_rest);
     assert_eq!((open.files.len(), open.files[0].mime.as_str()), (1, "image/jpeg"));
+    assert_eq!((open.files[0].alt.as_str(), open.files[0].transcript.as_str()), ("", ""), "a copy with no description or transcript reads empty (as every open copy written before them)");
     assert_eq!(open.topics, vec!["Maths".to_owned(), "Grade 4".to_owned()]);
     // The encrypted post is still the subscribers' copy, and it says its audience.
     join_jam(&alice, &bob, &jam, &transport);
@@ -7934,7 +7940,7 @@ fn a_bands_groups_show_to_members_an_open_one_is_joined_by_request_an_invite_onl
 const SERIES_ID: &str = "0194c3f0-aaaa-7000-8000-000000000001";
 
 fn series_part(writer: &Party, jam: &str, title: &str, part: u32, thumb: Vec<u8>) -> String {
-    let picture = crate::OutgoingAttachment { bytes: vec![7; 64], name: "cover.jpg".into(), mime: "image/jpeg".into(), width: Some(8), height: Some(8), duration_ms: None, thumb, poster: Vec::new(), alt: String::new() };
+    let picture = crate::OutgoingAttachment { bytes: vec![7; 64], name: "cover.jpg".into(), mime: "image/jpeg".into(), width: Some(8), height: Some(8), duration_ms: None, thumb, poster: Vec::new(), alt: String::new(), transcript: String::new() };
     publish_with(writer, jam, title, "Words", vec![picture], options("subscribers", Some(series("Fractions", part, Some(2)))))
 }
 
@@ -8335,7 +8341,7 @@ fn ready_to_move() -> Move {
     sync(&alice, &transport);
     alice.store.create_jam("Fractions that stick".into(), "Short lessons".into(), vec![]).unwrap();
     let file: Vec<u8> = (0..600_000u32).map(|i| (i.wrapping_mul(2654435761) >> 13) as u8).collect();
-    alice.store.send_attachments("dm:bob".into(), "worksheet".into(), vec![crate::OutgoingAttachment { bytes: file, name: "w.pdf".into(), mime: "application/pdf".into(), width: None, height: None, duration_ms: None, thumb: vec![], poster: vec![], alt: String::new() }], None).unwrap();
+    alice.store.send_attachments("dm:bob".into(), "worksheet".into(), vec![crate::OutgoingAttachment { bytes: file, name: "w.pdf".into(), mime: "application/pdf".into(), width: None, height: None, duration_ms: None, thumb: vec![], poster: vec![], alt: String::new(), transcript: String::new() }], None).unwrap();
     let dir = tempfile::tempdir().unwrap();
     let dest = dir.path().join("accounts").join("alice").join("lime.db");
     let new = TransferNew::offer(alice.user.clone(), dest.to_string_lossy().into_owned()).unwrap();
@@ -8830,4 +8836,118 @@ fn a_photos_description_travels_inside_the_message_survives_a_forward_and_a_tran
     assert_eq!(bob.store.set_attachment_transcript(got.id.clone(), "no-such".into(), "x".into()), Err(crate::StoreError::NotFound));
     bob.store.set_attachment_transcript(got.id.clone(), id, String::new()).unwrap();
     assert_eq!(bob.store.list_messages(format!("dm:{}", alice.user)).unwrap().pop().unwrap().attachments[0].transcript, "", "an empty text clears it");
+}
+
+#[test]
+fn a_jam_posts_photo_description_and_recording_transcript_reach_the_reader_and_the_server_cannot_read_them() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let jam = new_jam(&alice);
+    join_jam(&alice, &bob, &jam, &transport);
+    // A short post with a described photo (padded and over-long: cleaned and cut like a chat photo's).
+    let photo = crate::OutgoingAttachment { alt: "  A red kite over the school field  ".into(), ..pic(5, 3000) };
+    let long = crate::OutgoingAttachment { alt: "é".repeat(400), ..pic(6, 3000) };
+    let plain = pic(7, 3000);
+    let quick = alice.store.publish_jam_post(jam.clone(), "quick".into(), String::new(), String::new(), "Sports day".into(), "free".into(), vec![photo, long, plain], vec![]).unwrap();
+    // A recording with the writer's transcript (a control character goes; a photo's transcript is ignored).
+    let audio = crate::OutgoingAttachment { name: "Recording.m4a".into(), mime: "audio/mp4".into(), duration_ms: Some(4000), width: None, height: None, transcript: "Welcome back.\nToday we count by fives.\u{7}".into(), ..pic(8, 600) };
+    let wrong = crate::OutgoingAttachment { transcript: "not for a photo".into(), ..pic(9, 500) };
+    let record = alice.store.publish_jam_post(jam.clone(), "record".into(), "Counting".into(), String::new(), "About it".into(), "free".into(), vec![audio, wrong], vec![]).unwrap();
+    for _ in 0..4 {
+        catch_up(&alice, &[&bob], &transport);
+    }
+    for p in [&alice, &bob] {
+        let photos = p.store.list_jam_attachments(quick.clone()).unwrap();
+        assert_eq!(photos[0].alt, "A red kite over the school field", "trimmed");
+        assert_eq!(photos[1].alt.chars().count(), 250, "cut at 250 characters");
+        assert_eq!(photos[2].alt, "", "none stays none");
+        let files = p.store.list_jam_attachments(record.clone()).unwrap();
+        assert_eq!(files[0].transcript, "Welcome back.\nToday we count by fives.", "the writer's words, no control characters");
+        assert_eq!(files[1].transcript, "", "a photo carries no transcript");
+    }
+    // The server holds ciphertext only: neither text is in anything it stores.
+    let state = server.state.lock().unwrap();
+    for (name, bytes) in &state.objects {
+        for secret in ["red kite", "Today we count by fives"] {
+            assert!(!bytes.windows(secret.len()).any(|w| w == secret.as_bytes()), "{name} must not contain {secret:?}");
+        }
+    }
+}
+
+#[test]
+fn a_long_transcript_fits_in_a_post_and_a_post_with_too_many_is_refused_not_cut() {
+    let server = FakeServer::new();
+    let (alice, _transport) = party(&server, "alice", 1);
+    let jam = new_jam(&alice);
+    let long = "é".repeat(100_000);
+    let clip = |seed: u8, text: &str| crate::OutgoingAttachment { name: "Recording.m4a".into(), mime: "audio/mp4".into(), duration_ms: Some(4000), width: None, height: None, transcript: text.into(), ..pic(seed, 600) };
+    // One transcript of the full 100,000 characters goes.
+    alice.store.publish_jam_post(jam.clone(), "record".into(), "Long".into(), String::new(), "About it".into(), "free".into(), vec![clip(1, &long)], vec![]).unwrap();
+    // Ten of them would make the post's sealed blob bigger than one chunk: refused whole, never half-sent.
+    let many: Vec<_> = (0..10).map(|n| clip(n as u8, &long)).collect();
+    assert!(alice.store.publish_jam_post(jam, "record".into(), "Too much".into(), String::new(), "About it".into(), "free".into(), many, vec![]).is_err());
+}
+
+#[test]
+fn an_everyone_posts_descriptions_and_transcripts_are_in_its_signed_text_and_a_transcript_too_big_for_the_open_copy_is_left_out() {
+    let server = open_server();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let jam = new_jam(&alice);
+    let photo = crate::OutgoingAttachment { alt: "A red kite over the school field".into(), ..pic(3, 900) };
+    let plain = pic(4, 900);
+    let audio = crate::OutgoingAttachment { name: "Recording.m4a".into(), mime: "audio/mp4".into(), duration_ms: Some(4000), width: None, height: None, transcript: "Welcome back. Today we count by fives.".into(), ..pic(5, 600) };
+    let post = alice.store.publish_jam_post_with(jam.clone(), "record".into(), "Counting".into(), String::new(), "About it".into(), "free".into(), vec![audio, photo, plain], vec![], "person".into(), options("everyone", None)).unwrap();
+    deliver(&alice, &transport);
+    let open = bob.store.fetch_open_post(transport.clone(), post.clone()).unwrap();
+    assert_eq!(open.files[0].transcript, "Welcome back. Today we count by fives.", "the transcript is in the open copy");
+    assert_eq!(open.files[0].alt, "");
+    assert_eq!(open.files[1].alt, "A red kite over the school field", "the description is in the open copy");
+    assert_eq!(open.files[2].alt, "", "none stays none");
+    // The copy for subscribers is the same one it always was.
+    // A transcript that would push the signed text past the server's limit is left out of the open copy, and the post still goes.
+    let big = crate::OutgoingAttachment { name: "Recording.m4a".into(), mime: "audio/mp4".into(), duration_ms: Some(4000), width: None, height: None, transcript: "é".repeat(100_000), ..pic(6, 600) };
+    let big_post = alice.store.publish_jam_post_with(jam, "record".into(), "Long".into(), String::new(), "About it".into(), "free".into(), vec![big], vec![], "person".into(), options("everyone", None)).unwrap();
+    deliver(&alice, &transport);
+    let long = bob.store.fetch_open_post(transport.clone(), big_post.clone()).unwrap();
+    assert_eq!(long.files[0].transcript, "", "left out of the open copy: it does not fit");
+}
+
+#[test]
+fn an_edit_can_describe_a_photo_and_add_a_transcript_to_files_the_post_already_has() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let jam = new_jam(&alice);
+    join_jam(&alice, &bob, &jam, &transport);
+    let audio = crate::OutgoingAttachment { name: "Recording.m4a".into(), mime: "audio/mp4".into(), duration_ms: Some(4000), width: None, height: None, ..pic(7, 600) };
+    let post = alice.store.publish_jam_post(jam.clone(), "record".into(), "Songs".into(), String::new(), "About it".into(), "free".into(), vec![audio, pic(8, 500)], vec![]).unwrap();
+    for _ in 0..4 {
+        catch_up(&alice, &[&bob], &transport);
+    }
+    let ids: Vec<String> = bob.store.list_jam_attachments(post.clone()).unwrap().into_iter().map(|a| a.attachment_id).collect();
+    let details = vec![
+        crate::client::jam::JamFileDetails { attachment_id: ids[0].clone(), alt: String::new(), transcript: "Hello class.\u{7}".into() },
+        crate::client::jam::JamFileDetails { attachment_id: ids[1].clone(), alt: "  A lime on a desk ".into(), transcript: "not for a photo".into() },
+        crate::client::jam::JamFileDetails { attachment_id: "not-in-this-post".into(), alt: "x".into(), transcript: "x".into() },
+    ];
+    alice.store.edit_jam_post_with_details(post.clone(), "Songs".into(), String::new(), "About it".into(), vec![], "person".into(), false, None, details).unwrap();
+    for _ in 0..5 {
+        catch_up(&alice, &[&bob], &transport);
+    }
+    for p in [&alice, &bob] {
+        let files = p.store.list_jam_attachments(post.clone()).unwrap();
+        assert_eq!(files.iter().map(|f| f.attachment_id.clone()).collect::<Vec<_>>(), ids, "the same files, not re-sent");
+        assert_eq!(files[0].transcript, "Hello class.", "the recording's transcript");
+        assert_eq!(files[1].alt, "A lime on a desk", "the picture's description, trimmed");
+        assert_eq!(files[1].transcript, "", "a photo takes no transcript");
+    }
+    // Clearing: empty text removes them.
+    let clear = vec![crate::client::jam::JamFileDetails { attachment_id: ids[1].clone(), alt: String::new(), transcript: String::new() }];
+    alice.store.edit_jam_post_with_details(post.clone(), "Songs".into(), String::new(), "About it".into(), vec![], "person".into(), false, None, clear).unwrap();
+    for _ in 0..5 {
+        catch_up(&alice, &[&bob], &transport);
+    }
+    assert_eq!(bob.store.list_jam_attachments(post).unwrap()[1].alt, "");
 }

@@ -92,7 +92,7 @@ enum Transcriber {
     }
 
     @available(iOS 26.0, *)
-    private static func installedAnalyzerLocale(for locale: Locale) async -> Locale? {
+    static func installedAnalyzerLocale(for locale: Locale) async -> Locale? {
         guard SpeechTranscriber.isAvailable, let supported = await SpeechTranscriber.supportedLocale(equivalentTo: locale) else { return nil }
         let installed = await SpeechTranscriber.installedLocales
         return installed.contains(where: { $0.identifier(.bcp47) == supported.identifier(.bcp47) }) ? supported : nil

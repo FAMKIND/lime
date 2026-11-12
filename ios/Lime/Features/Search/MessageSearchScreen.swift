@@ -166,6 +166,7 @@ struct MessageSearchScreen: View {
             Text("No results for “\(query.trimmingCharacters(in: .whitespaces))”")
                 .font(Theme.body).foregroundStyle(Theme.textSecondary)
                 .frame(maxWidth: .infinity).padding(.top, 30)
+                .announcesWhenShown("No results for \u{201C}\(query.trimmingCharacters(in: .whitespaces))\u{201D}")
                 .accessibilityIdentifier("search-none")
         } else {
             callsSection
@@ -193,12 +194,12 @@ struct MessageSearchScreen: View {
                         NavigationLink(value: ThreadTarget(conversationID: hit.conversationID, rootID: root, focusMessageID: hit.messageID, words: SearchText.words(query))) { messageRow(hit) }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("search-message-\(hit.messageID)")
-                            .accessibilityLabel("\(hit.conversationTitle), in Replies: \(SearchText.plain(hit.marked))")
+                            .accessibilityLabel("\(hit.conversationTitle), in Replies: \(SearchText.plain(hit.marked)), \(MessageFormat.listTime(hit.date))")
                     } else {
                         NavigationLink(value: ChatTarget(conversationID: hit.conversationID, messageID: hit.messageID, words: SearchText.words(query))) { messageRow(hit) }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("search-message-\(hit.messageID)")
-                            .accessibilityLabel("\(hit.conversationTitle): \(SearchText.plain(hit.marked))")
+                            .accessibilityLabel("\(hit.conversationTitle): \(SearchText.plain(hit.marked)), \(MessageFormat.listTime(hit.date))")
                     }
                 }
             }

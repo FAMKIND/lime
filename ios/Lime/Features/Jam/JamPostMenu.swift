@@ -47,7 +47,7 @@ struct JamPostMenu: View {
                 }
             }
             Section {
-                Button { JamSaved.toggle(post.postId); savedList = JamSaved.contains(post.postId) ? "1" : "0" } label: { Label(saved ? "Saved \u{2713}" : "Save", systemImage: saved ? "bookmark.fill" : "bookmark") }.accessibilityIdentifier("card-save")
+                Button { JamSaved.toggle(post.postId); savedList = JamSaved.contains(post.postId) ? "1" : "0" } label: { Label(saved ? "Saved \u{2713}" : "Save", systemImage: saved ? "bookmark.fill" : "bookmark") }.accessibilityLabel(saved ? "Saved" : "Save").accessibilityIdentifier("card-save")
             }
             if !mine {
                 Section {

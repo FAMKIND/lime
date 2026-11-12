@@ -292,7 +292,7 @@ final class VoicePlayer: NSObject, AVAudioPlayerDelegate {
         isPlaying = false
         progress = 0
         currentID = nil
-        if let following { Task { await play(following) } }
+        if let following { Announce.say("Playing the next voice message"); Task { await play(following) } }
     }
 }
 
@@ -303,6 +303,7 @@ struct VoiceBubble: View {
     @Environment(\.ownBubbleStyle) private var ownStyle   // a chat's own colour for my bubbles (LIME-277d)
     private var ownFill: Color { ownStyle?.fill ?? Theme.ownBubble }
     private var ownInk: Color { ownStyle?.ink ?? Theme.ownBubbleInk }
+    private var ownSecondary: Color { ownStyle?.secondary ?? Theme.ownBubbleSecondary }
     let item: AttachmentItem
     let isOwn: Bool
     var uploading = false
@@ -339,7 +340,7 @@ struct VoiceBubble: View {
                 .frame(width: 112, height: 28)
                 .accessibilityHidden(true)
             VStack(alignment: .trailing, spacing: 2) {
-                Text(timeText).font(Theme.caption.monospacedDigit()).foregroundStyle(ink.opacity(0.8))
+                Text(timeText).font(Theme.caption.monospacedDigit()).foregroundStyle(isOwn ? ownSecondary : ink.opacity(0.8))
                     .accessibilityIdentifier("voice-time-\(item.id)")
                 if isCurrent {
                     Button { player.cycleRate() } label: {

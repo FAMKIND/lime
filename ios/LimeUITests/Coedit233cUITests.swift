@@ -25,7 +25,7 @@ final class Coedit233cUITests: LimeUITestCase {
     func testTheDraftFollowsWhatIsOnScreenSurvivesClosingAndKeepsTheCaretWhenAnotherAuthorTypes() {
         let app = launch()
         let title = openArticle(app)
-        title.tap(); title.typeText("Fractions plan\n\n")
+        title.tap(); title.typeText("Fractions plan\n"); focusArticleBody(app)
         let body = app.textViews["composer-field"]
         expectation(for: NSPredicate(format: "hasKeyboardFocus == true"), evaluatedWith: body)
         waitForExpectations(timeout: 5)

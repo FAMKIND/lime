@@ -38,7 +38,7 @@ extension ConversationStore {
             if item.mime == "text/vtt" || item.name == JamCover.name { Self.demoJamBlobs[fileID] = item.bytes }
             let kind = item.mime.hasPrefix("image/") ? "image" : item.mime.hasPrefix("video/") ? "video" : item.mime.hasPrefix("audio/") ? "audio" : "file"
             return JamAttachmentInfo(attachmentId: fileID, name: item.name, mime: item.mime, kind: kind, size: UInt64(item.bytes.count), width: item.width, height: item.height,
-                                     durationMs: item.durationMs, thumb: item.thumb, poster: item.poster, available: true)
+                                     durationMs: item.durationMs, thumb: item.thumb, poster: item.poster, available: true, alt: item.alt, transcript: item.transcript)
         }
         demoJamAttachments[id] = info
         let post = JamPostInfo(postId: id, jamId: jamID, author: meProvider().id, tier: audience == "members" ? "members" : "free", kind: kind, title: title, subtitle: subtitle, markdown: markdown, plain: messagePlainText(text: markdown),
@@ -165,10 +165,15 @@ extension ConversationStore {
         }
     }
 
-    func demoEdit(_ postID: String, title: String, subtitle: String, markdown: String, displayAs: String = "person", added: [OutgoingAttachment] = [], removeCover: Bool = false) {
+    func demoEdit(_ postID: String, title: String, subtitle: String, markdown: String, displayAs: String = "person", added: [OutgoingAttachment] = [], removeCover: Bool = false, details: [JamFileDetails] = []) {
+        for detail in details {
+            guard let at = demoJamAttachments[postID]?.firstIndex(where: { $0.attachmentId == detail.attachmentId }) else { continue }
+            demoJamAttachments[postID]?[at].alt = detail.alt
+            if demoJamAttachments[postID]?[at].kind != "image" { demoJamAttachments[postID]?[at].transcript = detail.transcript }
+        }
         if removeCover || added.contains(where: { $0.name == "cover.jpg" }) { demoJamAttachments[postID]?.removeAll { $0.name == "cover.jpg" } }
         for file in added where file.name == "cover.jpg" {
-            demoJamAttachments[postID, default: []].append(JamAttachmentInfo(attachmentId: UUID().uuidString.lowercased(), name: "cover.jpg", mime: "image/jpeg", kind: "image", size: UInt64(file.bytes.count), width: file.width, height: file.height, durationMs: nil, thumb: file.thumb, poster: Data(), available: true))
+            demoJamAttachments[postID, default: []].append(JamAttachmentInfo(attachmentId: UUID().uuidString.lowercased(), name: "cover.jpg", mime: "image/jpeg", kind: "image", size: UInt64(file.bytes.count), width: file.width, height: file.height, durationMs: nil, thumb: file.thumb, poster: Data(), available: true, alt: file.alt))
         }
         for (jam, posts) in jamPosts {
             guard let i = posts.firstIndex(where: { $0.postId == postID }) else { continue }

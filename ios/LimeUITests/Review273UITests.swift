@@ -15,8 +15,12 @@ final class Review273UITests: LimeUITestCase {
         app.buttons["jam-write-article"].tap()
         let title = app.textFields["jam-article-title"].exists ? app.textFields["jam-article-title"] : app.textViews["jam-article-title"]
         XCTAssertTrue(title.waitForExistence(timeout: 8))
-        title.tap(); title.typeText("Seed swap\n\n")
-        app.textViews["composer-field"].typeText("Bring packets of seeds.")
+        title.tap(); title.typeText("Seed swap\n")
+        // Return in the subtitle does not always move on to the body: tap it.
+        let body = app.textViews["composer-field"]
+        XCTAssertTrue(body.waitForExistence(timeout: 5))
+        body.tap()
+        body.typeText("Bring packets of seeds.")
         app.buttons["jam-post-as"].tap()
         let band = app.buttons["jam-post-as-review-demo-band-writer"]
         XCTAssertTrue(band.waitForExistence(timeout: 5), "a band I write for is offered, marked for review")

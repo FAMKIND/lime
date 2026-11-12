@@ -32,6 +32,7 @@ struct WelcomeView: View {
                     .font(Theme.font(.title, weight: .bold))
                     .multilineTextAlignment(.center)
                     .foregroundStyle(Theme.text)
+                    .accessibilityAddTraits(.isHeader)
                     .accessibilityIdentifier("welcome-headline")
                 Text("A secure messenger made for teachers.")
                     .font(Theme.body)
@@ -79,7 +80,7 @@ struct OnboardingFlow: View {
                 ProfileScreen(model: model)
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: model.step)
+        .animation(Motion.animation(.easeInOut(duration: 0.2)), value: model.step)
         .sheet(isPresented: Binding(get: { model.confirmation != nil }, set: { if !$0 { model.editIdentifier() } })) {
             ConfirmationSheet(model: model)
         }
@@ -232,6 +233,8 @@ struct CodeScreen: View {
                     .font(Theme.font(.subheadline, weight: .semibold))
                     .foregroundStyle(seconds == 0 ? Theme.text : Theme.textSecondary)
                     .disabled(seconds > 0 || model.isBusy)
+                    // A steady name, with the wait as its value, instead of a label that changes every second (LIME-322).
+                    .accessibilityLabel("Resend code").accessibilityValue(seconds == 0 ? "" : "available in \(seconds) seconds")
                     .accessibilityIdentifier("resend-code")
                 Spacer()
                 Button("Edit") { model.back() }
@@ -385,6 +388,7 @@ struct TermsScreen: View {
                         .underline()
                         .foregroundStyle(Theme.text)
                         .frame(minHeight: 44)
+                        .accessibilityAddTraits(.isLink)
                         .accessibilityIdentifier(id)
                 }
             }

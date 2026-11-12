@@ -69,6 +69,13 @@ struct ComposerPanelSearch: View {
     @State private var gifs: [MyGif] = []
     @FocusState private var focused: Bool
 
+    /// A GIF with no words of its own reads its place in the list, not just "GIF" (LIME-321).
+    static func gifLabel(_ gif: MyGif, in gifs: [MyGif]) -> String {
+        if let words = [gif.words, gif.frameText, gif.messageText].first(where: { !$0.isEmpty }) { return "GIF, \(words)" }
+        let at = gifs.firstIndex(where: { $0.id == gif.id }).map { $0 + 1 } ?? 1
+        return "GIF \(at) of \(gifs.count)"
+    }
+
     private var stickers: [LimeSticker] { tab == .stickers ? StickerPack.matching(query.trimmingCharacters(in: .whitespacesAndNewlines)) : [] }
 
     var body: some View {
@@ -96,7 +103,7 @@ struct ComposerPanelSearch: View {
                             GIFThumb(id: gif.id).frame(width: 84, height: 84).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel([gif.words, gif.frameText, gif.messageText].first { !$0.isEmpty }.map { "GIF, \($0)" } ?? "GIF").accessibilityHint("Sends it")
+                        .accessibilityLabel(Self.gifLabel(gif, in: gifs)).accessibilityHint("Sends it")
                         .accessibilityIdentifier("panel-found-gif-\(gif.id)")
                     }
                 }
@@ -105,7 +112,8 @@ struct ComposerPanelSearch: View {
             .frame(height: 88)
             .overlay {
                 if stickers.isEmpty && gifs.isEmpty {
-                    Text(query.isEmpty ? "Type to search." : "Nothing matches \u{2018}\(query)\u{2019}.").font(Theme.secondary).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("panel-search-empty")
+                    Text(query.isEmpty ? "Type to search." : "Nothing matches \u{2018}\(query)\u{2019}.").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
+                        .announcesWhenShown(query.isEmpty ? "Type to search." : "Nothing matches \u{2018}\(query)\u{2019}.").accessibilityIdentifier("panel-search-empty")
                 }
             }
         }
@@ -154,7 +162,7 @@ struct ComposerPanelContent: View {
             }
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 80), spacing: 6), count: 3), spacing: 6) {
                 ForEach(gifs, id: \.id) { gif in
-                    let label = [gif.words, gif.frameText, gif.messageText].first { !$0.isEmpty }.map { "GIF, \($0)" } ?? "GIF"
+                    let label = ComposerPanelSearch.gifLabel(gif, in: gifs)
                     Button { Task { await send(gif) } } label: {
                         GIFThumb(id: gif.id).aspectRatio(1, contentMode: .fit).frame(maxWidth: .infinity).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)).contentShape(Rectangle())
                     }

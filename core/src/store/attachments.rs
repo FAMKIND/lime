@@ -42,6 +42,17 @@ pub(crate) struct Descriptor {
     pub poster: Vec<u8>,
     /// A photo's description, written by the sender for people who cannot see it (LIME-130-3b), at most [`MAX_ALT_CHARS`] characters, or empty.
     pub alt: String,
+    /// What the writer says an audio or video attachment says, for people who cannot hear it (LIME-130-6b): at most [`MAX_TRANSCRIPT_CHARS`], or empty.
+    /// Inside the encrypted message with the rest of the descriptor.
+    pub transcript: String,
+}
+
+/// A writer's transcript is at most this many characters (a longer one is cut when read or sent).
+pub(crate) const MAX_TRANSCRIPT_CHARS: usize = 100_000;
+
+/// A transcript as it is kept: control characters other than newline and tab dropped, trimmed, cut to the limit.
+pub(crate) fn clean_transcript(text: &str) -> String {
+    text.chars().filter(|c| !c.is_control() || *c == '\n' || *c == '\t').take(MAX_TRANSCRIPT_CHARS + 1000).collect::<String>().trim().chars().take(MAX_TRANSCRIPT_CHARS).collect()
 }
 
 /// A photo's description is at most this many characters (a longer one is cut when read).
@@ -64,6 +75,7 @@ impl Descriptor {
         if !self.thumb.is_empty() { value["thumb"] = json!(vodozemac::base64_encode(&self.thumb)); }
         if !self.poster.is_empty() { value["poster"] = json!(vodozemac::base64_encode(&self.poster)); }
         if !self.alt.is_empty() { value["alt"] = json!(self.alt); }
+        if !self.transcript.is_empty() { value["transcript"] = json!(self.transcript); }
         value
     }
 
@@ -83,7 +95,7 @@ impl Descriptor {
         };
         // A poster that does not decode or is too big is left out: the message is still good, the cover just stays the blur.
         let poster = text("poster").and_then(|t| vodozemac::base64_decode(t).ok()).filter(|b| b.len() <= MAX_POSTER).unwrap_or_default();
-        Some(Descriptor { id, key, digest, size, mime, name, width: number("w"), height: number("h"), duration_ms: number("duration_ms"), thumb, poster, alt: text("alt").map(clean_alt).unwrap_or_default() })
+        Some(Descriptor { id, key, digest, size, mime, name, width: number("w"), height: number("h"), duration_ms: number("duration_ms"), thumb, poster, alt: text("alt").map(clean_alt).unwrap_or_default(), transcript: text("transcript").map(clean_transcript).unwrap_or_default() })
     }
 }
 
@@ -216,6 +228,7 @@ fn from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<(Descriptor, bool)> {
             thumb: r.get::<_, Option<Vec<u8>>>(9)?.unwrap_or_default(),
             poster: r.get::<_, Option<Vec<u8>>>(11)?.unwrap_or_default(),
             alt: r.get::<_, Option<String>>(12)?.unwrap_or_default(),
+            transcript: String::new(),
         },
         r.get::<_, bool>(10)?,
     ))
@@ -394,7 +407,7 @@ mod tests {
     fn a_descriptor_survives_json_and_a_malformed_one_is_refused() {
         let d = Descriptor {
             id: id(), key: new_key(), digest: digest_hex(b"x"), size: 1, mime: "image/jpeg".into(), name: "a.jpg".into(),
-            width: Some(10), height: Some(20), duration_ms: None, thumb: vec![1, 2, 3], poster: vec![4, 5, 6], alt: "A dog".into(),
+            width: Some(10), height: Some(20), duration_ms: None, thumb: vec![1, 2, 3], poster: vec![4, 5, 6], alt: "A dog".into(), transcript: "Hello class.".into(),
         };
         assert_eq!(Descriptor::parse(&d.to_json()), Some(d.clone()));
         let mut bad = d.to_json();
@@ -429,6 +442,7 @@ mod tests {
         let mut d = Descriptor {
             id: "0b3e7d0e-5a43-4a53-8d7d-62d1b2f2a6c1".into(), key: vec![9; 32], digest: "a".repeat(64), size: 10, mime: "image/jpeg".into(), name: "a.jpg".into(),
             width: None, height: None, duration_ms: None, thumb: vec![], poster: vec![], alt: String::new(),
+        transcript: String::new(),
         };
         // Without one the field is not written, so an older client sees exactly what it always saw.
         assert!(d.to_json().get("alt").is_none());
@@ -445,5 +459,30 @@ mod tests {
         value["alt"] = json!(format!("a\u{7}{}", "b".repeat(400)));
         assert_eq!(Descriptor::parse(&value).map(|p| p.alt.chars().count()), Some(MAX_ALT_CHARS));
         assert!(!Descriptor::parse(&value).unwrap().alt.contains('\u{7}'));
+    }
+
+    #[test]
+    fn a_writers_transcript_round_trips_is_capped_cleaned_and_an_old_payload_decodes_empty() {
+        let mut d = Descriptor {
+            id: "0b3e7d0e-5a43-4a53-8d7d-62d1b2f2a6c1".into(), key: vec![9; 32], digest: "a".repeat(64), size: 10, mime: "audio/mp4".into(), name: "a.m4a".into(),
+            width: None, height: None, duration_ms: Some(60_000), thumb: vec![], poster: vec![], alt: String::new(), transcript: String::new(),
+        };
+        // Not written when empty: an older client sees what it always saw, and an old payload decodes empty.
+        assert!(d.to_json().get("transcript").is_none());
+        assert_eq!(Descriptor::parse(&d.to_json()).map(|p| p.transcript), Some(String::new()));
+        d.transcript = "Welcome.\nToday: fractions.\tOk".into();
+        assert_eq!(Descriptor::parse(&d.to_json()).map(|p| p.transcript), Some("Welcome.\nToday: fractions.\tOk".into()));
+        // Control characters other than newline and tab go; the text is trimmed.
+        let mut value = d.to_json();
+        value["transcript"] = json!("  a\u{0}b\u{7}c\nd  ");
+        assert_eq!(Descriptor::parse(&value).map(|p| p.transcript), Some("abc\nd".into()));
+        // A hundred thousand characters survive; more is cut at the limit.
+        value["transcript"] = json!("é".repeat(MAX_TRANSCRIPT_CHARS));
+        assert_eq!(Descriptor::parse(&value).unwrap().transcript.chars().count(), MAX_TRANSCRIPT_CHARS);
+        value["transcript"] = json!("é".repeat(MAX_TRANSCRIPT_CHARS + 5000));
+        assert_eq!(Descriptor::parse(&value).unwrap().transcript.chars().count(), MAX_TRANSCRIPT_CHARS);
+        // A wrong type is no transcript, not a refusal.
+        value["transcript"] = json!(5);
+        assert_eq!(Descriptor::parse(&value).map(|p| p.transcript), Some(String::new()));
     }
 }

@@ -720,3 +720,172 @@ Do each step with VoiceOver on and your eyes off the screen if you can. **Today 
 - **Dark mode** was audited for the same screens (third pass); **Increase Contrast, Reduce Transparency and Reduce Motion** were not toggled in the simulator passes.
 - **The audit tool's own limits:** it checks element descriptions, hit areas (< 44 pt), clipping, Dynamic Type support and the contrast of text it can see; it cannot judge reading order, announcements, gesture-only actions or meaning, which is why the code review exists.
 
+
+## LIME-321 status (130-m1: the minors for common, chat, attachments and calls)
+
+Added by LIME-321 (2026-11-11). Nothing above is changed; line numbers are this file's own. **Fixed already** = by an earlier 130 brief; **Fixed in 321** = changed now; **Ask / deferred** = needs a product decision, a device check, or is acceptable as it is. No row is stale (the code moved but every finding still pointed at something real).
+
+| line | status | note |
+|---|---|---|
+| 203 | ask / deferred | disabled text is exempt from 1.4.3; labels stay readable (deferred) |
+| 204 | fixed in 321 |  |
+| 205 | fixed in 321 |  |
+| 209 | fixed in 321 |  |
+| 210 | already fixed | 130-3a (the ring and ', including you') |
+| 211 | already fixed | 130-2/130-4 (`Theme.danger`, the word Missed) |
+| 213 | ask / deferred | nothing is carried by colour alone in the call controls, the Missed word or the badges; no branch added (deferred until a colour-only state turns up) |
+| 214 | already fixed | 130-2/130-7 (the theme resolves Increase Contrast) |
+| 225 | already fixed | 130-2 (Glass.swift) |
+| 227 | ask / deferred | about 290 fixed glyph sizes, mostly in fixed circles (deferred; the text cases are separate findings) |
+| 228 | fixed in 321 |  |
+| 229 | fixed in 321 |  |
+| 235 | fixed in 321 |  |
+| 236 | fixed in 321 |  |
+| 237 | fixed in 321 |  |
+| 238 | fixed in 321 |  |
+| 239 | fixed in 321 |  |
+| 240 | fixed in 321 |  |
+| 243 | fixed in 321 |  |
+| 253 | fixed in 321 |  |
+| 254 | fixed in 321 |  |
+| 268 | fixed in 321 |  |
+| 273 | already fixed | 130-3a (a named Play GIF action) |
+| 277 | fixed in 321 |  |
+| 280 | fixed in 321 |  |
+| 281 | fixed in 321 |  |
+| 282 | fixed in 321 |  |
+| 292 | fixed in 321 |  |
+| 293 | fixed in 321 |  |
+| 294 | fixed in 321 |  |
+| 295 | fixed in 321 |  |
+| 296 | fixed in 321 |  |
+| 303 | fixed in 321 |  |
+| 311 | fixed in 321 |  |
+| 312 | fixed in 321 |  |
+| 314 | fixed in 321 |  |
+| 315 | fixed in 321 |  |
+| 316 | fixed in 321 | labels, announcement and the Send-to flows fixed; the picker's fixed row height and the .regularMaterial fallback are deferred |
+| 324 | fixed in 321 |  |
+| 325 | fixed in 321 |  |
+| 327 | fixed in 321 | Saved to Photos announced, React expanded/collapsed, 44 pt targets; the zoom photo's label was already alt-aware |
+| 329 | ask / deferred | captions for chat videos are a product decision; the close button over AVKit's controls is a layout question |
+| 338 | fixed in 321 |  |
+| 340 | fixed in 321 |  |
+| 362 | ask / deferred | the sites are jam files: 130-m3/m4 (LIME-323/324) |
+| 363 | ask / deferred | the sites are jam files: 130-m3/m4 (LIME-323/324) |
+| 366 | ask / deferred | the sites are jam files: 130-m3/m4 (LIME-323/324) |
+| 367 | ask / deferred | the sites are jam files: 130-m3/m4 (LIME-323/324) |
+| 426 | fixed in 321 | the full-screen photo now reads its description; a zoom control is a behaviour change (deferred) |
+| 495 | fixed in 321 |  |
+| 500 | fixed in 321 |  |
+| 535 | ask / deferred | Bold Text needs a device check; nothing reads legibilityWeight |
+| 536 | already fixed | 130-2 |
+| 537 | fixed in 321 | the 40 pt circles are 44 now; fixed glyph sizes deferred |
+| 554 | already fixed | 130-4a |
+| 555 | already fixed | 130-4a |
+| 556 | already fixed | 130-4c |
+| 557 | ask / deferred | the audit itself says acceptable for call controls |
+| 558 | ask / deferred | visible Accept/Decline captions would be a layout change |
+| 559 | already fixed | 130-4a |
+| 566 | already fixed | 130-4b |
+| 567 | already fixed | 130-4b |
+| 568 | already fixed | 130-4b |
+| 569 | fixed in 321 | grabber hidden, hints added; the .regularMaterial fallback is deferred (the system usually handles it) |
+| 570 | already fixed | 130-4b |
+| 571 | fixed in 321 |  |
+| 581 | already fixed | 130-4b |
+| 582 | fixed in 321 |  |
+| 583 | fixed in 321 |  |
+| 584 | ask / deferred | a 28 pt frame glyph (acceptable) |
+| 590 | already fixed | 130-5a/earlier (one adjustable rail) |
+| 591 | fixed in 321 |  |
+| 674 | ask / deferred | needs a device test with VoiceOver, Switch Control and Voice Control |
+| 675 | ask / deferred | renaming the tabs is a product decision; the 12 pt badge font is deferred |
+| 676 | fixed in 321 |  |
+| 678 | fixed in 321 |  |
+
+## LIME-322 status (130-m2: the minors for profile, settings, themes, onboarding, emergency, groups)
+
+Added by LIME-322 (2026-11-11). Same meaning as the table above: **already fixed** (an earlier brief), **fixed in 322**, **ask / deferred**. No row is stale.
+
+| line | status | note |
+|---|---|---|
+| 193 | already fixed | 130-7 (the guard sweep covers link on surface) |
+| 195 | already fixed | 130-7 (secondary checked on the pill fills) |
+| 197 | already fixed | 130-7 (text pairs at 4.5:1; the hairline is 3:1 only with Increase Contrast, left: nothing relies on it alone) |
+| 212 | already fixed | 130-2 (`Theme.danger` is guarded; the label is text) |
+| 215 | ask / deferred | hairline and bubble-edge colours would change the look: a design decision (nothing relies on the hairline alone) |
+| 241 | already fixed | 130-2 (away/DND colours re-chosen; shape carries it) |
+| 257 | fixed in 322 | wallpaper chips on the three quiet lines |
+| 276 | fixed in 322 | the voice message's time uses the guarded caption colour |
+| 313 | ask / deferred | the composer's font does not follow a chat's own text size; needs a signature change and a device test |
+| 339 | fixed in 322 | chips 44 pt; the count is spoken as people are picked |
+| 343 | ask / deferred | white name over a photo: contrast per photo needs a device test; a scrim on the name is a visual change |
+| 345 | fixed in 322 | the spinner is "Working" and a problem is announced |
+| 346 | fixed in 322 | names wrap at accessibility sizes (a confirmation for Reset is ask) |
+| 600 | already fixed | 130-2 |
+| 601 | fixed in 322 | the sheet title is a heading; with VoiceOver the students row is one adjustable element (the buttons stay for touch) |
+| 610 | fixed in 322 | chevrons and icons hidden; external links say "Opens in your browser" |
+| 611 | fixed in 322 | the picker is named "Text size or font" |
+| 619 | fixed in 322 | Rename and Delete are actions on the custom sounds (the footnote wording is ask) |
+| 620 | fixed in 322 | title is a heading; Cancel is 44 pt |
+| 621 | fixed in 322 | Email, Linked devices and Storage rows are one stop for VoiceOver |
+| 622 | fixed in 322 | with VoiceOver the fingerprint is read character by character (the mono font not scaling is ask) |
+| 623 | already fixed | 130-5a (`dangerFill` with white text; the error is announced and a hint) |
+| 624 | already fixed | 130-5a (announced; the visibility heading is a Section header) |
+| 625 | fixed in 322 | the emoji field overlay is hidden; the emoji button names the current emoji |
+| 636 | fixed in 322 | the blank hero action is gone (a visible pause button is ask) |
+| 637 | fixed in 322 | the name is a heading (contrast over real photos needs a device check) |
+| 638 | fixed in 322 | "Copied" announced; "See all" names its list; values wrap; the hero fade honours Reduce Motion |
+| 639 | ask / deferred | the tab label's hard-coded ", tab, 1 of N" is a wording decision (and a localisation one) |
+| 650 | fixed in 322 | Resend code keeps one name, the wait is its value (box clipping at accessibility sizes needs a device check) |
+| 651 | fixed in 322 | Terms, Privacy and Guidelines are links |
+| 652 | fixed in 322 | the welcome headline is a heading (the markdown links need a device check) |
+| 653 | fixed in 322 | the top bar grows with the text; Next says Working; the step animation honours Reduce Motion |
+| 654 | fixed in 322 | the icon is hidden; the title is a heading |
+| 665 | fixed in 322 | the code scales with the text; copy, looking, waiting and done are announced (wrapping the code is ask) |
+| 666 | fixed in 322 | card titles are headings |
+| 679 | fixed in 322 | the self-test result is announced |
+
+
+## LIME-323 status
+
+First 31 jam minors plus rows 362, 363, 366, 367 (jam files). Line numbers are the audit's.
+
+| Row | Status | Note |
+|---|---|---|
+| 207 | open | prompt and unplayed-waveform contrast: carried to LIME-324 |
+| 369 | already fixed | the tap cards carry the button trait or inner Buttons; the link card too |
+| 379 | fixed | the dot is hidden under VoiceOver and Switch Control; the card label says "New comments" (mine only) |
+| 380 | fixed | name, "by" and byline wrap at accessibility sizes |
+| 381 | fixed | request cards announce who added you; Accept/Decline carry the post title |
+| 382 | fixed | post count announced after load; the empty result is announced when shown |
+| 383 | fixed | same: the filtered count and the empty state are announced |
+| 384 | fixed | the highlight fade honours Reduce Motion |
+| 385 | fixed | "Showing the whole post" is announced; the expansion honours Reduce Motion |
+| 386 | fixed | the spoken label is "Saved" (menu and options row); the icons are hidden |
+| 394 | already fixed | the card-level tap is not an element; the cover, title and pill are the Buttons |
+| 395 | open | org name truncation and the fixed 96 pt cover: carried to LIME-324 |
+| 396 | open | scrubber height and unplayed-bar contrast: carried to LIME-324 |
+| 398 | fixed | "Reading speed" now has a spoken value |
+| 399 | fixed | read-aloud announces Listening, Paused, Stopped and Finished (player queue start is open, LIME-324) |
+| 401 | open | scrim behind the caption and elapsed time: carried to LIME-324 |
+| 404 | fixed | the audio cover is no longer an element |
+| 405 | fixed | Subscribe pills are 44 pt |
+| 406 | open | marquee runs forever with motion allowed: carried to LIME-324 |
+| 407 | open | skip intervals differ between lock screen and screen; a choice: ask |
+| 417 | already fixed | the top bar is hidden from VoiceOver while it is off screen |
+| 418 | fixed | the jam name line is a heading |
+| 419 | fixed | the find field has a name |
+| 420 | open | selection by border plus .isSelected: carried to LIME-324 |
+| 421 | already fixed | destructive rows use Theme.danger (guarded to 4.5:1); the icon scales |
+| 422 | fixed | see 399 |
+| 423 | already fixed | the export carries alt text |
+| 424 | already fixed | Remove uses Theme.danger and a labelled name |
+| 425 | already fixed | photo tiles say their alt text when there is one |
+| 433 | fixed | Reply and ⋯ are 44 pt; both say whose comment |
+| 435 | fixed | each row reads "Comment by" or "Reply by"; Reply says "Reply to NAME" |
+| 362 | partly fixed | feed, highlight, expand, scroll: done; Discover, player tint, cursor tag: carried to LIME-324 |
+| 363 | open | fixed icon sizes in 60+ places (options row done): carried to LIME-324 |
+| 366 | partly fixed | stacked opacity removed in CreatePublication, EditSeriesSheet, NewBandGroupSheet; BeforePublish, OrgFieldSheet and the dummy buttons: LIME-324 |
+| 367 | partly fixed | options rows hide their icons; JamReader and OrgGroupsTab: LIME-324 |

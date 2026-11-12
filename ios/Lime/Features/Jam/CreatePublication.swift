@@ -136,7 +136,6 @@ struct CreatePublicationSheet: View {
             Text(title).font(Theme.title).foregroundStyle(Theme.accentInk)
                 .padding(.horizontal, 18).frame(minHeight: 44)
                 .background(Theme.accent.opacity(enabled ? 1 : 0.4), in: Capsule())
-                .opacity(enabled ? 1 : 0.6)
         }
         .disabled(!enabled).accessibilityIdentifier(id)
     }

@@ -3,7 +3,7 @@ use super::*;
 const EVERYTHING: &str = "# The big idea\n\nA **bold** and *italic* and ~~struck~~ word, `code`, a [link](https://example.com) and a mention [@Jean](mention:jean).\n\n## Steps\n\n- first\n  - nested\n- second\n\n1. one\n2. two\n\n> A quotation\n\n  An indented paragraph\n\n```\nlet x = 1;\n```\n\n![A photo](attachment:0)\n\n![A video](attachment:1)\n\n[[Subscribe]](https://example.com/s)\n\n---\n\n[[freewall]]\n\nThe subscribers' part.";
 
 fn input(kind: &str, text: &str) -> DraftBlockInput {
-    DraftBlockInput { kind: kind.into(), level: 0, ordered: false, number: 0, attachment: 0, caption: String::new(), url: String::new(), colour: String::new(), spans: vec![Span { text: text.into(), ..Span::default() }] }
+    DraftBlockInput { kind: kind.into(), level: 0, ordered: false, number: 0, attachment: 0, caption: String::new(), alt: String::new(), url: String::new(), colour: String::new(), spans: vec![Span { text: text.into(), ..Span::default() }] }
 }
 
 #[test]
@@ -22,7 +22,7 @@ fn the_markdown_of_every_block_kind_round_trips() {
     assert!(first.spans.iter().any(|s| s.link.as_deref() == Some("https://example.com")));
     assert!(first.spans.iter().any(|s| s.mention.as_deref() == Some("jean")));
     // The title and subtitle are the draft's own.
-    assert_eq!(draft.meta(), DraftMeta { title: "T".into(), subtitle: "S".into(), cover: String::new() });
+    assert_eq!(draft.meta(), DraftMeta { title: "T".into(), subtitle: "S".into(), cover: String::new(), cover_alt: String::new() });
     // And it survives being saved and loaded.
     let mut draft = draft;
     let bytes = draft.save();
@@ -265,4 +265,30 @@ fn two_authors_typing_in_the_title_and_subtitle_at_once_keep_every_letter() {
     assert_eq!(shem.meta().subtitle, jean.meta().subtitle);
     assert_eq!(shem.meta().title, "Big The roots of lime", "both authors' letters in the title");
     assert!(shem.meta().subtitle.contains('X') && shem.meta().subtitle.ends_with(", old"), "{:?}", shem.meta().subtitle);
+}
+
+#[test]
+fn an_image_blocks_description_is_kept_cleaned_and_old_drafts_and_other_blocks_have_none() {
+    let mut draft = DraftDoc::from_markdown("T", "S", "").unwrap();
+    let image = draft.insert_block(0, &DraftBlockInput { kind: "image".into(), attachment: 1000, ..input("image", "") }).unwrap();
+    let para = draft.insert_block(1, &input("paragraph", "Words")).unwrap();
+    assert_eq!(draft.blocks()[0].alt, "", "a block made without one has none (as every draft before this)");
+    draft.set_block_alt(&image, "  A class planting beans  ").unwrap();
+    assert_eq!(draft.blocks()[0].alt, "A class planting beans");
+    draft.set_block_alt(&image, &"é".repeat(400)).unwrap();
+    assert_eq!(draft.blocks()[0].alt.chars().count(), 250);
+    assert!(draft.set_block_alt(&para, "no").is_err(), "only an image takes one");
+    assert_eq!(draft.image_alts().get(&1000).map(|a| a.chars().count()), Some(250));
+    // A moved block keeps its description; a copy of the draft (a co-author) reads it; saved and loaded it is still there.
+    draft.move_block(&image, 1).unwrap();
+    assert_eq!(draft.blocks()[1].alt.chars().count(), 250);
+    draft.set_cover_alt("A lime on a desk").unwrap();
+    assert_eq!(draft.meta().cover_alt, "A lime on a desk");
+    let bytes = draft.save();
+    let loaded = DraftDoc::load(&bytes).unwrap();
+    assert_eq!(loaded.meta().cover_alt, "A lime on a desk");
+    assert_eq!(loaded.blocks().iter().find(|b| b.kind == "image").map(|b| b.alt.chars().count()), Some(250));
+    // A document written before the field existed (no "alt" or "cover_alt" key) reads empty.
+    let fresh = DraftDoc::from_markdown("T", "S", "").unwrap();
+    assert_eq!(fresh.meta().cover_alt, "");
 }
