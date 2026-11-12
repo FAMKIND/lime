@@ -256,6 +256,12 @@ fun main(args: Array<String>) {
                         val states = store.listJamPosts(j.jamId).joinToString(",") { it.state }
                         if (noted.add("a:${j.status}:$states")) println("jam: Ada's jam is ${j.status}; posts [$states]")
                     }
+                    // LIME-412b: Ada's jam picture is public: Ben fetches it from the page (`refresh_jam_picture`) and says how big it is.
+                    for (jam in followed.filter { it.writer == adaId && it.status != "left" }) {
+                        val changed = runCatching { store.refreshJamPicture(http, freshToken(http, tokens), jam.jamId) }
+                        changed.exceptionOrNull()?.let { if (noted.add("picerr:${it::class.simpleName}")) println("jam: picture refresh failed: ${it::class.simpleName}") }
+                        store.jamPicture(jam.jamId)?.let { if (noted.add("pic:${it.size}")) println("jam: Ada's jam picture ${it.size} bytes") }
+                    }
                     for (jam in followed.filter { it.writer == adaId && it.status == "active" }) {
                         val now = store.listJamPosts(jam.jamId)
                         // A deleted post leaves the list (or turns "gone"): say so once.
@@ -292,6 +298,41 @@ fun main(args: Array<String>) {
             store.sendAttachments(dm, "", listOf(OutgoingAttachment(bytes, "Video.mp4", "video/mp4", 640u, 360u, 3000u, ByteArray(0), ByteArray(0), "")), null)
             store.deliverQueued(http, freshToken(http, tokens))
             println("sent a video (${bytes.size} bytes)")
+        }
+        "band-join" -> {
+            // LIME-315c: `partner band-join <link-or-code>` joins Ada's band by its invite (`join_org`), accepts Ada's chat request, waits to be added, then keeps
+            // listening and says what it sees: its role and the members ("band: members ..."), and any post of the band ("band: received ... as jam by <band>").
+            val pasted = args.getOrNull(1) ?: error("usage: partner band-join <link-or-code>")
+            val code = pasted.trim().let { t -> t.substringAfter("/b/#", "").ifEmpty { t.substringAfter("/b/", "").substringBefore('?') }.ifEmpty { t } }
+            val invite = store.parseOrgInvite(code) ?: error("band-join: not a band code")
+            println("band: invite for jam ${invite.jamId.take(8)}")
+            val noted = mutableSetOf<String>()
+            var asked = false
+            println("band-join: listening as $personaName (Ctrl-C to stop)")
+            while (true) {
+                try {
+                    store.sync(http, freshToken(http, tokens))
+                    store.listConversations().filter { it.requestState == "pending" }.forEach { runCatching { store.acceptRequest(it.id) } }
+                    if (!asked) { store.joinOrg(code); asked = true; println("band: asked to join") }
+                    val state = store.orgJoinState(invite.jamId)
+                    if (noted.add("state:$state")) println("band: join state $state")
+                    if (state == "joined") {
+                        val members = store.orgMembers(invite.jamId).joinToString(", ") { "${it.name}=${it.role}" }
+                        if (noted.add("members:$members")) println("band: members $members")
+                        val mine = store.orgMembers(invite.jamId).firstOrNull { it.isMe }
+                        if (mine != null && noted.add("role:${mine.role}")) println("band: my role ${mine.role}")
+                    }
+                    val followed = store.listJamSubscriptions().filter { it.jamId == invite.jamId }
+                    for (jam in followed) {
+                        if (noted.add("jam:${jam.status}")) println("band: following the band's jam \"${jam.title}\" (${jam.status})")
+                        for (post in store.listJamPosts(jam.jamId)) if (post.state == "ready" && noted.add("post:${post.postId}")) println("band: received ${post.kind} \"${post.title.ifEmpty { post.plain.take(40) }}\" as ${post.displayAs} by \"${jam.title}\"")
+                    }
+                    store.deliverQueued(http, freshToken(http, tokens))
+                } catch (e: Exception) {
+                    System.err.println("band-join: ${e::class.simpleName} (will retry)")
+                }
+                Thread.sleep(2000)
+            }
         }
         "echo", "actions-echo" -> {
             // `actions-echo` (LIME-304) also reacts 👍 to each new message and prints "edited: …" / "deleted: …" when Ada changes one.

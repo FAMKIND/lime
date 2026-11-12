@@ -48,6 +48,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -226,6 +227,7 @@ fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenTh
                         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp, horizontal = 24.dp).testTag("deleted-run"),
                     )
                     is ChatRow.Message -> MessageBubble(
+                        onOpenSender = onOpenProfile,
                         item = row.item, summary = summary, showAvatar = row.showAvatar, endsRun = row.endsRun,
                         showState = row.item.isOwn && (row.item.state != DeliveryState.Sent || row.item.id == lastOwnId),
                         replyCount = model.replyCounts[row.item.id] ?: 0,
@@ -361,6 +363,7 @@ private fun MessageBubble(
     onRetry: () -> Unit, onReply: () -> Unit, onOpenThread: () -> Unit, model: ChatModel, onOpenPhoto: (Int) -> Unit,
     selecting: Boolean, selected: Boolean, onToggleSelect: () -> Unit, onOpenMenu: () -> Unit, onPerform: (uniffi.lime_core.MessageAction) -> Unit, onReact: (String) -> Unit,
     voice: com.limemessenger.lime.chats.VoicePlayer, voiceNext: (String) -> String?, voiceData: suspend (String) -> ByteArray?,
+    onOpenSender: ((String, String) -> Unit)? = null,
 ) {
     val colors = Lime.colors
     val context = LocalContext.current
@@ -412,7 +415,11 @@ private fun MessageBubble(
             }
         }
         if (!own) {
-            if (showAvatar && sender != null) Avatar(sender.initials.ifEmpty { initialsOf(sender.name) }, sender.tone.toInt(), 32.dp)
+            // In a group the sender's avatar opens their profile (iOS: tap a sender's avatar); that is where Report and Block are.
+            if (showAvatar && sender != null) Avatar(
+                sender.initials.ifEmpty { initialsOf(sender.name) }, sender.tone.toInt(), 32.dp,
+                modifier = if (isGroup && onOpenSender != null) Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).clickable { onOpenSender(sender.id, sender.name) }.semantics { role = Role.Button; contentDescription = "${sender.name}, profile" }.testTag("sender-avatar-${sender.id}") else Modifier,
+            )
             else Spacer(Modifier.size(32.dp))
             Spacer(Modifier.size(8.dp))
         }

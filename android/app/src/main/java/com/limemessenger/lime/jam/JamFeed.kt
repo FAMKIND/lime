@@ -160,7 +160,11 @@ class JamModel(
         env?.deliver?.invoke()
     }
 
+    /** Tests: the comments of a post when no core store is behind the model. */
+    var commentsSource: ((String) -> List<JamCommentInfo>)? = null
+
     suspend fun comments(postId: String): List<JamCommentInfo> {
+        commentsSource?.let { return it(postId) }
         val core = store() ?: return emptyList()
         return withContext(Dispatchers.IO) { runCatching { core.listJamComments(postId) }.getOrDefault(emptyList()) }
     }

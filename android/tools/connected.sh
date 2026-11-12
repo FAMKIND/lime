@@ -20,11 +20,11 @@ for avd in ${AVDS:-lime-api36 lime-api26}; do
     ./gradlew -q installDebug installDebugAndroidTest || status=1
     # The server allows 10 device registrations per hour per account (staging's LIME_RATE_REGISTER_PER_HOUR), and every class registers Ada once, so
     # only the chat and groups tests run by default (LIME-303); STAGING_CLASSES="StagingSignInTest StagingChatTest" runs both.
-    for cls in ${STAGING_CLASSES:-StagingChatTest StagingGroupsTest StagingActionsTest StagingListTest StagingVoiceFilesTest StagingJamTest StagingJamWriteTest StagingModerationTest StagingGifTest StagingComposerTest StagingMentionTest StagingLinkPreviewTest StagingVideoTest}; do
+    for cls in ${STAGING_CLASSES:-StagingChatTest StagingGroupsTest StagingActionsTest StagingListTest StagingVoiceFilesTest StagingJamTest StagingJamWriteTest StagingModerationTest StagingGifTest StagingComposerTest StagingMentionTest StagingLinkPreviewTest StagingVideoTest StagingBlockGroupTest StagingJamPictureTest}; do
       tools/staging-test-accounts.sh --push >/dev/null || status=1
       tools/partner/run reset >/dev/null || status=1
       case "$cls" in
-        StagingGroupsTest*|StagingMentionTest*)
+        StagingGroupsTest*|StagingMentionTest*|StagingBlockGroupTest*)
           # Groups (LIME-303): Ben and Cleo both answer in every group and accept invitations (a fresh store each).
           tools/partner/run reset --as cleo >/dev/null || status=1
           tools/partner/run group-echo >/tmp/lime-partner.log 2>&1 &
@@ -36,7 +36,7 @@ for avd in ${AVDS:-lime-api36 lime-api26}; do
           tools/partner/run actions-echo >/tmp/lime-partner.log 2>&1 &
           partner=$!
           partner2= ;;
-        StagingJamWriteTest*)
+        StagingJamWriteTest*|StagingJamPictureTest*)
           # Jam writing (LIME-312): Ben follows Ada's jam when she creates it, says what arrives, and comments on each new post.
           tools/partner/run jam-echo >/tmp/lime-partner.log 2>&1 &
           partner=$!
@@ -80,6 +80,9 @@ for avd in ${AVDS:-lime-api36 lime-api26}; do
         mkdir -p "$HOME/Desktop/lime-android-407"; adb exec-out run-as com.limemessenger.lime cat files/shots/15-link-bubble-real-chat.png > "$HOME/Desktop/lime-android-407/15-link-bubble-real-chat.png" 2>/dev/null
         # Ben must have received the card's fields (and the picture, decrypted): url, title, site, bytes.
         grep -Eq '^preview: https://example.org/lesson\|Fractions made visible\|example.org\|[1-9][0-9]* bytes' /tmp/lime-partner.log || { status=1; echo "$cls: Ben never got the card fields"; } ;; esac
+      case "$cls" in StagingJamPictureTest*)
+        # Ben fetched Ada's PUBLIC jam picture from her page and said how big it is (LIME-412b).
+        grep -Eq "^jam: Ada's jam picture [1-9][0-9]* bytes" /tmp/lime-partner.log || { status=1; echo "$cls: Ben never fetched the jam picture"; } ;; esac
       case "$cls" in StagingVideoTest*)
         # Ben must have downloaded and decrypted Ada's video whole: type, size, length, size in pixels, a poster and a thumbnail.
         grep -Eq '^video: video/mp4\|[1-9][0-9]* bytes\|[1-9][0-9]* ms\|[1-9][0-9]*x[1-9][0-9]*\|poster [1-9][0-9]* bytes\|thumb [0-9]+ bytes' /tmp/lime-partner.log || { status=1; echo "$cls: Ben never got the video whole"; } ;; esac

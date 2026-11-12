@@ -106,6 +106,37 @@ class JamLeftoversUiTest {
         assertEquals("the sheet shows what is being reported", 1, count("report-preview"))
     }
 
+    @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+    @Test fun theFilterSheetOffersEveryFilterEvenWithAnEmptyFeedAsIosDoes() {
+        // iOS (JamFilter.swift) shows Co-authored, Subscribed and Bands whether or not any post has them: so does Android (recorded in LIME-412b).
+        val m = JamModel({ store }, nameOf = { "Ben Android" }, source = { listOf(Samples.jam("j1", "Ben's classroom notes")) to emptyList() }, savedStore = MemorySaved())
+        runBlocking { m.reload() }
+        rule.setContent { LimeTheme { JamFeedScreen(m) {} } }
+        rule.onNodeWithTag("jam-filter-button", useUnmergedTree = true).performScrollTo().performClick()
+        rule.waitUntil(5_000) { count("jam-filter-sheet") > 0 }
+        for (tag in listOf("jam-filter-coauthored", "jam-filter-subscribed", "jam-filter-bands", "jam-filter-saved", "jam-filter-media-any")) assertEquals(tag, 1, count(tag))
+    }
+
+    @Test fun aCommentByAnotherTeacherHasAReportAndMyOwnAndAPendingOneDoNot() {
+        val m = model()
+        runBlocking { m.reload() }
+        m.commentsSource = {
+            listOf(
+                uniffi.lime_core.JamCommentInfo("c-other", "quick", null, "writer2", "A comment by another teacher", 1_000L, "published", false),
+                uniffi.lime_core.JamCommentInfo("c-mine", "quick", null, "me", "My own comment", 2_000L, "published", true),
+                uniffi.lime_core.JamCommentInfo("c-pending", "quick", null, "writer3", "Waiting to be published", 3_000L, "pending", false),
+            )
+        }
+        rule.setContent { LimeTheme { JamReaderScreen(posts[0], m, myId = "me", chats = chats, onBack = {}) } }
+        rule.waitUntil(5_000) { count("jam-comment-row-c-other") > 0 }
+        assertEquals("another teacher's comment has Report", 1, count("jam-comment-report-c-other"))
+        assertEquals("my own comment has none", 0, count("jam-comment-report-c-mine"))
+        assertEquals("a pending comment has none", 0, count("jam-comment-report-c-pending"))
+        rule.onNodeWithTag("jam-comment-report-c-other", useUnmergedTree = true).performScrollTo().performClick()
+        rule.waitUntil(5_000) { count("report-sheet") > 0 }
+        assertEquals("the sheet shows the comment being reported", "A comment by another teacher", rule.onNodeWithTag("report-preview", useUnmergedTree = true).fetchSemanticsNode().config[SemanticsProperties.Text].joinToString("") { it.text })
+    }
+
     @Test fun theShowStickersSwitchHidesTheStickerTabAndComesBack() {
         StickerPack.setShown(context, false)
         rule.setContent { LimeTheme { GifPanel(chats, onSend = {}, onDismiss = {}) } }

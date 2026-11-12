@@ -79,11 +79,16 @@ class ChatsModel(
     /** The chats that are unread besides `id` (LIME-409: the number beside a chat's Back; iOS LIME-325): the Messages tab's count (chats, not messages; muted counted as the tab does), minus this chat when it is unread. */
     fun otherUnreadChats(id: String): Int = countOtherUnread(chats.map { it.id to it.isUnread }, id)
 
+    /** Each read takes a ticket when it starts; a read that finishes after a LATER one has already been shown is dropped (it is older news): a slow poll must not put back what a change just removed. */
+    private var readsStarted = 0
+    private var readsShown = 0
+
     suspend fun reload() {
         val core = store() ?: return
         try {
-            conversations = withContext(Dispatchers.IO) { core.listConversations() }
-            revision++
+            val ticket = ++readsStarted
+            val list = withContext(Dispatchers.IO) { core.listConversations() }
+            if (ticket > readsShown) { readsShown = ticket; conversations = list; revision++ }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
