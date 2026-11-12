@@ -1,5 +1,6 @@
 #!/bin/sh
 # Runs the instrumented tests on both emulators, one at a time, headless; shuts each down after. Extra args go to Gradle
+# GRADLE_TASK=connectedReleaseLikeAndroidTest with "-Plime.testBuildType=releaseLike" runs the plain suite against the R8-minified build (LIME-411).
 # NO_STAGING=1 skips the @Staging tests. (for example: -Pandroid.testInstrumentationRunnerArguments.class=com.limemessenger.lime.FoundationsTest).
 cd "$(dirname "$0")/.."
 export PATH=/opt/homebrew/share/android-commandlinetools/platform-tools:$PATH ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
@@ -11,7 +12,7 @@ for avd in ${AVDS:-lime-api36 lime-api26}; do
   adb uninstall com.limemessenger.lime >/dev/null 2>&1; adb uninstall com.limemessenger.lime.test >/dev/null 2>&1
   # STAGING_ONLY=1 skips this first, non-staging pass (a re-run of just the staging classes).
   # A failed pass keeps its report (Gradle overwrites it on the next run): copied to $FAILURES (default ~/Desktop/lime-android-night4/failures) first.
-  [ -n "$STAGING_ONLY" ] || ./gradlew -q connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.limemessenger.lime.Staging "$@" || { status=1; d="${FAILURES:-$HOME/Desktop/lime-android-night4/failures}/$(date +%H%M%S)-$avd"; mkdir -p "$d"; cp -R app/build/outputs/androidTest-results/connected/debug/. "$d"/ 2>/dev/null; cp -R app/build/reports/androidTests/connected/debug "$d/html" 2>/dev/null; echo "failing report copied to $d"; }
+  [ -n "$STAGING_ONLY" ] || ./gradlew -q ${GRADLE_TASK:-connectedDebugAndroidTest} -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.limemessenger.lime.Staging "$@" || { status=1; d="${FAILURES:-$HOME/Desktop/lime-android-night4/failures}/$(date +%H%M%S)-$avd"; mkdir -p "$d"; cp -R app/build/outputs/androidTest-results/connected/. "$d"/ 2>/dev/null; cp -R app/build/reports/androidTests/connected "$d/html" 2>/dev/null; echo "failing report copied to $d"; }
   if [ -z "$NO_STAGING" ]; then
     # The staging tests: install, then for each test class push Ada's and Ben's FRESH sessions into the debug app (a test's sign-out ends
     # its session on the server, so each class needs its own), start Ben (the host-side partner) with a fresh store (Ada's keys are new

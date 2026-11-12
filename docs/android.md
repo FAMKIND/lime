@@ -36,6 +36,16 @@ cd android
 4. `android/tools/connected.sh` runs every instrumented test on API 26 and API 36, one emulator at a time and headless, including the real Ada ↔ Ben exchange. `android/tools/record-demo.sh` films the walk-through into `~/Desktop/lime-android-prototype/`.
 5. **Staging allows 10 device registrations per hour per account** (`LIME_RATE_REGISTER_PER_HOUR`); the app registers on every launch, so a day of test runs can use them up ("Busy").
 
+## The release build (LIME-411)
+
+`./gradlew bundleRelease` makes the Android App Bundle Play takes (`app/build/outputs/bundle/release/app-release.aab`); `assembleRelease` makes the APK. Both are **minified (R8) and resource-shrunk**; the keep rules are in `app/proguard-rules.pro` (UniFFI's `uniffi.lime_core.**` and JNA, which find each other by name and reflection; CameraX and Media3 bring their own).
+
+- **Signing.** The release type reads `~/.lime/android-signing.properties` (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`) when it exists and signs with that key; without it the output is unsigned. Nothing secret is in the repository. Today the file points at a **local test keystore** (`~/.lime/android-test-upload.jks`, not the Play key). **The real upload key is made by the owner when the Play account exists** (Play App Signing then holds the app signing key); put its path in that file.
+- **16 KB pages.** Play requires native libraries aligned for 16 KB pages (apps targeting Android 15+). `liblime_core.so` is built with NDK 30, which aligns to 16 KB by default (`readelf -l` shows `LOAD` alignment `0x4000`); **JNA is 5.19.1** (5.14.0's x86_64 library was 4 KB aligned, `0x1000`; 5.17.0 and later are `0x4000`). Prove it: `zipalign -c -P 16 -v 4 app/build/outputs/apk/release/app-release.apk` (all `lib/` entries OK) and lint's `Aligned16KB` reports nothing.
+- **The icon** is an adaptive icon (`mipmap-anydpi-v26/ic_launcher.xml`): the lime logomark (`public/assets/logo-mark.svg`, converted path by path) on the brand's light lime `#e4f9be`, with a monochrome layer for themed icons on Android 13+. It is a placeholder for the owner's final art (292b/292c on iOS).
+- **Proving R8 did not break the app.** The release APK has no test-account sign-in, so the instrumented suite runs against **`releaseLike`**, a release build signed with the debug key: `GRADLE_TASK=connectedReleaseLikeAndroidTest tools/connected.sh -Plime.testBuildType=releaseLike -Pandroid.testInstrumentationRunnerArguments.notClass=com.limemessenger.lime.LinkPreviewTlsTest` (the TLS test uses a debug-only test CA the release types do not trust). `proguard-test-keep.pro` keeps the app's own classes and Kotlin/Compose whole in that type alone, because the test APK links to them by name; JNA, UniFFI's glue, CameraX and Media3 are shrunk exactly as in release.
+- **No test sign-in in release:** `tools/check-release-clean.sh` checks the APK and the AAB for the markers.
+
 ## Checking the core builds for Android
 
 ```sh

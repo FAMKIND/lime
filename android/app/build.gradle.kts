@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -26,11 +28,37 @@ android {
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
 
-    buildTypes {
-        release {
-            isMinifyEnabled = false
+    // Signing (LIME-411): the release build is signed only when ~/.lime/android-signing.properties exists (storeFile, storePassword, keyAlias, keyPassword); without it the bundle is
+    // unsigned. Nothing secret is in the repo. The real Play UPLOAD key is the owner's, made when the Play account exists; the file may point at a local test keystore until then.
+    val signingFile = File(System.getProperty("user.home"), ".lime/android-signing.properties")
+    val signing = Properties().apply { if (signingFile.exists()) signingFile.inputStream().use { load(it) } }
+    signingConfigs {
+        if (signingFile.exists()) create("lime") {
+            storeFile = file(signing.getProperty("storeFile"))
+            storePassword = signing.getProperty("storePassword")
+            keyAlias = signing.getProperty("keyAlias")
+            keyPassword = signing.getProperty("keyPassword")
         }
     }
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfigs.findByName("lime")?.let { signingConfig = it }
+        }
+        // The release build with the debug key, for proving that R8 did not break the app: the instrumented suite runs against it (-Plime.testBuildType=releaseLike).
+        // The tests link to app classes by name, so this type additionally keeps the app's own classes from being renamed or removed; libraries (JNA, CameraX, Media3,
+        // Compose) are shrunk and optimized exactly as in release, and so are the resources.
+        create("releaseLike") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            isDebuggable = true
+            matchingFallbacks += "release"
+            proguardFiles("proguard-test-keep.pro")
+        }
+    }
+    if (project.hasProperty("lime.testBuildType")) testBuildType = project.property("lime.testBuildType") as String
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -40,6 +68,8 @@ android {
         buildConfig = true
     }
     sourceSets["main"].kotlin.directories.add("build/generated/uniffi")
+    // releaseLike is a release (the stub of the debug-only test sign-in, no test accounts) that the instrumented tests can run against.
+    sourceSets["releaseLike"].kotlin.directories.add("src/release/java")
     // Test doubles shared by the unit tests and the instrumented UI tests.
     sourceSets["test"].kotlin.directories.add("src/testShared/java")
     sourceSets["androidTest"].kotlin.directories.add("src/testShared/java")
@@ -82,4 +112,5 @@ dependencies {
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+    "releaseLikeImplementation"(libs.androidx.compose.ui.test.manifest)   // the compose tests' empty activity, for the releaseLike type only
 }

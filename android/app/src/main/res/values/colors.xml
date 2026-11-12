@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="lime_canvas">#FFF9F8F4</color>
+    <!-- The launcher icon's background (LIME-411): the brand's light lime; the logomark brings its own dark outline, which is what gives the edge its contrast (about 15:1) on this colour. -->
+    <color name="ic_launcher_background">#FFE4F9BE</color>
 </resources>
