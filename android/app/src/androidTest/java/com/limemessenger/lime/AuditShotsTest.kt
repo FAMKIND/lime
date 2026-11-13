@@ -103,9 +103,9 @@ class AuditShotsTest {
     }
 
     // ---- Messages
-    @Test fun messages() = scr("messages", wait = "messages-list") { Shell(link = { ChatListScreen(chats, "Ada Android", onOpen = {}) }) }
-    @Test fun messagesDark() = scr("messages", dark = true, wait = "messages-list") { Shell(link = { ChatListScreen(chats, "Ada Android", onOpen = {}) }) }
-    @Test fun messagesLargest() = scr("messages-font2", font = 2f, wait = "messages-list") { Shell(link = { ChatListScreen(chats, "Ada Android", onOpen = {}) }) }
+    @Test fun messages() = scr("messages", wait = "messages-list") { Shell(link = { ChatListScreen(chats, "Ada Android", onOpen = {}) }, linkUnread = chats.unreadChatCount) }
+    @Test fun messagesDark() = scr("messages", dark = true, wait = "messages-list") { Shell(link = { ChatListScreen(chats, "Ada Android", onOpen = {}) }, linkUnread = chats.unreadChatCount) }
+    @Test fun messagesLargest() = scr("messages-font2", font = 2f, wait = "messages-list") { Shell(link = { ChatListScreen(chats, "Ada Android", onOpen = {}) }, linkUnread = chats.unreadChatCount) }
     @Test fun messagesEmpty() {
         val empty = ChatsModel(store = { null }, transport = { null }, token = { "t" }, staleToken = { "t" })
         scr("messages-empty", wait = "messages-list") { Shell(link = { ChatListScreen(empty, "Ada Android", onOpen = {}) }) }

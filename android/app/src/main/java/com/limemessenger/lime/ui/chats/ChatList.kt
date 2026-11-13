@@ -70,6 +70,16 @@ import uniffi.lime_core.chatLabels
 import com.limemessenger.lime.chats.unreadCount
 import com.limemessenger.lime.auth.ConnectionProblem
 import com.limemessenger.lime.ui.common.Avatar
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.layout.onSizeChanged
+import com.limemessenger.lime.ui.theme.LimeCircle
+import com.limemessenger.lime.ui.theme.LimeShapes
+import com.limemessenger.lime.ui.theme.LimeSpacing
+import com.limemessenger.lime.ui.theme.LimeTopFade
+import com.limemessenger.lime.ui.theme.LimeType
+import com.limemessenger.lime.ui.theme.LimeType.style
 import com.limemessenger.lime.ui.common.GroupAvatar
 import com.limemessenger.lime.ui.common.initialsOf
 import com.limemessenger.lime.ui.shell.Icons
@@ -97,48 +107,58 @@ fun ChatListScreen(
     var refreshing by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf(false) }
     Box(modifier.fillMaxSize().background(colors.canvas)) {
-    Column(Modifier.fillMaxSize()) {
-        Header(myName, myTone, onProfile, onSearch)
-        FilterRow(model)
-        PullToRefreshBox(
-            isRefreshing = refreshing,
-            onRefresh = { scope.launch { refreshing = true; try { model.pullToRefresh() } finally { refreshing = false } } },
-            modifier = Modifier.weight(1f),
-        ) {
-            LazyColumn(Modifier.fillMaxSize().testTag("messages-list")) {
-                model.problem?.let { problem -> item(key = "problem") { ProblemBanner(problem) } }
-                if (model.requests.isNotEmpty()) item(key = "requests") { RequestsRow(model.requests.size, onRequests) }
-                if (model.isLoaded && model.chats.isEmpty() && model.requests.isEmpty()) {
-                    item(key = "empty") { EmptyChats(note, onNewMessage) { note = true } }
-                } else if (model.chats.isNotEmpty() && model.shownChats.isEmpty()) {
-                    item(key = "filtered") { FilteredEmpty { model.unreadOnly = false } }
-                }
-                items(model.shownChats, key = { it.id }) { conversation -> ChatRowItem(model, conversation, myName, myTone) { onOpen(conversation) } }
+    // The header floats over the list (iOS: circle controls over the content with a soft top fade): the list starts under it and scrolls beneath the fade.
+    var headerPx by remember { mutableStateOf(0) }
+    val headerDp = with(androidx.compose.ui.platform.LocalDensity.current) { headerPx.toDp() }
+    PullToRefreshBox(
+        isRefreshing = refreshing,
+        onRefresh = { scope.launch { refreshing = true; try { model.pullToRefresh() } finally { refreshing = false } } },
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        LazyColumn(Modifier.fillMaxSize().testTag("messages-list"), contentPadding = androidx.compose.foundation.layout.PaddingValues(top = headerDp, bottom = 88.dp)) {
+            item(key = "filters") { FilterRow(model) }
+            model.problem?.let { problem -> item(key = "problem") { ProblemBanner(problem) } }
+            if (model.requests.isNotEmpty()) item(key = "requests") { RequestsRow(model.requests.size, onRequests) }
+            if (model.isLoaded && model.chats.isEmpty() && model.requests.isEmpty()) {
+                item(key = "empty") { EmptyChats(note, onNewMessage) { note = true } }
+            } else if (model.chats.isNotEmpty() && model.shownChats.isEmpty()) {
+                item(key = "filtered") { FilteredEmpty { model.unreadOnly = false } }
             }
+            items(model.shownChats, key = { it.id }) { conversation -> ChatRowItem(model, conversation, myName, myTone) { onOpen(conversation) } }
         }
+    }
+    Box(Modifier.align(Alignment.TopCenter)) {
+        LimeTopFade(headerHeight = (headerDp - 10.dp).coerceAtLeast(0.dp))
+        Box(Modifier.onSizeChanged { headerPx = it.height }) { Header(myName, myTone, onProfile, onSearch) }
     }
     // The one lime action on the list: a new message (iOS's floating plus).
     val newLabel = stringResource(R.string.chats_card_new)
     Box(
-        Modifier.align(Alignment.BottomEnd).padding(16.dp).size(56.dp).background(colors.accent, CircleShape)
+        Modifier.align(Alignment.BottomEnd).padding(16.dp).size(LimeCircle.fab).shadow(6.dp, CircleShape).background(colors.accent, CircleShape)
             .semantics { role = Role.Button; contentDescription = newLabel }.clickable(onClick = onNewMessage).testTag("new-message-button"),
         contentAlignment = Alignment.Center,
-    ) { Icon(Icons.Compose, null, tint = colors.accentInk) }
+    ) { Icon(Icons.Plus, null, tint = colors.accentInk, modifier = Modifier.size(28.dp)) }
     }
 }
 
 @Composable
 private fun Header(myName: String, myTone: Int, onProfile: () -> Unit, onSearch: () -> Unit) {
     val colors = Lime.colors
-    Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(stringResource(R.string.app_name), color = colors.text, fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-        val searchLabel = stringResource(R.string.search_label)
-        Box(Modifier.size(48.dp).clickable(onClick = onSearch).semantics { contentDescription = searchLabel; role = Role.Button }.testTag("search-button"), contentAlignment = Alignment.Center) { Icon(Icons.Search, null, tint = colors.text) }
-        val profile = stringResource(R.string.my_profile)
-        Box(
-            Modifier.size(48.dp).clickable(onClick = onProfile).semantics { contentDescription = "$profile, $myName"; role = Role.Button }.testTag("my-avatar"),
-            contentAlignment = Alignment.Center,
-        ) { Avatar(initialsOf(myName), tone = myTone, size = 36.dp) }
+    Row(Modifier.fillMaxWidth().padding(horizontal = LimeSpacing.l, vertical = LimeSpacing.xs), verticalAlignment = Alignment.CenterVertically) {
+        Text(stringResource(R.string.app_name), color = colors.text, style = LimeType.run { titleBold.style() }, modifier = Modifier.weight(1f))
+        // Search and my avatar in one capsule (iOS: one glass bubble; here a solid surface with the hairline).
+        Row(
+            Modifier.background(colors.surface, LimeShapes.pill).border(BorderStroke(0.5.dp, colors.hairline), LimeShapes.pill).padding(horizontal = LimeSpacing.xs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            val searchLabel = stringResource(R.string.search_label)
+            Box(Modifier.size(LimeCircle.target).clickable(onClick = onSearch).semantics { contentDescription = searchLabel; role = Role.Button }.testTag("search-button"), contentAlignment = Alignment.Center) { Icon(Icons.Search, null, tint = colors.text) }
+            val profile = stringResource(R.string.my_profile)
+            Box(
+                Modifier.size(LimeCircle.target).clickable(onClick = onProfile).semantics { contentDescription = "$profile, $myName"; role = Role.Button }.testTag("my-avatar"),
+                contentAlignment = Alignment.Center,
+            ) { Avatar(initialsOf(myName), tone = myTone, size = 36.dp) }
+        }
     }
 }
 
@@ -375,7 +395,7 @@ fun ConversationRow(
     Row(
         Modifier.fillMaxWidth().heightIn(min = 72.dp)
             .semantics(mergeDescendants = false) { contentDescription = description; role = Role.Button; if (customActions.isNotEmpty()) this.customActions = customActions }
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(horizontal = 16.dp, vertical = 15.dp).testTag("conversation-row-${conversation.id}"),
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(horizontal = LimeSpacing.l, vertical = 15.dp).testTag("conversation-row-${conversation.id}"),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         if (!conversation.isGroup && first != null) Avatar(first.initials.ifEmpty { initialsOf(first.name) }, first.tone.toInt(), 52.dp)
@@ -385,16 +405,16 @@ fun ConversationRow(
             val large = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
             val title: @Composable (Modifier) -> Unit = { m ->
                 Text(
-                    conversation.title, color = colors.text, fontSize = 17.sp, fontWeight = if (unread) FontWeight.Bold else FontWeight.SemiBold,
+                    conversation.title, color = colors.text, fontSize = LimeType.title.size, fontWeight = if (unread) FontWeight.Bold else FontWeight.SemiBold,
                     maxLines = if (large) 3 else 1, overflow = TextOverflow.Ellipsis, modifier = m.testTag("row-title-${conversation.id}"),
                 )
             }
             val marks: @Composable () -> Unit = {
-                label?.let { Text(it, color = colors.textSecondary, fontSize = 12.sp, modifier = Modifier.background(colors.surface, RoundedCornerShape(8.dp)).padding(horizontal = 6.dp, vertical = 2.dp)) }
+                label?.let { Text(it, color = colors.textSecondary, fontSize = LimeType.caption.size, modifier = Modifier.background(colors.surface, LimeShapes.pill).padding(horizontal = 8.dp, vertical = 2.dp)) }
                 if (muted) Icon(Icons.Muted, null, tint = colors.textSecondary, modifier = Modifier.size(14.dp).testTag("muted-${conversation.id}"))
                 if (conversation.isPinned) Icon(Icons.Pinned, null, tint = colors.textSecondary, modifier = Modifier.size(14.dp).testTag("pinned-${conversation.id}"))
             }
-            val timeText: @Composable () -> Unit = { Text(time, color = colors.textSecondary, fontSize = 14.sp, maxLines = 1, modifier = Modifier.testTag("row-time-${conversation.id}")) }
+            val timeText: @Composable () -> Unit = { Text(time, color = colors.textSecondary, fontSize = LimeType.secondary.size, maxLines = 1, modifier = Modifier.testTag("row-time-${conversation.id}")) }
             if (large) {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     title(Modifier)
@@ -410,10 +430,10 @@ fun ConversationRow(
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Column(Modifier.weight(1f)) {
-                    preview.quote?.let { Text(it, color = colors.textSecondary, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    preview.quote?.let { Text(it, color = colors.textSecondary, fontSize = LimeType.caption.size, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                     Text(
                         preview.body.ifEmpty { stringResource(R.string.chat_row_no_messages) },
-                        color = if (unread) colors.text else colors.textSecondary, fontSize = 15.sp,
+                        color = if (unread) colors.text else colors.textSecondary, fontSize = LimeType.secondary.size,
                         fontWeight = if (unread) FontWeight.SemiBold else FontWeight.Normal,
                         maxLines = if (preview.quote != null) 1 else 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("row-preview-${conversation.id}"),
                     )

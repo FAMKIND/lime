@@ -52,6 +52,8 @@ import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -213,43 +215,60 @@ fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenTh
     }
 
     Column(modifier.fillMaxSize().background(colors.canvas).systemBarsPadding().imePadding()) {
-        val chosen = selection
-        if (chosen != null) SelectionBar(chosen.size, onCancel = { selection = null },
-            onForward = { forwarding = chosen.toList() }, onDelete = { deleting = model.messages.filter { it.id in chosen } })
-        else Header(summary, chats.myName, chats.myTone, chats.otherUnreadChats(model.conversationId), onBack, onOpenGroup) { m -> onOpenProfile(m.id, m.name) }
-        LazyColumn(Modifier.weight(1f).fillMaxWidth().testTag("chat-messages"), state = listState, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp)) {
-            items(rows, key = { it.id }) { row ->
-                when (row) {
-                    is ChatRow.Day -> DayChip(row.text)
-                    is ChatRow.System -> SystemLine(row.item.text)
-                    is ChatRow.DeletedRun -> Text(
-                        stringResource(R.string.chat_deleted_run, row.count), color = colors.textSecondary, fontSize = 13.sp, fontStyle = FontStyle.Italic,
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp, horizontal = 24.dp).testTag("deleted-run"),
-                    )
-                    is ChatRow.Message -> MessageBubble(
-                        onOpenSender = onOpenProfile,
-                        item = row.item, summary = summary, showAvatar = row.showAvatar, endsRun = row.endsRun,
-                        showState = row.item.isOwn && (row.item.state != DeliveryState.Sent || row.item.id == lastOwnId),
-                        replyCount = model.replyCounts[row.item.id] ?: 0,
-                        onRetry = { scope.launch { model.resend(row.item.id) } },
-                        onReply = { model.replyingTo = row.item },
-                        onOpenThread = { onOpenThread(row.item) },
-                        model = model,
-                        onOpenPhoto = { index -> viewer = row.item to index },
-                        selecting = selection != null, selected = selection?.contains(row.item.id) == true,
-                        onToggleSelect = { selection = selection?.let { if (row.item.id in it) it - row.item.id else it + row.item.id } },
-                        onOpenMenu = { menuFor = row.item },
-                        onPerform = { action -> perform(action, row.item) },
-                        onReact = { emoji -> scope.launch { model.react(row.item, emoji) } },
-                        voice = voice, voiceNext = voiceNext, voiceData = voiceData,
-                    )
+        // The header floats over the messages with a soft top fade (iOS: circle controls over the content); the list starts under it.
+        var headerPx by remember { mutableStateOf(0) }
+        val headerDp = with(androidx.compose.ui.platform.LocalDensity.current) { headerPx.toDp() }
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            LazyColumn(Modifier.fillMaxSize().testTag("chat-messages"), state = listState, contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 12.dp, end = 12.dp, top = headerDp + 8.dp, bottom = 8.dp)) {
+                items(rows, key = { it.id }) { row ->
+                    when (row) {
+                        is ChatRow.Day -> DayChip(row.text)
+                        is ChatRow.System -> SystemLine(row.item.text)
+                        is ChatRow.DeletedRun -> Text(
+                            stringResource(R.string.chat_deleted_run, row.count), color = colors.textSecondary, fontSize = 13.sp, fontStyle = FontStyle.Italic,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp, horizontal = 24.dp).testTag("deleted-run"),
+                        )
+                        is ChatRow.Message -> MessageBubble(
+                            onOpenSender = onOpenProfile,
+                            item = row.item, summary = summary, showAvatar = row.showAvatar, endsRun = row.endsRun,
+                            showState = row.item.isOwn && (row.item.state != DeliveryState.Sent || row.item.id == lastOwnId),
+                            replyCount = model.replyCounts[row.item.id] ?: 0,
+                            onRetry = { scope.launch { model.resend(row.item.id) } },
+                            onReply = { model.replyingTo = row.item },
+                            onOpenThread = { onOpenThread(row.item) },
+                            model = model,
+                            onOpenPhoto = { index -> viewer = row.item to index },
+                            selecting = selection != null, selected = selection?.contains(row.item.id) == true,
+                            onToggleSelect = { selection = selection?.let { if (row.item.id in it) it - row.item.id else it + row.item.id } },
+                            onOpenMenu = { menuFor = row.item },
+                            onPerform = { action -> perform(action, row.item) },
+                            onReact = { emoji -> scope.launch { model.react(row.item, emoji) } },
+                            voice = voice, voiceNext = voiceNext, voiceData = voiceData,
+                        )
+                    }
+                }
+            }
+            Box(Modifier.align(Alignment.TopCenter)) {
+                com.limemessenger.lime.ui.theme.LimeTopFade(headerHeight = (headerDp - 10.dp).coerceAtLeast(0.dp))
+                Box(Modifier.onSizeChanged { headerPx = it.height }) {
+                val chosen = selection
+                if (chosen != null) SelectionBar(chosen.size, onCancel = { selection = null },
+                    onForward = { forwarding = chosen.toList() }, onDelete = { deleting = model.messages.filter { it.id in chosen } })
+                else Header(summary, chats.myName, chats.myTone, chats.otherUnreadChats(model.conversationId), onBack, onOpenGroup) { m -> onOpenProfile(m.id, m.name) }
                 }
             }
         }
-        model.banner?.let { Text(it, color = colors.danger, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).testTag("chat-banner")) }
-        if (summary != null && summary.isRequest) RequestBar(summary.title, onBlock = { blocking = true }) { scope.launch { chats.acceptRequest(summary.id) } }
-        else if (summary?.groupEnded != null) EndedBar(summary.groupEnded == "left") { scope.launch { chats.removeChat(summary.id); onBack() } }
-        else if (selection == null) Composer(model, chats, seedPhotos, editing = editing, onEdited = { editing = null }, onSaveEdit = { item, text -> scope.launch { model.edit(item, text) } }, panelOpen = gifPanel, onGif = { gifPanel = true }) { text, photos, preview -> scope.launch { if (photos.isNotEmpty()) model.sendPhotos(photos, text) else if (preview != null) model.sendWithPreview(text, preview) else model.send(text) } }
+        // The banner, the bars and the composer may use the window except the header's own room: however tall the composer grows, it can never run under the floating header (as the old fixed bar guaranteed).
+        Column(Modifier.layout { measurable, constraints ->
+            val room = (constraints.maxHeight - (com.limemessenger.lime.ui.theme.LimeCircle.target + com.limemessenger.lime.ui.theme.LimeSpacing.xs * 2).roundToPx()).coerceAtLeast(0)
+            val placeable = measurable.measure(constraints.copy(maxHeight = room))
+            layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+        }) {
+            model.banner?.let { Text(it, color = colors.danger, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).testTag("chat-banner")) }
+            if (summary != null && summary.isRequest) RequestBar(summary.title, onBlock = { blocking = true }) { scope.launch { chats.acceptRequest(summary.id) } }
+            else if (summary?.groupEnded != null) EndedBar(summary.groupEnded == "left") { scope.launch { chats.removeChat(summary.id); onBack() } }
+            else if (selection == null) Composer(model, chats, seedPhotos, editing = editing, onEdited = { editing = null }, onSaveEdit = { item, text -> scope.launch { model.edit(item, text) } }, panelOpen = gifPanel, onGif = { gifPanel = true }) { text, photos, preview -> scope.launch { if (photos.isNotEmpty()) model.sendPhotos(photos, text) else if (preview != null) model.sendWithPreview(text, preview) else model.send(text) } }
+        }
     }
     viewer?.let { (item, index) -> PhotoViewer(item.attachments.filter { it.mime.startsWith("image/") }, index, model, onClose = { viewer = null }) }
     menuFor?.let { item ->
@@ -289,7 +308,7 @@ private fun SelectionBar(count: Int, onCancel: () -> Unit, onForward: () -> Unit
 internal fun Header(summary: ConversationSummary?, myName: String, myTone: Int, otherUnread: Int, onBack: () -> Unit, onGroup: () -> Unit, onProfile: (uniffi.lime_core.MemberInfo) -> Unit) {
     val colors = Lime.colors
     val first = summary?.members?.firstOrNull()
-    Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = com.limemessenger.lime.ui.theme.LimeSpacing.s, vertical = com.limemessenger.lime.ui.theme.LimeSpacing.xs), verticalAlignment = Alignment.CenterVertically) {
         BackWithCount(otherUnread, onBack)
         // In a one-to-one chat the avatar and the name open the person's profile.
         val opensProfile = summary != null && !summary.isGroup && first != null
@@ -308,7 +327,7 @@ internal fun Header(summary: ConversationSummary?, myName: String, myTone: Int, 
                 else com.limemessenger.lime.ui.common.GroupAvatar(summary, myName, myTone, 36.dp)
             }
             Text(
-                summary?.title.orEmpty(), color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                summary?.title.orEmpty(), color = colors.text, fontSize = com.limemessenger.lime.ui.theme.LimeType.secondaryStrong.size, fontWeight = FontWeight.SemiBold, maxLines = 1,
                 modifier = Modifier.padding(start = 12.dp).weight(1f).semantics { heading() }.testTag("chat-title"),
             )
         }
@@ -325,13 +344,18 @@ fun BackWithCount(otherUnread: Int, onBack: () -> Unit, modifier: Modifier = Mod
     val back = stringResource(R.string.chat_back)
     val state = if (otherUnread > 0) androidx.compose.ui.res.pluralStringResource(R.plurals.chat_back_unread, otherUnread, otherUnread) else null
     Row(
-        modifier.heightIn(min = 56.dp).widthIn(min = 56.dp)
+        modifier.heightIn(min = com.limemessenger.lime.ui.theme.LimeCircle.target).widthIn(min = com.limemessenger.lime.ui.theme.LimeCircle.target)
             .clickable(onClick = onBack)
             .clearAndSetSemantics { contentDescription = back; role = Role.Button; if (state != null) stateDescription = state; testTag = "chat-back" }
-            .padding(start = 16.dp, end = if (otherUnread > 0) 8.dp else 16.dp),
+            .padding(end = 4.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Icon(Icons.Back, contentDescription = null, tint = colors.text)
+        // lime's circle (iOS: a 44 pt glass circle with the ‹): a solid surface with the hairline, in the 48 dp target; the unread count sits beside it.
+        Box(
+            Modifier.padding(2.dp).size(com.limemessenger.lime.ui.theme.LimeCircle.visible).background(colors.surface, com.limemessenger.lime.ui.theme.LimeShapes.circle)
+                .border(androidx.compose.foundation.BorderStroke(0.5.dp, colors.hairline), com.limemessenger.lime.ui.theme.LimeShapes.circle),
+            contentAlignment = Alignment.Center,
+        ) { Icon(Icons.Back, contentDescription = null, tint = colors.text, modifier = Modifier.size(22.dp)) }
         if (otherUnread > 0) com.limemessenger.lime.ui.chats.CountBadge(otherUnread, Modifier.testTag("chat-back-count"))
     }
 }

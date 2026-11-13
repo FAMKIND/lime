@@ -2,6 +2,7 @@ package com.limemessenger.lime.ui.shell
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
@@ -24,6 +25,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.limemessenger.lime.R
 import com.limemessenger.lime.ui.theme.Lime
+import com.limemessenger.lime.ui.theme.LimeType
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 
 enum class Tab(val label: Int, val icon: ImageVector) {
     Link(R.string.tab_link, TabIcons.Link),
@@ -33,7 +43,7 @@ enum class Tab(val label: Int, val icon: ImageVector) {
 
 /** The signed-in shell: link · call · jam as a bottom bar (as iOS). Call and jam say "Coming soon on Android" until built. */
 @Composable
-fun Shell(link: @Composable () -> Unit, modifier: Modifier = Modifier, jam: (@Composable () -> Unit)? = null, selected: Tab? = null, onSelect: ((Tab) -> Unit)? = null) {
+fun Shell(link: @Composable () -> Unit, modifier: Modifier = Modifier, jam: (@Composable () -> Unit)? = null, selected: Tab? = null, onSelect: ((Tab) -> Unit)? = null, linkUnread: Int = 0) {
     // The caller can keep the tab (Root does: a post, a chat or a profile replaces the whole shell, and coming back must land on the same tab).
     var own by rememberSaveable { mutableStateOf(Tab.Link) }
     val tab = selected ?: own
@@ -43,20 +53,30 @@ fun Shell(link: @Composable () -> Unit, modifier: Modifier = Modifier, jam: (@Co
         modifier = modifier,
         containerColor = colors.canvas,
         bottomBar = {
-            NavigationBar(containerColor = colors.surface) {
-                Tab.entries.forEach { entry ->
-                    NavigationBarItem(
-                        modifier = Modifier.testTag("tab-${entry.name.lowercase()}"),
-                        selected = tab == entry,
-                        onClick = { choose(entry) },
-                        icon = { Icon(entry.icon, contentDescription = null) },
-                        label = { Text(stringResource(entry.label), fontSize = 12.sp) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = colors.text, selectedTextColor = colors.text,
-                            unselectedIconColor = colors.textSecondary, unselectedTextColor = colors.textSecondary,
-                            indicatorColor = colors.pressed,
-                        ),
-                    )
+            Column {
+                // lime's bar: the canvas colour with a hairline on top (the accent is only for the unread badge, the one live thing here); still a real NavigationBar for TalkBack.
+                Box(Modifier.fillMaxWidth().height(0.5.dp).background(colors.hairline))
+                NavigationBar(containerColor = colors.canvas) {
+                    Tab.entries.forEach { entry ->
+                        val unreadWords = if (entry == Tab.Link && linkUnread > 0) androidx.compose.ui.res.pluralStringResource(R.plurals.chat_back_unread, linkUnread, linkUnread) else null
+                        NavigationBarItem(
+                            modifier = Modifier.testTag("tab-${entry.name.lowercase()}").then(if (unreadWords != null) Modifier.semantics { stateDescription = unreadWords } else Modifier),
+                            selected = tab == entry,
+                            onClick = { choose(entry) },
+                            icon = {
+                                if (entry == Tab.Link && linkUnread > 0) BadgedBox(badge = {
+                                    Badge(containerColor = colors.accent, contentColor = colors.accentInk, modifier = Modifier.testTag("tab-link-badge")) { Text(com.limemessenger.lime.chats.badgeText(linkUnread)) }
+                                }) { Icon(entry.icon, contentDescription = null) }
+                                else Icon(entry.icon, contentDescription = null)
+                            },
+                            label = { Text(stringResource(entry.label), fontSize = LimeType.caption.size) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = colors.text, selectedTextColor = colors.text,
+                                unselectedIconColor = colors.textSecondary, unselectedTextColor = colors.textSecondary,
+                                indicatorColor = colors.pressed,
+                            ),
+                        )
+                    }
                 }
             }
         },

@@ -113,6 +113,8 @@ class ChatListUiTest {
         assertEquals(setOf("Journey Park", "Autumn Reyes"), model.shownChats.map { it.title }.toSet())
         runBlocking { model.chats.filter { it.unread > 0u }.forEach { model.markRead(it.id) } }
         rule.waitForIdle()
+        // The marks-read reload lands on the model's own coroutine: wait for the state on screen, not for a clock (LIME-422: an order-dependent miss in one full pass).
+        rule.waitUntil(5_000) { count("filtered-empty") > 0 }
         assertTrue("with nothing unread the filtered list says so", count("filtered-empty") > 0)
         rule.onNodeWithTag("filtered-empty").assertIsDisplayed()
         rule.onNodeWithTag("chat-filter-all").performClick()

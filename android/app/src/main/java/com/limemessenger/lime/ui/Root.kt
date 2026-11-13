@@ -197,7 +197,7 @@ private fun SignedIn(session: AccountSession) {
     } else if (requestsOpen) {
         RequestsScreen(chats, onOpen = { openId = it.id }, onBack = { requestsOpen = false })
     } else {
-        Shell(selected = shellTab, onSelect = { shellTab = it }, jam = { JamFeedScreen(jam, onYours = { yourJam = true }, onOpen = { jamPost = it }) }, link = {
+        Shell(selected = shellTab, onSelect = { shellTab = it }, linkUnread = chats.unreadChatCount, jam = { JamFeedScreen(jam, onYours = { yourJam = true }, onOpen = { jamPost = it }) }, link = {
             ChatListScreen(
                 chats, myName = session.profile?.displayName.orEmpty(), myTone = com.limemessenger.lime.chats.AvatarTone.tone(session.userId.orEmpty()),
                 onOpen = { openId = it.id },

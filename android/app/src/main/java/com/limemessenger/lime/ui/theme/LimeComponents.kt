@@ -33,6 +33,8 @@ import androidx.compose.ui.unit.dp
 object LimeCircle {
     val visible: Dp = 44.dp
     val target: Dp = 48.dp
+    /** The floating plus on the Messages list: iOS 64 pt. */
+    val fab: Dp = 64.dp
 }
 
 /**
