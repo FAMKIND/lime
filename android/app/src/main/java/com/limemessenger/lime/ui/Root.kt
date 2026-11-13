@@ -175,9 +175,9 @@ private fun SignedIn(session: AccountSession) {
     } else if (person != null) {
         PersonProfileScreen(person.first, person.second, chats, onBack = { personProfile = null }, jam = jam, onBlocked = { personProfile = null; openId = null })
     } else if (postOpen != null) {
-        JamReaderScreen(postOpen, jam, myId = session.userId, chats = chats, onEdit = { compose = com.limemessenger.lime.ui.jam.ComposeRoute(if (it.kind == "article") "article" else "quick", editing = it); jamPost = null }, onBack = { jamPost = null })
-    } else if (bandPage != null && jam.myJams.any { it.jamId == bandPage }) {
-        com.limemessenger.lime.ui.band.BandScreen(jam.myJams.first { it.jamId == bandPage }, jam, onBack = { bandPage = null }, onOpenPost = { jamPost = it })
+        JamReaderScreen(postOpen, jam, myId = session.userId, chats = chats, onViewBand = { jamPost = null; bandPage = it }, onEdit = { compose = com.limemessenger.lime.ui.jam.ComposeRoute(if (it.kind == "article") "article" else "quick", editing = it); jamPost = null }, onBack = { jamPost = null })
+    } else if (bandPage != null && jam.jams.any { it.jamId == bandPage }) {
+        com.limemessenger.lime.ui.band.BandScreen(jam.jams.first { it.jamId == bandPage }, jam, onBack = { bandPage = null }, onOpenPost = { jamPost = it }, onOpenChat = { id -> bandPage = null; yourJam = false; openId = id })
     } else if (yourJam) {
         com.limemessenger.lime.ui.jam.YourJamScreen(jam, jamDrafts, onBack = { yourJam = false }, onCompose = { compose = it }, onOpenBand = { bandPage = it })
     } else if (chatModel != null && groupModel != null && groupInfoOpen) {

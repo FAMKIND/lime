@@ -226,7 +226,7 @@ private fun PostCard(post: JamPostInfo, model: JamModel, player: com.limemesseng
 
 /** Reading one post: the title, subtitle and byline, the post's Markdown with its photos in place (the writer's descriptions for TalkBack), a recording's player, then ♥ and the comments. */
 @Composable
-fun JamReaderScreen(post: JamPostInfo, model: JamModel, myId: String? = null, onEdit: ((JamPostInfo) -> Unit)? = null, chats: com.limemessenger.lime.chats.ChatsModel? = null, onBack: () -> Unit) {
+fun JamReaderScreen(post: JamPostInfo, model: JamModel, myId: String? = null, onEdit: ((JamPostInfo) -> Unit)? = null, chats: com.limemessenger.lime.chats.ChatsModel? = null, onViewBand: ((String) -> Unit)? = null, onBack: () -> Unit) {
     val colors = Lime.colors
     val context = androidx.compose.ui.platform.LocalContext.current
     val player = remember { com.limemessenger.lime.chats.VoicePlayer(context.applicationContext) }
@@ -261,6 +261,8 @@ fun JamReaderScreen(post: JamPostInfo, model: JamModel, myId: String? = null, on
             if (post.subtitle.isNotEmpty()) Text(post.subtitle, color = colors.textSecondary, fontSize = 18.sp)
             val detail = listOfNotNull(model.authorName(post), model.byline(post), JamDates.short(post.created), if (post.editedAt > 0) "Edited" else null).joinToString(" · ")
             Text(detail, color = colors.textSecondary, fontSize = 14.sp, modifier = Modifier.testTag("jam-reader-byline"))
+            // A post made as a band: its byline names the band, and View band opens its page (iOS: "View band" among the post's options).
+            if (post.displayAs == "jam" && onViewBand != null) androidx.compose.material3.TextButton({ onViewBand(post.jamId) }, Modifier.heightIn(min = 48.dp).testTag("jam-reader-view-band")) { Text(stringResource(R.string.band_view), color = colors.text, fontWeight = FontWeight.SemiBold) }
             val images = files.filter { it.kind == "image" }
             files.firstOrNull { it.kind == "audio" }?.let { JamPodcastPill(post, it, model, player) }
             MessageText(

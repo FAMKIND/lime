@@ -3,6 +3,8 @@ package com.limemessenger.lime.jam
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import uniffi.lime_core.LimeStore
+import uniffi.lime_core.OrgGroupInfo
+import uniffi.lime_core.OrgInfo
 import uniffi.lime_core.OrgInvite
 import uniffi.lime_core.OrgMemberInfo
 
@@ -19,6 +21,17 @@ interface BandBackend {
     /** Reads a code the core accepts (`jam.writer.token`), or null when it is not one. */
     suspend fun parse(code: String): OrgInvite?
     suspend fun join(code: String): Boolean
+    /** My own join of a band: `asked`, `joined`, `full`, `refused`, or none (the core's `org_join_state`). */
+    suspend fun joinState(jamId: String): String?
+    /** The bands I belong to (as a member of their members group) with my role: owner, writer or member (the core's `my_orgs`). */
+    suspend fun mine(): List<OrgInfo>
+    /** The band's groups (`org_groups`); `joinedState` is my own join of one (`asked`, `joined`, `full`, `refused`, or none). */
+    suspend fun groups(jamId: String): List<OrgGroupInfo>
+    suspend fun groupJoinState(jamId: String, conversationId: String): String?
+    suspend fun joinGroup(jamId: String, conversationId: String): Boolean
+    /** Makes a group inside the band (an owner's: the core refuses anyone else); the new group's conversation id, or null. */
+    suspend fun createGroup(jamId: String, name: String, open: Boolean, members: List<String>): String?
+    suspend fun leave(jamId: String): Boolean
 }
 
 class CoreBandBackend(private val store: () -> LimeStore?, private val deliver: suspend () -> Unit) : BandBackend {
@@ -34,6 +47,13 @@ class CoreBandBackend(private val store: () -> LimeStore?, private val deliver: 
     override suspend fun remove(jamId: String, userId: String) = core { it.removeOrgMember(jamId, userId) }.isSuccess.also { deliver() }
     override suspend fun parse(code: String) = core { it.parseOrgInvite(code) }.getOrNull()
     override suspend fun join(code: String) = core { it.joinOrg(code) }.isSuccess.also { deliver() }
+    override suspend fun joinState(jamId: String) = core { it.orgJoinState(jamId) }.getOrNull()
+    override suspend fun mine() = core { it.myOrgs() }.getOrDefault(emptyList())
+    override suspend fun groups(jamId: String) = core { it.orgGroups(jamId) }.getOrDefault(emptyList())
+    override suspend fun groupJoinState(jamId: String, conversationId: String) = core { it.orgGroupJoinState(jamId, conversationId) }.getOrNull()
+    override suspend fun joinGroup(jamId: String, conversationId: String) = core { it.joinOrgGroup(jamId, conversationId) }.isSuccess.also { deliver() }
+    override suspend fun createGroup(jamId: String, name: String, open: Boolean, members: List<String>) = core { it.createOrgGroup(jamId, name.trim(), null, open, members) }.getOrNull().also { deliver() }
+    override suspend fun leave(jamId: String) = core { it.leaveOrg(jamId) }.isSuccess.also { deliver() }
 }
 
 /** A band's invite link and reading a code out of what someone pasted (iOS `ConversationStore.bandLink` / `bandCode(from:)`). // ANDROID DEBT: a Kotlin twin of two small Swift functions; the code itself is the core's (`parse_org_invite`). */

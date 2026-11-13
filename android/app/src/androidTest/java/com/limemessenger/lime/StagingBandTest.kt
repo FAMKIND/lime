@@ -115,9 +115,8 @@ class StagingBandTest {
         until(30_000, "the band page button") { count("band-open-page") > 0 }
         click("band-open-page")
         until(10_000, "the band page") { count("band-page") > 0 }
-        click("band-tab-info")
-        until(10_000, "Info") { count("band-info-members") > 0 }
-        fun openMembers() { click("band-info-members"); until(30_000, "Members") { count("band-member-$myUser") > 0 } }
+        until(30_000, "the Members tab (the owner is a member)") { count("band-tab-members") > 0 }
+        fun openMembers() { click("band-tab-members"); until(30_000, "Members") { count("band-member-$myUser") > 0 } }
         openMembers()
         assertEquals("You, Owner", rule.onNodeWithTag("band-member-$myUser", useUnmergedTree = true).fetchSemanticsNode().config[SemanticsProperties.ContentDescription].joinToString())
         click("band-invite-open")
@@ -130,7 +129,7 @@ class StagingBandTest {
         // Ben's request reaches Ada's phone at her next sync, and she adds him: look at Members again until he is there (bounded).
         var found = false
         for (attempt in 1..15) {
-            try { rule.waitUntil(20_000) { count("band-member-$benId") > 0 }; found = true; break } catch (e: Throwable) { click("band-members-back"); Thread.sleep(2_000); openMembers() }
+            try { rule.waitUntil(20_000) { count("band-member-$benId") > 0 }; found = true; break } catch (e: Throwable) { click("band-tab-info"); Thread.sleep(2_000); openMembers() }
         }
         assertTrue("Ben never appeared in Members; the core says ${runCatching { core.orgMembers(band.jamId).map { it.userId.take(8) + ':' + it.role } }}", found)
         // Make him a Writer.
@@ -140,7 +139,7 @@ class StagingBandTest {
         until(60_000, "Ben a Writer") { rule.onNodeWithTag("band-member-$benId", useUnmergedTree = true).fetchSemanticsNode().config[SemanticsProperties.ContentDescription].joinToString().endsWith(", Writer") }
         assertEquals("writer", core.orgMembers(band.jamId).first { it.userId == benId }.role)
         // Post as the band.
-        click("band-members-back"); click("band-back")
+        click("band-back")
         until(30_000, "Your jam") { count("jam-write-post") > 0 }
         click("jam-write-post")
         until(10_000, "the post sheet") { count("jam-compose-body") > 0 }

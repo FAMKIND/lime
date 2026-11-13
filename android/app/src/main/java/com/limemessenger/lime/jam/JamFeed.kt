@@ -255,6 +255,14 @@ class JamModel(
         env?.deliver?.invoke()
     }
 
+    /** Follows a jam (or a band) I am looking at from its id and its writer (no page needed: the core only needs those two). */
+    suspend fun subscribeTo(jamId: String, writerId: String) {
+        val core = store() ?: return
+        withContext(Dispatchers.IO) { runCatching { core.subscribeToJam(jamId, writerId) } }
+        reload()
+        env?.deliver?.invoke()
+    }
+
     suspend fun unsubscribe(jamId: String) {
         val core = store() ?: return
         withContext(Dispatchers.IO) { runCatching { core.unsubscribeFromJam(jamId) } }

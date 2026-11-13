@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -71,19 +72,26 @@ import uniffi.lime_core.OrgMemberInfo
 private const val MAX_MEMBERS = 100
 
 /**
- * A band's page (LIME-315b; iOS `OrgProfile`): its picture, name and about, then **Posts | Info**. Posts are the band's jam posts (open one in the usual reader); Info is the about, the tags, how many posts and
- * a **Members** row that opens the members screen. Members is where the owner manages roles, removes people and makes the invite link.
+ * A band's page (LIME-315b/315d; iOS `OrgProfile`): its picture, name and about, then the tabs **Posts | Info**, and for the band's **members only** (iOS `sections`: the members see more) **Members | Groups**.
+ * What each person sees: the **owner** (the band is theirs): everything, Invite, New group, role changes; a **writer** or **member**: Members (read-only: the core says whom they may manage: nobody), the Groups, and **Leave band**;
+ * a **subscriber** (follows the band, is not a member): Posts and Info and the **Subscribe** pill ("Subscribed ✓", asking before it unsubscribes), no member list, no invite, no groups.
+ * (A writer cannot post straight as someone else's band: the core only lets the band's owner publish; writers send a draft for review: not built, see the record.)
  */
 @Composable
-fun BandScreen(jam: JamInfo, model: JamModel, onBack: () -> Unit, onOpenPost: (JamPostInfo) -> Unit) {
+fun BandScreen(jam: JamInfo, model: JamModel, onBack: () -> Unit, onOpenPost: (JamPostInfo) -> Unit, onOpenChat: (String) -> Unit = {}) {
     val colors = Lime.colors
-    var tab by remember { mutableStateOf(0) }
-    var members by remember { mutableStateOf(false) }
-    var count by remember { mutableStateOf<Int?>(null) }
-    LaunchedEffect(jam.jamId, members) { count = model.bands.members(jam.jamId).size }
-    if (members) { BandMembersScreen(jam, model, onBack = { members = false }); return }
+    val scope = rememberCoroutineScope()
+    var tab by remember { mutableStateOf("posts") }
+    var myRole by remember { mutableStateOf<String?>(null) }
+    var roleLoaded by remember { mutableStateOf(false) }
+    var confirmUnsubscribe by remember { mutableStateOf(false) }
+    // My role in this band: from the core's list of the bands I belong to (nothing there: I only follow it).
+    LaunchedEffect(jam.jamId, model.reloads) { myRole = model.bands.mine().firstOrNull { it.jamId == jam.jamId }?.myRole; roleLoaded = true }
+    val member = myRole != null
+    val owner = myRole == "owner"
     val picture = remember(jam.jamId, model.reloads) { model.picture(jam.jamId)?.let { AttachmentProcessing.decodeForDisplay(it, 400) }?.asImageBitmap() }
     val posts = model.posts.filter { it.jamId == jam.jamId }.sortedByDescending { it.created }
+    val following = model.subscriptionStatus(jam.jamId).let { it == "active" || it == "requested" }
     Column(Modifier.fillMaxSize().background(colors.canvas).systemBarsPadding().testTag("band-page")) {
         Row(Modifier.fillMaxWidth().heightIn(min = 64.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack, Modifier.size(56.dp).testTag("band-back")) { Icon(Icons.Back, stringResource(R.string.chat_back), tint = colors.text) }
@@ -98,33 +106,150 @@ fun BandScreen(jam: JamInfo, model: JamModel, onBack: () -> Unit, onOpenPost: (J
                 Column {
                     Text(stringResource(R.string.band_label), color = colors.textSecondary, fontSize = 13.sp)
                     if (jam.about.isNotEmpty()) Text(jam.about, color = colors.text, fontSize = 16.sp, maxLines = 3)
+                    if (myRole != null) Text(stringResource(R.string.band_your_role, roleTitleOf(myRole!!)), color = colors.textSecondary, fontSize = 13.sp, modifier = Modifier.testTag("band-your-role"))
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TabPill(stringResource(R.string.band_tab_posts), tab == 0, "band-tab-posts") { tab = 0 }
-                TabPill(stringResource(R.string.band_tab_info), tab == 1, "band-tab-info") { tab = 1 }
+            // Subscribe (a band I do not own): lime when I do not follow it, neutral "Subscribed ✓" after; a tap on it asks before it unsubscribes (as a jam's).
+            if (!jam.mine && !owner && roleLoaded) {
+                val words = stringResource(if (following) R.string.band_subscribed_words else R.string.band_subscribe_words, jam.title)
+                Box(
+                    Modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(24.dp)).background(if (following) colors.surface else colors.accent)
+                        .clickable { if (following) confirmUnsubscribe = true else scope.launch { model.subscribeTo(jam.jamId, jam.writer) } }
+                        .semantics { contentDescription = words; role = Role.Button }.padding(horizontal = 20.dp).testTag("band-subscribe"),
+                    contentAlignment = Alignment.Center,
+                ) { Text(stringResource(if (following) R.string.band_subscribed else R.string.band_subscribe), color = if (following) colors.text else colors.accentInk, fontWeight = FontWeight.SemiBold) }
             }
-            if (tab == 0) {
-                if (posts.isEmpty()) Text(stringResource(R.string.band_no_posts), color = colors.textSecondary, fontSize = 16.sp, modifier = Modifier.padding(vertical = 24.dp).testTag("band-no-posts"))
-                posts.forEach { post ->
-                    val words = post.title.ifEmpty { JamModel.excerpt(post, 120) }
-                    Column(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.surface).clickable { onOpenPost(post) }.padding(14.dp)
-                            .semantics(mergeDescendants = true) { role = Role.Button }.testTag("band-post-${post.postId}"),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        if (post.title.isNotEmpty()) Text(post.title, color = colors.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
-                        Text(JamModel.excerpt(post, 160), color = colors.textSecondary, fontSize = 15.sp, maxLines = 3)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TabPill(stringResource(R.string.band_tab_posts), tab == "posts", "band-tab-posts") { tab = "posts" }
+                TabPill(stringResource(R.string.band_tab_info), tab == "info", "band-tab-info") { tab = "info" }
+                if (member) {
+                    TabPill(stringResource(R.string.band_members_row), tab == "members", "band-tab-members") { tab = "members" }
+                    TabPill(stringResource(R.string.band_tab_groups), tab == "groups", "band-tab-groups") { tab = "groups" }
+                }
+            }
+            when (tab) {
+                "posts" -> {
+                    if (posts.isEmpty()) Text(stringResource(if (jam.mine || following) R.string.band_no_posts else R.string.band_subscribe_to_read), color = colors.textSecondary, fontSize = 16.sp, modifier = Modifier.padding(vertical = 24.dp).testTag("band-no-posts"))
+                    posts.forEach { post ->
+                        Column(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.surface).clickable { onOpenPost(post) }.padding(14.dp)
+                                .semantics(mergeDescendants = true) { role = Role.Button }.testTag("band-post-${post.postId}"),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            if (post.title.isNotEmpty()) Text(post.title, color = colors.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
+                            Text(JamModel.excerpt(post, 160), color = colors.textSecondary, fontSize = 15.sp, maxLines = 3)
+                        }
                     }
                 }
-            } else {
-                if (jam.about.isNotEmpty()) Text(jam.about, color = colors.text, fontSize = 17.sp, modifier = Modifier.testTag("band-about"))
-                if (jam.topics.isNotEmpty()) Text(jam.topics.joinToString(" · "), color = colors.textSecondary, fontSize = 15.sp, modifier = Modifier.testTag("band-topics"))
-                InfoRow(stringResource(R.string.band_posts_count), jam.postCount.toInt().toString(), "band-info-posts")
-                InfoRow(stringResource(R.string.band_members_row), count?.toString().orEmpty(), "band-info-members", onClick = { members = true })
+                "info" -> {
+                    if (jam.about.isNotEmpty()) Text(jam.about, color = colors.text, fontSize = 17.sp, modifier = Modifier.testTag("band-about"))
+                    if (jam.topics.isNotEmpty()) Text(jam.topics.joinToString(" · "), color = colors.textSecondary, fontSize = 15.sp, modifier = Modifier.testTag("band-topics"))
+                    InfoRow(stringResource(R.string.band_posts_count), jam.postCount.toInt().toString(), "band-info-posts")
+                }
+                "members" -> BandMembersScreen(jam, model, onBack = {}, embedded = true, onLeft = onBack)
+                "groups" -> BandGroupsPane(jam, model, owner = owner, onOpenChat = onOpenChat)
             }
         }
     }
+    if (confirmUnsubscribe) AlertDialog(
+        onDismissRequest = { confirmUnsubscribe = false }, containerColor = colors.canvas,
+        title = { Text(stringResource(R.string.band_unsubscribe_title, jam.title), color = colors.text) },
+        text = { Text(stringResource(R.string.band_unsubscribe_body), color = colors.textSecondary) },
+        confirmButton = { TextButton({ confirmUnsubscribe = false; scope.launch { model.unsubscribe(jam.jamId) } }, Modifier.heightIn(min = 48.dp).testTag("band-unsubscribe-confirm")) { Text(stringResource(R.string.band_unsubscribe), color = colors.danger) } },
+        dismissButton = { TextButton({ confirmUnsubscribe = false }, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.jam_cancel), color = colors.text) } },
+    )
+}
+
+@Composable
+private fun roleTitleOf(role: String) = stringResource(when (role) { "owner" -> R.string.band_role_owner; "writer" -> R.string.band_role_writer; else -> R.string.band_role_member })
+
+/**
+ * The band's groups (LIME-315d; iOS `OrgGroupsTab`): each group with "Open" or "Invite only"; **Open** for a group I am in, **Join** for an open group I am not in (`org_group_join_state` says "asked" while an owner's phone
+ * has not added me yet), **New group** for the band's owner. A band's group opens as an ordinary group chat.
+ */
+@Composable
+fun BandGroupsPane(jam: JamInfo, model: JamModel, owner: Boolean, onOpenChat: (String) -> Unit) {
+    val colors = Lime.colors
+    val scope = rememberCoroutineScope()
+    var groups by remember { mutableStateOf<List<uniffi.lime_core.OrgGroupInfo>>(emptyList()) }
+    var states by remember { mutableStateOf<Map<String, String?>>(emptyMap()) }
+    var loaded by remember { mutableStateOf(false) }
+    var making by remember { mutableStateOf(false) }
+    val reads = remember { com.limemessenger.lime.ui.common.NewestRead() }   // the newest read wins (LIME-417)
+    suspend fun load() {
+        reads.read({ val list = model.bands.groups(jam.jamId); list to list.associate { it.conversationId to model.bands.groupJoinState(jam.jamId, it.conversationId) } }) { (list, st) -> groups = list; states = st; loaded = true }
+    }
+    LaunchedEffect(jam.jamId) { load() }
+    Column(Modifier.fillMaxWidth().testTag("band-groups"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (owner) TextButton({ making = true }, Modifier.heightIn(min = 48.dp).testTag("band-new-group")) { Text(stringResource(R.string.band_new_group), color = colors.text, fontWeight = FontWeight.SemiBold) }
+        if (loaded && groups.isEmpty()) Text(stringResource(R.string.band_no_groups), color = colors.textSecondary, fontSize = 16.sp, modifier = Modifier.padding(vertical = 16.dp).testTag("band-no-groups"))
+        groups.forEach { group ->
+            val state = states[group.conversationId]
+            val inIt = group.joined || state == "joined"
+            val kind = stringResource(if (group.open) R.string.band_group_open else R.string.band_group_invite_only)
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 60.dp).semantics(mergeDescendants = true) { contentDescription = "${group.name}, $kind" }.testTag("band-group-${group.conversationId}"),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Avatar(group.name.take(1).uppercase(), 2, 40.dp)
+                Column(Modifier.weight(1f)) {
+                    Text(group.name, color = colors.text, fontSize = 17.sp, maxLines = 1)
+                    Text(kind, color = colors.textSecondary, fontSize = 13.sp)
+                    if (state == "asked" && !inIt) Text(stringResource(R.string.band_group_asked), color = colors.textSecondary, fontSize = 13.sp, modifier = Modifier.testTag("band-group-asked-${group.conversationId}"))
+                }
+                if (inIt) TextButton({ onOpenChat(group.conversationId) }, Modifier.heightIn(min = 48.dp).testTag("band-group-open-${group.conversationId}")) { Text(stringResource(R.string.band_group_open_action), color = colors.text) }
+                else if (group.open && state != "asked") TextButton({ scope.launch { model.bands.joinGroup(jam.jamId, group.conversationId); load() } }, Modifier.heightIn(min = 48.dp).testTag("band-group-join-${group.conversationId}")) { Text(stringResource(R.string.band_group_join), color = colors.text, fontWeight = FontWeight.SemiBold) }
+            }
+        }
+    }
+    if (making) NewBandGroupDialog(jam, model, onDismiss = { making = false }, onMade = { making = false; scope.launch { load() } })
+}
+
+/** An owner makes a group inside the band (LIME-315d; iOS `NewBandGroupSheet`): a name (50), Open (any member may join) or Invite only, and who starts in it, from the band. */
+@Composable
+private fun NewBandGroupDialog(jam: JamInfo, model: JamModel, onDismiss: () -> Unit, onMade: () -> Unit) {
+    val colors = Lime.colors
+    val scope = rememberCoroutineScope()
+    var name by remember { mutableStateOf("") }
+    var open by remember { mutableStateOf(true) }
+    var chosen by remember { mutableStateOf(setOf<String>()) }
+    var people by remember { mutableStateOf<List<OrgMemberInfo>>(emptyList()) }
+    var failed by remember { mutableStateOf(false) }
+    var making by remember { mutableStateOf(false) }
+    LaunchedEffect(jam.jamId) { people = model.bands.members(jam.jamId).filter { !it.isMe } }
+    AlertDialog(
+        onDismissRequest = { if (!making) onDismiss() }, containerColor = colors.canvas,
+        title = { Text(stringResource(R.string.band_new_group), color = colors.text) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(name, { name = it.take(50) }, singleLine = true, label = { Text(stringResource(R.string.band_group_name_hint)) }, modifier = Modifier.fillMaxWidth().testTag("band-group-name"))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TabPill(stringResource(R.string.band_group_open), open, "band-group-kind-open") { open = true }
+                    TabPill(stringResource(R.string.band_group_invite_only), !open, "band-group-kind-invite") { open = false }
+                }
+                Text(stringResource(if (open) R.string.band_group_open_note else R.string.band_group_invite_note), color = colors.textSecondary, fontSize = 13.sp)
+                if (people.isNotEmpty()) Text(stringResource(R.string.band_group_start_with), color = colors.textSecondary, fontSize = 14.sp)
+                people.forEach { person ->
+                    val on = person.userId in chosen
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable { chosen = if (on) chosen - person.userId else chosen + person.userId }
+                            .semantics(mergeDescendants = true) { role = Role.Checkbox; selected = on; contentDescription = person.name }.testTag("band-group-pick-${person.userId}"),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(person.name, color = colors.text, fontSize = 17.sp, modifier = Modifier.weight(1f))
+                        if (on) Icon(Icons.Check, null, tint = colors.text)
+                    }
+                }
+                if (failed) Text(stringResource(R.string.band_group_failed), color = colors.danger, fontSize = 14.sp, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("band-group-failed"))
+            }
+        },
+        confirmButton = {
+            TextButton({
+                scope.launch { making = true; failed = false; val id = model.bands.createGroup(jam.jamId, name, open, chosen.toList()); making = false; if (id != null) onMade() else failed = true }
+            }, Modifier.heightIn(min = 48.dp).testTag("band-group-create"), enabled = name.isNotBlank() && !making) { Text(stringResource(if (making) R.string.band_creating else R.string.band_make), color = colors.text, fontWeight = FontWeight.SemiBold) }
+        },
+        dismissButton = { TextButton({ if (!making) onDismiss() }, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.jam_cancel), color = colors.text) } },
+    )
 }
 
 @Composable
@@ -160,7 +285,7 @@ private fun roleTitle(role: String) = stringResource(when (role) { "owner" -> R.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BandMembersScreen(jam: JamInfo, model: JamModel, onBack: () -> Unit) {
+fun BandMembersScreen(jam: JamInfo, model: JamModel, onBack: () -> Unit, embedded: Boolean = false, onLeft: () -> Unit = {}) {
     val colors = Lime.colors
     val scope = rememberCoroutineScope()
     var members by remember { mutableStateOf<List<OrgMemberInfo>>(emptyList()) }
@@ -169,6 +294,7 @@ fun BandMembersScreen(jam: JamInfo, model: JamModel, onBack: () -> Unit) {
     var removing by remember { mutableStateOf<OrgMemberInfo?>(null) }
     var inviting by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
+    var leaving by remember { mutableStateOf(false) }
     val reads = remember { com.limemessenger.lime.ui.common.NewestRead() }   // the newest read wins (LIME-417): a role change or a removal reads the list while the first load may still run
     suspend fun load() { reads.read({ model.bands.members(jam.jamId) }) { members = it; loaded = true } }
     LaunchedEffect(jam.jamId) { load() }
@@ -176,13 +302,14 @@ fun BandMembersScreen(jam: JamInfo, model: JamModel, onBack: () -> Unit) {
     val canInvite = members.any { it.canManage } || members.any { it.isMe && it.role == "owner" }
     val roles = listOf("owner", "writer", "member")
     val roleWords = roles.associateWith { roleTitle(it) }
-    Column(Modifier.fillMaxSize().background(colors.canvas).systemBarsPadding().testTag("band-members")) {
-        Row(Modifier.fillMaxWidth().heightIn(min = 64.dp), verticalAlignment = Alignment.CenterVertically) {
+    Column(if (embedded) Modifier.fillMaxWidth().testTag("band-members") else Modifier.fillMaxSize().background(colors.canvas).systemBarsPadding().testTag("band-members")) {
+        if (embedded) { if (canInvite) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { TextButton({ inviting = true }, Modifier.heightIn(min = 48.dp).testTag("band-invite-open")) { Text(stringResource(R.string.band_invite), color = colors.text, fontWeight = FontWeight.SemiBold) } } }
+        else Row(Modifier.fillMaxWidth().heightIn(min = 64.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack, Modifier.size(56.dp).testTag("band-members-back")) { Icon(Icons.Back, stringResource(R.string.chat_back), tint = colors.text) }
             Text(stringResource(R.string.band_members_row), color = colors.text, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f).semantics { heading() })
             if (canInvite) TextButton({ inviting = true }, Modifier.heightIn(min = 48.dp).testTag("band-invite-open")) { Text(stringResource(R.string.band_invite), color = colors.text, fontWeight = FontWeight.SemiBold) }
         }
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(if (embedded) Modifier.fillMaxWidth() else Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(stringResource(R.string.band_members_count, members.size, MAX_MEMBERS), color = colors.textSecondary, fontSize = 14.sp, modifier = Modifier.testTag("band-members-count"))
             if (loaded && members.isEmpty()) Text(stringResource(R.string.band_members_none), color = colors.textSecondary, fontSize = 16.sp, modifier = Modifier.padding(vertical = 16.dp).testTag("band-members-none"))
             if (failed) Text(stringResource(R.string.band_change_failed), color = colors.danger, fontSize = 14.sp, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("band-members-failed"))
@@ -201,8 +328,18 @@ fun BandMembersScreen(jam: JamInfo, model: JamModel, onBack: () -> Unit) {
                     Text(roleName, color = colors.textSecondary, fontSize = 15.sp)
                 }
             }
+            // Everyone but the owner can leave the band (iOS: "everyone else can leave"): out of its members and groups, and no longer following it.
+            val me = members.firstOrNull { it.isMe }
+            if (me != null && me.role != "owner") TextButton({ leaving = true }, Modifier.heightIn(min = 52.dp).testTag("band-leave")) { Text(stringResource(R.string.band_leave), color = colors.danger, fontSize = 17.sp) }
         }
     }
+    if (leaving) AlertDialog(
+        onDismissRequest = { leaving = false }, containerColor = colors.canvas,
+        title = { Text(stringResource(R.string.band_leave_title), color = colors.text) },
+        text = { Text(stringResource(R.string.band_leave_body), color = colors.textSecondary) },
+        confirmButton = { TextButton({ leaving = false; scope.launch { if (model.bands.leave(jam.jamId)) onLeft() else failed = true } }, Modifier.heightIn(min = 48.dp).testTag("band-leave-confirm")) { Text(stringResource(R.string.band_leave), color = colors.danger) } },
+        dismissButton = { TextButton({ leaving = false }, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.jam_cancel), color = colors.text) } },
+    )
     acting?.let { person ->
         ModalBottomSheet(onDismissRequest = { acting = null }, containerColor = colors.canvas) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp).testTag("band-member-sheet")) {
@@ -291,18 +428,22 @@ fun BandJoinDialog(model: JamModel, onDismiss: () -> Unit) {
                     "bad" -> Text(stringResource(R.string.band_join_bad), color = colors.danger, fontSize = 14.sp, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("band-join-bad"))
                     "failed" -> Text(stringResource(R.string.band_join_failed), color = colors.danger, fontSize = 14.sp, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("band-join-failed"))
                     "asked" -> Text(stringResource(R.string.band_join_asked), color = colors.text, fontSize = 14.sp, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("band-join-asked"))
+                    "joined" -> Text(stringResource(R.string.band_join_in), color = colors.text, fontSize = 14.sp, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("band-join-joined"))
+                    "full" -> Text(stringResource(R.string.band_join_full), color = colors.danger, fontSize = 14.sp, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("band-join-full"))
+                    "refused" -> Text(stringResource(R.string.band_join_refused), color = colors.danger, fontSize = 14.sp, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("band-join-refused"))
                 }
             }
         },
         confirmButton = {
-            if (state == "asked") TextButton(onDismiss, Modifier.heightIn(min = 48.dp).testTag("band-join-done")) { Text(stringResource(R.string.band_join_done), color = colors.text) }
+            if (state == "asked" || state == "joined") TextButton(onDismiss, Modifier.heightIn(min = 48.dp).testTag("band-join-done")) { Text(stringResource(R.string.band_join_done), color = colors.text) }
             else TextButton({
                 scope.launch {
                     val code = BandLinks.code(text)
-                    state = if (model.bands.parse(code) == null) "bad" else if (model.bands.join(code)) "asked" else "failed"
+                    val invite = model.bands.parse(code)
+                    state = if (invite == null) "bad" else if (!model.bands.join(code)) "failed" else when (model.bands.joinState(invite.jamId)) { "joined" -> "joined"; "full" -> "full"; "refused" -> "refused"; else -> "asked" }
                 }
             }, Modifier.heightIn(min = 48.dp).testTag("band-join-go"), enabled = text.isNotBlank()) { Text(stringResource(R.string.band_join_go), color = colors.text, fontWeight = FontWeight.SemiBold) }
         },
-        dismissButton = { if (state != "asked") TextButton(onDismiss, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.jam_cancel), color = colors.text) } },
+        dismissButton = { if (state != "asked" && state != "joined") TextButton(onDismiss, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.jam_cancel), color = colors.text) } },
     )
 }

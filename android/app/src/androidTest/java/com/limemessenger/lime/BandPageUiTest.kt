@@ -10,7 +10,7 @@ import androidx.compose.ui.test.performTextReplacement
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.limemessenger.lime.chats.Samples
-import com.limemessenger.lime.jam.BandBackend
+import com.limemessenger.lime.chats.FakeBand
 import com.limemessenger.lime.jam.BandLinks
 import com.limemessenger.lime.jam.JamModel
 import com.limemessenger.lime.keys.KeyWrapper
@@ -33,8 +33,6 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import uniffi.lime_core.LimeStore
-import uniffi.lime_core.OrgInvite
-import uniffi.lime_core.OrgMemberInfo
 
 /** LIME-315b: the band page (Posts | Info), members with roles, the invite link and joining by a code, against a made-up band (the core reads the codes: no network, no account). */
 @RunWith(AndroidJUnit4::class)
@@ -45,27 +43,7 @@ class BandPageUiTest {
     private lateinit var store: LimeStore
     private val alias = "lime.test.bandpage"
 
-    /** Made-up members and codes; the *reading* of a code is the real core's (`parse_org_invite`), as is the rule the app follows (`can_manage` is whatever this fake reports, as the core would). */
-    private inner class FakeBand : BandBackend {
-        val people = mutableListOf(
-            OrgMemberInfo("me", "Ada Android", 1u, "owner", true, false),
-            OrgMemberInfo("ben", "Ben Android", 2u, "writer", false, true),
-            OrgMemberInfo("cleo", "Cleo Android", 3u, "member", false, true),
-        )
-        var token = 1
-        var inviteOn = true
-        val roleChanges = mutableListOf<Triple<String, String, String>>()
-        val removed = mutableListOf<String>()
-        val joined = mutableListOf<String>()
-        override suspend fun members(jamId: String) = people.toList()
-        override suspend fun inviteCode(jamId: String) = if (inviteOn) "$jamId.me.token$token" else null
-        override suspend fun resetInvite(jamId: String, on: Boolean): String? { inviteOn = on; if (on) token++; return inviteCode(jamId) }
-        override suspend fun setRole(jamId: String, userId: String, role: String): Boolean { roleChanges += Triple(jamId, userId, role); people.replaceAll { if (it.userId == userId) it.copy(role = role) else it }; return true }
-        override suspend fun remove(jamId: String, userId: String): Boolean { removed += userId; people.removeAll { it.userId == userId }; return true }
-        override suspend fun parse(code: String): OrgInvite? = store.parseOrgInvite(code)
-        override suspend fun join(code: String): Boolean { joined += code; return true }
-    }
-    private val fake = FakeBand()
+    private val fake = FakeBand { store.parseOrgInvite(it) }
     private val band = Samples.jam("band", "The Staff Room", mine = true, created = 2_000).copy(about = "A school team", topics = listOf("Maths", "Grade 4"), postCount = 2u)
     private val posts = listOf(
         Samples.jamPost("p1", "band", at = 3_000, plain = "Our first band post"),
@@ -97,8 +75,10 @@ class BandPageUiTest {
         rule.onNodeWithTag("band-tab-info", useUnmergedTree = true).performClick()
         rule.waitUntil(5_000) { count("band-about") > 0 }
         assertEquals("A school team", text("band-about")); assertEquals("Maths · Grade 4", text("band-topics"))
-        rule.waitUntil(5_000) { words("band-info-members") == "Members, 3" }
-        assertTrue("the tabs say selected to TalkBack", rule.onNodeWithTag("band-tab-info", useUnmergedTree = true).fetchSemanticsNode().config[SemanticsProperties.Selected])
+        rule.onNodeWithTag("band-tab-members", useUnmergedTree = true).performClick()
+        rule.waitUntil(5_000) { count("band-member-me") > 0 }
+        assertEquals("3 of 100", text("band-members-count"))
+        assertTrue("the tabs say selected to TalkBack", rule.onNodeWithTag("band-tab-members", useUnmergedTree = true).fetchSemanticsNode().config[SemanticsProperties.Selected])
     }
 
     @Test fun membersListsMeAsOwnerAsOneStopPerRowAndTheOwnerChangesARoleAndRemovesSomeone() {

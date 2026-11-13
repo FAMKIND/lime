@@ -147,6 +147,19 @@ fun YourJamScreen(model: JamModel, drafts: JamDrafts, onBack: () -> Unit, onComp
                 PrimaryButton(stringResource(R.string.jam_write_post), { onCompose(ComposeRoute("quick")) }, Modifier.testTag("jam-write-post"))
                 OutlineButton(stringResource(R.string.jam_write_article), "jam-write-article") { onCompose(ComposeRoute("article")) }
                 OutlineButton(stringResource(R.string.band_create), "band-create-open") { creatingBand = true }
+                // The bands I belong to without owning (a writer or a member), from the core's `my_orgs`: each opens its page (LIME-315d).
+                var belong by remember { mutableStateOf<List<uniffi.lime_core.OrgInfo>>(emptyList()) }
+                LaunchedEffect(model.reloads) { belong = model.bands.mine().filter { it.myRole != "owner" } }
+                if (belong.isNotEmpty() && onOpenBand != null) {
+                    Section(stringResource(R.string.band_yours_belong))
+                    belong.forEach { org ->
+                        val words = "${org.name}, ${org.myRole}"
+                        Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable { onOpenBand(org.jamId) }.semantics(mergeDescendants = true) { role = Role.Button; contentDescription = words }.testTag("band-belong-${org.jamId}"), verticalAlignment = Alignment.CenterVertically) {
+                            Text(org.name, color = colors.text, fontSize = 17.sp, modifier = Modifier.weight(1f))
+                            Text(org.myRole.replaceFirstChar { it.uppercase() }, color = colors.textSecondary, fontSize = 15.sp)
+                        }
+                    }
+                }
                 if (draftList.isNotEmpty()) {
                     Section(stringResource(R.string.jam_drafts))
                     draftList.forEach { d ->

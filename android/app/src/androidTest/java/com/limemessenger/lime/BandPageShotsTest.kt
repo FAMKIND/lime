@@ -11,7 +11,7 @@ import android.graphics.Bitmap
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.limemessenger.lime.chats.Samples
-import com.limemessenger.lime.jam.BandBackend
+import com.limemessenger.lime.chats.FakeBand
 import com.limemessenger.lime.jam.BandLinks
 import com.limemessenger.lime.jam.JamModel
 import com.limemessenger.lime.keys.KeyWrapper
@@ -34,8 +34,6 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import uniffi.lime_core.LimeStore
-import uniffi.lime_core.OrgInvite
-import uniffi.lime_core.OrgMemberInfo
 
 /** NOT a test: the LIME-315b screenshots (the band page, Members, the invite sheet, the join dialog; light, dark, 200% font) into files/shots (`tools/shots-315b.sh`). `@Staging` only so the plain pass skips it. */
 @Staging
@@ -47,27 +45,7 @@ class BandPageShotsTest {
     private lateinit var store: LimeStore
     private val alias = "lime.test.bandshots2"
 
-    /** Made-up members and codes; the *reading* of a code is the real core's (`parse_org_invite`), as is the rule the app follows (`can_manage` is whatever this fake reports, as the core would). */
-    private inner class FakeBand : BandBackend {
-        val people = mutableListOf(
-            OrgMemberInfo("me", "Ada Android", 1u, "owner", true, false),
-            OrgMemberInfo("ben", "Ben Android", 2u, "writer", false, true),
-            OrgMemberInfo("cleo", "Cleo Android", 3u, "member", false, true),
-        )
-        var token = 1
-        var inviteOn = true
-        val roleChanges = mutableListOf<Triple<String, String, String>>()
-        val removed = mutableListOf<String>()
-        val joined = mutableListOf<String>()
-        override suspend fun members(jamId: String) = people.toList()
-        override suspend fun inviteCode(jamId: String) = if (inviteOn) "$jamId.me.token$token" else null
-        override suspend fun resetInvite(jamId: String, on: Boolean): String? { inviteOn = on; if (on) token++; return inviteCode(jamId) }
-        override suspend fun setRole(jamId: String, userId: String, role: String): Boolean { roleChanges += Triple(jamId, userId, role); people.replaceAll { if (it.userId == userId) it.copy(role = role) else it }; return true }
-        override suspend fun remove(jamId: String, userId: String): Boolean { removed += userId; people.removeAll { it.userId == userId }; return true }
-        override suspend fun parse(code: String): OrgInvite? = store.parseOrgInvite(code)
-        override suspend fun join(code: String): Boolean { joined += code; return true }
-    }
-    private val fake = FakeBand()
+    private val fake = FakeBand { store.parseOrgInvite(it) }
     private val band = Samples.jam("band", "The Staff Room", mine = true, created = 2_000).copy(about = "A school team", topics = listOf("Maths", "Grade 4"), postCount = 2u)
     private val posts = listOf(
         Samples.jamPost("p1", "band", at = 3_000, plain = "Our first band post"),

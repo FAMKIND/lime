@@ -334,9 +334,53 @@ fun main(args: Array<String>) {
                         if (noted.add("jam:${jam.status}")) println("band: following the band's jam \"${jam.title}\" (${jam.status})")
                         for (post in store.listJamPosts(jam.jamId)) if (post.state == "ready" && noted.add("post:${post.postId}")) println("band: received ${post.kind} \"${post.title.ifEmpty { post.plain.take(40) }}\" as ${post.displayAs} by \"${jam.title}\"")
                     }
+                    // LIME-315d: the band's groups: join every open one (`join_org_group`), say what happens, and answer what is said in them (like `group-echo`).
+                    if (state == "joined") {
+                        for (g in runCatching { store.orgGroups(invite.jamId) }.getOrDefault(emptyList())) {
+                            val gState = runCatching { store.orgGroupJoinState(invite.jamId, g.conversationId) }.getOrNull()
+                            if (!g.joined && g.open && gState == null && noted.add("gj:${g.conversationId}")) { runCatching { store.joinOrgGroup(invite.jamId, g.conversationId) }; println("band: asked to join group \"${g.name}\"") }
+                            if (noted.add("gs:${g.conversationId}:${g.joined}:$gState")) println("band: group \"${g.name}\" joined=${g.joined} state=$gState")
+                            if (g.joined) for (m in store.listMessages(g.conversationId)) if (m.senderId != null && m.localState != "system" && noted.add("gm:${m.id}")) {
+                                println("band: group \"${g.name}\" message \"${messagePlainText(m.text).take(60)}\"")
+                                store.queueText(g.conversationId, "$personaName here: got \"${messagePlainText(m.text).take(40)}\"")
+                            }
+                        }
+                    }
                     store.deliverQueued(http, freshToken(http, tokens))
                 } catch (e: Exception) {
                     System.err.println("band-join: ${e::class.simpleName} (will retry)")
+                }
+                Thread.sleep(2000)
+            }
+        }
+        "band-subscribe" -> {
+            // LIME-315d: `partner --as cleo band-subscribe <link-or-code>`: a SUBSCRIBER (not a member): follows the band's jam by the invite's ids, accepts Ada's chat, and says what she can see:
+            // the band's posts ("band-view: received ... as <display_as> by <band>") and that she cannot see the members or the invite ("band-view: members visible N", "band-view: invite refused").
+            val pasted = args.getOrNull(1) ?: error("usage: partner --as cleo band-subscribe <link-or-code>")
+            val code = pasted.trim().let { t -> t.substringAfter("/b/#", "").ifEmpty { t.substringAfter("/b/", "").substringBefore('?') }.ifEmpty { t } }
+            val invite = store.parseOrgInvite(code) ?: error("band-subscribe: not a band code")
+            val noted = mutableSetOf<String>()
+            var asked = false
+            val startedAt = System.currentTimeMillis()
+            println("band-subscribe: listening as $personaName (Ctrl-C to stop)")
+            while (true) {
+                try {
+                    store.sync(http, freshToken(http, tokens))
+                    store.listConversations().filter { it.requestState == "pending" }.forEach { runCatching { store.acceptRequest(it.id) } }
+                    val chatReady = store.listConversations().any { it.id == dm && it.requestState != "pending" }
+                    if (!asked && (chatReady || System.currentTimeMillis() - startedAt > 40_000)) { store.subscribeToJam(invite.jamId, invite.writerId); asked = true; println("band-view: asked to subscribe (chat ready: $chatReady)") }
+                    for (jam in store.listJamSubscriptions().filter { it.jamId == invite.jamId }) {
+                        if (noted.add("jam:${jam.status}")) println("band-view: following \"${jam.title}\" (${jam.status})")
+                        for (post in store.listJamPosts(jam.jamId)) if (post.state == "ready" && noted.add("post:${post.postId}")) println("band-view: received ${post.kind} \"${post.title.ifEmpty { post.plain.take(40) }}\" as ${post.displayAs} by \"${jam.title}\"")
+                    }
+                    val members = runCatching { store.orgMembers(invite.jamId).size }
+                    if (noted.add("members:$members")) println("band-view: members visible ${members.getOrNull() ?: ("error " + members.exceptionOrNull()?.let { it::class.simpleName })}")
+                    val code2 = runCatching { store.orgInviteCode(invite.jamId) }
+                    if (noted.add("invite:${code2.isSuccess}")) println(if (code2.isSuccess) "band-view: invite code VISIBLE" else "band-view: invite refused")
+                    if (noted.add("orgs:${store.myOrgs().size}")) println("band-view: my bands ${store.myOrgs().size}")
+                    store.deliverQueued(http, freshToken(http, tokens))
+                } catch (e: Exception) {
+                    System.err.println("band-subscribe: ${e::class.simpleName} (will retry)")
                 }
                 Thread.sleep(2000)
             }

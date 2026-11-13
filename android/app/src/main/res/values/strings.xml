@@ -641,4 +641,35 @@
     <string name="band_join_failed">Could not ask to join. Try again.</string>
     <string name="band_join_asked">Asked to join. An owner\u2019s phone adds you the next time it is online.</string>
     <string name="band_open_page">Band page</string>
+    <!-- LIME-315d -->
+    <string name="band_your_role">Your role: %1$s</string>
+    <string name="band_tab_groups">Groups</string>
+    <string name="band_subscribe">Subscribe</string>
+    <string name="band_subscribed">Subscribed \u2713</string>
+    <string name="band_subscribe_words">Subscribe to %1$s</string>
+    <string name="band_subscribed_words">Subscribed to %1$s. Tap to unsubscribe.</string>
+    <string name="band_subscribe_to_read">Subscribe to read their posts.</string>
+    <string name="band_unsubscribe_title">Unsubscribe from %1$s?</string>
+    <string name="band_unsubscribe_body">You stop getting its posts. Posts you already have stay.</string>
+    <string name="band_unsubscribe">Unsubscribe</string>
+    <string name="band_leave">Leave band</string>
+    <string name="band_leave_title">Leave this band?</string>
+    <string name="band_leave_body">You leave its members and its groups, and stop following it.</string>
+    <string name="band_new_group">New group</string>
+    <string name="band_no_groups">No groups yet.</string>
+    <string name="band_group_open">Open</string>
+    <string name="band_group_invite_only">Invite only</string>
+    <string name="band_group_open_action">Open</string>
+    <string name="band_group_join">Join</string>
+    <string name="band_group_asked">You\u2019ll be added when an owner\u2019s phone is next online.</string>
+    <string name="band_group_name_hint">Group name</string>
+    <string name="band_group_open_note">Any member of the band can join.</string>
+    <string name="band_group_invite_note">Only people you add are in it.</string>
+    <string name="band_group_start_with">Start with</string>
+    <string name="band_group_failed">That group could not be made. Try again.</string>
+    <string name="band_join_in">You are in the band.</string>
+    <string name="band_join_full">This band is full.</string>
+    <string name="band_join_refused">The owner\u2019s phone did not accept that link.</string>
+    <string name="band_view">View band</string>
+    <string name="band_yours_belong">Bands you belong to</string>
 </resources>
