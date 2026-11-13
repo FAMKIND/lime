@@ -939,3 +939,16 @@ Jam minors 32 → end (31 rows) plus the leftovers of LIME-323 (207, 363, 395, 3
 | 362 | fixed | every remaining jam animation honours Reduce Motion |
 | 366 | partly fixed | stacked opacity gone everywhere; the dimmed remix/share stubs stay (tests use them; they are disabled): ask |
 | 367 | ask | decorative symbols in JamReader and OrgGroupsTab: unverified on VoiceOver; check on a phone |
+
+## LIME-326 status
+
+Five asks decided by plot, built in LIME-326.
+
+| Row | Status | Note |
+|---|---|---|
+| 558 | fixed in 326 | the incoming call shows "Decline" and "Accept" under the buttons (footnote, white on the call scrim); the button names are unchanged |
+| 406 | fixed in 326 | the marquee scrolls once (2 s wait, scroll, 2 s pause, back) and stops; a tap plays it once more; Reduce Motion still shows no scroll |
+| 468 | fixed in 326 | "New link" and "Turn off" ask first (confirm sheet; Turn off in the danger style); the announcement after stays |
+| 639 | fixed in 326 | no hard-coded ", tab, 1 of N" exists in the code: the system speaks the position; the labels are unchanged there |
+| 675 | fixed in 326 | spoken tab names start with the visible word: "link, messages", "call, calls", "jam"; the tab badge font scales with the text (read when the bar is made) |
+| 366 | fixed in 326 | the dimmed Remix and Share stubs no longer show (the card's action row is ♥ and 💬 in two columns); the "0 remixes" in the post page's counts line is left for plot |

@@ -12,8 +12,8 @@ final class CallsTabUITests: XCTestCase {
     }
 
     private func openCalls(_ app: XCUIApplication) {
-        XCTAssertTrue(app.tabBars.buttons["call"].waitForExistence(timeout: 10))
-        app.tabBars.buttons["call"].tap()
+        XCTAssertTrue(app.tabBars.buttons["call, calls"].waitForExistence(timeout: 10))
+        app.tabBars.buttons["call, calls"].tap()
         XCTAssertTrue(app.segmentedControls.buttons["All"].waitForExistence(timeout: 5))
     }
 
@@ -124,7 +124,7 @@ final class CallsTabUITests: XCTestCase {
         XCTAssertTrue(plus.waitForExistence(timeout: 10))
         XCTAssertEqual(plus.frame.width, 64, accuracy: 1)
         XCTAssertEqual(plus.frame.height, 64, accuracy: 1)
-        let frames = app.tabBars.buttons.allElementsBoundByIndex.filter { ["link", "call", "jam"].contains($0.label) }.map(\.frame)
+        let frames = app.tabBars.buttons.allElementsBoundByIndex.filter { ["link, messages", "call, calls", "jam"].contains($0.label) }.map(\.frame)
         let bar = frames.dropFirst().reduce(frames.first ?? .zero) { $0.union($1) }.insetBy(dx: -6, dy: -4)
         XCTAssertFalse(plus.frame.intersects(bar), "the + \(plus.frame) must not overlap the bar \(bar)")
         plus.tap()
@@ -137,7 +137,7 @@ final class CallsTabUITests: XCTestCase {
         let plus = app.buttons["new-call-button"]
         XCTAssertTrue(plus.waitForExistence(timeout: 5))
         XCTAssertEqual(plus.frame.width, 64, accuracy: 1)
-        let frames = app.tabBars.buttons.allElementsBoundByIndex.filter { ["link", "call", "jam"].contains($0.label) }.map(\.frame)
+        let frames = app.tabBars.buttons.allElementsBoundByIndex.filter { ["link, messages", "call, calls", "jam"].contains($0.label) }.map(\.frame)
         let bar = frames.dropFirst().reduce(frames.first ?? .zero) { $0.union($1) }.insetBy(dx: -6, dy: -4)
         XCTAssertFalse(plus.frame.intersects(bar))
     }
@@ -188,7 +188,7 @@ final class CallsTabUITests: XCTestCase {
         for _ in 0..<3 { list.swipeUp() }
         XCTAssertEqual(bar.frame.width, before.width, accuracy: 1, "the tab bar does not shrink on scroll")
         XCTAssertEqual(bar.frame.height, before.height, accuracy: 1)
-        XCTAssertTrue(app.tabBars.buttons["link"].isHittable && app.tabBars.buttons["jam"].isHittable, "all three tabs are still there")
+        XCTAssertTrue(app.tabBars.buttons["link, messages"].isHittable && app.tabBars.buttons["jam"].isHittable, "all three tabs are still there")
     }
 
     func testTheMagnifierPushesTheCallsSearchWithPeopleAndCalls() {
@@ -216,12 +216,12 @@ final class CallsTabUITests: XCTestCase {
 
     func testTheCallTabBadgeCountsMissedCallsAndClearsWhenTheTabIsOpened() {
         let app = app()
-        XCTAssertTrue(app.tabBars.buttons["call"].waitForExistence(timeout: 10))
-        let value = { (app.tabBars.buttons["call"].value as? String) ?? "" }
+        XCTAssertTrue(app.tabBars.buttons["call, calls"].waitForExistence(timeout: 10))
+        let value = { (app.tabBars.buttons["call, calls"].value as? String) ?? "" }
         let counted = NSPredicate { _, _ in value().hasPrefix("2") }
         expectation(for: counted, evaluatedWith: nil)
         waitForExpectations(timeout: 8)
-        app.tabBars.buttons["call"].tap()
+        app.tabBars.buttons["call, calls"].tap()
         XCTAssertTrue(app.segmentedControls.buttons["All"].waitForExistence(timeout: 5))
         let cleared = NSPredicate { _, _ in !value().hasPrefix("2") }
         expectation(for: cleared, evaluatedWith: nil)

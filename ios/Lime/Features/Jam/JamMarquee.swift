@@ -2,10 +2,10 @@ import SwiftUI
 import UIKit
 import AVKit
 
-/// How a marquee moves (LIME-235c): a pause at the start, a slow scroll to the end, a pause, back.
+/// How a marquee moves (LIME-235c, LIME-326): a pause at the start, a slow scroll to the end, a pause, back, and then it stops (WCAG 2.2.2); a tap plays it once more.
 enum MarqueeMotion {
     static let startPause = 2.0
-    static let endPause = 1.5
+    static let endPause = 2.0
     static let speed = 30.0   // points a second
 
     /// How far the text overflows its box (0 when it fits).
@@ -30,6 +30,7 @@ struct MarqueeText: View {
     @State private var textWidth: CGFloat = 0
     @State private var boxWidth: CGFloat = 0
     @State private var offset: CGFloat = 0
+    @State private var replay = 0
 
     private var overflow: CGFloat { MarqueeMotion.overflow(text: textWidth, box: boxWidth) }
 
@@ -51,7 +52,8 @@ struct MarqueeText: View {
                     .mask { edgeFade }
                     .opacity(overflow > 0 && !reduceMotion ? 1 : 0)
             }
-            .task(id: "\(text)|\(Int(textWidth))|\(Int(boxWidth))|\(reduceMotion)") { await run() }
+            .task(id: "\(text)|\(Int(textWidth))|\(Int(boxWidth))|\(reduceMotion)|\(replay)") { await run() }
+            .simultaneousGesture(TapGesture().onEnded { replay += 1 })
             .accessibilityElement(children: .ignore).accessibilityLabel(text)
     }
 
@@ -67,15 +69,13 @@ struct MarqueeText: View {
         offset = 0
         guard overflow > 0, !reduceMotion else { return }
         let seconds = MarqueeMotion.duration(overflow: overflow)
-        while !Task.isCancelled {
-            try? await Task.sleep(for: .seconds(MarqueeMotion.startPause))
-            if Task.isCancelled { return }
-            withAnimation(.linear(duration: seconds)) { offset = -overflow - 10 }
-            try? await Task.sleep(for: .seconds(seconds + MarqueeMotion.endPause))
-            if Task.isCancelled { return }
-            withAnimation(.linear(duration: seconds)) { offset = 0 }
-            try? await Task.sleep(for: .seconds(seconds))
-        }
+        // One pass, then it stops (LIME-326).
+        try? await Task.sleep(for: .seconds(MarqueeMotion.startPause))
+        if Task.isCancelled { return }
+        withAnimation(.linear(duration: seconds)) { offset = -overflow - 10 }
+        try? await Task.sleep(for: .seconds(seconds + MarqueeMotion.endPause))
+        if Task.isCancelled { return }
+        withAnimation(.linear(duration: seconds)) { offset = 0 }
     }
 }
 

@@ -15,15 +15,15 @@ final class TabBarUITests: XCTestCase {
     func testTheTabBarHasLinkCallJamInThatOrderWithLowercaseLabels() {
         let app = demoApp()
         XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 10))
-        let labels = app.tabBars.buttons.allElementsBoundByIndex.map(\.label).filter { ["link", "call", "jam"].contains($0) }
-        XCTAssertEqual(labels, ["link", "call", "jam"])
+        let labels = app.tabBars.buttons.allElementsBoundByIndex.map(\.label).filter { ["link, messages", "call, calls", "jam"].contains($0) }
+        XCTAssertEqual(labels, ["link, messages", "call, calls", "jam"])
         XCTAssertTrue(app.buttons["conversation-row-dm:sam"].waitForExistence(timeout: 5), "the app starts on link")
     }
 
     func testCallOpensCallsInPlaceNotInASheet() {
         let app = demoApp()
-        XCTAssertTrue(app.tabBars.buttons["call"].waitForExistence(timeout: 10))
-        app.tabBars.buttons["call"].tap()
+        XCTAssertTrue(app.tabBars.buttons["call, calls"].waitForExistence(timeout: 10))
+        app.tabBars.buttons["call, calls"].tap()
         XCTAssertTrue(any(app, "calls-screen").waitForExistence(timeout: 5) || app.navigationBars["Calls"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.tabBars.firstMatch.exists, "the tab bar is still there: it is a tab, not a sheet")
     }
@@ -36,9 +36,9 @@ final class TabBarUITests: XCTestCase {
         XCTAssertFalse(app.tabBars.firstMatch.isHittable, "the tab bar is hidden in a chat so the composer keeps the bottom")
         // The bar is hidden in a chat, so go to call from Messages: back out, switch, and come back.
         goBack(app)
-        app.tabBars.buttons["call"].tap()
+        app.tabBars.buttons["call, calls"].tap()
         XCTAssertTrue(app.buttons["calls-search-button"].waitForExistence(timeout: 5))
-        app.tabBars.buttons["link"].tap()
+        app.tabBars.buttons["link, messages"].tap()
         XCTAssertTrue(app.buttons["conversation-row-dm:sam"].waitForExistence(timeout: 5))
     }
 
@@ -51,7 +51,7 @@ final class TabBarUITests: XCTestCase {
         XCTAssertTrue(app.buttons["conversation-row-dm:sam"].waitForExistence(timeout: 10))
         app.buttons["messages-search-button"].tap()
         XCTAssertTrue(app.textFields["search-field"].waitForExistence(timeout: 5))
-        app.tabBars.buttons["link"].tap()
+        app.tabBars.buttons["link, messages"].tap()
         XCTAssertTrue(app.buttons["conversation-row-dm:sam"].waitForExistence(timeout: 5), "a re-tap goes back to Messages")
     }
 
@@ -75,15 +75,16 @@ final class TabBarUITests: XCTestCase {
 
     /// The union of the tab buttons, a little larger: what the "+" must not cover.
     private func tabBarArea(_ app: XCUIApplication) -> CGRect {
-        let frames = app.tabBars.buttons.allElementsBoundByIndex.filter { ["link", "call", "jam"].contains($0.label) }.map(\.frame)
+        let frames = app.tabBars.buttons.allElementsBoundByIndex.filter { ["link, messages", "call, calls", "jam"].contains($0.label) }.map(\.frame)
         return frames.dropFirst().reduce(frames.first ?? .zero) { $0.union($1) }.insetBy(dx: -6, dy: -4)
     }
 
     func testEveryTabRootHasTheLogoSearchAndAvatarAndNothingElse() {
         let app = demoApp()
         for (tab, searchID) in [("link", "messages-search-button"), ("call", "calls-search-button"), ("jam", "jam-search-button")] {
-            XCTAssertTrue(app.tabBars.buttons[tab].waitForExistence(timeout: 10))
-            app.tabBars.buttons[tab].tap()
+            let spoken = tab == "link" ? "link, messages" : tab == "call" ? "call, calls" : tab
+            XCTAssertTrue(app.tabBars.buttons[spoken].waitForExistence(timeout: 10))
+            app.tabBars.buttons[spoken].tap()
             XCTAssertTrue(app.buttons["lime menu"].waitForExistence(timeout: 5), "\(tab): the logo")
             XCTAssertTrue(app.buttons[searchID].exists, "\(tab): search")
             XCTAssertTrue(app.buttons["settings-button"].exists, "\(tab): the avatar")
@@ -102,7 +103,7 @@ final class TabBarUITests: XCTestCase {
         app.buttons["messages-search-button"].tap()
         XCTAssertTrue(app.textFields["search-field"].waitForExistence(timeout: 5), "link: message search")
         app.buttons["search-back"].tap()
-        app.tabBars.buttons["call"].tap()
+        app.tabBars.buttons["call, calls"].tap()
         XCTAssertTrue(app.buttons["calls-search-button"].waitForExistence(timeout: 5))
         app.buttons["calls-search-button"].tap()
         XCTAssertTrue(app.textFields["search-field"].waitForExistence(timeout: 5), "call: its own search screen")
@@ -116,7 +117,7 @@ final class TabBarUITests: XCTestCase {
         let app = demoApp()
         let plus = app.buttons["new-message-button"]
         XCTAssertTrue(plus.waitForExistence(timeout: 10))
-        XCTAssertTrue(app.tabBars.buttons["link"].exists)
+        XCTAssertTrue(app.tabBars.buttons["link, messages"].exists)
         XCTAssertFalse(plus.frame.intersects(tabBarArea(app)), "the + \(plus.frame) must not overlap the tab bar \(tabBarArea(app))")
         XCTAssertGreaterThan(plus.frame.midX, app.windows.firstMatch.frame.midX, "bottom right")
         XCTAssertGreaterThan(plus.frame.midY, app.windows.firstMatch.frame.midY, "bottom")

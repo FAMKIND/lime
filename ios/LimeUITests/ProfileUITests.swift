@@ -50,7 +50,7 @@ final class ProfileUITests: XCTestCase {
 
     func testCallDatesOnTheProfileAreOneLineEach() {
         let app = app(["-lime-demo-calls"])
-        app.tabBars.buttons["call"].tap()
+        app.tabBars.buttons["call, calls"].tap()
         app.buttons.matching(identifier: "call-row-avatar").element(boundBy: 1).tap()   // Sam (the picture opens the details, LIME-170)
         XCTAssertTrue(any(app, "profile-screen").waitForExistence(timeout: 8))
         let lines = app.descendants(matching: .any).matching(identifier: "profile-call-line")

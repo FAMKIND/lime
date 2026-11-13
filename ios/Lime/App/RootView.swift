@@ -132,6 +132,7 @@ private struct SignedInView: View {
     private func tabLabel(_ title: String, _ symbol: String) -> some View {
         Label(title, systemImage: symbol)
             .environment(\.symbolVariants, .none)
+            .accessibilityLabel(TabNames.spoken(title))
     }
 
     private func linkTab(path: Binding<NavigationPath>) -> some View {
@@ -183,6 +184,17 @@ private struct SignedInView: View {
 
 
 /// The tab symbols: the outline ones, in every state.
+/// What VoiceOver says for a tab: the visible word first (Voice Control's "tap link"), then what it is (LIME-326). The system adds "tab, 1 of 3" itself.
+enum TabNames {
+    nonisolated static func spoken(_ visible: String) -> String {
+        switch visible {
+        case "link": return "link, messages"
+        case "call": return "call, calls"
+        default: return visible
+        }
+    }
+}
+
 enum TabSymbols {
     static let link = "message"
     static let call = "phone"

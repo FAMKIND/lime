@@ -10839,3 +10839,17 @@ Settings, profile and groups: the 13 majors (audit rows 341, 342, 344, 609, 612�
   - Deferred as acceptable: 203, 213, 557, 584.
 - **For the user (gate, 13 mini):** lock-screen skip is 10 back / 30 forward and matches the player; VoiceOver in an article, a band page and its members, the composer; largest text on the series page and a podcast card.
 - **For plot:** the audit's minors are done except the ask list above.
+
+## LIME-326
+
+**Brief:** five accessibility asks decided by plot (558, 406, 468, 639 + 675, 366). Status rows: `## LIME-326 status` in the audit doc (all "fixed in 326").
+- **558:** `CallView.round` takes `caption:`; only Decline and Accept show their word under the button (footnote, white on `coverTextScrim`); names unchanged.
+- **406:** `MarqueeText` runs one pass (2 s wait, scroll, 2 s pause, back) and stops; a simultaneous tap gesture replays it (it doesn't swallow a parent button's tap); Reduce Motion unchanged.
+- **468:** `OrgInviteSheet`: "New link" and "Turn off" open `confirmSheet`s ("Make a new link?" / "Turn off the invite link?", Cancel on both, Turn off destructive); the announcements run after confirming. `Band246UITests` updated.
+- **639/675:** the code had no hard-coded ", tab, 1 of N" (the system speaks the position), so nothing to remove. `TabNames.spoken`: "link, messages", "call, calls", "jam" (visible word first). **23 UI-test sites** that found the tab by its label now use the new names. The tab badge font is a scaled `UIFontMetrics` font (read when the bar is made).
+- **366:** the disabled Remix/Share stubs are gone from `JamActionRow` (♥ and 💬 in two equal columns); `Jam212bUITests` and `Jam188yUITests` updated. The post page's counts line still says "N remixes" (left for plot).
+- **Tests:** `TabNames326Tests` (3 unit). The marquee's motion is not modelled as state, so no unit test for it.
+- **Gate (iOS):** `check-warnings.sh` 0; Release device build OK; unit 5 run (the new three and `Player235cTests`) 0 failed; the UI classes for calls, the tab bar, the jam feed/reader, band invite, Messages (`CallScreen`, `Player235c`, `Band246`, `Jam212b`, `Jam188y`, `TabBar`, `CallsTab`, `Access130c`, `LimeUITestsMessages`): 86 run, 0 failed. The whole UI suite was not re-run (only the tab-label tests changed outside those classes: sed across `LimeUITests`).
+- **Installed:** the 13 mini, the iPad (4) and Jean's 12 mini (all three took it).
+- **For the user (gate, 13 mini):** an incoming call from the iPad shows Decline / Accept words; a long jam title scrolls once and stops, a tap replays; New link / Turn off ask first; VoiceOver on the tabs reads "link, messages, tab, 1 of 3" (check there is no doubled position); no Remix/Share on a post.
+- **For plot:** the "0 remixes" in the counts line; the badge font follows the text size only when the app starts.

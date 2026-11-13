@@ -10,7 +10,7 @@ enum TabBadgeStyle {
     @MainActor static func appearance() -> UITabBarAppearance {
         let appearance = UITabBarAppearance()
         appearance.configureWithDefaultBackground()
-        let attributes: [NSAttributedString.Key: Any] = [.foregroundColor: text, .font: UIFont.systemFont(ofSize: 12, weight: .semibold)]
+        let attributes: [NSAttributedString.Key: Any] = [.foregroundColor: text, .font: UIFontMetrics(forTextStyle: .caption1).scaledFont(for: .systemFont(ofSize: 12, weight: .semibold))]   // follows the text size (LIME-326)
         for layout in [appearance.stackedLayoutAppearance, appearance.inlineLayoutAppearance, appearance.compactInlineLayoutAppearance] {
             for state in [layout.normal, layout.selected] {
                 state.badgeBackgroundColor = background

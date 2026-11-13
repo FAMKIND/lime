@@ -57,8 +57,8 @@ final class FilterRowUITests: XCTestCase {
 
     func testCallsFilterRowAndMenu() {
         let app = app(["-lime-demo-calls"])
-        XCTAssertTrue(app.tabBars.buttons["call"].waitForExistence(timeout: 10))
-        app.tabBars.buttons["call"].tap()
+        XCTAssertTrue(app.tabBars.buttons["call, calls"].waitForExistence(timeout: 10))
+        app.tabBars.buttons["call, calls"].tap()
         let segments = app.segmentedControls.firstMatch
         XCTAssertTrue(segments.waitForExistence(timeout: 5))
         XCTAssertTrue(segments.buttons["All"].exists && segments.buttons["Missed"].exists)

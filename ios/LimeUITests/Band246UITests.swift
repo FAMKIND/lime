@@ -36,6 +36,8 @@ final class Band246UITests: LimeUITestCase {
         XCTAssertTrue(app.staticTexts["org-invite-text"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["org-invite-text"].label.hasPrefix("https://limemessenger.com/b/#"))
         app.buttons["org-invite-off"].tap()
+        XCTAssertTrue(app.buttons["org-invite-off-confirm"].waitForExistence(timeout: 5), "asks first (LIME-326)")
+        app.buttons["org-invite-off-confirm"].tap()
         XCTAssertTrue(app.staticTexts["org-invite-is-off"].waitForExistence(timeout: 5), "turned off")
     }
 

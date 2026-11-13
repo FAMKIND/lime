@@ -20,7 +20,7 @@ final class Jam188kUITests: LimeUITestCase {
         XCTAssertTrue(app.buttons["audio-mini-open"].waitForExistence(timeout: 5), "playing shows the mini player")
         XCTAssertTrue(app.buttons["audio-mini-open"].label.contains("Sunday planning"))
         // The mini player stays across tabs.
-        app.buttons["link"].tap()
+        app.buttons["link, messages"].tap()
         XCTAssertTrue(app.buttons["audio-mini-open"].waitForExistence(timeout: 5), "and on another tab")
         app.buttons["audio-mini-open"].tap()
         XCTAssertTrue(any(app, "jam-video-screen").waitForExistence(timeout: 5), "tapping it opens the now-playing screen")

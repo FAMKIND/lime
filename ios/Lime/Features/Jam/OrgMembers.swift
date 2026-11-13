@@ -124,6 +124,8 @@ struct OrgInviteSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var inviteLink: String?
     @State private var loaded = false
+    @State private var confirmingNew = false
+    @State private var confirmingOff = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -143,8 +145,8 @@ struct OrgInviteSheet: View {
                             .accessibilityIdentifier("org-invite-share")
                         }
                         HStack(spacing: 10) {
-                            Button("New link") { Task { inviteLink = await store.resetOrgInvite(jamID, on: true); Announce.say("New invite link. The old link stopped working") } }.accessibilityIdentifier("org-invite-new")
-                            Button("Turn off", role: .destructive) { Task { inviteLink = await store.resetOrgInvite(jamID, on: false); Announce.say("Invite link turned off") } }.accessibilityIdentifier("org-invite-off")
+                            Button("New link") { confirmingNew = true }.accessibilityIdentifier("org-invite-new")
+                            Button("Turn off", role: .destructive) { confirmingOff = true }.accessibilityIdentifier("org-invite-off")
                         }
                         .font(Theme.secondary).frame(minHeight: 44)
                     } else if loaded {
@@ -159,6 +161,15 @@ struct OrgInviteSheet: View {
         .limeBackground()
         .presentationDetents([.medium, .large])
         .task { inviteLink = await store.orgInviteLink(jamID); loaded = true }
+        // Both break the old link for anyone who has it, so both ask first (LIME-326).
+        .confirmSheet("Make a new link?", isPresented: $confirmingNew) {
+            Button("New link") { Task { inviteLink = await store.resetOrgInvite(jamID, on: true); Announce.say("New invite link. The old link stopped working") } }.accessibilityIdentifier("org-invite-new-confirm")
+            Button("Cancel", role: .cancel) {}
+        } message: { Text("The old link will stop working.") }
+        .confirmSheet("Turn off the invite link?", isPresented: $confirmingOff) {
+            Button("Turn off", role: .destructive) { Task { inviteLink = await store.resetOrgInvite(jamID, on: false); Announce.say("Invite link turned off") } }.accessibilityIdentifier("org-invite-off-confirm")
+            Button("Cancel", role: .cancel) {}
+        } message: { Text("The link will stop working.") }
     }
 }
 

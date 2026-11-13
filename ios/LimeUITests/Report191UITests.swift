@@ -51,7 +51,7 @@ final class Report191UITests: LimeUITestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-screen", "jam-following"]
         app.launch()
-        app.buttons["link"].tap()
+        app.buttons["link, messages"].tap()
         app.buttons["conversation-row-dm:lee"].tap()
         any(app, "chat-title").tap()
         let more = app.buttons["profile-more"]

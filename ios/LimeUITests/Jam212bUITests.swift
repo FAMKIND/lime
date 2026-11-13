@@ -25,18 +25,15 @@ final class Jam212bUITests: LimeUITestCase {
         XCTAssertLessThan(video.frame.minY, title.frame.minY, "then the video, then the title")
     }
 
-    func testEveryCardHasTheSameActionRowAndRemixAndShareAreDisabled() {
+    func testEveryCardHasTheSameActionRowAndNoRemixOrShareStubs() {
         let app = launch()
         any(app, "jam-filter-segments").buttons["Podcasts"].tap()
         let like = app.buttons["jam-like-demo-post-4"]
         for _ in 0..<5 where !like.exists || !like.isHittable { app.swipeUp() }
         XCTAssertTrue(like.waitForExistence(timeout: 8))
         XCTAssertTrue(app.buttons["jam-comment-demo-post-4"].exists)
-        let remix = app.buttons["jam-action-remix-demo-post-4"], share = app.buttons["jam-action-share-demo-post-4"]
-        XCTAssertTrue(remix.exists && share.exists)
-        XCTAssertFalse(remix.isEnabled || share.isEnabled, "disabled until they exist")
-        XCTAssertLessThan(like.frame.minX, remix.frame.minX)
-        XCTAssertLessThan(remix.frame.minX, share.frame.minX, "spread across, in order")
+        XCTAssertFalse(app.buttons["jam-action-remix-demo-post-4"].exists || app.buttons["jam-action-share-demo-post-4"].exists, "features not built do not show (LIME-326)")
+        XCTAssertLessThan(like.frame.minX, app.buttons["jam-comment-demo-post-4"].frame.minX, "♥ then 💬")
     }
 
     func testThePodcastEditPageShowsTheCoHostsControl() {

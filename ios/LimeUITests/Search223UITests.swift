@@ -28,7 +28,7 @@ final class Search223UITests: LimeUITestCase {
 
     func testFromLinkThePostIsFoundToo() {
         let app = launch("jam-following")
-        app.tabBars.buttons["link"].tap()
+        app.tabBars.buttons["link, messages"].tap()
         app.buttons["messages-search-button"].tap()
         let field = app.textFields["search-field"]
         XCTAssertTrue(field.waitForExistence(timeout: 8))

@@ -36,7 +36,7 @@ final class Call224UITests: LimeUITestCase {
 
     func testNewCallRowsHaveOneCallButtonEach() {
         let app = app(["-lime-demo-calls"])
-        app.tabBars.buttons["call"].tap()
+        app.tabBars.buttons["call, calls"].tap()
         app.buttons["new-call-button"].tap()
         XCTAssertTrue(app.buttons["new-call-lee-button"].waitForExistence(timeout: 8))
         XCTAssertFalse(app.buttons["new-call-voice-lee"].exists || app.buttons["new-call-video-lee"].exists)
@@ -44,7 +44,7 @@ final class Call224UITests: LimeUITestCase {
 
     func testTheCallTabsMagnifierIsTheOneSearchWithCallsFirst() {
         let app = app(["-lime-demo-calls"])
-        app.tabBars.buttons["call"].tap()
+        app.tabBars.buttons["call, calls"].tap()
         app.buttons["calls-search-button"].tap()
         let field = app.textFields["search-field"]
         XCTAssertTrue(field.waitForExistence(timeout: 8))

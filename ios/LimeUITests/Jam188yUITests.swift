@@ -39,12 +39,12 @@ final class Jam188yUITests: LimeUITestCase {
         XCTAssertTrue(any(app, "jam-video-timeline").exists, "and a line to drag")
     }
 
-    func testTheCardsActionsAreFourEqualColumns() {
+    func testTheCardsActionsAreTwoEqualColumns() {
         let app = launch()
-        let like = any(app, "jam-like-demo-post-2"), share = any(app, "jam-action-share-demo-post-2")
+        let like = any(app, "jam-like-demo-post-2"), comment = any(app, "jam-comment-demo-post-2")
         XCTAssertTrue(like.waitForExistence(timeout: 10))
         let width = app.windows.firstMatch.frame.width
-        XCTAssertLessThan(like.frame.midX, width * 0.25 + 10, "the first column's centre")
-        XCTAssertGreaterThan(share.frame.midX, width * 0.75 - 10, "the last column reaches the right side")
+        XCTAssertLessThan(like.frame.midX, width * 0.5, "the first column")
+        XCTAssertGreaterThan(comment.frame.midX, width * 0.5, "the second column")
     }
 }

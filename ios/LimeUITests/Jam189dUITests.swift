@@ -48,7 +48,7 @@ final class Jam189dUITests: LimeUITestCase {
         // Lee's profile: his comment on a post I can read.
         app.terminate(); 
         let app2 = launch("jam-following")
-        app2.buttons["link"].tap()
+        app2.buttons["link, messages"].tap()
         app2.buttons["conversation-row-dm:lee"].tap()
         any(app2, "chat-title").tap()
         XCTAssertTrue(app2.buttons["profile-tab-Activity"].waitForExistence(timeout: 10))

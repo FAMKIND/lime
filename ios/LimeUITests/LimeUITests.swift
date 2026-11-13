@@ -67,7 +67,7 @@ class LimeUITestCase: XCTestCase {
     /// The link tab's badge (the system tab bar shows the count of unread chats as the tab's value); "" when there is none.
     func linkBadge(_ app: XCUIApplication) -> String {
         // The system reads the badge as the tab's value, e.g. "1 item"; keep the number.
-        let text = (app.tabBars.buttons["link"].value as? String) ?? ""
+        let text = (app.tabBars.buttons["link, messages"].value as? String) ?? ""
         let digits = text.prefix { $0.isNumber }
         return digits == "0" ? "" : String(digits)
     }
