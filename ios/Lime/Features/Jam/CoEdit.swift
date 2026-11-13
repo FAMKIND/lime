@@ -445,7 +445,7 @@ final class PeerCursorLayer: UIView {
             let size = tag.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
             tag.frame = CGRect(x: max(caretRect.minX - 1, 0), y: max(caretRect.minY - size.height - 1, 0), width: size.width, height: size.height)
             let idle = now.timeIntervalSince(peer.lastMoved) > 3
-            UIView.animate(withDuration: 0.25) { tag.alpha = idle ? 0 : 1 }
+            if UIAccessibility.isReduceMotionEnabled { tag.alpha = idle ? 0 : 1 } else { UIView.animate(withDuration: 0.25) { tag.alpha = idle ? 0 : 1 } }
             addSubview(caret); addSubview(tag)
         }
         for (id, view) in tags where !seen.contains(id) { view.removeFromSuperview(); tags[id] = nil; carets[id]?.removeFromSuperview(); carets[id] = nil; selections[id]?.forEach { $0.removeFromSuperview() }; selections[id] = nil }
@@ -883,7 +883,7 @@ struct PeerFieldCursors: View {
                                 .accessibilityElement(children: .ignore).accessibilityLabel("\(first)\u{2019}s caret").accessibilityIdentifier("coedit-caret-\(peer.id)")
                             CursorTag(person: peer.person, colour: colour, ink: Color(uiColor: PeerColor.ink(on: PeerColor.color(tone: peer.tone, dark: scheme == .dark))))
                                 .opacity(faded ? 0 : 1)
-                                .animation(.easeInOut(duration: 0.25), value: faded)
+                                .animation(Motion.animation(.easeInOut(duration: 0.25)), value: faded)
                                 .offset(y: -(CursorTag.height + 1))
                                 .accessibilityElement(children: .ignore).accessibilityLabel("\(first)\u{2019}s cursor").accessibilityIdentifier("coedit-cursor-\(peer.id)")
                         }

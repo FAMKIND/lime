@@ -11,7 +11,7 @@ struct SeriesTag: View {
     var body: some View {
         if let series = post.series {
             Button { if let action { action() } else { store.jamPath.append(SeriesRoute(seriesID: series.id)) } } label: {
-                Text("\(series.partLabel) \u{00B7} \(series.title)").font(Theme.caption).foregroundStyle(onScrim ? Color.white.opacity(0.9) : Theme.textSecondary).lineLimit(1).frame(minHeight: 28, alignment: .leading)
+                Text("\(series.partLabel) \u{00B7} \(series.title)").font(Theme.caption).foregroundStyle(onScrim ? Color.white.opacity(0.9) : Theme.textSecondary).lineLimit(2).frame(minHeight: 44, alignment: .leading)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("\(series.partLabel) of the series \(series.title)").accessibilityHint("Opens the series").accessibilityIdentifier("jam-card-series-\(post.postId)")

@@ -85,6 +85,7 @@ struct HandoverOfferCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("\(store.teacherName(offer.peer)) wants to hand \(offer.title)\u{2019}s publishing to you").font(Theme.body).foregroundStyle(Theme.text)
+                .announcesWhenShown("\(store.teacherName(offer.peer)) wants to hand \(offer.title)\u{2019}s publishing to you")
                 .accessibilityIdentifier("handover-offer-\(offer.jamId)")
             Text("You\u{2019}d receive its subscriber list and publish for the band.").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
             HStack(spacing: 10) {

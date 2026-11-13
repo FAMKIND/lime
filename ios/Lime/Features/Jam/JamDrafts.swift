@@ -195,7 +195,7 @@ struct JamDraftsList: View {
 
     // MARK: Selection
 
-    private func select(_ row: DraftRow) { store.draftSelecting = true; store.draftSelection = [row.draftID] }
+    private func select(_ row: DraftRow) { store.draftSelecting = true; store.draftSelection = [row.draftID]; Announce.say("Selecting drafts") }
 
     private func toggle(_ row: DraftRow) {
         if store.draftSelection.contains(row.draftID) { store.draftSelection.remove(row.draftID) } else { store.draftSelection.insert(row.draftID) }
@@ -265,7 +265,7 @@ struct DraftSelectionBar: View {
     private func item(_ symbol: String, _ label: String, id: String, tint: Color = Theme.text, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 2) {
-                Image(systemName: symbol).font(.system(size: 18)).accessibilityHidden(true)
+                Image(systemName: symbol).font(Theme.body).accessibilityHidden(true)
                 Text(label).font(Theme.caption)
             }
             .foregroundStyle(tint).frame(maxWidth: .infinity, minHeight: 52).contentShape(Rectangle())

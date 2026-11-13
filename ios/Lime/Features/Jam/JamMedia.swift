@@ -132,13 +132,13 @@ struct JamVideoCard: View {
                 }
                 Spacer()
                 if captionsOn, let line = JamCaptions.line(at: Int(controller.position * 1000), in: cues) {
-                    Text(line).font(Theme.font(.footnote, weight: .semibold)).foregroundStyle(.white).multilineTextAlignment(.center)
+                    Text(line).font(Theme.font(.footnote, weight: .semibold)).foregroundStyle(.white).coverTextScrim().multilineTextAlignment(.center)
                         .padding(.horizontal, 10).padding(.vertical, 5).background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                         .accessibilityIdentifier("jam-video-caption")
                 }
                 // The timeline (LIME-188y): "0:16 / 1:05" and a line to drag.
                 HStack(spacing: 10) {
-                    Text("\(VoiceFormat.clock(controller.position)) / \(VoiceFormat.clock(controller.duration))").font(Theme.caption.monospacedDigit()).foregroundStyle(.white)
+                    Text("\(VoiceFormat.clock(controller.position)) / \(VoiceFormat.clock(controller.duration))").font(Theme.caption.monospacedDigit()).foregroundStyle(.white).coverTextScrim()
                         .accessibilityIdentifier("jam-video-time")
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
@@ -349,7 +349,7 @@ struct JamVideoScreen: View {
             let image = await store.coverImage(for: item.postID)
             let sampled = image.map { HeroPalette.compute($0) }
             let colours = PlayerTint.colors(sampled: sampled, fallbackTone: store.teacher(post?.author ?? "").tone, deeper: reduceTransparency || contrast == .increased)
-            withAnimation(.easeInOut(duration: 0.4)) { tintColors = colours }
+            withMotion(.easeInOut(duration: 0.4)) { tintColors = colours }
         }
         .task(id: item.file.attachmentId) {
             loadedCues = []
@@ -961,7 +961,7 @@ struct JamVideoFullScreen: View {
                         circle(controller.isPlaying ? "pause.fill" : "play.fill", controller.isPlaying ? "Pause" : "Play", size: 72, id: "jam-fullscreen-play") {
                             Task { await controller.toggle(data: { await store.jamAttachmentData(postID, file.attachmentId) }); show() }
                         }
-                        circle("goforward.10", "Skip forward 10 seconds", size: 56, id: "jam-fullscreen-fwd10") { controller.skip(by: 10); show() }
+                        circle("goforward.30", "Skip forward 30 seconds", size: 56, id: "jam-fullscreen-fwd10") { controller.skip(by: 30); show() }
                     }
                     .transition(.opacity)
                     VStack(alignment: .leading, spacing: 10) {

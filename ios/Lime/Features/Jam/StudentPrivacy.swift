@@ -64,18 +64,21 @@ struct StudentPrivacyBlock: View {
                 }
                 .padding(14).frame(maxWidth: .infinity, alignment: .leading)
                 .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .accessibilityElement(children: .combine).accessibilityIdentifier("privacy-faces")
+                .accessibilityElement(children: .combine)
+                .announcesWhenShown(faces == 1 ? "This photo has faces. Check you have permission, or choose another photo." : "These photos have faces. Check you have permission, or choose other photos.")
+                .accessibilityIdentifier("privacy-faces")
             }
             Toggle(isOn: $confirmed) {
                 Text("I have permission to share any students who appear or are heard").font(Theme.body).foregroundStyle(Theme.text)
             }
             .toggleStyle(CheckToggleStyle())
+            .accessibilityAddTraits(.isToggle)
             .accessibilityIdentifier("privacy-confirm")
             Button { guidance = true } label: { Text("Read the guidance").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.linkOther).frame(minHeight: 44) }
                 .buttonStyle(.plain).accessibilityIdentifier("privacy-guidance")
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.surface.opacity(0.5), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .sheet(isPresented: $guidance) { StudentPrivacyGuide() }
         .task { faces = await FaceCheck.picturesWithFaces(pictures) }
     }

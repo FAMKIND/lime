@@ -554,7 +554,7 @@ struct PodcastRecorder: View {
                 .scrollDismissesKeyboard(.interactively)
                 .onChange(of: focus) { _, line in
                     guard let line else { return }
-                    withAnimation { proxy.scrollTo(line, anchor: .center) }
+                    withMotion { proxy.scrollTo(line, anchor: .center) }
                 }
             }
             detailsBar
@@ -717,7 +717,7 @@ struct PodcastRecorder: View {
         handleView(symbol).offset(x: x)
             .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("trim")).onChanged { drag($0.location.x) })
             .accessibilityElement().accessibilityLabel(label).accessibilityValue(VoiceFormat.clock(value)).accessibilityIdentifier(id)
-            .accessibilityAdjustableAction { step($0 == .increment ? 1 : -1) }
+            .accessibilityAdjustableAction { step(($0 == .increment ? 1 : -1) * (take.duration > 300 ? 10 : take.duration > 60 ? 5 : 1)) }   // longer takes move in bigger steps (LIME-324)
     }
 
     private func handleView(_ symbol: String) -> some View {
@@ -892,7 +892,7 @@ struct PodcastRecorder: View {
                         .scrollDismissesKeyboard(.interactively)
                         .onChange(of: focus) { _, line in
                             guard let line else { return }
-                            withAnimation { proxy.scrollTo(line, anchor: .center) }
+                            withMotion { proxy.scrollTo(line, anchor: .center) }
                         }
                     }
                 }
@@ -1008,7 +1008,7 @@ struct PodcastRecorder: View {
 
     private func line(_ text: Binding<String>, prompt: String, label: String, focus line: Line, weight: Font.Weight, size: Font.TextStyle, limit: Int, id: String, multiline: Bool = false) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            TextField("", text: text, prompt: Text(prompt).foregroundColor(.white.opacity(0.55)), axis: multiline ? .vertical : .horizontal)
+            TextField("", text: text, prompt: Text(prompt).foregroundColor(.white.opacity(0.72)), axis: multiline ? .vertical : .horizontal)
                 .font(Theme.font(size, weight: weight)).foregroundStyle(.white).lineLimit(multiline ? 1...8 : 1...3)
                 .focused($focus, equals: line).submitLabel(multiline ? .return : .next)
                 .onChange(of: text.wrappedValue) { _, now in if now.count > limit { text.wrappedValue = String(now.prefix(limit)) } }

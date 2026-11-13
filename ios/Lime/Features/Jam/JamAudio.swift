@@ -144,7 +144,7 @@ struct JamAudioCard: View {
                     .frame(width: 40, height: 44)
                 }
                 .accessibilityLabel(playing ? "Pause" : "Play").accessibilityIdentifier("jam-audio-play-\(file.attachmentId)")
-                WaveformScrubber(controller: controller, waveform: file.thumb, id: file.attachmentId, height: 32)
+                WaveformScrubber(controller: controller, waveform: file.thumb, id: file.attachmentId, height: 44)
                 Button { controller.muted.toggle() } label: {
                     Image(systemName: controller.muted ? "speaker.slash.fill" : "speaker.wave.2.fill").font(.system(size: 15)).foregroundStyle(Theme.text).frame(width: 36, height: 44)
                 }

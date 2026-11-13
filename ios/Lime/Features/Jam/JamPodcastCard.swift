@@ -8,6 +8,8 @@ struct JamPodcastCard: View {
     let post: JamPostInfo
     @Environment(ConversationStore.self) private var store
     @State private var cover: UIImage?
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .body) private var coverSide: CGFloat = 96
 
     var body: some View {
         let files = store.jamAttachments(post.postId)
@@ -19,14 +21,14 @@ struct JamPodcastCard: View {
         VStack(alignment: .leading, spacing: 4) {
         HStack(alignment: .top, spacing: 14) {
             Button { open(file) } label: {
-                PostCover(postID: post.postId).frame(width: 96, height: 96).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                PostCover(postID: post.postId).frame(width: coverSide, height: coverSide).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
             .buttonStyle(.plain).accessibilityLabel("Open player").accessibilityIdentifier("jam-audio-expand")
             VStack(alignment: .leading, spacing: 6) {
                 // A tiny avatar before the name (LIME-252): the org's picture or tile, or the writer's photo; decorative, the line reads the name.
                 HStack(spacing: 6) {
                     if post.displayAs == "jam" { BylineAvatar(people: [], jam: org, jamId: post.jamId, size: 18) } else { BylineAvatar(people: [writer], size: 18) }
-                    Text([org.uppercased(), JamDates.short(post.created)].joined(separator: " \u{00B7} ")).font(Theme.font(.caption2, weight: .semibold)).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                    Text([org.uppercased(), JamDates.short(post.created)].joined(separator: " \u{00B7} ")).font(Theme.font(.caption2, weight: .semibold)).foregroundStyle(Theme.textSecondary).lineLimit(typeSize.isAccessibilitySize ? nil : 1)
                         .accessibilityIdentifier("jam-card-byline-\(post.postId)")
                 }
                 // Every part of the card opens the black player and plays (LIME-204); the post's page is reached from the player.

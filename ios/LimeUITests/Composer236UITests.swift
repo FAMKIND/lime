@@ -13,7 +13,7 @@ final class Composer236UITests: LimeUITestCase {
         app.buttons["new-jam-post"].tap()
         let article = app.buttons["jam-write-article"], record = app.buttons["jam-record"]
         XCTAssertTrue(article.waitForExistence(timeout: 8) && record.exists)
-        XCTAssertEqual(article.label, "Write an article"); XCTAssertEqual(record.label, "Record a podcast")
+        XCTAssertEqual(article.label, "Write article"); XCTAssertEqual(record.label, "Record podcast")
         // Both pills are above the keyboard bar.
         let photo = app.buttons["jam-add-photo"]
         XCTAssertLessThan(article.frame.maxY, photo.frame.minY + 2, "the pills sit above the bar")

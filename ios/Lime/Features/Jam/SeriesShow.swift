@@ -247,8 +247,9 @@ struct SeriesPage: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Part \(part.part), \(part.title), \(video ? "video" : kind.lowercased())\(part.read ? ", played" : "")")
+        .accessibilityLabel("Part \(part.part), \(part.title), \(video ? "video" : kind.lowercased())\(part.read ? (part.kind == "record" ? ", played" : ", read") : "")")
         .accessibilityAction(named: part.read ? (part.kind == "record" ? "Mark as unplayed" : "Mark as unread") : (part.kind == "record" ? "Mark as played" : "Mark as read")) { toggleRead(part) }
+        .accessibilityAction(named: "Play next") { if part.kind == "record", part.local { playNext(part) } }
         .accessibilityAction(named: JamSaved.contains(part.id) ? "Unsave" : "Save") { if part.local { JamSaved.toggle(part.id); refresh += 1 } }
         .accessibilityIdentifier("series-part-\(part.id)")
         .overlay(alignment: .topTrailing) { if let post { JamPostMenu(post: post).padding(.trailing, 6).padding(.top, 2) } }
@@ -286,7 +287,7 @@ struct SeriesPage: View {
                             Button { store.openProfile(ProfileRoute(userID: who.id, name: who.name, isMe: who.id == store.meProvider().id)) } label: {
                                 VStack(spacing: 4) {
                                     AvatarView(person: who, size: 76).accessibilityHidden(true)
-                                    Text(who.name).font(Theme.secondary).foregroundStyle(Theme.text).lineLimit(1)
+                                    Text(who.name).font(Theme.secondary).foregroundStyle(Theme.text).multilineTextAlignment(.center)
                                     Text(person.role).font(Theme.caption).foregroundStyle(Theme.textSecondary)
                                 }
                                 .frame(width: 96)
@@ -337,7 +338,7 @@ struct SeriesPage: View {
                                     VStack(alignment: .leading, spacing: 6) {
                                         RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.avatar(AvatarTone.tone(for: other.id))).frame(width: 160, height: 160)
                                             .overlay(Image(systemName: "square.stack").font(.system(size: 36)).foregroundStyle(Theme.text.opacity(0.5)))
-                                        Text(other.title).font(Theme.secondary).foregroundStyle(Theme.text).lineLimit(2).frame(width: 160, alignment: .leading)
+                                        Text(other.title).font(Theme.secondary).foregroundStyle(Theme.text).frame(width: 160, alignment: .leading)
                                     }
                                 }
                                 .buttonStyle(.plain).accessibilityLabel(other.title).accessibilityIdentifier("series-more-\(other.id)")

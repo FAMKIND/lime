@@ -94,7 +94,7 @@ struct SeriesChip: View {
         Button { picking = true } label: {
             HStack(spacing: 8) {
                 Image(systemName: "square.stack").font(.system(size: 14, weight: .medium)).accessibilityHidden(true)
-                Text(series.map { "\($0.title) \u{00B7} \($0.partLabel)" } ?? "Add to a series").font(Theme.font(.subheadline)).lineLimit(1)
+                Text(series.map { "\($0.title) \u{00B7} \($0.partLabel)" } ?? "Add to a series").font(Theme.font(.subheadline)).lineLimit(2)
                 Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).accessibilityHidden(true)
             }
             .foregroundStyle(series == nil ? Theme.textSecondary : Theme.text)

@@ -200,7 +200,7 @@ final class PodcastController {
         for command in [center.playCommand, center.pauseCommand, center.togglePlayPauseCommand, center.skipForwardCommand, center.skipBackwardCommand, center.changePlaybackPositionCommand] {
             command.removeTarget(nil)
         }
-        center.skipForwardCommand.preferredIntervals = [10]
+        center.skipForwardCommand.preferredIntervals = [30]
         center.skipBackwardCommand.preferredIntervals = [10]
         center.playCommand.isEnabled = true; center.pauseCommand.isEnabled = true; center.togglePlayPauseCommand.isEnabled = true
         center.skipForwardCommand.isEnabled = true; center.skipBackwardCommand.isEnabled = true; center.changePlaybackPositionCommand.isEnabled = true
@@ -210,7 +210,7 @@ final class PodcastController {
             guard let self else { return }
             if self.isPlaying { self.pause() } else { await self.toggle(data: { nil }) }
         }; return .success }
-        center.skipForwardCommand.addTarget { [weak self] _ in Task { @MainActor in self?.skip(by: 10) }; return .success }
+        center.skipForwardCommand.addTarget { [weak self] _ in Task { @MainActor in self?.skip(by: 30) }; return .success }
         center.skipBackwardCommand.addTarget { [weak self] _ in Task { @MainActor in self?.skip(by: -10) }; return .success }
         center.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
@@ -272,7 +272,7 @@ struct PodcastBar: View {
                     .frame(width: 60, height: 60)
                 }
                 .accessibilityLabel(controller.isPlaying ? "Pause" : "Play").accessibilityIdentifier("podcast-play-\(id)")
-                skipButton("goforward.10", "Forward 10 seconds", 10)
+                skipButton("goforward.30", "Forward 30 seconds", 30)
                 Spacer()
                 Color.clear.frame(width: 48, height: 44).accessibilityHidden(true)
             }
@@ -337,7 +337,7 @@ struct WaveformScrubber: View {
                     let bar = waveform.isEmpty ? 4 : max(4, size.height * CGFloat(value) / 255)
                     let rect = CGRect(x: left + CGFloat(index) * (width + gap), y: (size.height - bar) / 2, width: width, height: bar)
                     let played = (Double(index) + 0.5) / Double(values.count) <= controller.fraction
-                    context.fill(Path(roundedRect: rect, cornerRadius: width / 2), with: .color(played ? Theme.text : Theme.text.opacity(0.28)))
+                    context.fill(Path(roundedRect: rect, cornerRadius: width / 2), with: .color(played ? Theme.text : Theme.text.opacity(0.5)))
                 }
             }
             .contentShape(Rectangle())

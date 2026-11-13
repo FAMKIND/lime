@@ -889,3 +889,53 @@ First 31 jam minors plus rows 362, 363, 366, 367 (jam files). Line numbers are t
 | 363 | open | fixed icon sizes in 60+ places (options row done): carried to LIME-324 |
 | 366 | partly fixed | stacked opacity removed in CreatePublication, EditSeriesSheet, NewBandGroupSheet; BeforePublish, OrgFieldSheet and the dummy buttons: LIME-324 |
 | 367 | partly fixed | options rows hide their icons; JamReader and OrgGroupsTab: LIME-324 |
+
+
+## LIME-324 status
+
+Jam minors 32 → end (31 rows) plus the leftovers of LIME-323 (207, 363, 395, 396, 401, 406, 407, 420 and the rest of 362, 366, 367).
+
+| Row | Status | Note |
+|---|---|---|
+| 436 | fixed | the counts line is a heading |
+| 442 | ask | the ⋯ Menu overlays the card header; moving it is a layout choice: your look on a phone |
+| 443 | fixed | group expand honours Reduce Motion |
+| 444 | fixed | "Subscribe to like and comment" is announced |
+| 451 | already fixed | the lines are unlimited at accessibility sizes |
+| 452 | partly fixed | entering selection mode is announced; the "is writing" polling is not announced (noisy): ask |
+| 454 | fixed | the selection icon scales with the text |
+| 463 | fixed | info-card titles are headings |
+| 465 | already fixed | the spoken names contain the visible word (Edit, Edit Cover) |
+| 466 | fixed | a tab switch announces the tab |
+| 467 | fixed | "Make owner" is an action on the row |
+| 468 | fixed | "New link" and "Turn off" are announced; a confirmation step is a design call: ask |
+| 470 | fixed | the field says "Up to 50 characters" |
+| 471 | fixed | going over the limit is announced; the chips are 44 pt |
+| 472 | fixed | the field names are the visible prompts; the failure is announced already |
+| 473 | fixed | the hand-over offer is announced when it arrives |
+| 481 | fixed | "Play next" is an action on the row |
+| 482 | fixed | "read" for articles, "played" for recordings |
+| 483 | ask | the post menu over long titles: a layout choice |
+| 484 | already fixed | the hero text sits on the cover scrim |
+| 485 | fixed | host names and "More from" titles wrap |
+| 486 | fixed | the series tag is 44 pt and wraps to 2 lines; the chip text wraps |
+| 492 | fixed | spoken labels equal the visible "Write article", "Record podcast", "Create band" (two UI tests updated) |
+| 493 | fixed | "Recording 0:12, remove"; the clip row is 44 pt |
+| 496 | partly fixed | the heading menu scales; the pill rows are horizontal scrolls (scroll, not clip): check at the largest size |
+| 497 | ask | the top bar is the system toolbar; check overflow at the largest size on a phone |
+| 499 | fixed | the faces warning is announced; the confirmation is a toggle; the panel is solid |
+| 511 | ask | audio-level feedback for VoiceOver is a new feature |
+| 512 | partly fixed | the adjust step grows with the length of the take (1, 5, 10 s); the 32 pt hit width stays (44 pt made a scrub drag beside the handle grab the handle; the existing test caught it): ask |
+| 518 | ask | cursor tag font is a fixed 13 pt in a UIKit view; the tag layout needs a look |
+| 520 | fixed | the tag fade honours Reduce Motion |
+| 207 | fixed | the recorder prompt is white at 0.72; the unplayed waveform is 0.5 |
+| 363 | ask | fixed icon sizes in 60+ places: scaling them changes layouts; a phone-by-phone pass |
+| 395 | fixed | the org line wraps at accessibility sizes; the cover scales |
+| 396 | fixed | the scrubber is 44 pt; unplayed bars are darker |
+| 401 | fixed | the caption and the elapsed time sit on the scrim |
+| 406 | ask | the marquee runs while motion is allowed (stops with Reduce Motion): by design; a pause control is a design call |
+| 407 | fixed | back 10 s, forward 30 s on every skip button and on the lock screen / Control Center (the scrubbers still step 10 s) |
+| 420 | fixed | the selected display chip is underlined as well as bordered |
+| 362 | fixed | every remaining jam animation honours Reduce Motion |
+| 366 | partly fixed | stacked opacity gone everywhere; the dimmed remix/share stubs stay (tests use them; they are disabled): ask |
+| 367 | ask | decorative symbols in JamReader and OrgGroupsTab: unverified on VoiceOver; check on a phone |

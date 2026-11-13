@@ -84,7 +84,7 @@ struct JamEngagementSection: View {
         let writer = store.teacherName(post.author)
         VStack(alignment: .leading, spacing: 12) {
             Text("\(counts.likes) \(counts.likes == 1 ? "like" : "likes") \u{00B7} \(counts.comments) \(counts.comments == 1 ? "comment" : "comments") \u{00B7} \(counts.remixes) remixes")
-                .font(Theme.caption).foregroundStyle(soft).accessibilityIdentifier("jam-counts-line")
+                .font(Theme.caption).foregroundStyle(soft).accessibilityAddTraits(.isHeader).accessibilityIdentifier("jam-counts-line")
             faces(counts)
             composer(writer)
             ForEach(top, id: \.commentId) { comment in

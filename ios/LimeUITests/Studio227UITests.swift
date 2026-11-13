@@ -16,8 +16,8 @@ final class Studio227UITests: LimeUITestCase {
     func testThePlusOffersWriteAnArticleAndRecordAPodcast() {
         let app = studio()
         XCTAssertTrue(app.buttons["jam-write-article"].waitForExistence(timeout: 8))
-        XCTAssertEqual(app.buttons["jam-record"].label, "Record a podcast")
-        XCTAssertEqual(app.buttons["jam-write-article"].label, "Write an article")
+        XCTAssertEqual(app.buttons["jam-record"].label, "Record podcast")
+        XCTAssertEqual(app.buttons["jam-write-article"].label, "Write article")
     }
 
     private func field(_ app: XCUIApplication, _ id: String) -> XCUIElement { app.textFields[id].exists ? app.textFields[id] : app.textViews[id] }

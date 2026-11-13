@@ -74,7 +74,7 @@ struct BeforePublishScreen: View {
                 if let problem { Text(problem).font(Theme.secondary).foregroundStyle(Theme.danger).fixedSize(horizontal: false, vertical: true).announcesWhenShown(problem).accessibilityIdentifier("before-problem") }
               }
               // While it goes out, everything else is dimmed and cannot be tapped (the button shows the spinner).
-              .opacity(working ? 0.5 : 1).allowsHitTesting(!working).animation(.easeOut(duration: 0.2), value: working)
+              .opacity(working ? 0.5 : 1).allowsHitTesting(!working).animation(Motion.animation(.easeOut(duration: 0.2)), value: working)
                 Button(action: action) {
                     // Working: a spinner and "Posting…" / "Publishing…" / "Updating…", so the app never looks frozen (LIME-243).
                     HStack(spacing: 10) {

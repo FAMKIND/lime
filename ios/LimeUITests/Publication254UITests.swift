@@ -13,7 +13,7 @@ final class Publication254UITests: LimeUITestCase {
         app.buttons["new-jam-post"].tap()
         let card = app.buttons["jam-create-publication"]
         XCTAssertTrue(card.waitForExistence(timeout: 8))
-        XCTAssertEqual(card.label, "Create a band")
+        XCTAssertEqual(card.label, "Create band")
         XCTAssertGreaterThan(card.frame.minX, app.buttons["jam-record"].frame.maxX - 1, "after Record podcast")
         card.tap()
         let name = app.textFields["publication-name-field"]

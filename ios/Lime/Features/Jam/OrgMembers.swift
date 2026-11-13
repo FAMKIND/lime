@@ -103,6 +103,7 @@ struct OrgMembersTab: View {
         }
         .padding(.horizontal, 18)
         .accessibilityElement(children: .contain)
+        .accessibilityAction(named: "Make owner") { if iOwn && iRun && member.canManage && member.role != "owner" { Task { await store.setOrgRole(jamID, user: member.userId, role: "owner") } } }
         .accessibilityAction(named: "Make writer") { if iRun && member.canManage { Task { await store.setOrgRole(jamID, user: member.userId, role: "writer") } } }
         .accessibilityAction(named: "Remove") { if iRun && member.canManage { removing = member } }
     }
@@ -142,8 +143,8 @@ struct OrgInviteSheet: View {
                             .accessibilityIdentifier("org-invite-share")
                         }
                         HStack(spacing: 10) {
-                            Button("New link") { Task { inviteLink = await store.resetOrgInvite(jamID, on: true) } }.accessibilityIdentifier("org-invite-new")
-                            Button("Turn off", role: .destructive) { Task { inviteLink = await store.resetOrgInvite(jamID, on: false) } }.accessibilityIdentifier("org-invite-off")
+                            Button("New link") { Task { inviteLink = await store.resetOrgInvite(jamID, on: true); Announce.say("New invite link. The old link stopped working") } }.accessibilityIdentifier("org-invite-new")
+                            Button("Turn off", role: .destructive) { Task { inviteLink = await store.resetOrgInvite(jamID, on: false); Announce.say("Invite link turned off") } }.accessibilityIdentifier("org-invite-off")
                         }
                         .font(Theme.secondary).frame(minHeight: 44)
                     } else if loaded {
@@ -252,7 +253,7 @@ struct NewBandGroupSheet: View {
                 VStack(alignment: .leading, spacing: 16) {
                     TextField("Group name", text: Binding(get: { name }, set: { name = String($0.prefix(50)) })).font(Theme.body).selectionTint().focused($focused)
                         .padding(.horizontal, 16).frame(minHeight: 52).background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .accessibilityIdentifier("org-group-name")
+                        .accessibilityHint("Up to 50 characters").accessibilityIdentifier("org-group-name")
                     Picker("Who can join", selection: $open) {
                         Text("Open").tag(true)
                         Text("Invite only").tag(false)

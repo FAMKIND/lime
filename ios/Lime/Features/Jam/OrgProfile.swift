@@ -435,6 +435,7 @@ struct OrgProfileView: View {
             Spacer(minLength: HeroShape.textToPills(screen: screen))
             if editingNow { Color.clear.frame(height: HeroShape.pillsRow) } else {
                 ProfileTabs(sections: sections, selection: $tab)
+                    .onChange(of: tab) { _, now in Announce.say(now.rawValue) }
             }
         }
         .frame(maxWidth: .infinity, minHeight: HeroShape.blockHeight(screen: screen, inset: inset))
@@ -609,7 +610,7 @@ struct OrgProfileView: View {
 
     private func infoCard<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.textSecondary).padding(.leading, 6)
+            Text(title).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.textSecondary).padding(.leading, 6).accessibilityAddTraits(.isHeader)
             content().background(Theme.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
     }

@@ -93,6 +93,7 @@ struct OrgFieldSheet: View {
 
     private func count(_ text: String, over: Bool) -> some View {
         Text(text).font(Theme.caption).foregroundStyle(over ? Theme.danger : Theme.textSecondary).frame(maxWidth: .infinity, alignment: .trailing)
+            .onChange(of: over) { _, now in if now { Announce.say("Over the limit") } }
     }
 
     private func toggle(_ topic: String) {
@@ -196,7 +197,7 @@ struct FlowChips: View {
                 let on = selected.contains(item)
                 Button { tap(item) } label: {
                     Text(item).font(Theme.secondary).foregroundStyle(on ? Theme.accentInk : Theme.text)
-                        .padding(.horizontal, 12).frame(minHeight: 36)
+                        .padding(.horizontal, 12).frame(minHeight: 44)
                         .background(on ? Theme.accent : Theme.surface, in: Capsule())
                 }
                 .buttonStyle(.plain)

@@ -79,7 +79,7 @@ struct JamFilterRow: View {
                     // Room inside the fades, so at rest the first pill and the last are fully clear.
                     .padding(.horizontal, fade)
                 }
-                .onChange(of: segment) { _, now in withAnimation { proxy.scrollTo(now, anchor: .center) } }
+                .onChange(of: segment) { _, now in withMotion { proxy.scrollTo(now, anchor: .center) } }
             }
             .mask {
                 HStack(spacing: 0) {

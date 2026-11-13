@@ -95,7 +95,7 @@ struct JamDiscoverList: View {
     private func group(_ row: Row) -> some View {
         let open = expanded.contains(row.author)
         let name = store.openWriterName(row.author)
-        Button { withAnimation { if open { expanded.remove(row.author) } else { expanded.insert(row.author) } } } label: {
+        Button { withMotion { if open { expanded.remove(row.author) } else { expanded.insert(row.author) } } } label: {
             HStack(spacing: 12) {
                 AvatarView(person: store.teacher(row.author), size: 40).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
@@ -277,7 +277,7 @@ struct OpenPostPage: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 4) {
                 ForEach([("heart", "Like"), ("bubble.left", "Comment")], id: \.0) { symbol, label in
-                    Button { withAnimation { asking = true } } label: {
+                    Button { withMotion { asking = true }; Announce.say("Subscribe to like and comment") } label: {
                         Image(systemName: symbol).font(.system(size: 20)).foregroundStyle(Theme.textSecondary).frame(width: 44, height: 44).contentShape(Rectangle())
                     }
                     .buttonStyle(.plain).accessibilityLabel(label).accessibilityHint("Subscribe to like and comment").accessibilityIdentifier("open-post-\(symbol)")

@@ -10823,3 +10823,19 @@ Settings, profile and groups: the 13 majors (audit rows 341, 342, 344, 609, 612�
 - iOS Debug build (simulator): OK. Release build (device): OK. `check-warnings.sh`: 0 warnings in Lime's own sources.
 - Unit tests (`LimeTests`, 13 mini simulator): 751 run, 10 skipped, 0 failed (747 before + 4 from LIME-325).
 - Not run: the UI suite (no iOS code changed by the merge; the next brief runs its classes).
+
+## LIME-324
+
+**Brief:** 130-m4, jam minors 32 → end (31 rows) plus 323's leftovers (11 rows). Status: `## LIME-324 status` in `docs/accessibility-audit-2026-11.md` (42 rows).
+- **Counts:** fixed 28, already fixed 3 (451, 465, 484), partly fixed 4 (452, 496, 512, 366), ask 7 (442, 483, 497, 511, 518, 363, 367) plus 406. Nothing stale.
+- **What changed (smallest change each):** announcements (subscribe prompt, hand-over offer, faces warning, invite link new/off, tab switch, selection mode, band-name limit); headings (counts line, info-card titles, jam name); names equal the visible words (Write article, Record podcast, Create band, band fields, "Recording 0:12, remove"); actions ("Make owner", "Play next"); sizes (Reply/⋯, chips, series tag, scrubber, subscribe pills 44 pt; wraps instead of truncating in series, host and podcast-card text); Reduce Motion on every remaining jam animation (SwiftUI and the cursor tag); contrast (recorder prompt, unplayed waveform, caption and time scrim, solid privacy panel); **407 decided: back 10 s / forward 30 s on every skip button and the lock screen/Control Center** (the scrubbers keep 10 s steps); the selected display chip is underlined. Two UI tests updated for the new spoken labels (`Studio227`, `Composer236`, `Publication254`).
+- **One change reverted:** trim handle hit width 44 pt made the existing `testThePreviewIs…PlayheadScrubs` drag grab the handle; reverted to 32 pt (row 512 "ask").
+- **Gate (iOS):** `check-warnings.sh` 0; Release device build OK; unit 751 run, 0 failed; full UI suite on 3 clones (117 min): 552 run, 4 failed: the test runner failed to launch once (simulator busy), the subtitle typing race (`Jam188b`, passed re-run), `Publication254` (my label change; test updated, passed), the playhead scrub (above; passed after the revert). Re-run one at a time: all pass. No new tests.
+- **Installed:** the 13 mini and the iPad (4). Jean's 12 mini unavailable (error 4016).
+- **All asks across 321–324 in one place (for the user):**
+  - Design/layout choices: 442 (⋯ over the card header), 483 (post menu over long titles), 406 (marquee: add a pause control?), 366 (the dimmed remix/share stubs), 468 (confirm before "New link"/"Turn off"), 215 (hairline colours), 343 (white name over photo), 558 (visible Accept/Decline), 675 (tab names), 639 (tab label wording), 329 (chat-video captions), 313 (composer follows chat text size).
+  - Device checks (VoiceOver, largest text): 497 (compose top bar overflow), 496 (pill rows at the largest size), 367 (decorative symbols), 674, 535 (Bold Text), 363 (60+ fixed icon sizes: a phone-by-phone pass), 227 (~290 fixed glyphs), 518 (cursor tag font), 512 (trim handle width), 452 ("is writing" announcements).
+  - New features: 511 (audio level for VoiceOver).
+  - Deferred as acceptable: 203, 213, 557, 584.
+- **For the user (gate, 13 mini):** lock-screen skip is 10 back / 30 forward and matches the player; VoiceOver in an article, a band page and its members, the composer; largest text on the series page and a podcast card.
+- **For plot:** the audit's minors are done except the ask list above.

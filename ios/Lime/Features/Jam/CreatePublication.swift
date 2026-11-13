@@ -74,7 +74,7 @@ struct CreatePublicationSheet: View {
                     .font(Theme.body).selectionTint().focused($focused).submitLabel(.next).onSubmit { if canNext { step = 2 } }
                     .padding(.horizontal, 16).frame(minHeight: 52)
                     .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .accessibilityLabel("Name").accessibilityIdentifier("publication-name-field")
+                    .accessibilityLabel("What is your band called?").accessibilityIdentifier("publication-name-field")
                 Text("\(min(cleaned.count, Self.nameLimit))/\(Self.nameLimit)").font(Theme.caption).foregroundStyle(Theme.textSecondary).padding(.horizontal, 6)
             }
             VStack(alignment: .leading, spacing: 6) {
@@ -82,7 +82,7 @@ struct CreatePublicationSheet: View {
                     .font(Theme.body).selectionTint().lineLimit(3...8)
                     .padding(16).frame(maxWidth: .infinity, alignment: .leading)
                     .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .accessibilityLabel("About").accessibilityIdentifier("publication-about-field")
+                    .accessibilityLabel("What will you share? (optional)").accessibilityIdentifier("publication-about-field")
                 Text("The picture, name and about are public.").font(Theme.caption).foregroundStyle(Theme.textSecondary).padding(.horizontal, 6)
             }
             VStack(alignment: .leading, spacing: 2) {

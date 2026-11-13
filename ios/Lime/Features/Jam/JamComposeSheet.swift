@@ -732,9 +732,9 @@ struct JamComposeSheet: View {
             ForEach(Array(clips.enumerated()), id: \.offset) { index, clip in
                 Button { clips.remove(at: index); captions[.clip(index)] = nil } label: {
                     Label("Recording \(VoiceFormat.clock(Double(clip.durationMs ?? 0) / 1000))", systemImage: "xmark.circle.fill")
-                        .font(Theme.secondary).foregroundStyle(Theme.text).padding(.horizontal, 12).frame(minHeight: 36).background(Theme.surface, in: Capsule())
+                        .font(Theme.secondary).foregroundStyle(Theme.text).padding(.horizontal, 12).frame(minHeight: 44).background(Theme.surface, in: Capsule())
                 }
-                .accessibilityLabel("Remove the \(clip.mime.hasPrefix("video/") ? "video" : "audio") recording").accessibilityIdentifier("jam-recorded-\(index)")
+                .accessibilityLabel("Recording \(VoiceFormat.clock(Double(clip.durationMs ?? 0) / 1000)), remove").accessibilityIdentifier("jam-recorded-\(index)")
             }
             Spacer()
         }
@@ -772,9 +772,9 @@ struct JamComposeSheet: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 0) {
                             leadingTools(width: width)
-                            compactPill("Write article", spoken: "Write an article", system: "square.and.pencil", id: "jam-write-article") { setArticle(true) }.padding(.leading, 4)
-                            compactPill("Record podcast", spoken: "Record a podcast", system: "waveform", id: "jam-record") { recordMode = 0 }.padding(.leading, 8)
-                            compactPill("Create band", spoken: "Create a band", system: "circle.dotted", id: "jam-create-publication") { creatingPublication = true }.padding(.horizontal, 8)
+                            compactPill("Write article", spoken: "Write article", system: "square.and.pencil", id: "jam-write-article") { setArticle(true) }.padding(.leading, 4)
+                            compactPill("Record podcast", spoken: "Record podcast", system: "waveform", id: "jam-record") { recordMode = 0 }.padding(.leading, 8)
+                            compactPill("Create band", spoken: "Create band", system: "circle.dotted", id: "jam-create-publication") { creatingPublication = true }.padding(.horizontal, 8)
                             trailingTools(width: width)
                         }
                     }
@@ -842,7 +842,7 @@ struct JamComposeSheet: View {
                     Button { composer.setHeading(n == 0 ? nil : n); headingOpen = false } label: {
                         HStack(spacing: 8) {
                             Image(systemName: "checkmark").font(.system(size: 12, weight: .semibold)).frame(width: 16).opacity(level == n ? 1 : 0).accessibilityHidden(true)
-                            Text(n == 0 ? "Normal text" : "Heading \(n)").font(n == 0 ? Theme.body : .system(size: CGFloat(20 - n), weight: .bold))
+                            Text(n == 0 ? "Normal text" : "Heading \(n)").font(n == 0 ? Theme.body : Theme.font(n == 1 ? .title2 : n == 2 ? .title3 : .headline, weight: .bold))
                             Spacer(minLength: 0)
                         }
                         .foregroundStyle(Theme.text).padding(.horizontal, 14).frame(minHeight: 44).contentShape(Rectangle())
@@ -899,9 +899,9 @@ struct JamComposeSheet: View {
 
     private var pillRow: some View {
         HStack(spacing: 10) {
-            chip("Write article", spoken: "Write an article", system: "square.and.pencil", id: "jam-write-article") { setArticle(true) }
-            chip("Record podcast", spoken: "Record a podcast", system: "waveform", id: "jam-record") { recordMode = 0 }
-            chip("Create band", spoken: "Create a band", system: "circle.dotted", id: "jam-create-publication") { creatingPublication = true }
+            chip("Write article", spoken: "Write article", system: "square.and.pencil", id: "jam-write-article") { setArticle(true) }
+            chip("Record podcast", spoken: "Record podcast", system: "waveform", id: "jam-record") { recordMode = 0 }
+            chip("Create band", spoken: "Create band", system: "circle.dotted", id: "jam-create-publication") { creatingPublication = true }
         }
     }
 

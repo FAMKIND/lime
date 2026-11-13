@@ -255,7 +255,7 @@ struct JamArticlePage: View {
                     .onPreferenceChange(ArticleOffsetKey.self) { track($0, false) }
                     .onPreferenceChange(ArticleHeadEndKey.self) { headEnd = $0 }
                     .modifier(ArticleScrollTracking(track: track))
-                    .onChange(of: scrollTarget) { _, id in if let id { withAnimation { proxy.scrollTo(id, anchor: id == "comments" ? .top : .center) } } }
+                    .onChange(of: scrollTarget) { _, id in if let id { withMotion { proxy.scrollTo(id, anchor: id == "comments" ? .top : .center) } } }
                     .task { if toComments { try? await Task.sleep(for: .milliseconds(500)); scrollTarget = "comments" } }
                 }
                 .padding(.top, 0)
@@ -276,7 +276,7 @@ struct JamArticlePage: View {
         }
         // ...and the dock goes with them.
         .toolbar(barsGone ? .hidden : .automatic, for: .tabBar)
-        .animation(.easeOut(duration: 0.2), value: barHidden)
+        .animation(Motion.animation(.easeOut(duration: 0.2)), value: barHidden)
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         // The system back is hidden for the glass Back, so the two-finger "Z" goes back from here (LIME-130-6a).
@@ -438,7 +438,7 @@ struct JamArticlePage: View {
         .opacity(barsGone ? 0 : 1)
         .accessibilityHidden(barsGone)
         .animation(reduceMotion ? .linear(duration: 0.15) : .easeOut(duration: 0.2), value: barHidden)
-        .animation(.easeOut(duration: 0.2), value: showsPill)
+        .animation(Motion.animation(.easeOut(duration: 0.2)), value: showsPill)
     }
 
     /// The glass pill like the chat header's: the byline's picture, the title, and who it is by. One button to the profile; with several people
@@ -597,7 +597,7 @@ struct ReaderDisplaySheet: View {
                             HStack(spacing: 8) {
                                 ForEach(ReaderFont.allCases) { face in
                                     Button { fontRaw = face.rawValue } label: {
-                                        Text(face.title).font(face.font(size: 17)).foregroundStyle(Theme.text).padding(.horizontal, 16).frame(minHeight: 48)
+                                        Text(face.title).font(face.font(size: 17)).underline(fontRaw == face.rawValue).foregroundStyle(Theme.text).padding(.horizontal, 16).frame(minHeight: 48)
                                             .background(Theme.surface, in: Capsule())
                                             .overlay(Capsule().strokeBorder(fontRaw == face.rawValue ? Theme.accent : Color.clear, lineWidth: 2))
                                     }
@@ -629,7 +629,7 @@ struct ReaderDisplaySheet: View {
             HStack(spacing: 8) {
                 ForEach(Array(names.enumerated()), id: \.offset) { index, name in
                     Button { step.wrappedValue = index - 1 } label: {
-                        Text(name).font(Theme.secondary).foregroundStyle(Theme.text).frame(maxWidth: .infinity, minHeight: 48).background(Theme.surface, in: Capsule())
+                        Text(name).font(Theme.secondary).underline(step.wrappedValue == index - 1).foregroundStyle(Theme.text).frame(maxWidth: .infinity, minHeight: 48).background(Theme.surface, in: Capsule())
                             .overlay(Capsule().strokeBorder(step.wrappedValue == index - 1 ? Theme.accent : Color.clear, lineWidth: 2))
                     }
                     .accessibilityAddTraits(step.wrappedValue == index - 1 ? .isSelected : []).accessibilityIdentifier("\(id)-\(index)")

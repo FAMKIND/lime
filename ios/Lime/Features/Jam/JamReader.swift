@@ -78,7 +78,7 @@ struct JamPostView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .task { if toComments { try? await Task.sleep(for: .milliseconds(400)); withAnimation { proxy.scrollTo("comments", anchor: .top) } } }
+        .task { if toComments { try? await Task.sleep(for: .milliseconds(400)); withMotion { proxy.scrollTo("comments", anchor: .top) } } }
         }
         .background(Theme.canvas)
         .environment(\.postContext, PostContext(post: post))
