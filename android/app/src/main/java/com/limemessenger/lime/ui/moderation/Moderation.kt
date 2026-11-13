@@ -214,7 +214,8 @@ fun BlockedScreen(chats: ChatsModel, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     var blocked by remember { mutableStateOf<List<uniffi.lime_core.BlockedPerson>?>(null) }
     var said by remember { mutableStateOf("") }
-    LaunchedEffect(Unit) { blocked = chats.blockedPeople() }
+    val reads = remember { com.limemessenger.lime.ui.common.NewestRead() }   // the newest read wins (LIME-417): the first load and the read after an Unblock can overlap
+    LaunchedEffect(Unit) { reads.read({ chats.blockedPeople() }) { blocked = it } }
     val unblockedWords = stringResource(R.string.blocked_unblocked, "%s")
     SettingsPage(stringResource(R.string.blocked_title), onBack, "blocked-screen") {
         val list = blocked
@@ -226,7 +227,7 @@ fun BlockedScreen(chats: ChatsModel, onBack: () -> Unit) {
                         val unblock = {
                             scope.launch {
                                 chats.unblock(person.conversationId)
-                                blocked = chats.blockedPeople()
+                                reads.read({ chats.blockedPeople() }) { blocked = it }
                                 said = unblockedWords.replace("%s", person.name)
                             }
                             Unit

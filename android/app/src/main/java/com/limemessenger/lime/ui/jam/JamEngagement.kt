@@ -98,7 +98,9 @@ fun JamEngagementSection(post: JamPostInfo, model: JamModel, myId: String?, onRe
     var replyingTo by remember { mutableStateOf<JamCommentInfo?>(null) }
     var failed by remember { mutableStateOf(false) }
     val counts = model.countsOf(post.postId)
-    LaunchedEffect(post.postId, counts.comments, counts.likes) { comments = model.comments(post.postId) }
+    val commentReads = remember(post.postId) { com.limemessenger.lime.ui.common.NewestRead() }   // the newest read wins (LIME-417): the effect below, a new comment and a delete all read the list
+    suspend fun reloadComments() { commentReads.read({ model.comments(post.postId) }) { comments = it } }
+    LaunchedEffect(post.postId, counts.comments, counts.likes) { reloadComments() }
     LaunchedEffect(post.postId) { if (model.isMine(post)) model.markSeen(post.postId) }
     Column(Modifier.fillMaxWidth().testTag("jam-engagement"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Box(Modifier.fillMaxWidth().size(1.dp).background(colors.hairline))
@@ -125,7 +127,7 @@ fun JamEngagementSection(post: JamPostInfo, model: JamModel, myId: String?, onRe
                 Modifier.size(56.dp).background(if (canSend) colors.accent else colors.pressed, CircleShape)
                     .then(if (canSend) Modifier.clickable(role = Role.Button) {
                         val words = text; val parent = replyingTo?.commentId
-                        scope.launch { if (model.comment(post.postId, words, parent)) { text = ""; replyingTo = null; comments = model.comments(post.postId) } else failed = true }
+                        scope.launch { if (model.comment(post.postId, words, parent)) { text = ""; replyingTo = null; reloadComments() } else failed = true }
                     } else Modifier)
                     .semantics { contentDescription = sendWords }.testTag("jam-comment-send"),
                 contentAlignment = Alignment.Center,
@@ -134,9 +136,9 @@ fun JamEngagementSection(post: JamPostInfo, model: JamModel, myId: String?, onRe
         if (failed) Text(stringResource(R.string.jam_comment_failed), color = colors.danger, fontSize = 14.sp, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("jam-comment-failed"))
         val tops = comments.filter { it.parentId == null }
         tops.forEach { top ->
-            CommentRow(top, model, myId, indent = false, onReply = { replyingTo = top }, onReport = onReportComment) { scope.launch { model.deleteComment(post.postId, it); comments = model.comments(post.postId) } }
+            CommentRow(top, model, myId, indent = false, onReply = { replyingTo = top }, onReport = onReportComment) { scope.launch { model.deleteComment(post.postId, it); reloadComments() } }
             comments.filter { it.parentId == top.commentId }.forEach { reply ->
-                CommentRow(reply, model, myId, indent = true, onReply = { replyingTo = top }, onReport = onReportComment) { scope.launch { model.deleteComment(post.postId, it); comments = model.comments(post.postId) } }
+                CommentRow(reply, model, myId, indent = true, onReply = { replyingTo = top }, onReport = onReportComment) { scope.launch { model.deleteComment(post.postId, it); reloadComments() } }
             }
         }
     }

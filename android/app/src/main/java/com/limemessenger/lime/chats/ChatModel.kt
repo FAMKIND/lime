@@ -1,5 +1,6 @@
 package com.limemessenger.lime.chats
 
+import com.limemessenger.lime.ui.common.NewestRead
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.graphics.ImageBitmap
@@ -39,13 +40,18 @@ class ChatModel(
 
     val summary: ConversationSummary? get() = chats.conversations.firstOrNull { it.id == conversationId }
 
+    private val messageReads = NewestRead()
+
+    /** Tests: how the messages and thread summaries are read (a slow read and a fast one). */
+    internal var readHook: (suspend (uniffi.lime_core.LimeStore) -> Pair<List<MessageItem>, Map<String, Int>>)? = null
+
+    /** The newest read wins ([NewestRead]); the state is set on the caller's thread, not on the IO thread that read it. */
     suspend fun reload() {
         val core = chats.core() ?: return
         try {
-            withContext(Dispatchers.IO) {
-                messages = core.listMessages(conversationId)
-                replyCounts = core.listThreadSummaries(conversationId).associate { it.rootId to it.replyCount.toInt() }
-            }
+            messageReads.read({
+                withContext(Dispatchers.IO) { readHook?.invoke(core) ?: (core.listMessages(conversationId) to core.listThreadSummaries(conversationId).associate { it.rootId to it.replyCount.toInt() }) }
+            }) { (found, replies) -> messages = found; replyCounts = replies }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

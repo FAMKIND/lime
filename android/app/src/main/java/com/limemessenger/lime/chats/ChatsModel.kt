@@ -1,5 +1,6 @@
 package com.limemessenger.lime.chats
 
+import com.limemessenger.lime.ui.common.NewestRead
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -79,16 +80,16 @@ class ChatsModel(
     /** The chats that are unread besides `id` (LIME-409: the number beside a chat's Back; iOS LIME-325): the Messages tab's count (chats, not messages; muted counted as the tab does), minus this chat when it is unread. */
     fun otherUnreadChats(id: String): Int = countOtherUnread(chats.map { it.id to it.isUnread }, id)
 
-    /** Each read takes a ticket when it starts; a read that finishes after a LATER one has already been shown is dropped (it is older news): a slow poll must not put back what a change just removed. */
-    private var readsStarted = 0
-    private var readsShown = 0
+    private val listReads = NewestRead()
 
+    /** Tests: how the list is read (a slow read and a fast one); the core's `list_conversations` unless given. */
+    internal var listHook: (suspend (uniffi.lime_core.LimeStore) -> List<ConversationSummary>)? = null
+
+    /** The newest read wins (LIME-412b, [NewestRead]): a slow poll must not put back what a change just removed. */
     suspend fun reload() {
         val core = store() ?: return
         try {
-            val ticket = ++readsStarted
-            val list = withContext(Dispatchers.IO) { core.listConversations() }
-            if (ticket > readsShown) { readsShown = ticket; conversations = list; revision++ }
+            listReads.read({ withContext(Dispatchers.IO) { listHook?.invoke(core) ?: core.listConversations() } }) { list -> conversations = list; revision++ }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

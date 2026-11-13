@@ -1,5 +1,6 @@
 package com.limemessenger.lime.chats
 
+import com.limemessenger.lime.ui.common.NewestRead
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -40,10 +41,16 @@ class GroupModel(private val chats: ChatsModel, val conversationId: String) {
     var failed by mutableStateOf(false)
         private set
 
+    private val detailReads = NewestRead()
+
+    /** Tests: how the details are read. */
+    internal var detailsHook: (suspend (uniffi.lime_core.LimeStore) -> GroupDetails)? = null
+
+    /** The newest read wins ([NewestRead]): a slow read begun before a rename or a removal must not put the old member list back. */
     suspend fun refresh() {
         val core = chats.core() ?: return
         try {
-            details = withContext(Dispatchers.IO) { core.groupDetails(conversationId) }
+            detailReads.read({ withContext(Dispatchers.IO) { detailsHook?.invoke(core) ?: core.groupDetails(conversationId) } }) { found -> details = found }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

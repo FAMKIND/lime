@@ -251,10 +251,10 @@ fun StorageScreen(chats: ChatsModel, prefs: MediaPrefs, onBack: () -> Unit) {
     var removing by remember { mutableStateOf<uniffi.lime_core.ChatUsage?>(null) }
     var gifs by remember { mutableStateOf<uniffi.lime_core.MyGifUsage?>(null) }
     var clearingGifs by remember { mutableStateOf(false) }
+    val usageReads = remember { com.limemessenger.lime.ui.common.NewestRead() }   // the newest read wins (LIME-417): two loads can overlap (open, then a clear)
     suspend fun load() {
         val core = chats.core() ?: return
-        usage = withContext(Dispatchers.IO) { runCatching { core.storageUsage() }.getOrNull() }
-        gifs = withContext(Dispatchers.IO) { runCatching { core.myGifsUsage() }.getOrNull() }
+        usageReads.read({ withContext(Dispatchers.IO) { runCatching { core.storageUsage() }.getOrNull() to runCatching { core.myGifsUsage() }.getOrNull() } }) { (u, g) -> usage = u; gifs = g }
     }
     LaunchedEffect(Unit) { load() }
     if (clearingGifs) androidx.compose.material3.AlertDialog(

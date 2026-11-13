@@ -702,3 +702,25 @@ Also: redirect to a private address over TLS fetches nothing more (`aRedirectToA
 **Proved against the real server (the third run):** Ada created a band through the UI; Members: "You, Owner"; the Invite link's code was accepted by the core; **Ben joined by that link** (`band: join state joined`); **Ada's Members listed him** (as a Member), Ada made him a **Writer** through the sheet and Ben saw it (`band: my role writer`; members `Ada Android=owner, You=writer`); Ben followed the band's jam (`requested` then `active`) and **received Ada's post "A post from the band" as `jam` by "Staff Room Band"** (`display_as` = jam: the byline is the band); the core confirmed the post is stored as `displayAs == "jam"`. Budget: Ada 3 registrations in the hour, Ben 7, Cleo 0 for the three runs.
 **Now in the default staging list** (`StagingBandTest`, after the picture class). **Still unproven:** the band's groups list, the subscriber's view and a non-owner writer posting as a band (none is built); and the Android UI for **Join a band** (Ben used the partner, not the app's dialog: its parsing is unit-tested with made-up data).
 **For plot:** 315c is done for the owner's side and the join; the next band slice is the groups list, the subscriber's view and a QR code. The earlier hypotheses in the 315c record (the join op sent too early; Ada's `process_orgs`) are **replaced by this finding**.
+
+## LIME-417 — stale reads, everywhere the lists reload (Android, night 5)
+
+**Survey (read-only, every asynchronous read that sets state):** the rule from `793780c` (a ticket taken when a read STARTS, a read that finishes after a later one was applied is dropped) is now **one small class, `ui/common/NewestRead`** (plain Kotlin: `read(fetch, apply)`; the ticket and the apply are on the caller's thread, the fetch anywhere); `ChatsModel.reload` was moved onto it.
+| Model / read | Before | Now |
+|---|---|---|
+| `ChatsModel.reload` (chat list) | guarded (412b, hand-made ticket) | **guarded by `NewestRead`**; test (hook) |
+| `ChatModel.reload` (messages + thread summaries) | **none** (and it set the state from the IO thread) | **guarded; state now set on the caller's thread**; test |
+| `GroupModel.refresh` (group details) | **none** | **guarded**; test |
+| `JamModel.reload` (jams, posts, file kinds) | **none** | **guarded** (all read together, set together); test (via its `source`) |
+| `JamModel` per-post counts (`reload`, ♥, `refreshOne`) | **none** (three writers of one map) | **guarded per post** (one `NewestRead` per post id; the feed's reload now reads the counts through it, after the feed is set) |
+| `JamEngagementSection` comments (effect + new comment + delete: three readers) | **none** | **guarded** (local `NewestRead`) |
+| `BandMembersScreen.load` (load, role change, remove) | **none** | **guarded** (local) |
+| `StorageScreen.load` (usage and My GIFs, open and after a clear) | **none** | **guarded** (local; both numbers set together) |
+| `BlockedScreen` (first load and the read after an Unblock) | **none** | **guarded** (local) |
+| `BandScreen` member count, `YourJamScreen` subscribers, `ProfileScreen` blocked flag, `SearchScreen`, GIF panel and "/" strip (`produceState`), people lookup | keyed `LaunchedEffect` / `produceState` | **cannot race**: a new key cancels the older coroutine, and `withContext` returns nothing once its job is cancelled (the people lookup has its own "latest search wins" test) |
+| `ChatModel.loadImage`, attachments, comments/attachments/subscribers as plain return values | a `loading` set / the caller's effect | **cannot race** (one load per id; the caller above owns the state) |
+| calls list, devices list | not built on Android | n/a |
+**Tests:** `NewestReadTest` (JVM, 4: a slow read finishing after a fast newer one is dropped; in-order reads all apply; a later-started read wins whenever it arrives; a failed read does not block the next) and `NewestReadModelsTest` (instrumented, 4: the chat list, an open chat's messages, the jam feed, a group's details: each starts a slow read, then a fast newer one, lets the fast finish, then the slow one, and asserts the fast one's state). **Checked once by removing the guard** (the class's "newest" test forced to always apply): **all 4 model tests and the unit test failed** (e.g. "expected 1 but was 5", "Stale name"), and passed again with the guard restored. The per-post counts and the three composable-local guards have no model-level test of their own (they have no seam; the helper's tests cover the rule).
+**Core rules added:** none. **Choices made:** `NewestRead` lives in `ui/common` and is **not** an ANDROID DEBT (iOS does not need it: its stores are actors); the jam feed's counts are now read after the feed is applied (a few extra suspends), not bundled with it.
+**Checks:** `testDebugUnitTest lintDebug` pass; the plain pass on **API 36 green (175 tests, 0 failures)**; API 26 once at the end of the night (with 315d).
+**For plot:** none.

@@ -169,7 +169,8 @@ fun BandMembersScreen(jam: JamInfo, model: JamModel, onBack: () -> Unit) {
     var removing by remember { mutableStateOf<OrgMemberInfo?>(null) }
     var inviting by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
-    suspend fun load() { members = model.bands.members(jam.jamId); loaded = true }
+    val reads = remember { com.limemessenger.lime.ui.common.NewestRead() }   // the newest read wins (LIME-417): a role change or a removal reads the list while the first load may still run
+    suspend fun load() { reads.read({ model.bands.members(jam.jamId) }) { members = it; loaded = true } }
     LaunchedEffect(jam.jamId) { load() }
     fun change(person: OrgMemberInfo, role: String) { scope.launch { failed = !model.bands.setRole(jam.jamId, person.userId, role); load() } }
     val canInvite = members.any { it.canManage } || members.any { it.isMe && it.role == "owner" }

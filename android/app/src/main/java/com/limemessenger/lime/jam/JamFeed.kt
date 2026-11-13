@@ -1,5 +1,6 @@
 package com.limemessenger.lime.jam
 
+import com.limemessenger.lime.ui.common.NewestRead
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -101,38 +102,45 @@ class JamModel(
         }
     }
 
+    private class FeedRead(val jams: List<JamInfo>, val posts: List<JamPostInfo>, val counts: List<JamCountsInfo>, val kinds: Map<String, List<String>>)
+    private val feedReads = NewestRead()
+
+    /** The newest read wins ([NewestRead]): a slow reload begun before a change (a subscription, a post) must not put the old feed back. The jams, the posts, their counts and file kinds are read together and set together. */
     suspend fun reload() {
         try {
-            if (source != null) {
-                val (found, all) = source.invoke()
-                jams = found
-                posts = uniffi.lime_core.jamFeedPosts(all, found)
-            } else {
-                val core = store() ?: return
-                val (mine, followed, all) = withContext(Dispatchers.IO) {
-                    val mine = core.listMyJams()
+            val core = store()
+            if (source == null && core == null) return
+            val applied = feedReads.read({
+                if (source != null) {
+                    val (found, all) = source.invoke()
+                    FeedRead(found, uniffi.lime_core.jamFeedPosts(all, found), emptyList(), emptyMap())
+                } else withContext(Dispatchers.IO) {
+                    val mine = core!!.listMyJams()
                     val followed = core.listJamSubscriptions()
                     val live = (followed.filter { it.status == "active" } + mine).map { it.jamId }.toSet()
-                    Triple(mine, followed, live.flatMap { core.listJamPosts(it) })
+                    val all = live.flatMap { core.listJamPosts(it) }
+                    val jamsNow = mine + followed
+                    val postsNow = uniffi.lime_core.jamFeedPosts(all, jamsNow)
+                    FeedRead(
+                        jamsNow, postsNow, emptyList(),
+                        postsNow.mapNotNull { p -> runCatching { core.listJamAttachments(p.postId) }.getOrNull()?.let { list -> p.postId to list.map { it.kind } } }.toMap(),
+                    )
                 }
-                jams = mine + followed
-                posts = uniffi.lime_core.jamFeedPosts(all, jams)
-                refreshCounts()
+            }) { r ->
+                jams = r.jams
+                posts = r.posts
+                fileKinds.putAll(r.kinds)
+                reloads += 1
             }
-            reloads += 1
+            if (!applied) return
+            // The likes and comments of each post: read after the feed is set, each by its own newest-wins read (a ♥ pressed meanwhile is not overwritten).
+            if (core != null) posts.forEach { readCounts(core, it.postId) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             // Keep what is shown.
         }
         isLoaded = true
-    }
-
-    private suspend fun refreshCounts() {
-        val core = store() ?: return
-        val fresh = withContext(Dispatchers.IO) { posts.mapNotNull { p -> runCatching { core.jamPostCounts(p.postId) }.getOrNull() } }
-        fresh.forEach { counts[it.postId] = it }
-        withContext(Dispatchers.IO) { posts.forEach { p -> runCatching { core.listJamAttachments(p.postId) }.getOrNull()?.let { list -> fileKinds[p.postId] = list.map { it.kind } } } }
     }
 
     fun countsOf(postId: String): JamCountsInfo = counts[postId] ?: JamCountsInfo(postId, 0u, 0u, 0u, emptyList(), false, false)
@@ -156,7 +164,7 @@ class JamModel(
         val core = store() ?: return
         val on = !countsOf(post.postId).likedByMe
         withContext(Dispatchers.IO) { runCatching { core.reactToJamPost(post.postId, on) } }
-        counts[post.postId] = withContext(Dispatchers.IO) { runCatching { core.jamPostCounts(post.postId) }.getOrNull() } ?: countsOf(post.postId)
+        readCounts(core, post.postId)
         env?.deliver?.invoke()
     }
 
@@ -196,7 +204,14 @@ class JamModel(
 
     suspend fun refreshOne(postId: String) {
         val core = store() ?: return
-        withContext(Dispatchers.IO) { runCatching { core.jamPostCounts(postId) }.getOrNull() }?.let { counts[postId] = it }
+        readCounts(core, postId)
+    }
+
+    private val countReads = HashMap<String, NewestRead>()
+
+    /** A post's likes and comments, read again: the newest read of THIS post wins ([NewestRead]), whether it came from a ♥, the feed's reload or a refresh. */
+    private suspend fun readCounts(core: LimeStore, postId: String) {
+        countReads.getOrPut(postId) { NewestRead() }.read({ withContext(Dispatchers.IO) { runCatching { core.jamPostCounts(postId) }.getOrNull() } }) { found -> if (found != null) counts[postId] = found }
     }
 
     // ---- a post's files
