@@ -4,6 +4,14 @@
 
 **Screenshots:** `~/Desktop/lime-android-design/` (420: the gallery, light/dark halves, 100% and 200% font, API 26 and 36; 422: `422-before-*` and `422-after-*`). Failure reports: `~/Desktop/lime-android-design/failures/`.
 
+| Brief | What | Commit |
+|---|---|---|
+| 420 | design tokens (type, shapes, spacing, circle button, top fade, motion) + debug gallery (long-press the Settings title in a debug build) | `0474324b` |
+| 421 | the audit: `docs/design/android-vs-ios-audit.md` (62 rows, top 10, brief order) | `8aba5e6b` |
+| 422 | shell, headers, chat list in lime's look (before/after shots) | `a56db78b` |
+
+**Start here (morning, ~20 minutes):** (1) `docs/design/android-vs-ios-audit.md`: the top 10 and the recommended order; tell plot which rows to match. (2) `~/Desktop/lime-android-design/422-before-*` beside `422-after-*` (and `docs/design/android-audit/ios-messages.png`, dated). (3) the gallery shots `420-*`. **Core rules added: none. Core, ios, main untouched; nothing merged; only `android` pushed.** Stopped at 02:20 with all three briefs done and committed; the one thing to know is the intermittent `ChatListUiTest` failure described in the 422 record.
+
 ### LIME-422 — the shell, the headers and the chat list in lime's look
 
 **What you have now:** (1) **Messages:** the header **floats over the list** with `LimeTopFade` (the list starts under it and scrolls beneath the fade; the filter chips are the list's first item); search and my avatar sit in **one capsule** (surface + hairline, each a 48 dp target); the "lime" wordmark is the `titleBold` style; the **"+" is 64 dp** (iOS 64 pt) with a plus (not the pencil) and a soft shadow, accent: still the one lime action. Rows use the tokens (title 17 semibold, time 15 `secondary`, preview 15, the label capsule is a pill, side padding `LimeSpacing.l`). (2) **Tab bar:** still a real Material `NavigationBar` (TalkBack), now the canvas colour with a **hairline on top**, a neutral `pressed` indicator for the active tab, 12 sp labels from the type tokens, and **the unread count as an accent badge on the link tab** (iOS has it; "N unread chats" as the tab's state for TalkBack; `Shell(linkUnread = chats.unreadChatCount)`). (3) **A chat's header** floats over the messages with the same fade: the **Back is lime's circle** (44 dp circle, hairline, in a 48 dp target; the unread count of the other chats beside it, LIME-409's semantics unchanged: one stop "Back", state "3 unread chats"); the **name is iOS's `subheadline` semibold 15** (was 20).
