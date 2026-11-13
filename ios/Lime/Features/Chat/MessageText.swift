@@ -330,7 +330,7 @@ struct PostButton: View {
         case .subscribe: "Subscribes you to this jam"
         case .share: "Sends this post to a chat"
         case .message: "Opens a chat with the writer"
-        case .comment: "Coming soon"
+        case .comment: ""   // reserved; authors cannot add it and it does nothing (LIME-328)
         case .link: "Opens a link"
         }
     }

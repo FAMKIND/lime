@@ -23,8 +23,9 @@ final class Jam188yUITests: LimeUITestCase {
         photo.tap()
         func pill(_ label: String) -> XCUIElement { app.buttons.matching(NSPredicate(format: "label BEGINSWITH[c] %@", label)).firstMatch }
         XCTAssertTrue(pill("like").waitForExistence(timeout: 5))
-        for label in ["like", "comment", "remix", "share"] { XCTAssertTrue(pill(label).exists, label) }
-        let xs = ["like", "comment", "remix", "share"].map { pill($0).frame.midX }
+        for label in ["like", "comment", "share"] { XCTAssertTrue(pill(label).exists, label) }
+        XCTAssertFalse(pill("remix").exists, "no Remix until it exists (LIME-328)")
+        let xs = ["like", "comment", "share"].map { pill($0).frame.midX }
         let gaps = zip(xs, xs.dropFirst()).map { $1 - $0 }
         XCTAssertEqual(gaps.max() ?? 0, gaps.min() ?? 0, accuracy: 1.5, "evenly spaced")
     }

@@ -10865,3 +10865,16 @@ Settings, profile and groups: the 13 majors (audit rows 341, 342, 344, 609, 612�
 - **Installed:** the 13 mini, the iPad (4) and Jean's 12 mini.
 - **For the user (gate, 13 mini):** a post's counts line has no remixes; change Text Size in Control Center with lime open: the tab badge number grows (needs an unread count to see it).
 - **For plot:** (a) the inert Remix stubs in the player and photo viewer; (b) a title inside a button no longer replays on tap (only the landscape title does): 326's "tap replays" holds only there, a design call if you want it everywhere (e.g. replay when the About sheet closes).
+
+## LIME-328
+
+**Brief:** no "coming soon" buttons anywhere in jam.
+- **Survey (before editing):** `JamActionPill` is used in the article reader bar (`JamArticle`), the player's bottom bar and the full-screen photo viewer (`JamViewerBar`), always with a `postID`. Dead stubs found: its Remix button (and a Share that did nothing without a handler), both dimmed with the hint "Coming soon". The only other "Coming soon" string is the hint of the reserved `lime:comment` button action in `MessageText.swift` (authors cannot add it; it does nothing): the hint is now empty. No stub was a path to anything real.
+- **Change:** `JamActionPill` shows ♥ and 💬 (with a `postID`) and Share only when `share != nil` (hint "Sends the post to a chat"); never Remix; no "Coming soon" left in `ios/Lime`. Tests: `Jam188yUITests` (like, comment, share present, no remix, evenly spaced), a comment in `Player235UITests`. The "title taps don't replay" decision is already what 327 built.
+- **Full UI suite (3 clones, 103 min):** unit 754 run, 0 failed; UI 552 run, 3 failed:
+  1. the test runner failed to launch once (simulator busy), a load artefact;
+  2. `BackUnread325UITests` (value "" while the tab said 2): passed on a one-at-a-time re-run;
+  3. `Drafts276UITests.testTheMenuSavesADraft…ThenDeletedBySwipe`: **fails every time, and also at the LIME-324 commit (`7e13964`) with the 324 tests**, so it is **not caused by 325–328**. The failure: after "Discard" on a resumed draft, `jam-segment-Drafts` is not found within 10 s (the second `openDrafts`); a dump shows the jam feed scrolled ~1,870 pt. It passed in the 324 full run, so it may depend on timing under the 3-clone load. I did not fix it (not in 328's scope); for plot.
+- **Check:** `check-warnings.sh` 0; Release device build OK; installed on the 13 mini, the iPad (4) and Jean's 12 mini.
+- **For the user (gate, 13 mini):** a jam podcast's bottom bar has no Remix; a jam photo full screen shows ♥ 💬 share only; nothing says "Coming soon".
+- **For plot:** (a) the `Drafts276UITests` failure above: a real feed-scroll behaviour after discarding a resumed draft, or a test-timing issue; say if you want a brief; (b) this session's `test-full.sh` runs share one result bundle and log (`$TMPDIR/lime-test-full.*`), so overlapping runs overwrite each other: I lost time to that.

@@ -685,7 +685,7 @@ struct JamVideoScreen: View {
 
     // The bottom bar
 
-    /// AirPlay · ♥ 💬 remix share · Up next, all glass.
+    /// AirPlay · ♥ 💬 share · Up next, all glass.
     private func bottomBar(_ item: (postID: String, file: JamAttachmentInfo, controller: PodcastController), _ post: JamPostInfo?) -> some View {
         HStack(spacing: 10) {
             AirPlayButton().frame(width: 44, height: 44).limeGlass(in: Circle(), overMedia: true).accessibilityLabel("AirPlay").accessibilityIdentifier("jam-video-airplay")
@@ -754,7 +754,7 @@ private struct TextOver: View {
     }
 }
 
-/// ♥ · comment · remix · share. Inert until LIME-189 (as on the cards), except Share, which sends the post to a chat.
+/// ♥ · comment · share. Share only when it has somewhere to go; Remix is not shown until it exists (LIME-328).
 struct JamActionPill: View {
     var dark = false
     var share: (() -> Void)? = nil
@@ -768,21 +768,19 @@ struct JamActionPill: View {
                 JamHeartButton(postID: postID, size: 20, dark: dark)
                 JamCommentCount(postID: postID, size: 20, dark: dark) { comment?() }
             }
-            ForEach(postID == nil ? [("heart", "like"), ("bubble.left", "comment"), ("arrow.2.squarepath", "remix"), ("square.and.arrow.up", "share")] : [("arrow.2.squarepath", "remix"), ("square.and.arrow.up", "share")], id: \.1) { icon, label in
-                let live = label == "share" && share != nil
-                Button { if live { share?() } } label: {
-                    Image(systemName: icon).font(.system(size: 20)).frame(maxWidth: .infinity, minHeight: 44)
+            if let share {
+                Button(action: share) {
+                    Image(systemName: "square.and.arrow.up").font(.system(size: 20)).frame(maxWidth: .infinity, minHeight: 44)
                 }
-                .buttonStyle(.plain).foregroundStyle(dark ? Color.white.opacity(live ? 1 : 0.5) : Theme.text.opacity(live ? 1 : 0.5))
-                .accessibilityLabel(label).accessibilityHint(live ? "Sends the post to a chat" : "Coming soon").accessibilityIdentifier("jam-pill-\(label)")
+                .buttonStyle(.plain).foregroundStyle(dark ? Color.white : Theme.text)
+                .accessibilityLabel("share").accessibilityHint("Sends the post to a chat").accessibilityIdentifier("jam-pill-share")
             }
         }
         .padding(.horizontal, 8).limeGlass(in: Capsule(), overMedia: dark)
     }
 }
 
-/// The bar under a jam photo in the full-screen viewer (LIME-188y): ♥ · 💬 · remix · share, like the one under the reader; only Share works until
-/// LIME-189.
+/// The bar under a jam photo in the full-screen viewer (LIME-188y): ♥ · 💬 · share, like the one under the reader.
 struct JamViewerBar: View {
     let postID: String
     @Environment(ConversationStore.self) private var store

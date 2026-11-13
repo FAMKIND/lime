@@ -27,7 +27,7 @@ final class Player235UITests: LimeUITestCase {
         XCTAssertTrue(any(app, "jam-player-audio-only").exists, "only the waveform")
         XCTAssertFalse(app.segmentedControls["jam-player-mode"].exists, "no Listen | Watch")
         XCTAssertFalse(app.buttons["Watch"].exists)
-        // The bottom bar: AirPlay, ♥ 💬 remix share, Up next.
+        // The bottom bar: AirPlay, ♥ 💬 share, Up next.
         XCTAssertTrue(any(app, "jam-video-airplay").exists)
         XCTAssertTrue(app.buttons["jam-pill-share"].exists)
         // Tapping the info block opens About: the title, the writer, the description, a close button.
