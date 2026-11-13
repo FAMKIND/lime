@@ -421,10 +421,12 @@ fun ConversationRow(
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) { marks(); timeText() }
                 }
             } else {
+                // The time sits at ONE right edge on every row: the name and its marks share the room left of it (a weighted name next to a weighted spacer left a gap at the end of short names).
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    title(Modifier.weight(1f, fill = false))
-                    marks()
-                    Spacer(Modifier.weight(1f))
+                    Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        title(Modifier.weight(1f, fill = false))
+                        marks()
+                    }
                     timeText()
                 }
             }

@@ -40,7 +40,17 @@ fun Avatar(initials: String, tone: Int, size: Dp = 52.dp, emoji: String? = null,
         val density = androidx.compose.ui.platform.LocalDensity.current
         val emojiSize = with(density) { (size * 0.5f).toSp() }
         val initialsSize = with(density) { (size * 0.38f).toSp() }
-        if (emoji != null) Text(emoji, fontSize = emojiSize)
-        else Text(initials, color = androidx.compose.ui.graphics.Color(0xFF131B17), fontSize = initialsSize, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        if (emoji != null) Text(emoji, style = glyphStyle(emojiSize))
+        else Text(initials, color = androidx.compose.ui.graphics.Color(0xFF131B17), style = glyphStyle(initialsSize), fontWeight = FontWeight.SemiBold, maxLines = 1)
     }
 }
+
+/**
+ * A glyph inside a circle: the line is exactly the glyph's size and centred (the theme's body line height is 22 sp, which at 200% font made a line far taller than a small avatar,
+ * so the initials sat low and were clipped).
+ */
+fun glyphStyle(size: androidx.compose.ui.unit.TextUnit) = androidx.compose.ui.text.TextStyle(
+    fontSize = size, lineHeight = size,
+    lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center, androidx.compose.ui.text.style.LineHeightStyle.Trim.Both),
+    platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false),
+)

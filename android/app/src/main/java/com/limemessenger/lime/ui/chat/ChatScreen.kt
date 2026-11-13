@@ -35,6 +35,7 @@ import uniffi.lime_core.AttachmentInfo
 import uniffi.lime_core.OutgoingAttachment
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -308,7 +309,7 @@ private fun SelectionBar(count: Int, onCancel: () -> Unit, onForward: () -> Unit
 internal fun Header(summary: ConversationSummary?, myName: String, myTone: Int, otherUnread: Int, onBack: () -> Unit, onGroup: () -> Unit, onProfile: (uniffi.lime_core.MemberInfo) -> Unit) {
     val colors = Lime.colors
     val first = summary?.members?.firstOrNull()
-    Row(Modifier.fillMaxWidth().padding(horizontal = com.limemessenger.lime.ui.theme.LimeSpacing.s, vertical = com.limemessenger.lime.ui.theme.LimeSpacing.xs), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = com.limemessenger.lime.ui.theme.LimeSpacing.s, vertical = com.limemessenger.lime.ui.theme.LimeSpacing.xs), horizontalArrangement = Arrangement.spacedBy(com.limemessenger.lime.ui.theme.LimeSpacing.s), verticalAlignment = Alignment.CenterVertically) {
         BackWithCount(otherUnread, onBack)
         // In a one-to-one chat the avatar and the name open the person's profile.
         val opensProfile = summary != null && !summary.isGroup && first != null
@@ -343,20 +344,25 @@ fun BackWithCount(otherUnread: Int, onBack: () -> Unit, modifier: Modifier = Mod
     val colors = Lime.colors
     val back = stringResource(R.string.chat_back)
     val state = if (otherUnread > 0) androidx.compose.ui.res.pluralStringResource(R.plurals.chat_back_unread, otherUnread, otherUnread) else null
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    // One pill, as iOS: the chevron and the count inside the same circle (no count) or capsule that widens with the number (12 dp side padding, 48 dp at least each way).
+    // The count is plain text in the text colour, never a coloured badge. One TalkBack stop: "Back", state "3 unread chats".
     Row(
         modifier.heightIn(min = com.limemessenger.lime.ui.theme.LimeCircle.target).widthIn(min = com.limemessenger.lime.ui.theme.LimeCircle.target)
+            .clip(com.limemessenger.lime.ui.theme.LimeShapes.pill)
+            .background(colors.surface, com.limemessenger.lime.ui.theme.LimeShapes.pill)
+            .border(androidx.compose.foundation.BorderStroke(0.5.dp, colors.hairline), com.limemessenger.lime.ui.theme.LimeShapes.pill)
             .clickable(onClick = onBack)
             .clearAndSetSemantics { contentDescription = back; role = Role.Button; if (state != null) stateDescription = state; testTag = "chat-back" }
-            .padding(end = 4.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp),
+            .animateContentSize(com.limemessenger.lime.ui.theme.LimeMotion.spec<androidx.compose.ui.unit.IntSize>(ctx.contentResolver, androidx.compose.animation.core.tween(200)))
+            .padding(horizontal = if (otherUnread > 0) com.limemessenger.lime.ui.theme.LimeSpacing.m else 0.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
     ) {
-        // lime's circle (iOS: a 44 pt glass circle with the ‹): a solid surface with the hairline, in the 48 dp target; the unread count sits beside it.
-        Box(
-            Modifier.padding(2.dp).size(com.limemessenger.lime.ui.theme.LimeCircle.visible).background(colors.surface, com.limemessenger.lime.ui.theme.LimeShapes.circle)
-                .border(androidx.compose.foundation.BorderStroke(0.5.dp, colors.hairline), com.limemessenger.lime.ui.theme.LimeShapes.circle),
-            contentAlignment = Alignment.Center,
-        ) { Icon(Icons.Back, contentDescription = null, tint = colors.text, modifier = Modifier.size(22.dp)) }
-        if (otherUnread > 0) com.limemessenger.lime.ui.chats.CountBadge(otherUnread, Modifier.testTag("chat-back-count"))
+        Icon(Icons.Back, contentDescription = null, tint = colors.text, modifier = Modifier.size(22.dp))
+        if (otherUnread > 0) Text(
+            com.limemessenger.lime.chats.badgeText(otherUnread), color = colors.text, maxLines = 1,
+            style = com.limemessenger.lime.ui.theme.LimeType.run { title.style() }, modifier = Modifier.testTag("chat-back-count"),
+        )
     }
 }
 
@@ -430,7 +436,8 @@ private fun MessageBubble(
     Row(
         Modifier.fillMaxWidth().padding(vertical = 2.dp),
         horizontalArrangement = if (own) Arrangement.End else Arrangement.Start,
-        verticalAlignment = Alignment.CenterVertically,
+        // iOS (`ChatView` message row: `HStack(alignment: .top)`): the avatar sits at the top of the message, level with the sender name or the bubble's top, never centred on the bubble + time line.
+        verticalAlignment = Alignment.Top,
     ) {
         if (selecting) {
             val toggleWords = stringResource(R.string.message_select_toggle)
@@ -477,7 +484,7 @@ private fun MessageBubble(
                         }
                     }
                 }
-                if (!item.deleted && (endsRun || showState || item.edited)) Footer(item, showState, onRetry)
+                if (!item.deleted && (endsRun || showState || item.edited)) Footer(item, showState, onRetry, own)
             }
             ReactionChips(item, onReact)
             if (replyCount > 0 && !item.deleted) {
@@ -492,9 +499,10 @@ private fun MessageBubble(
 
 /** The time, "Edited" and the delivery state under a message (as iOS: Sending…, Sent, Not sent, Not delivered; the nearby-phone words). */
 @Composable
-private fun Footer(item: MessageItem, showState: Boolean, onRetry: () -> Unit) {
+private fun Footer(item: MessageItem, showState: Boolean, onRetry: () -> Unit, own: Boolean) {
     val colors = Lime.colors
-    Row(Modifier.padding(horizontal = 6.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+    // The time line starts exactly at the bubble's left edge for others' messages and ends exactly at its right edge for mine (no side padding).
+    Row(Modifier.padding(vertical = 2.dp).testTag("message-footer-${item.id}"), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(MessageFormat.clock(item.sentAt), color = colors.textSecondary, fontSize = 12.sp, modifier = Modifier.testTag("message-time-${item.id}"))
         if (item.edited) Text(stringResource(R.string.chat_edited), color = colors.textSecondary, fontSize = 12.sp)
         if (showState && item.isOwn) when (val state = item.state) {

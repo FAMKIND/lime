@@ -52,7 +52,7 @@ fun GroupAvatar(group: ConversationSummary, myName: String, myTone: Int, size: D
                 contentAlignment = Alignment.Center,
             ) {
                 val density = androidx.compose.ui.platform.LocalDensity.current
-                androidx.compose.material3.Text("+${plan.extra}", color = colors.text, fontSize = with(density) { (diameter * 0.38f).toSp() }, maxLines = 1)
+                androidx.compose.material3.Text("+${plan.extra}", color = colors.text, style = glyphStyle(with(density) { (diameter * 0.38f).toSp() }), maxLines = 1)
             }
         }
     }

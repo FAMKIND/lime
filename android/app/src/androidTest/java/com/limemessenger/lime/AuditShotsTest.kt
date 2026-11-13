@@ -3,6 +3,11 @@
 package com.limemessenger.lime
 
 import android.graphics.Bitmap
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
@@ -210,4 +215,54 @@ class AuditShotsTest {
         val m = jamModel()
         scr("jam-yours", wait = "jam-yours") { com.limemessenger.lime.ui.jam.YourJamScreen(m, com.limemessenger.lime.jam.JamDrafts(File(dir, "drafts")), onBack = {}, onCompose = {}) }
     }
+
+
+    // ---- LIME-422b (tools/shots-422b.sh)
+    private fun backPills(name: String, dark: Boolean, font: Float) {
+        val summary = chats.chats.first { it.title == "Autumn Reyes" }
+        scr(name, dark = dark, font = font) {
+            androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.fillMaxSize().androidx_bg().systemBarsPadding()) {
+                for (n in listOf(0, 1, 12, 120)) com.limemessenger.lime.ui.chat.Header(summary, "Ada", 5, n, onBack = {}, onGroup = {}, onProfile = {})
+            }
+        }
+    }
+    private fun androidx.compose.ui.Modifier.androidx_bg() = this.then(androidx.compose.ui.Modifier.background(androidx.compose.ui.graphics.Color.Transparent))
+    @Test fun backPills() = backPills("back-pills", false, 1f)
+    @Test fun backPillsDark() = backPills("back-pills", true, 1f)
+    @Test fun backPillsLargest() = backPills("back-pills-font2", false, 2f)
+
+    private fun rowsMix(name: String, dark: Boolean, font: Float) {
+        val last = { id: String, text: String, at: Long -> Samples.message("m-$id", text, from = "ben", at = at) }
+        val now = System.currentTimeMillis()
+        val rows = listOf(
+            Samples.conversation("dm:a", "Plain row", last = last("a", "Just a plain row", now - 5_000_000), activityAt = now - 5_000_000),
+            Samples.conversation("dm:b", "Unread friend", unread = 3, last = last("b", "Are you coming on Friday?", now - 90_000_000), activityAt = now - 90_000_000),
+            Samples.conversation("dm:c", "Pinned friend", pinned = true, last = last("c", "Pinned and quiet", now - 3 * 86_400_000L), activityAt = now - 3 * 86_400_000L),
+            Samples.conversation("grp:d", "Grade 4 Team", group = true, pinned = true, unread = 12, last = last("d", "Same template, same folder.", now - 4 * 86_400_000L), activityAt = now - 4 * 86_400_000L),
+            Samples.conversation("dm:e", "Muted and unread", unread = 1, last = last("e", "Muted but unread", now - 9 * 86_400_000L), activityAt = now - 9 * 86_400_000L),
+        )
+        scr(name, dark = dark, font = font) {
+            androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.fillMaxSize().background(com.limemessenger.lime.ui.theme.Lime.colors.canvas).systemBarsPadding()) {
+                rows.forEach { c -> com.limemessenger.lime.ui.chats.ConversationRow(c, muted = c.id == "dm:e" || c.id == "grp:d", myName = "Ada", onClick = {}) }
+            }
+        }
+    }
+    @Test fun rowsMix() = rowsMix("rows-mix", false, 1f)
+    @Test fun rowsMixDark() = rowsMix("rows-mix", true, 1f)
+    @Test fun rowsMixLargest() = rowsMix("rows-mix-font2", false, 2f)
+
+    private fun avatars(name: String, dark: Boolean) {
+        val groups = chats.chats.filter { it.isGroup }.take(3)
+        scr(name, dark = dark, font = 2f) {
+            androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.fillMaxSize().background(com.limemessenger.lime.ui.theme.Lime.colors.canvas).systemBarsPadding().padding(16.dp), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp)) {
+                for (size in listOf(52.dp, 36.dp)) androidx.compose.foundation.layout.Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {
+                    groups.forEach { g -> com.limemessenger.lime.ui.common.GroupAvatar(g, "Ada Android", 5, size) }
+                    com.limemessenger.lime.ui.common.Avatar("AR", 3, size)
+                    com.limemessenger.lime.ui.common.Avatar("", 0, size, emoji = "🍎")
+                }
+            }
+        }
+    }
+    @Test fun avatarsLargest() = avatars("avatars-font2", false)
+    @Test fun avatarsLargestDark() = avatars("avatars-font2", true)
 }
