@@ -8,7 +8,7 @@ count() { # <apk-or-aab> -> number of marker hits in its dex + resources (an AAB
   d="$(mktemp -d)"; unzip -q -o "$1" -d "$d"
   n=0
   for f in "$d"/classes*.dex "$d"/resources.arsc "$d"/base/dex/*.dex "$d"/base/resources.pb; do
-    [ -f "$f" ] && n=$((n + $(strings -a "$f" | grep -cE 'test-accounts\.json|Use a test account|test-account-|use-test-account' || true)))
+    [ -f "$f" ] && n=$((n + $(strings -a "$f" | grep -cE 'test-accounts\.json|Use a test account|test-account-|use-test-account|Design gallery|design-gallery|gallery-fade-list' || true)))
   done
   rm -rf "$d"; echo "$n"
 }

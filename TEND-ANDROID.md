@@ -1,5 +1,37 @@
 # TEND-ANDROID.md
 
+## Design night (2026-11-13): LIME-420, LIME-421, LIME-422
+
+**Screenshots:** `~/Desktop/lime-android-design/` (420: the gallery, light/dark halves, 100% and 200% font, API 26 and 36; 422 before/after later). Failure reports: `~/Desktop/lime-android-design/failures/`.
+
+### LIME-420 — lime's design tokens and a debug gallery
+
+**What you have now:** one place for lime's look: `ui/theme/LimeType.kt` (the iOS text styles as sp, installed as Material `Typography`), `LimeShapes.kt` (bubble 22, card 20, cardSmall 14, field 16, chip 12, pill, circle, sheetTop 28, composerTop 18; installed as Material `Shapes`), `LimeSpacing.kt` (4, 8, 12, 16, 20, 24), `LimeComponents.kt` (`LimeCircleButton`: 44 dp circle in a 48 dp target, surface + hairline, `pressed` fill, soft shadow only over content; `LimeTopFade`: canvas gradient, header height + 10 dp, no touches, hidden from TalkBack), `LimeMotion.kt` (no animation when "Remove animations" is on, read when something would animate). **Debug-only gallery** (`src/debug`, with a no-op twin in `src/release`): in a debug build, **long-press the "Settings" title**: every style, shape, the spacing scale, the circle button (normal, pressed, disabled, over content) and the top fade over a scrolling list, drawn light and then dark. No existing screen was restyled (only the two theme lines: Material `Typography` and `Shapes` now come from lime; screens that set their own sp/shape are unchanged).
+**What I should try (2 minutes):** debug build → Settings → long-press "Settings" → scroll the gallery; compare with `docs/design/mobile/*.png`; try the system font size at the largest step.
+
+**iOS → Android type table (default "Large" Dynamic Type; sp follows the phone's font size):**
+| lime name | iOS style | sp / weight / line | Material role |
+|---|---|---|---|
+| largeTitle | largeTitle | 34 / regular / 41 | displayLarge |
+| titleBold | title bold (`Theme.font(.title, .bold)`, 4 uses) | 28 / bold / 34 | displayMedium, headlineLarge |
+| screenTitle | title2 semibold (9 uses; bold 8) | 22 / semibold / 28 | displaySmall, headlineMedium |
+| sectionTitle | title3 semibold (3; bold 12) | 20 / semibold / 25 | headlineSmall, titleLarge |
+| title | `Theme.title` = body semibold (90 + 45 uses) | 17 / semibold / 22 | titleMedium |
+| body | `Theme.body` (293 uses) | 17 / regular / 22 | bodyLarge |
+| secondary | `Theme.secondary` = subheadline (207) | 15 / regular / 20 | bodyMedium |
+| secondaryStrong | subheadline semibold (98) | 15 / semibold / 20 | titleSmall, labelLarge |
+| footnote | footnote (12) | 13 / regular / 18 | bodySmall |
+| caption | `Theme.caption` (147) | 12 / regular / 16 | (gallery) |
+| captionStrong | caption medium/semibold | 12 / medium / 16 | labelMedium |
+| caption2 | caption2 | 11 / regular / 13 | labelSmall |
+iOS navigation bars are `.inline` everywhere (no large titles): a screen title is the system's inline title (headline 17 semibold); Android's screen titles today are 20 sp semibold (`sectionTitle`), a difference 421 lists. **Text size/typeface:** iOS has its own text size (7 steps) and 9 typefaces (Settings → Customize → Text size); **Android has neither: it follows the system font size** (Settings says so), so the tokens are sp and follow it; I did not build a typeface or own-size setting (a later brief).
+**Shapes table (iOS → Android):** `Theme.bubbleRadius` 22 → `bubble`; most used `RoundedRectangle` radii in iOS views: 14 (54 uses: formatting toolbar, series cards, compose sheets) → `cardSmall`; 16 (39: moderation sheets, onboarding fields) → `field`; 12 (26: composer, jam media, GIF library) → `chip`; 20 (23: profile, new-message sheet) → `card` (also Android's settings cards); 18 (17) is the composer panel's top corners → `composerTop`; 24 (12: Text size and Appearance cards); sheets `presentationCornerRadius(28)` → `sheetTop`; `Capsule()` (181 uses) → `pill`; Material's five sizes: extraSmall 12, small 14, medium 16, large 20, extraLarge 28.
+**Spacing (iOS):** horizontal 16 (103 uses), 18 (91), 20 (69), 12 (52), 14 (49), 8 (28); top 8 (53); all-round 16 (31), 20 (27), 14 (22); `spacing:` 8 (102), 10 (104), 12 (99), 14 (77), 6 (68). The scale 4/8/12/16/20/24 matches 8, 12, 16, 20; 14 and 18 round to 12/16 (a decision for 422: keep 18 for list rows if the audit says so).
+**The inventory of Android `ui/` before this brief (counts):** 350 `fontSize =` uses in 16 distinct sizes (17 sp ×77, 15 ×65, 14 ×58, 16 ×40, 13 ×34, 20 ×22, 12 ×18, 22 ×10): **14 sp and 16 sp have no iOS style** (iOS has 13 and 15/17) and are the first to move; 83 `RoundedCornerShape` uses in 13 distinct radii (14 ×13, 12 ×13, 24 ×11, 26 ×9, 20 ×9, 16 ×8, 8 ×6, 18 ×6, 28 ×2, 22 ×2): **26 and 8 are not iOS radii**; 250 `.padding(` uses (horizontal 16 ×17, 18 ×14, 20/8 ×9, 16/8 ×9, 24 ×8, 8 ×7).
+**Android-native, on purpose:** Material components stay for behaviour (ripples, dialogs, sheets, system back and predictive back, edge-to-edge, TalkBack). Liquid Glass is not copied: the circle is a solid surface with the hairline (a soft shadow only over content); `LimeTopFade` is a plain canvas gradient (no blur).
+**Gate / proof:** plain pass green on API 36 and API 26 (190 tests each, 0 failures, no failure reports);  `LimeTypeTest` (JVM: the Typography equals the table; the circle button's target ≥ 48 dp and visible circle 44); `tools/check-release-clean.sh` now also looks for the gallery's strings: **debug APK 9 markers, release APK 0, release AAB 0**; screenshots `420-api{26,36}-font{100,200}-{1..4}-*.png` (`tools/shots-design.sh`, `DesignGalleryShotsTest` is `@Staging` so the plain pass skips it).
+**Core rules added:** none. **Not built:** a lime-own text size or typeface on Android; a restyle of any screen (that is 422).
+
 ## Night 5 (2026-11-12, evening): LIME-417, LIME-315d
 
 **What you have now:** day run 2 plus **no list can be overwritten by an older, slower read** (one `NewestRead` helper; a table of every model and what guards it is in the LIME-417 record) and **what a band looks like to everyone else**: the subscriber's view (Subscribe/Subscribed pill with its question), the member's and writer's view ("Your role: Writer", Members read-only, Leave band), a Groups tab (Join/Open, New group for the owner), "View band" from a band post's byline, "Bands you belong to" on Your jam, and the join dialog showing asked/joined/full/refused/bad/failed.

@@ -46,6 +46,6 @@ fun LimeTheme(dark: Boolean? = null, content: @Composable () -> Unit) {
         )
     }
     CompositionLocalProvider(LocalLimeColors provides c) {
-        MaterialTheme(colorScheme = scheme, content = content)
+        MaterialTheme(colorScheme = scheme, typography = LimeType.typography, shapes = LimeShapes.material, content = content)
     }
 }

@@ -1,6 +1,7 @@
 package com.limemessenger.lime.ui.settings
 
 import androidx.activity.compose.BackHandler
+import com.limemessenger.lime.debug.designGalleryTrigger
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -101,13 +102,14 @@ fun SettingsScreen(session: AccountSession, onClose: () -> Unit, chats: com.lime
         "storage" -> if (app != null && chats != null) { StorageScreen(chats, app.mediaPrefs, onBack = { route = "" }); return }
         "appearance" -> if (app != null) { AppearanceScreen(app.themePrefs, onBack = { route = "" }); return }
         "privacy" -> if (app != null) { PrivacyScreen(app.appLock, onBack = { route = "" }, linkPreviews = app.linkPreviewPrefs); return }
+        "debug-tools" -> { com.limemessenger.lime.debug.DesignGallery(onBack = { route = "" }); return }
         "blocked" -> if (chats != null) { com.limemessenger.lime.ui.moderation.BlockedScreen(chats, onBack = { route = "" }); return }
     }
 
     Column(Modifier.fillMaxSize().background(colors.canvas).systemBarsPadding()) {
         Row(Modifier.fillMaxWidth().heightIn(min = 64.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onClose, Modifier.size(56.dp).testTag("settings-close")) { Icon(Icons.Close, stringResource(R.string.settings_close), tint = colors.text) }
-            Text(stringResource(R.string.settings_title), color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.semantics { heading() })
+            Text(stringResource(R.string.settings_title), color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.designGalleryTrigger { route = "debug-tools" }.semantics { heading() })
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             // The profile card: who I am, as others see me.
