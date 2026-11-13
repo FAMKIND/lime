@@ -20,12 +20,23 @@ private struct MarqueeWidthKey: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
+/// A tap that replays the marquee, only when asked: inside a button, a tap gesture would swallow the button's own tap.
+private struct ReplayTap: ViewModifier {
+    let on: Bool
+    let action: () -> Void
+    @ViewBuilder func body(content: Content) -> some View {
+        if on { content.onTapGesture(perform: action) } else { content }
+    }
+}
+
 /// A line of text that scrolls sideways when it does not fit, like Apple Podcasts: a pause at the start, a slow scroll to the end, a pause, back, with
 /// both edges fading out. With Reduce Motion it is truncated with … and never moves. VoiceOver reads all of it.
 struct MarqueeText: View {
     let text: String
     var font: Font = Theme.body
     var color: Color = .white
+    /// A tap plays it once more, where the title is not already inside a button (a button's own tap must stay its own).
+    var replaysOnTap = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var textWidth: CGFloat = 0
     @State private var boxWidth: CGFloat = 0
@@ -53,7 +64,7 @@ struct MarqueeText: View {
                     .opacity(overflow > 0 && !reduceMotion ? 1 : 0)
             }
             .task(id: "\(text)|\(Int(textWidth))|\(Int(boxWidth))|\(reduceMotion)|\(replay)") { await run() }
-            .simultaneousGesture(TapGesture().onEnded { replay += 1 })
+            .modifier(ReplayTap(on: replaysOnTap) { replay += 1 })
             .accessibilityElement(children: .ignore).accessibilityLabel(text)
     }
 

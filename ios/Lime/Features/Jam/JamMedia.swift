@@ -1047,7 +1047,7 @@ struct JamVideoFullScreen: View {
     private func compactInfo(_ post: JamPostInfo) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text("\(JamDates.short(post.created)) \u{00B7} \(store.authorName(post))").font(Theme.caption).foregroundStyle(.white.opacity(0.8)).lineLimit(1)
-            if !post.title.isEmpty { MarqueeText(text: post.title, font: Theme.font(.subheadline, weight: .bold)) }
+            if !post.title.isEmpty { MarqueeText(text: post.title, font: Theme.font(.subheadline, weight: .bold), replaysOnTap: true) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

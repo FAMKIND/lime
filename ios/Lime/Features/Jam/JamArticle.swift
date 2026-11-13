@@ -402,7 +402,7 @@ struct JamArticlePage: View {
                     .accessibilityIdentifier("jam-article-end-subscribe")
                     CommunityJoinRow(jamID: post.jamId).frame(maxWidth: .infinity)
                 }
-                // (The likes row, "12 likes · 6 remixes" with faces, is LIME-189's: nothing is drawn here yet.)
+                // (The likes row, "12 likes · 6 comments" with faces, is LIME-189's: nothing is drawn here yet.)
             }
             .padding(16).background(Theme.surface.opacity(0.6), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             .accessibilityElement(children: .contain).accessibilityIdentifier("jam-article-jam-card")

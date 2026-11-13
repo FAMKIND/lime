@@ -32,7 +32,7 @@ final class Jam189cUITests: LimeUITestCase {
         let line = any(app, "jam-counts-line")
         for _ in 0..<4 where !line.exists { app.swipeUp() }
         XCTAssertTrue(line.waitForExistence(timeout: 8))
-        XCTAssertEqual(line.label, "2 likes \u{00B7} 1 comment \u{00B7} 0 remixes")
+        XCTAssertEqual(line.label, "2 likes \u{00B7} 1 comment")
         XCTAssertTrue(any(app, "jam-likers").label.hasPrefix("Liked by "), "a contact's face and name")
         XCTAssertTrue(any(app, "jam-comment-row-demo-comment-1").exists, "Lee's comment")
         // A comment of mine waits for the writer's phone.

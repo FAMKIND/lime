@@ -10853,3 +10853,15 @@ Settings, profile and groups: the 13 majors (audit rows 341, 342, 344, 609, 612�
 - **Installed:** the 13 mini, the iPad (4) and Jean's 12 mini (all three took it).
 - **For the user (gate, 13 mini):** an incoming call from the iPad shows Decline / Accept words; a long jam title scrolls once and stops, a tap replays; New link / Turn off ask first; VoiceOver on the tabs reads "link, messages, tab, 1 of 3" (check there is no doubled position); no Remix/Share on a post.
 - **For plot:** the "0 remixes" in the counts line; the badge font follows the text size only when the app starts.
+
+## LIME-327
+
+**Brief:** 326's two leftovers.
+- **Survey:** the only visible remix *count* was the post page's counts line (`JamEngagement.swift`); the model field `remixes` stays. Remix **buttons** still exist as inert stubs in the player and the full-screen photo viewer (`JamMedia.swift` ~771: "remix" among ♥ 💬 remix share); 327 asked for counts only, so they are untouched (for plot).
+- **(1)** The counts line is "N likes · N comments" (no remixes, no empty separator); comments in code docs updated; `Jam189cUITests` reads the new line.
+- **(2)** `TabBadgeStyle` rebuilds the badge appearance on `UIContentSizeCategory.didChangeNotification` and puts it on the tab bars already on screen. **Not verified live in a test** (a text-size change at runtime is not drivable from XCUITest); your gate step checks it.
+- **A 326 regression found and fixed here:** the marquee's replay tap (`simultaneousGesture`) stopped taps on a title inside a Button (the player's About sheet): `Player235UITests` failed. The replay tap now exists only where asked (`replaysOnTap`, used on the landscape info title, which is not in a button); titles inside buttons keep the button's own tap and do not replay on tap. `Jam188bUITests` also still expected the Remix/Share icons removed in 326 (stale; updated). Both slipped past 326 because those classes were not in its run list.
+- **Gate (iOS):** `check-warnings.sh` 0; Release device build OK; UI classes `Jam189c`, `TabBar`, `Jam188y`, `Jam212b`, `Jam188b`, `Player235`, `Player235c`: all pass (re-run one class at a time after the fixes; one unrelated subtitle-typing flake in `Jam188b` seen once under load as before). No new tests.
+- **Installed:** the 13 mini, the iPad (4) and Jean's 12 mini.
+- **For the user (gate, 13 mini):** a post's counts line has no remixes; change Text Size in Control Center with lime open: the tab badge number grows (needs an unread count to see it).
+- **For plot:** (a) the inert Remix stubs in the player and photo viewer; (b) a title inside a button no longer replays on tap (only the landscape title does): 326's "tap replays" holds only there, a design call if you want it everywhere (e.g. replay when the About sheet closes).

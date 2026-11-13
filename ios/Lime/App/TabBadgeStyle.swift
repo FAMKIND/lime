@@ -22,8 +22,23 @@ enum TabBadgeStyle {
 
     /// Applied once at launch to every tab bar the SwiftUI `TabView` makes.
     @MainActor static func install() {
+        apply()
+        // A text-size change while the app runs rebuilds the badge font and puts it on the bars already on screen (LIME-327).
+        NotificationCenter.default.addObserver(forName: UIContentSizeCategory.didChangeNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { apply(toVisibleBars: true) }
+        }
+    }
+
+    @MainActor private static func apply(toVisibleBars live: Bool = false) {
         let appearance = appearance()
         UITabBar.appearance().standardAppearance = appearance
         UITabBar.appearance().scrollEdgeAppearance = appearance
+        guard live else { return }
+        func bars(in view: UIView) -> [UITabBar] { ((view as? UITabBar).map { [$0] } ?? []) + view.subviews.flatMap(bars(in:)) }
+        for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
+            for window in scene.windows {
+                for bar in bars(in: window) { bar.standardAppearance = appearance; bar.scrollEdgeAppearance = appearance }
+            }
+        }
     }
 }

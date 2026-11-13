@@ -49,8 +49,8 @@ final class Jam188bUITests: LimeUITestCase {
         postNow(app)
         XCTAssertTrue(card(app, containing: "Thinking about fractions today").waitForExistence(timeout: 8), "the post is in the feed")
         XCTAssertFalse(any(app, "jam-feed-empty").exists)
-        for action in ["like", "comment", "remix", "share"] {
-            XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH[c] %@", action)).firstMatch.exists, "the \(action) icon is there (dimmed until 189)")
+        for action in ["like", "comment"] {   // remix and share are not shown until they exist (LIME-326)
+            XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH[c] %@", action)).firstMatch.exists, "the \(action) icon is there")
         }
     }
 

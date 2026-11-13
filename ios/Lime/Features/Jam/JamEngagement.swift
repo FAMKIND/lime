@@ -53,7 +53,7 @@ struct JamCommentCount: View {
     }
 }
 
-/// The post page's response part (LIME-189c): "20 likes · 3 comments · 0 remixes", the faces of up to five of your contacts who liked, a place to leave
+/// The post page's response part (LIME-189c): "20 likes · 3 comments", the faces of up to five of your contacts who liked, a place to leave
 /// a comment, and the comments (one level of replies under their parent). A pending comment waits greyed for the writer's phone.
 struct JamEngagementSection: View {
     let post: JamPostInfo
@@ -83,7 +83,7 @@ struct JamEngagementSection: View {
         let mineJam = store.isMyJamPost(post)
         let writer = store.teacherName(post.author)
         VStack(alignment: .leading, spacing: 12) {
-            Text("\(counts.likes) \(counts.likes == 1 ? "like" : "likes") \u{00B7} \(counts.comments) \(counts.comments == 1 ? "comment" : "comments") \u{00B7} \(counts.remixes) remixes")
+            Text("\(counts.likes) \(counts.likes == 1 ? "like" : "likes") \u{00B7} \(counts.comments) \(counts.comments == 1 ? "comment" : "comments")")   // no remix count until Remix exists (LIME-327)
                 .font(Theme.caption).foregroundStyle(soft).accessibilityAddTraits(.isHeader).accessibilityIdentifier("jam-counts-line")
             faces(counts)
             composer(writer)
