@@ -137,7 +137,7 @@ struct ChatView: View {
         .safeAreaBar(edge: .bottom) { bottomBar(conversation) }
         .safeAreaInset(edge: .top) { if finding { findBar }  }
         .navigationBarTitleDisplayMode(.inline)
-        .limeBack()
+        .limeBack(unread: backUnread)
         .toolbar {
             // The avatar and name sit beside the system ‹, with no glass of their own, left-aligned in a width worked out from the screen's (the room between ‹ and the two circles; .principal would centre it);
             // the name truncates rather than vanishing (LIME-247, 247b).
@@ -593,10 +593,16 @@ struct ChatView: View {
 
     // MARK: Header
 
+    /// The unread messages in the other chats, shown beside Back when Back returns to the Messages list (LIME-325, 331). On iOS 26 and later the ‹ is `limeBack`'s (LIME-334:
+    /// the number was only ever in the iOS 17-25 header below, so it never showed there); both read this.
+    private var backUnread: Int {
+        let leadsToList = unreadOnBack == .always || (unreadOnBack == .linkRoot && store.path.count <= 1)
+        return leadsToList ? store.otherUnreadMessages(excluding: conversationID) : 0
+    }
+
     private func header(_ conversation: Conversation) -> some View {
         HStack(spacing: 8) {
-            let leadsToList = unreadOnBack == .always || (unreadOnBack == .linkRoot && store.path.count <= 1)
-            let others = leadsToList ? store.otherUnreadMessages(excluding: conversationID) : 0
+            let others = backUnread
             Button { dismiss() } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "chevron.left")

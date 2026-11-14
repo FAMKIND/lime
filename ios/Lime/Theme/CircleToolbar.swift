@@ -29,6 +29,8 @@ struct CircleToolbarItem<Content: View>: ToolbarContent {
 @available(iOS 26, *)
 private struct LimeBackModifier: ViewModifier {
     let showsBack: Bool
+    /// A chat's Back shows how many unread messages wait in the other chats beside the chevron (LIME-325, 331, 334); 0: the plain circle.
+    let unread: Int
     @Environment(\.dismiss) private var dismiss
 
     func body(content: Content) -> some View {
@@ -38,9 +40,29 @@ private struct LimeBackModifier: ViewModifier {
             .swipeBackEnabled()
             .toolbar {
                 if showsBack {
-                    CircleToolbarItem(placement: .topBarLeading) {
-                        Button { dismiss() } label: { ToolIconLabel(symbol: "chevron.left") }
-                            .accessibilityLabel("Back").accessibilityIdentifier("back-button")
+                    if unread > 0 {
+                        // The chevron and the number in one glass capsule, 44 pt high (the circle widens only when there is a number).
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button { dismiss() } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "chevron.left").font(.system(size: 18)).foregroundStyle(Theme.text)
+                                    CountBadge(count: unread)
+                                }
+                                .padding(.horizontal, 12).frame(minWidth: 44, minHeight: 44)
+                                .fixedSize().contentShape(Capsule()).limeGlass(in: Capsule())
+                            }
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel("Back")
+                            .accessibilityValue(unread == 1 ? "1 unread message" : "\(unread) unread messages")
+                            .accessibilityAddTraits(.isButton)
+                            .accessibilityIdentifier("back-button")
+                        }
+                        .sharedBackgroundVisibility(.hidden)
+                    } else {
+                        CircleToolbarItem(placement: .topBarLeading) {
+                            Button { dismiss() } label: { ToolIconLabel(symbol: "chevron.left") }
+                                .accessibilityLabel("Back").accessibilityIdentifier("back-button")
+                        }
                     }
                 }
             }
@@ -50,8 +72,8 @@ private struct LimeBackModifier: ViewModifier {
 extension View {
     /// Our ‹ on iOS 26; the system's before that.
     @ViewBuilder
-    func limeBack(showsBack: Bool = true) -> some View {
-        if #available(iOS 26, *) { modifier(LimeBackModifier(showsBack: showsBack)) } else { navigationBarBackButtonHidden(!showsBack) }
+    func limeBack(showsBack: Bool = true, unread: Int = 0) -> some View {
+        if #available(iOS 26, *) { modifier(LimeBackModifier(showsBack: showsBack, unread: unread)) } else { navigationBarBackButtonHidden(!showsBack) }
     }
 }
 

@@ -11004,3 +11004,19 @@ Settings, profile and groups: the 13 majors (audit rows 341, 342, 344, 609, 612�
 - **Installed (332):** the 13 mini, the iPad (4) and Jean's 12 mini.
 - **For the user (gate, 13 mini):** with the iPad blocked from 330's check, the iPad sends two messages in the shared group while the 13 mini is in another chat: Back's number doesn't change; the iPad comments on a post: the count doesn't change. Unblock: both count again.
 - **For plot:** the list above.
+
+## LIME-334
+
+**Brief:** the unread number beside the chat's Back button didn't show on the 13 mini (iOS 26+).
+
+**Survey:** reproduced with data shaped like the screenshot (pinned 1:1 "Jean" plus three groups whose newest rows are a call, a video call and a rename, each unread 1). The count was right (`otherUnreadMessages` = 3, rows 1/1/1), so the number was being computed but never drawn.
+
+**Cause:** the Back number from 325/331 lived only in the old custom `header(_:)`, which is used on iOS 17–25. On iOS 26+ the chat uses the native toolbar with `.limeBack()`, which had no number at all, so Back was always a plain 44 pt chevron. The rule (325/331) is unchanged.
+
+**The change:** `ChatView.backUnread` holds the one rule (`.always`, or `.linkRoot` at the list root, then `otherUnreadMessages`); both the old header and `.limeBack(unread:)` use it. With a number, `LimeBackModifier` shows a glass capsule (chevron + `CountBadge`, label "Back", value "N unread message(s)"); with none it is the original circle.
+
+**Tests:** unit `Block334Tests` (screenshot's shape: pinned one-to-one + call, video call and rename chats → 3; fails without the shared rule being used, passes now). UI `BackUnread325UITests` gained a layout check (a Back with a number is wider than 44 pt; which sample chats are unread varies while data loads, so it only checks when a number is present). Before the fix the Back value was empty and the frame 44 pt; after, "1 unread message" in a wider capsule. `BackUnread325Tests`, `Block330/332Tests` pass.
+- **Gate:** `check-warnings.sh` 0; Release device build OK.
+- **Installed (this commit):** the 13 mini and the iPad (4). **Jean's 12 mini refused: "Insufficient storage" (needs ~111 MB more free)**; free some space on it and run `xcrun devicectl device install app --device 00008101-000348EC0E51003A $TMPDIR/dd334/Build/Products/Debug-iphoneos/Lime.app`.
+- **For the user (gate, 13 mini):** with those three chats unread, open Jean: Back shows ‹ 3.
+- **For plot:** the cause is the iOS 26 vs 17–25 split: any future chrome added to the legacy header must also go in `limeBack`. LIME-333 is next.
