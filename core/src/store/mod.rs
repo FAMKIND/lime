@@ -553,6 +553,53 @@ impl LimeStore {
         Ok(rows)
     }
 
+    /// Blocks **any person**, whether or not you ever had a chat with them (LIME-329): with a one-to-one it is `block_sender` unchanged; without one, a hidden
+    /// `dm:<id>` conversation in state `blocked` is made first (no messages, no request shown), so the Blocked list, Unblock and the key rotation (only if they
+    /// had your key) all work from the one place. What they post in groups or jam is stored as before and only marked (`block_rules`).
+    pub fn block_person(&self, user_id: String) -> Result<(), StoreError> {
+        let user_id = user_id.trim().to_owned();
+        if user_id.is_empty() || user_id == ME_ID {
+            return Err(StoreError::NotFound);
+        }
+        let conversation = format!("dm:{user_id}");
+        {
+            let conn = self.lock();
+            let existed: bool = conn
+                .query_row("SELECT EXISTS (SELECT 1 FROM conversations WHERE id = ?1)", params![conversation], |r| r.get(0))
+                .map_err(db_err)?;
+            if !existed {
+                let name: Option<String> = conn
+                    .query_row("SELECT name FROM people WHERE id = ?1", params![user_id], |r| r.get(0))
+                    .optional()
+                    .map_err(db_err)?;
+                crate::client::ensure_dm_as(&conn, &user_id, name.as_deref(), "blocked")?;
+                conn.execute("UPDATE conversations SET hidden = 1 WHERE id = ?1", params![conversation]).map_err(db_err)?;
+            }
+        }
+        self.block_sender(conversation)
+    }
+
+    /// Is this person blocked?
+    pub fn is_blocked(&self, user_id: String) -> Result<bool, StoreError> {
+        let conn = self.lock();
+        conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM conversations WHERE id = ?1 AND request_state = 'blocked')",
+            params![format!("dm:{user_id}")],
+            |r| r.get(0),
+        )
+        .map_err(db_err)
+    }
+
+    /// The user ids of the blocked people (conversations in state `blocked` with a `dm:` id), in a stable order.
+    pub fn blocked_ids(&self) -> Result<Vec<String>, StoreError> {
+        let conn = self.lock();
+        let mut statement = conn
+            .prepare("SELECT substr(id, 4) FROM conversations WHERE request_state = 'blocked' AND substr(id, 1, 3) = 'dm:' ORDER BY id")
+            .map_err(db_err)?;
+        let rows = statement.query_map([], |r| r.get::<_, String>(0)).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+        Ok(rows)
+    }
+
     /// Unblocks someone: their conversation comes back (what was stored before the block shows
     /// again, and new messages are kept).
     pub fn unblock(&self, conversation_id: String) -> Result<(), StoreError> {
@@ -566,9 +613,15 @@ impl LimeStore {
         if changed == 0 {
             return Err(StoreError::NotFound);
         }
-        // They no longer have to be shut out: give them the current key again.
+        // They no longer have to be shut out: give them the current key again. (Not to a person blocked without ever having a chat, LIME-329: they never had it,
+        // and unblocking must not hand a stranger the means to send to you.)
         if let Some(peer) = conversation_id.strip_prefix("dm:") {
-            delivery::queue_share(&conn, peer, now_ms())?;
+            let had_chat: bool = conn
+                .query_row("SELECT EXISTS (SELECT 1 FROM messages WHERE conversation_id = ?1)", params![conversation_id], |r| r.get(0))
+                .map_err(db_err)?;
+            if had_chat {
+                delivery::queue_share(&conn, peer, now_ms())?;
+            }
         }
         Ok(())
     }

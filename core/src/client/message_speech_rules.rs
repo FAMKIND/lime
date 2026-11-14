@@ -197,7 +197,7 @@ mod tests {
         assert_eq!(label(photo_only, None), "Someone, Photo, 9:05 AM");
         assert_eq!(message_speech_label(message("6", "Hello", Some("ben"), "received"), Some("Ben".into()), 2, 1, "9:05 AM".into()), "Ben, Hello, 9:05 AM, 2 replies, 1 unread");
         let mut reacted = message("7", "Hello", Some("ben"), "received");
-        reacted.reactions = vec![Reaction { emoji: "❤️".into(), count: 2, mine: true, people: vec![] }];
+        reacted.reactions = vec![Reaction { emoji: "❤️".into(), person_ids: Vec::new(), count: 2, mine: true, people: vec![] }];
         assert_eq!(label(reacted, Some("Ben")), "Ben, Hello, 9:05 AM, 2 reactions: ❤️ 2 (you)");
         let mut edited = message("8", "Hello", Some("ben"), "received");
         edited.edited = true;

@@ -338,6 +338,96 @@ fn a_blocked_senders_new_messages_stay_hidden_and_nothing_is_left_waiting() {
     assert!(bob.store.accept_request("dm:nobody".into()).is_err());
 }
 
+// ---- LIME-329: block any person
+
+#[test]
+fn a_person_can_be_blocked_without_ever_having_a_chat_and_their_group_posts_are_stored_but_marked() {
+    use crate::client::block_rules::{message_from_blocked, should_notify, NotifyKind};
+    let server = FakeServer::new();
+    let (alice, bob, _carol, transport, chat) = team(&server);
+    assert!(conversation(&alice, &bob).is_none(), "Alice has no one-to-one with Bob");
+    assert!(!alice.store.is_blocked(bob.user.clone()).unwrap());
+    let key_before = alice.store.test_delivery_key();
+
+    alice.store.block_person(bob.user.clone()).unwrap();
+    assert_eq!(alice.store.test_delivery_key(), key_before, "Bob never had Alice's key: nothing is rotated");
+    assert!(alice.store.is_blocked(bob.user.clone()).unwrap());
+    assert_eq!(alice.store.blocked_ids().unwrap(), vec![bob.user.clone()]);
+    let listed = alice.store.list_blocked().unwrap();
+    assert_eq!(listed.iter().map(|b| b.conversation_id.clone()).collect::<Vec<_>>(), vec![format!("dm:{}", bob.user)], "in the Blocked list");
+    assert!(conversation(&alice, &bob).is_none(), "and still not a chat in Messages");
+    assert!(alice.store.list_conversations().unwrap().iter().all(|c| c.id != format!("dm:{}", bob.user)));
+
+    // What Bob says in the group is stored as before, and marked by the rule.
+    bob.store.accept_request(chat.clone()).unwrap();
+    say_in(&bob, &transport, &chat, "hello team");
+    sync(&alice, &transport);
+    assert!(group_texts(&alice, &chat).contains(&"hello team".to_string()), "stored, so Unblock or Show can bring it back");
+    let message = alice.store.list_messages(chat.clone()).unwrap().into_iter().find(|m| m.text == "hello team").unwrap();
+    let blocked = alice.store.blocked_ids().unwrap();
+    assert!(message_from_blocked(message.clone(), blocked.clone()));
+    for kind in [NotifyKind::GroupMessage, NotifyKind::Reaction, NotifyKind::Mention, NotifyKind::JamComment, NotifyKind::JamReply] {
+        assert!(!should_notify(bob.user.clone(), kind, blocked.clone()), "{kind:?}");
+    }
+
+    // Unblock: nothing hidden any more, the message is still there, and Bob is not handed Alice's key.
+    alice.store.unblock(format!("dm:{}", bob.user)).unwrap();
+    assert!(!alice.store.is_blocked(bob.user.clone()).unwrap());
+    assert!(alice.store.blocked_ids().unwrap().is_empty());
+    assert!(!message_from_blocked(message, alice.store.blocked_ids().unwrap()));
+    assert!(should_notify(bob.user.clone(), NotifyKind::GroupMessage, Vec::new()));
+    assert!(group_texts(&alice, &chat).contains(&"hello team".to_string()));
+    assert!(!alice.store.test_queued_shares().contains(&bob.user), "a person who never had the key is not given it by Unblock");
+    assert!(conversation(&alice, &bob).is_none(), "never a chat: nothing appears in Messages");
+}
+
+#[test]
+fn blocking_a_person_with_a_chat_is_the_one_to_one_block_and_rotates_the_key_they_had() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let key_before = alice.store.test_delivery_key();
+    alice.store.block_person(bob.user.clone()).unwrap();
+    assert_ne!(alice.store.test_delivery_key(), key_before, "Bob had the key: it is rotated, as `block_sender` always did");
+    assert!(alice.store.is_blocked(bob.user.clone()).unwrap());
+    assert!(conversation(&alice, &bob).is_none(), "the chat is hidden as before");
+    alice.store.unblock(format!("dm:{}", bob.user)).unwrap();
+    assert!(conversation(&alice, &bob).is_some(), "the chat and its messages come back");
+    assert!(alice.store.test_queued_shares().contains(&bob.user), "a contact is given the new key again, as before");
+    assert!(alice.store.block_person("   ".into()).is_err());
+}
+
+#[test]
+fn a_blocked_persons_reaction_is_left_out_of_what_the_rule_shows_and_unblock_brings_it_back() {
+    use crate::client::block_rules::visible_reactions;
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = team(&server);
+    bob.store.accept_request(chat.clone()).unwrap();
+    carol.store.accept_request(chat.clone()).unwrap();
+    let sent = alice.store.queue_text(chat.clone(), "plan for Friday".into()).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    sync(&carol, &transport);
+    bob.store.react(chat.clone(), sent.id.clone(), "👍".into(), true).unwrap();
+    carol.store.react(chat.clone(), sent.id.clone(), "👍".into(), true).unwrap();
+    carol.store.react(chat.clone(), sent.id.clone(), "🎉".into(), true).unwrap();
+    deliver(&bob, &transport);
+    deliver(&carol, &transport);
+    sync(&alice, &transport);
+    let reactions = item_of(&alice, &chat, &sent.id).reactions;
+    let thumbs = reactions.iter().find(|r| r.emoji == "👍").unwrap();
+    assert_eq!(thumbs.person_ids.len(), 2, "who, by id, next to the names");
+    assert!(thumbs.person_ids.contains(&bob.user) && thumbs.person_ids.contains(&carol.user));
+
+    alice.store.block_person(carol.user.clone()).unwrap();
+    let shown = visible_reactions(reactions.clone(), alice.store.blocked_ids().unwrap());
+    assert_eq!(shown.len(), 1, "the 🎉 only Carol used is gone");
+    assert_eq!((shown[0].emoji.as_str(), shown[0].count, shown[0].person_ids.clone()), ("👍", 1, vec![bob.user.clone()]));
+    alice.store.unblock(format!("dm:{}", carol.user)).unwrap();
+    assert_eq!(visible_reactions(reactions, alice.store.blocked_ids().unwrap()).len(), 2, "after Unblock they show again");
+}
+
 #[test]
 fn a_queued_message_goes_sending_then_sent_and_a_failure_is_retried_in_order() {
     let server = FakeServer::new();

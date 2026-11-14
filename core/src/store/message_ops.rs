@@ -44,6 +44,8 @@ pub struct Reaction {
     pub count: u32,
     pub mine: bool,
     pub people: Vec<String>,
+    /// The user ids of the same people, in the same order (mine is my id): so a blocked person's reaction can be left out (LIME-329).
+    pub person_ids: Vec<String>,
 }
 
 /// The newest reaction in a chat, for its row in Messages ("Jean reacted ❤️ to …").
@@ -104,9 +106,9 @@ pub(crate) fn reactions_for(conn: &Connection, message_id: &str, me: &str) -> Ve
             Some(reaction) => {
                 reaction.count += 1;
                 reaction.mine |= mine;
-                if mine { reaction.people.insert(0, who) } else { reaction.people.push(who) }
+                if mine { reaction.people.insert(0, who); reaction.person_ids.insert(0, user) } else { reaction.people.push(who); reaction.person_ids.push(user) }
             }
-            None => out.push(Reaction { emoji, count: 1, mine, people: vec![who] }),
+            None => out.push(Reaction { emoji, count: 1, mine, people: vec![who], person_ids: vec![user] }),
         }
     }
     out

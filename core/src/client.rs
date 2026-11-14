@@ -48,6 +48,7 @@ pub(crate) mod auth_rules;
 pub(crate) mod arrival_rules;
 pub(crate) mod jam_rules;
 pub(crate) mod moderation_rules;
+pub(crate) mod block_rules;
 pub(crate) mod gif_rules;
 pub(crate) mod composer_rules;
 pub(crate) mod mention_rules;

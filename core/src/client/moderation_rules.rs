@@ -75,7 +75,7 @@ pub fn report_target_message(message_id: String, conversation_id: String, sender
         ids: vec![message_id.clone(), conversation_id.clone(), sender_id.clone()],
         noun: "message".to_owned(),
         person_name: sender_name,
-        block_conversation_id: conversation_id.starts_with("dm:").then(|| conversation_id.clone()),
+        block_conversation_id: if conversation_id.starts_with("dm:") { Some(conversation_id.clone()) } else { block_chat(&sender_id, true) },   // a group sender is blocked as a person (LIME-329)
         included: text(json!({ "message_id": message_id, "conversation": conversation_id, "sender": sender_id, "text": message_text, "sent": sent_ms, "attachments": attachments })),
         preview,
     }
@@ -270,7 +270,7 @@ mod tests {
         assert_eq!(m.block_conversation_id.as_deref(), Some("dm:ben"));
         assert_eq!(m.included, r#"{"attachments":2,"conversation":"dm:ben","message_id":"m1","sender":"ben","sent":1700000000000,"text":"Hello there"}"#);
         let in_group = report_target_message("m2".into(), "grp:x".into(), "cleo".into(), None, "x".repeat(300), 1, 0);
-        assert_eq!(in_group.block_conversation_id, None, "a group message has no chat to block");
+        assert_eq!(in_group.block_conversation_id.as_deref(), Some("dm:cleo"), "a group sender is blocked as a person: Report → Also block works in a group (LIME-329)");
         assert_eq!(in_group.preview.chars().count(), 160);
         let p = report_target_person("ben".into(), "Ben Android".into(), false);
         assert_eq!((p.kind.as_str(), p.noun.as_str(), p.block_conversation_id), ("person", "profile", None));
