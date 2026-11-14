@@ -385,9 +385,12 @@ fun main(args: Array<String>) {
                 Thread.sleep(2000)
             }
         }
-        "echo", "actions-echo" -> {
+        "echo", "actions-echo", "call-miss" -> {
             // `actions-echo` (LIME-304) also reacts 👍 to each new message and prints "edited: …" / "deleted: …" when Ada changes one.
             val actions = command == "actions-echo"
+            // `call-miss` (LIME-424): after answering Ada's first message, call her (an offer with a made-up SDP) and hang up 1.5 s later, so her phone logs a missed call.
+            val callsAda = command == "call-miss"
+            var called = false
             val seen = mutableMapOf<String, String>()
             // Everything already in the chat is history: only messages that arrive from now on are answered.
             val answered = mutableSetOf<String>()
@@ -439,6 +442,17 @@ fun main(args: Array<String>) {
                         }
                         if (actions) { store.react(dm, m.id, "👍", true); seen[m.id] = m.text }
                         store.deliverQueued(http, freshToken(http, tokens))
+                        if (callsAda && !called) {
+                            called = true
+                            val fp = "AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89"
+                            val id = "partner-call-" + (System.currentTimeMillis() / 1000)
+                            val offer = "{\"call_id\":\"$id\",\"video\":false,\"sdp\":\"v=0\\r\\na=fingerprint:sha-256 $fp\\r\\n\",\"fingerprint\":\"$fp\"}"
+                            store.sendCallSignal(http, freshToken(http, tokens), adaId, "call.offer", offer)
+                            println("call: offered $id")
+                            Thread.sleep(1500)
+                            store.sendCallSignal(http, freshToken(http, tokens), adaId, "call.end", "{\"call_id\":\"$id\"}")
+                            println("call: ended $id")
+                        }
                         println("replied to a message")
                     }
                     if (actions) {

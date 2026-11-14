@@ -20,7 +20,7 @@ for avd in ${AVDS:-lime-api36 lime-api26}; do
     ./gradlew -q installDebug installDebugAndroidTest || status=1
     # The server allows 10 device registrations per hour per account (staging's LIME_RATE_REGISTER_PER_HOUR), and every class registers Ada once, so
     # only the chat and groups tests run by default (LIME-303); STAGING_CLASSES="StagingSignInTest StagingChatTest" runs both.
-    for cls in ${STAGING_CLASSES:-StagingChatTest StagingGroupsTest StagingActionsTest StagingListTest StagingVoiceFilesTest StagingJamTest StagingJamWriteTest StagingModerationTest StagingGifTest StagingComposerTest StagingMentionTest StagingLinkPreviewTest StagingVideoTest StagingBlockGroupTest StagingJamPictureTest StagingBandTest StagingBandViewTest}; do
+    for cls in ${STAGING_CLASSES:-StagingChatTest StagingGroupsTest StagingActionsTest StagingListTest StagingVoiceFilesTest StagingJamTest StagingJamWriteTest StagingModerationTest StagingGifTest StagingComposerTest StagingMentionTest StagingLinkPreviewTest StagingVideoTest StagingBlockGroupTest StagingJamPictureTest StagingBandTest StagingBandViewTest StagingCallsTest}; do
       tools/staging-test-accounts.sh --push >/dev/null || status=1
       tools/partner/run reset >/dev/null || status=1
       case "$cls" in
@@ -34,6 +34,11 @@ for avd in ${AVDS:-lime-api36 lime-api26}; do
         StagingActionsTest*)
           # Message actions (LIME-304): Ben reacts to every message and prints what Ada edits and deletes.
           tools/partner/run actions-echo >/tmp/lime-partner.log 2>&1 &
+          partner=$!
+          partner2= ;;
+        StagingCallsTest*)
+          # Calls (LIME-424): Ben answers Ada's first message, then calls her and hangs up 1.5 s later: a missed call on her phone. Started BEFORE Ada acts.
+          tools/partner/run call-miss >/tmp/lime-partner.log 2>&1 &
           partner=$!
           partner2= ;;
         StagingBandViewTest*)
@@ -78,7 +83,7 @@ for avd in ${AVDS:-lime-api36 lime-api26}; do
           sleep 3
         done
         if [ -n "$link" ]; then
-          kill "$partner" $partner2 2>/dev/null; pkill -f "MainKt echo" 2>/dev/null; sleep 3
+          kill "$partner" $partner2 2>/dev/null; pkill -f "MainKt echo" 2>/dev/null; pkill -f "MainKt call-miss" 2>/dev/null; sleep 3
           tools/partner/run band-join "$link" >/tmp/lime-partner.log 2>&1 &
           partner=$!
           if [ "$cls" = "StagingBandViewTest" ]; then
@@ -120,6 +125,9 @@ for avd in ${AVDS:-lime-api36 lime-api26}; do
         mkdir -p "$HOME/Desktop/lime-android-407"; adb exec-out run-as com.limemessenger.lime cat files/shots/15-link-bubble-real-chat.png > "$HOME/Desktop/lime-android-407/15-link-bubble-real-chat.png" 2>/dev/null
         # Ben must have received the card's fields (and the picture, decrypted): url, title, site, bytes.
         grep -Eq '^preview: https://example.org/lesson\|Fractions made visible\|example.org\|[1-9][0-9]* bytes' /tmp/lime-partner.log || { status=1; echo "$cls: Ben never got the card fields"; } ;; esac
+      case "$cls" in StagingCallsTest*)
+        # Ben called Ada (a call.offer) and hung up (call.end): both ops went out.
+        grep -Eq '^call: offered partner-call-' /tmp/lime-partner.log && grep -Eq '^call: ended partner-call-' /tmp/lime-partner.log || { status=1; echo "$cls: Ben never offered and ended the call"; } ;; esac
       case "$cls" in StagingBandViewTest*)
         # LIME-315d: Ben (a member) joined the band's group and answered in it; Cleo (a SUBSCRIBER) saw the band's post as the band and could NOT see the members or the invite.
         grep -Eq '^band: received quick "A post from the band" as jam by "Staff Room Band"' /tmp/lime-partner.log || { status=1; echo "$cls: Ben never received the band post as the band"; }

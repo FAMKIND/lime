@@ -90,6 +90,9 @@ import uniffi.lime_core.messagePlainText
 
 /** The link tab: the Messages list (iOS's `MessagesView`): All | Unread, a banner when something is wrong, the rows, pull to refresh. */
 @OptIn(ExperimentalMaterial3Api::class)
+/** A test seam: the Messages list's state, to say in a failure report what the list had laid out. */
+internal var listStateProbe: androidx.compose.foundation.lazy.LazyListState? = null
+
 @Composable
 fun ChatListScreen(
     model: ChatsModel,
@@ -108,28 +111,29 @@ fun ChatListScreen(
     var note by remember { mutableStateOf(false) }
     Box(modifier.fillMaxSize().background(colors.canvas)) {
     // The header floats over the list (iOS: circle controls over the content with a soft top fade): the list starts under it and scrolls beneath the fade.
-    var headerPx by remember { mutableStateOf(0) }
-    val headerDp = with(androidx.compose.ui.platform.LocalDensity.current) { headerPx.toDp() }
-    PullToRefreshBox(
-        isRefreshing = refreshing,
-        onRefresh = { scope.launch { refreshing = true; try { model.pullToRefresh() } finally { refreshing = false } } },
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        LazyColumn(Modifier.fillMaxSize().testTag("messages-list"), contentPadding = androidx.compose.foundation.layout.PaddingValues(top = headerDp, bottom = 88.dp)) {
-            item(key = "filters") { FilterRow(model) }
-            model.problem?.let { problem -> item(key = "problem") { ProblemBanner(problem) } }
-            if (model.requests.isNotEmpty()) item(key = "requests") { RequestsRow(model.requests.size, onRequests) }
-            if (model.isLoaded && model.chats.isEmpty() && model.requests.isEmpty()) {
-                item(key = "empty") { EmptyChats(note, onNewMessage) { note = true } }
-            } else if (model.chats.isNotEmpty() && model.shownChats.isEmpty()) {
-                item(key = "filtered") { FilteredEmpty { model.unreadOnly = false } }
+    com.limemessenger.lime.ui.theme.FloatingHeaderLayout(
+        Modifier.fillMaxSize(),
+        header = { RootHeader(myName, myTone, onProfile, onSearch) },
+    ) { headerDp ->
+        PullToRefreshBox(
+            isRefreshing = refreshing,
+            onRefresh = { scope.launch { refreshing = true; try { model.pullToRefresh() } finally { refreshing = false } } },
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+            androidx.compose.runtime.SideEffect { listStateProbe = listState }
+            LazyColumn(Modifier.fillMaxSize().testTag("messages-list"), state = listState, contentPadding = androidx.compose.foundation.layout.PaddingValues(top = headerDp, bottom = 88.dp)) {
+                item(key = "filters") { FilterRow(model) }
+                model.problem?.let { problem -> item(key = "problem") { ProblemBanner(problem) } }
+                if (model.requests.isNotEmpty()) item(key = "requests") { RequestsRow(model.requests.size, onRequests) }
+                if (model.isLoaded && model.chats.isEmpty() && model.requests.isEmpty()) {
+                    item(key = "empty") { EmptyChats(note, onNewMessage) { note = true } }
+                } else if (model.chats.isNotEmpty() && model.shownChats.isEmpty()) {
+                    item(key = "filtered") { FilteredEmpty { model.unreadOnly = false } }
+                }
+                items(model.shownChats, key = { it.id }) { conversation -> ChatRowItem(model, conversation, myName, myTone) { onOpen(conversation) } }
             }
-            items(model.shownChats, key = { it.id }) { conversation -> ChatRowItem(model, conversation, myName, myTone) { onOpen(conversation) } }
         }
-    }
-    Box(Modifier.align(Alignment.TopCenter)) {
-        LimeTopFade(headerHeight = (headerDp - 10.dp).coerceAtLeast(0.dp))
-        Box(Modifier.onSizeChanged { headerPx = it.height }) { Header(myName, myTone, onProfile, onSearch) }
     }
     // The one lime action on the list: a new message (iOS's floating plus).
     val newLabel = stringResource(R.string.chats_card_new)
@@ -142,7 +146,7 @@ fun ChatListScreen(
 }
 
 @Composable
-private fun Header(myName: String, myTone: Int, onProfile: () -> Unit, onSearch: () -> Unit) {
+internal fun RootHeader(myName: String, myTone: Int, onProfile: () -> Unit, onSearch: () -> Unit, searchTag: String = "search-button") {
     val colors = Lime.colors
     Row(Modifier.fillMaxWidth().padding(horizontal = LimeSpacing.l, vertical = LimeSpacing.xs), verticalAlignment = Alignment.CenterVertically) {
         Text(stringResource(R.string.app_name), color = colors.text, style = LimeType.run { titleBold.style() }, modifier = Modifier.weight(1f))
@@ -152,7 +156,7 @@ private fun Header(myName: String, myTone: Int, onProfile: () -> Unit, onSearch:
             verticalAlignment = Alignment.CenterVertically,
         ) {
             val searchLabel = stringResource(R.string.search_label)
-            Box(Modifier.size(LimeCircle.target).clickable(onClick = onSearch).semantics { contentDescription = searchLabel; role = Role.Button }.testTag("search-button"), contentAlignment = Alignment.Center) { Icon(Icons.Search, null, tint = colors.text) }
+            Box(Modifier.size(LimeCircle.target).clickable(onClick = onSearch).semantics { contentDescription = searchLabel; role = Role.Button }.testTag(searchTag), contentAlignment = Alignment.Center) { Icon(Icons.Search, null, tint = colors.text) }
             val profile = stringResource(R.string.my_profile)
             Box(
                 Modifier.size(LimeCircle.target).clickable(onClick = onProfile).semantics { contentDescription = "$profile, $myName"; role = Role.Button }.testTag("my-avatar"),
@@ -263,7 +267,7 @@ private fun ChatRowItem(model: ChatsModel, conversation: ConversationSummary, my
 
 /** A segment: the selected one is filled (ink on a warm neutral; the lime accent is only for the primary action); it says "selected" to TalkBack. */
 @Composable
-private fun Chip(label: String, selected: Boolean, tag: String, onClick: () -> Unit) {
+internal fun Chip(label: String, selected: Boolean, tag: String, onClick: () -> Unit) {
     val colors = Lime.colors
     Box(
         Modifier.heightIn(min = 48.dp).widthIn(min = 64.dp)

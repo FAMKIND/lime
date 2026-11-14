@@ -82,3 +82,27 @@ fun LimeTopFade(modifier: Modifier = Modifier, headerHeight: Dp = 56.dp) {
             .clearAndSetSemantics { },
     )
 }
+
+private enum class FloatingSlot { Header, Content, Fade }
+
+/**
+ * A header that floats over the content with the soft top fade (iOS: circle controls over the content): the content is composed knowing the header's height (its list starts
+ * under it) and the fade is as tall as the header plus 10 dp. The header is measured first, in the same pass as the content, so no state is written after layout (a
+ * `onSizeChanged` that set a padding made a lazy list lay out twice and, now and then, keep a stale layout: LIME-424).
+ */
+@Composable
+fun FloatingHeaderLayout(modifier: Modifier = Modifier, header: @Composable () -> Unit, content: @Composable (headerHeight: Dp) -> Unit) {
+    androidx.compose.ui.layout.SubcomposeLayout(modifier) { constraints ->
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val headerPlaceables = subcompose(FloatingSlot.Header, header).map { it.measure(loose) }
+        val headerHeight = headerPlaceables.maxOfOrNull { it.height } ?: 0
+        val headerDp = headerHeight.toDp()
+        val contentPlaceables = subcompose(FloatingSlot.Content) { content(headerDp) }.map { it.measure(constraints) }
+        val fadePlaceables = subcompose(FloatingSlot.Fade) { LimeTopFade(headerHeight = (headerDp - 10.dp).coerceAtLeast(0.dp)) }.map { it.measure(loose) }
+        layout(constraints.maxWidth, constraints.maxHeight) {
+            contentPlaceables.forEach { it.place(0, 0) }
+            fadePlaceables.forEach { it.place(0, 0) }
+            headerPlaceables.forEach { it.place(0, 0) }
+        }
+    }
+}

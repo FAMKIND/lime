@@ -102,16 +102,36 @@ private fun SignedOut(session: AccountSession, onTermsAgreed: () -> Unit) {
 @Composable
 private fun SignedIn(session: AccountSession) {
     val appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    // The call driver needs the chats (names) and the chats need to hand it the call ops that arrive: they meet here.
+    val callHooks = remember(session) { CallHooks() }
     val chats = remember(session) {
         ChatsModel(
             store = { session.store }, transport = { session.transport }, token = { session.accessToken() },
             staleToken = { session.lastAccessToken() }, registrar = { session.registerDevice(); Unit }, isRegistered = { session.deviceRegistered },
             me = { session.profile?.displayName.orEmpty() to com.limemessenger.lime.chats.AvatarTone.tone(session.userId.orEmpty()) },
             mutes = com.limemessenger.lime.chats.MuteSettings(appContext.getSharedPreferences("lime.mutes", android.content.Context.MODE_PRIVATE)),
+            afterSync = { callHooks.afterSync() },
         )
     }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(chats) { lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { chats.runWhileForeground() } }
+    val callsModel = remember(session) { com.limemessenger.lime.calls.CallsModel { session.store } }
+    val callScope = rememberCoroutineScope()
+    val callDriver = remember(session) {
+        com.limemessenger.lime.calls.CallDriver(
+            store = { session.store }, transport = { session.transport }, token = { session.accessToken() }, myId = { session.userId }, scope = callScope,
+            // The chat may have arrived in this very sync (the list model has not read it yet): ask the core's list when the model does not know the person.
+            nameOf = { id ->
+                val dm = { c: uniffi.lime_core.ConversationSummary -> !c.isGroup && c.members.firstOrNull()?.id == id }
+                chats.conversations.firstOrNull(dm)?.title ?: session.store?.let { core -> runCatching { core.listConversations() }.getOrNull()?.firstOrNull(dm)?.title } ?: id
+            },
+            onLogged = { callScope.launch { callsModel.reload(); chats.reload() } },
+        )
+    }
+    callHooks.afterSync = { callDriver.handleArrivals(); callsModel.reload() }
+    var callNotice by remember { mutableStateOf(false) }
+    var callSearchOpen by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(callsModel, chats.revision) { callsModel.reload() }
     var openId by rememberSaveable { mutableStateOf<String?>(null) }
     var requestsOpen by rememberSaveable { mutableStateOf(false) }
     var newMessageOpen by rememberSaveable { mutableStateOf(false) }
@@ -158,6 +178,7 @@ private fun SignedIn(session: AccountSession) {
     BackHandler(enabled = personProfile != null) { personProfile = null }
     BackHandler(enabled = threadRoot != null) { threadRoot = null }
     BackHandler(enabled = openId == null && searchOpen) { searchOpen = false }
+    BackHandler(enabled = openId == null && callSearchOpen) { callSearchOpen = false }
     BackHandler(enabled = groupInfoOpen) { groupInfoOpen = false }
     BackHandler(enabled = groupStep != null) { groupStep = null }
     BackHandler(enabled = groupStep == null && groupPicking) { groupPicking = false }
@@ -185,7 +206,9 @@ private fun SignedIn(session: AccountSession) {
     } else if (chatModel != null && root != null) {
         ThreadScreen(root, chatModel, onBack = { threadRoot = null })
     } else if (chatModel != null) {
-        ChatScreen(chatModel, chats, onBack = { openId = null; focusMessage = null }, focusMessageId = focusMessage, onOpenThread = { threadRoot = it }, onOpenProfile = { id, name -> personProfile = id to name }, onOpenGroup = { groupInfoOpen = true })
+        ChatScreen(chatModel, chats, onBack = { openId = null; focusMessage = null }, focusMessageId = focusMessage, onOpenThread = { threadRoot = it }, onOpenProfile = { id, name -> personProfile = id to name }, onOpenGroup = { groupInfoOpen = true }, onCallBack = { _, _, _ -> callNotice = true })
+    } else if (callSearchOpen) {
+        com.limemessenger.lime.ui.calls.CallSearchScreen(callsModel, chats, onBack = { callSearchOpen = false }, onPlaceCall = { _, _, _ -> callNotice = true })
     } else if (searchOpen) {
         SearchScreen(chats, onBack = { searchOpen = false }, onOpenChat = { searchOpen = false; openId = it }, onOpenMessage = { chat, message -> searchOpen = false; focusMessage = message; openId = chat })
     } else if (groupStep != null) {
@@ -197,7 +220,13 @@ private fun SignedIn(session: AccountSession) {
     } else if (requestsOpen) {
         RequestsScreen(chats, onOpen = { openId = it.id }, onBack = { requestsOpen = false })
     } else {
-        Shell(selected = shellTab, onSelect = { shellTab = it }, linkUnread = chats.unreadChatCount, jam = { JamFeedScreen(jam, onYours = { yourJam = true }, onOpen = { jamPost = it }) }, link = {
+        Shell(selected = shellTab, onSelect = { shellTab = it }, linkUnread = chats.unreadChatCount, callsMissed = if (shellTab == com.limemessenger.lime.ui.shell.Tab.Call) 0 else callsModel.missedUnseen,
+            calls = {
+                com.limemessenger.lime.ui.calls.CallsScreen(
+                    callsModel, chats, myName = session.profile?.displayName.orEmpty(), myTone = com.limemessenger.lime.chats.AvatarTone.tone(session.userId.orEmpty()),
+                    onProfile = { profileOpen = true }, onSearch = { callSearchOpen = true }, onPlaceCall = { _, _, _ -> callNotice = true },
+                )
+            }, jam = { JamFeedScreen(jam, onYours = { yourJam = true }, onOpen = { jamPost = it }) }, link = {
             ChatListScreen(
                 chats, myName = session.profile?.displayName.orEmpty(), myTone = com.limemessenger.lime.chats.AvatarTone.tone(session.userId.orEmpty()),
                 onOpen = { openId = it.id },
@@ -209,7 +238,17 @@ private fun SignedIn(session: AccountSession) {
         })
     }
     ArrivalBannerView(arrivals) { id -> openId = id; arrivals.dismiss() }
+    // Placing a call arrives with the media (LIME-425): until then a tap on Call says so, and sends nothing.
+    if (callNotice) androidx.compose.material3.AlertDialog(
+        onDismissRequest = { callNotice = false }, modifier = Modifier.testTag("call-not-ready"),
+        title = { Text(stringResource(R.string.calls_not_ready_title)) },
+        text = { Text(stringResource(R.string.calls_not_ready_body)) },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = { callNotice = false }, modifier = Modifier.heightIn(min = 48.dp).testTag("call-not-ready-ok")) { Text(stringResource(R.string.calls_not_ready_ok)) } },
+    )
 }
+
+/** The place where the chats and the call driver are joined (each is built after the other needs it). */
+private class CallHooks { var afterSync: suspend () -> Unit = {}; suspend fun afterSync() = afterSync.invoke() }
 
 /** The banner for a new message: the title and body from the core's words, shown for a few seconds; tapping it opens the chat. TalkBack reads it when it appears. */
 @Composable

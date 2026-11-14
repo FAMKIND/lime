@@ -75,6 +75,10 @@ data class ListPreview(
         fun make(conversation: ConversationSummary, plainText: (String) -> String = { it }, rootOf: (String) -> MessageItem? = { null }): ListPreview {
             val root = if (conversation.lastIsReply) conversation.lastMessage?.threadRoot?.let(rootOf) else null
             val parts = uniffi.lime_core.listPreviewParts(conversation, root)
+            // A call is a message whose body is JSON: the row says what the chat's bubble says ("Voice call · 4:12", "Missed voice call").
+            val last = conversation.lastMessage
+            val call = if (last != null && last.id.startsWith("call:") && !conversation.lastIsReply) uniffi.lime_core.callBubbleFromBody(last.text, last.isOwn) else null
+            if (call != null) return ListPreview("", null, call.summary, null, false)
             return ListPreview(parts.prefix, parts.symbol, parts.text, parts.quote, parts.isReaction)
         }
     }

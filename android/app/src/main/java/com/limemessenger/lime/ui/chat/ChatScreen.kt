@@ -148,6 +148,8 @@ import uniffi.lime_core.messagePlainText
 /** A chat (iOS's `ChatView`): the header, the messages, and the composer (or Accept for a stranger's first message). The system back gesture closes it. */
 @Composable
 fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenThread: (MessageItem) -> Unit = {}, modifier: Modifier = Modifier, onOpenProfile: (String, String) -> Unit = { _, _ -> }, onOpenGroup: () -> Unit = {}, focusMessageId: String? = null,
+    /** Calls someone back (a call bubble in a chat, after asking). */
+    onCallBack: (peerId: String, name: String, video: Boolean) -> Unit = { _, _, _ -> },
     /** Photos already in the composer's draft strip (screenshots and tests: the Photo Picker cannot be driven headless). */
     seedPhotos: List<OutgoingAttachment> = emptyList(),
     /** A message already being edited (tests: a local-only message is not offered Edit, as the core only lets a sent or sending one be edited). */
@@ -217,9 +219,15 @@ fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenTh
 
     Column(modifier.fillMaxSize().background(colors.canvas).systemBarsPadding().imePadding()) {
         // The header floats over the messages with a soft top fade (iOS: circle controls over the content); the list starts under it.
-        var headerPx by remember { mutableStateOf(0) }
-        val headerDp = with(androidx.compose.ui.platform.LocalDensity.current) { headerPx.toDp() }
-        Box(Modifier.weight(1f).fillMaxWidth()) {
+        com.limemessenger.lime.ui.theme.FloatingHeaderLayout(
+            Modifier.weight(1f).fillMaxWidth(),
+            header = {
+                val chosen = selection
+                if (chosen != null) SelectionBar(chosen.size, onCancel = { selection = null },
+                    onForward = { forwarding = chosen.toList() }, onDelete = { deleting = model.messages.filter { it.id in chosen } })
+                else Header(summary, chats.myName, chats.myTone, chats.otherUnreadChats(model.conversationId), onBack, onOpenGroup) { m -> onOpenProfile(m.id, m.name) }
+            },
+        ) { headerDp ->
             LazyColumn(Modifier.fillMaxSize().testTag("chat-messages"), state = listState, contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 12.dp, end = 12.dp, top = headerDp + 8.dp, bottom = 8.dp)) {
                 items(rows, key = { it.id }) { row ->
                     when (row) {
@@ -229,7 +237,10 @@ fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenTh
                             stringResource(R.string.chat_deleted_run, row.count), color = colors.textSecondary, fontSize = 13.sp, fontStyle = FontStyle.Italic,
                             modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp, horizontal = 24.dp).testTag("deleted-run"),
                         )
-                        is ChatRow.Message -> MessageBubble(
+                        is ChatRow.Message -> {
+                        // A call is a local message with the id `call:<id>` and a small JSON body: drawn as iOS draws it (the core's words), not as text.
+                        val call = remember(row.item.id, row.item.text) { if (row.item.id.startsWith("call:")) uniffi.lime_core.callBubbleFromBody(row.item.text, row.item.isOwn) else null }
+                        if (call != null) CallBubbleRow(row.item, call, summary, onCallBack) else MessageBubble(
                             onOpenSender = onOpenProfile,
                             item = row.item, summary = summary, showAvatar = row.showAvatar, endsRun = row.endsRun,
                             showState = row.item.isOwn && (row.item.state != DeliveryState.Sent || row.item.id == lastOwnId),
@@ -246,16 +257,8 @@ fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenTh
                             onReact = { emoji -> scope.launch { model.react(row.item, emoji) } },
                             voice = voice, voiceNext = voiceNext, voiceData = voiceData,
                         )
+                        }
                     }
-                }
-            }
-            Box(Modifier.align(Alignment.TopCenter)) {
-                com.limemessenger.lime.ui.theme.LimeTopFade(headerHeight = (headerDp - 10.dp).coerceAtLeast(0.dp))
-                Box(Modifier.onSizeChanged { headerPx = it.height }) {
-                val chosen = selection
-                if (chosen != null) SelectionBar(chosen.size, onCancel = { selection = null },
-                    onForward = { forwarding = chosen.toList() }, onDelete = { deleting = model.messages.filter { it.id in chosen } })
-                else Header(summary, chats.myName, chats.myTone, chats.otherUnreadChats(model.conversationId), onBack, onOpenGroup) { m -> onOpenProfile(m.id, m.name) }
                 }
             }
         }

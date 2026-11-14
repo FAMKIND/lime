@@ -35,6 +35,8 @@ class ChatsModel(
     private val me: () -> Pair<String, Int> = { "" to 0 },
     /** The chats muted on this phone (null in tests that do not need it). */
     private val mutes: MuteSettings? = null,
+    /** After the mailbox was fetched (the call ops that arrived are handed to the call driver here). Runs on the caller's thread. */
+    private val afterSync: suspend () -> Unit = {},
 ) {
     val myName: String get() = me().first
     val myTone: Int get() = me().second
@@ -115,6 +117,7 @@ class ChatsModel(
                     // Sends first (they keep their order); a failure leaves them "Not sent" for a retry.
                     withContext(Dispatchers.IO) { runCatching { core.deliverQueued(link, bearer) } }
                     withContext(Dispatchers.IO) { core.sync(link, bearer) }
+                    try { afterSync() } catch (e: CancellationException) { throw e } catch (e: Exception) { /* a call op that could not be handled must not read as a connection problem */ }
                     problem = null
                 } catch (e: CancellationException) {
                     throw e

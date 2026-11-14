@@ -43,7 +43,7 @@ enum class Tab(val label: Int, val icon: ImageVector) {
 
 /** The signed-in shell: link · call · jam as a bottom bar (as iOS). Call and jam say "Coming soon on Android" until built. */
 @Composable
-fun Shell(link: @Composable () -> Unit, modifier: Modifier = Modifier, jam: (@Composable () -> Unit)? = null, selected: Tab? = null, onSelect: ((Tab) -> Unit)? = null, linkUnread: Int = 0) {
+fun Shell(link: @Composable () -> Unit, modifier: Modifier = Modifier, jam: (@Composable () -> Unit)? = null, selected: Tab? = null, onSelect: ((Tab) -> Unit)? = null, linkUnread: Int = 0, calls: (@Composable () -> Unit)? = null, callsMissed: Int = 0) {
     // The caller can keep the tab (Root does: a post, a chat or a profile replaces the whole shell, and coming back must land on the same tab).
     var own by rememberSaveable { mutableStateOf(Tab.Link) }
     val tab = selected ?: own
@@ -58,14 +58,19 @@ fun Shell(link: @Composable () -> Unit, modifier: Modifier = Modifier, jam: (@Co
                 Box(Modifier.fillMaxWidth().height(0.5.dp).background(colors.hairline))
                 NavigationBar(containerColor = colors.canvas) {
                     Tab.entries.forEach { entry ->
-                        val unreadWords = if (entry == Tab.Link && linkUnread > 0) androidx.compose.ui.res.pluralStringResource(R.plurals.chat_back_unread, linkUnread, linkUnread) else null
+                        val badge = when (entry) { Tab.Link -> linkUnread; Tab.Call -> callsMissed; else -> 0 }
+                        val unreadWords = when {
+                            badge <= 0 -> null
+                            entry == Tab.Link -> androidx.compose.ui.res.pluralStringResource(R.plurals.chat_back_unread, badge, badge)
+                            else -> stringResource(R.string.calls_badge_state, badge)
+                        }
                         NavigationBarItem(
                             modifier = Modifier.testTag("tab-${entry.name.lowercase()}").then(if (unreadWords != null) Modifier.semantics { stateDescription = unreadWords } else Modifier),
                             selected = tab == entry,
                             onClick = { choose(entry) },
                             icon = {
-                                if (entry == Tab.Link && linkUnread > 0) BadgedBox(badge = {
-                                    Badge(containerColor = colors.accent, contentColor = colors.accentInk, modifier = Modifier.testTag("tab-link-badge")) { Text(com.limemessenger.lime.chats.badgeText(linkUnread)) }
+                                if (badge > 0) BadgedBox(badge = {
+                                    Badge(containerColor = colors.accent, contentColor = colors.accentInk, modifier = Modifier.testTag("tab-${entry.name.lowercase()}-badge")) { Text(com.limemessenger.lime.chats.badgeText(badge)) }
                                 }) { Icon(entry.icon, contentDescription = null) }
                                 else Icon(entry.icon, contentDescription = null)
                             },
@@ -85,7 +90,7 @@ fun Shell(link: @Composable () -> Unit, modifier: Modifier = Modifier, jam: (@Co
             when (tab) {
                 Tab.Link -> link()
                 Tab.Jam -> if (jam != null) jam() else ComingSoon()
-                Tab.Call -> ComingSoon()
+                Tab.Call -> if (calls != null) calls() else ComingSoon()
             }
         }
     }

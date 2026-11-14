@@ -6,6 +6,8 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.printToString
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.Density
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -114,7 +116,11 @@ class ChatListUiTest {
         runBlocking { model.chats.filter { it.unread > 0u }.forEach { model.markRead(it.id) } }
         rule.waitForIdle()
         // The marks-read reload lands on the model's own coroutine: wait for the state on screen, not for a clock (LIME-422: an order-dependent miss in one full pass).
-        rule.waitUntil(5_000) { count("filtered-empty") > 0 }
+        // If it ever fails, the report says what the model held and what was on screen (an intermittent miss seen in full passes since LIME-422).
+        try { rule.waitUntil(5_000) { count("filtered-empty") > 0 } } catch (e: Throwable) {
+            val info = com.limemessenger.lime.ui.chats.listStateProbe?.layoutInfo
+            throw AssertionError("visible=${info?.visibleItemsInfo?.map { it.key to it.size }} total=${info?.totalItemsCount} viewport=${info?.viewportSize} shown=${model.shownChats.size} chats=${model.chats.size} unread=${model.chats.count { it.unread > 0u }} unreadOnly=${model.unreadOnly} loaded=${model.isLoaded} requests=${model.requests.size}\n" + rule.onRoot(useUnmergedTree = true).printToString(), e)
+        }
         assertTrue("with nothing unread the filtered list says so", count("filtered-empty") > 0)
         rule.onNodeWithTag("filtered-empty").assertIsDisplayed()
         rule.onNodeWithTag("chat-filter-all").performClick()
