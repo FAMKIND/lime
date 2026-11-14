@@ -1,0 +1,5 @@
+// Shared build settings for the Mac app target (referenced from project.yml).
+CODE_SIGN_STYLE = Automatic
+
+// Your own signing team lives in the gitignored mac/Local.xcconfig (a copy of ios/Local.xcconfig).
+#include? "../Local.xcconfig"

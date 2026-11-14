@@ -4,3 +4,4 @@ build/
 DerivedData/
 *.xcodeproj
 tools/selftest/build/
+Local.xcconfig
