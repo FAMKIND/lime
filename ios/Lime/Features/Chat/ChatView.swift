@@ -141,7 +141,12 @@ struct ChatView: View {
         .toolbar {
             // The avatar and name sit beside the system ‹, with no glass of their own, left-aligned in a width worked out from the screen's (the room between ‹ and the two circles; .principal would centre it);
             // the name truncates rather than vanishing (LIME-247, 247b).
-            ToolbarItem(placement: .principal) { titlePill(conversation).frame(width: max(120, WindowMetrics.shared.size.width - 196), alignment: .leading).fixedSize(horizontal: false, vertical: true) }
+            ToolbarItem(placement: .principal) {
+                // With a number Back is a capsule, wider than the circle this was laid out beside: the title moves right by the difference so the gap after Back is the same (LIME-335).
+                titlePill(conversation)
+                    .frame(width: max(120, WindowMetrics.shared.size.width - 196) - titleShift, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, titleShift).padding(.trailing, 8)   // and 8 pt before the search circle, which a long name used to touch
+            }
                 .sharedBackgroundVisibility(.hidden)
             // Search and the call button are two 44 pt circles of our own glass (the system's would be a capsule), last; a fixed gap keeps them apart.
             ToolbarItem(placement: .topBarTrailing) {
@@ -433,6 +438,18 @@ struct ChatView: View {
     /// The name and the line under it are one line, and wrap at the larger sizes instead of being cut (LIME-130-3a).
     private var headerLines: Int? { globalTypeSize >= .accessibility1 ? nil : 2 }
 
+    /// Does the title have a line under the name (a group's members, my label for them, a status)?
+    private func hasSecondLine(_ conversation: Conversation) -> Bool {
+        if conversation.isGroup { return true }
+        guard let person = conversation.members.first else { return false }
+        if person.label != nil { return true }
+        return store.status(of: person.id).flatMap { StatusPlan.caption(state: $0.state, until: $0.until) } != nil
+    }
+
+    /// The name is one line (ending in "…") when something sits under it, so it never pushes that line down; with nothing under it it may use two. At the accessibility
+    /// sizes nothing is cut off (LIME-130, 335).
+    private func nameLines(_ conversation: Conversation) -> Int? { globalTypeSize >= .accessibility1 ? nil : (hasSecondLine(conversation) ? 1 : 2) }
+
     private func titlePill(_ conversation: Conversation) -> some View {
         HStack(spacing: 8) {
             ConversationAvatar(conversation: conversation, size: 36)
@@ -442,7 +459,7 @@ struct ChatView: View {
                     Text(conversation.title)
                         .font(Theme.font(.subheadline, weight: .semibold))
                         .foregroundStyle(Theme.text)
-                        .lineLimit(headerLines)
+                        .lineLimit(nameLines(conversation))
                     // "Verified in person" (they scanned each other's QR codes): a small seal after the name, with the date when tapped.
                     if conversation.verified && !conversation.isGroup {
                         Button { showingSeal = true } label: {
@@ -592,6 +609,10 @@ struct ChatView: View {
     }
 
     // MARK: Header
+
+    /// How far the title moves right: the capsule of a one-digit number is about 23 pt wider than the plain circle, but the system centres the title, so it takes 16 pt
+    /// of shift to leave the same 10 pt gap (measured on the 13 mini simulator); "10" to "99" and "99+" widen the badge by about 5 and 14 pt more.
+    private var titleShift: CGFloat { backUnread == 0 ? 0 : (backUnread < 10 ? 16 : (backUnread < 100 ? 21 : 30)) }
 
     /// The unread messages in the other chats, shown beside Back when Back returns to the Messages list (LIME-325, 331). On iOS 26 and later the ‹ is `limeBack`'s (LIME-334:
     /// the number was only ever in the iOS 17-25 header below, so it never showed there); both read this.
