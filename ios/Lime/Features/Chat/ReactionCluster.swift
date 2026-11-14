@@ -65,14 +65,15 @@ struct ReactionCircle: View {
     let onTap: () -> Void
     /// The emoji and the count grow with the text size (the circle keeps its size, so the layout of the row does not change).
     @ScaledMetric(relativeTo: .body) private var emojiSize: CGFloat = 16
+    /// Mine is the accent fill alone; with Differentiate Without Color it also gets a ring, so it does not rest on colour (LIME-130-3a, 331).
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
 
     var body: some View {
         Button(action: onTap) {
             Text(chip.emoji).font(.system(size: min(emojiSize, 22)))
                 .frame(width: ReactionPlan.chip, height: ReactionPlan.chip)
                 .background(chip.mine ? Theme.accent : Theme.chipFill, in: Circle())
-                // Mine is the accent fill and also a ring, so it does not rest on colour alone (LIME-130-3a).
-                .overlay(Circle().strokeBorder(chip.mine ? Theme.text : Theme.hairline, lineWidth: chip.mine ? 1.5 : 0.5))
+                .overlay { if !chip.mine { Circle().strokeBorder(Theme.hairline, lineWidth: 0.5) } else if differentiateWithoutColor { Circle().strokeBorder(Theme.text, lineWidth: 1.5) } }
                 .shadow(color: .black.opacity(0.12), radius: 2, y: 1)
                 .overlay(alignment: .bottomTrailing) {
                     if chip.count > 1 {

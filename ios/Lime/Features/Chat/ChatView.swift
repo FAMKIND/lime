@@ -4,9 +4,12 @@ struct ChatView: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.dynamicTypeSize) private var globalTypeSize
     let conversationID: Conversation.ID
+    /// Where Back leads decides whether the number of unread messages in the other chats sits beside the chevron (LIME-325, 331): `.linkRoot` when this chat is
+    /// the first screen over the Messages list (from the list, a notification, a share), `.always` where Back returns to a screen of Messages itself (its search),
+    /// `.off` where Back goes somewhere else (Calls, jam, a thread's chat, a profile).
+    enum UnreadOnBack { case off, always, linkRoot }
+    var unreadOnBack: UnreadOnBack = .off
     /// Opened from a search result: scroll to this message and highlight it for a moment.
-    /// True only where Back leads to the Messages list (LIME-325): the number of other unread chats sits beside the chevron.
-    var showsUnreadOnBack = false
     var focusMessageID: String? = nil
     /// The words of the search that led here: highlighted in the chat like find does.
     var focusWords: [String] = []
@@ -582,7 +585,8 @@ struct ChatView: View {
 
     private func header(_ conversation: Conversation) -> some View {
         HStack(spacing: 8) {
-            let others = showsUnreadOnBack ? store.otherUnreadChats(excluding: conversationID) : 0
+            let leadsToList = unreadOnBack == .always || (unreadOnBack == .linkRoot && store.path.count <= 1)
+            let others = leadsToList ? store.otherUnreadMessages(excluding: conversationID) : 0
             Button { dismiss() } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "chevron.left")
@@ -597,7 +601,7 @@ struct ChatView: View {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Back")
-            .accessibilityValue(others == 0 ? "" : others == 1 ? "1 unread chat" : "\(others) unread chats")
+            .accessibilityValue(others == 0 ? "" : others == 1 ? "1 unread message" : "\(others) unread messages")
             .accessibilityAddTraits(.isButton)
             .accessibilityIdentifier("back-button")
 

@@ -139,7 +139,7 @@ private struct SignedInView: View {
         NavigationStack(path: path) {
             MessagesView().callMiniPlayerInset()
                 .navigationDestination(for: Conversation.ID.self) { id in
-                    ChatView(conversationID: id, showsUnreadOnBack: true).toolbar(.hidden, for: .tabBar)
+                    ChatView(conversationID: id, unreadOnBack: .linkRoot).toolbar(.hidden, for: .tabBar)
                 }
                 .navigationDestination(for: GroupTarget.self) { target in
                     GroupDetailsView(target: target).callMiniPlayerInset().toolbar(.hidden, for: .tabBar)
@@ -148,7 +148,7 @@ private struct SignedInView: View {
                     ThreadView(target: target).limeBack().toolbar(.hidden, for: .tabBar)
                 }
                 .navigationDestination(for: ChatTarget.self) { target in
-                    ChatView(conversationID: target.conversationID, focusMessageID: target.messageID, focusWords: target.words)
+                    ChatView(conversationID: target.conversationID, unreadOnBack: .always, focusMessageID: target.messageID, focusWords: target.words)
                         .toolbar(.hidden, for: .tabBar)
                 }
                 .navigationDestination(for: ProfileRoute.self) { ProfileView(route: $0).callMiniPlayerInset() }

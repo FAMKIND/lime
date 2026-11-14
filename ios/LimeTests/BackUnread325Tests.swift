@@ -1,7 +1,7 @@
 import XCTest
 @testable import Lime
 
-/// LIME-325: the number beside the chat's Back is the Messages tab's count (unread chats) without this chat.
+/// LIME-331 (was 325): the number beside the chat's Back is the unread messages in the other accepted chats, as the Messages list's numbers add up.
 final class BackUnread325Tests: XCTestCase {
     private func chat(_ id: String, unread: Int = 0, marked: Bool = false, request: Bool = false) -> Conversation {
         var c = Conversation(id: id, title: id, members: [Person(id: id, name: id)], messages: [])
@@ -11,21 +11,26 @@ final class BackUnread325Tests: XCTestCase {
         return c
     }
 
-    func testThisChatIsExcludedAndOthersCount() {
-        let all = [chat("a", unread: 2), chat("b", unread: 5), chat("c", marked: true), chat("d")]
-        XCTAssertEqual(ConversationStore.otherUnreadChats(in: all, excluding: "a"), 2)
+    func testThisChatIsExcludedAndTheOthersMessagesAreAdded() {
+        let all = [chat("a", unread: 2), chat("b", unread: 5), chat("c", unread: 3), chat("d")]
+        XCTAssertEqual(ConversationStore.otherUnreadMessages(in: all, excluding: "a"), 8)
+    }
+
+    func testAChatMarkedUnreadCountsOne() {
+        let all = [chat("a"), chat("m", marked: true), chat("n", unread: 4, marked: true)]
+        XCTAssertEqual(ConversationStore.otherUnreadMessages(in: all, excluding: "a"), 5)
     }
 
     func testNoneUnreadIsZero() {
-        XCTAssertEqual(ConversationStore.otherUnreadChats(in: [chat("a"), chat("b")], excluding: "a"), 0)
+        XCTAssertEqual(ConversationStore.otherUnreadMessages(in: [chat("a"), chat("b")], excluding: "a"), 0)
     }
 
-    func testRequestsDoNotCountAsTheTabDoesNotCountThem() {
-        XCTAssertEqual(ConversationStore.otherUnreadChats(in: [chat("a"), chat("r", unread: 1, request: true)], excluding: "a"), 0)
+    func testRequestsAreNotCounted() {
+        XCTAssertEqual(ConversationStore.otherUnreadMessages(in: [chat("a"), chat("r", unread: 3, request: true)], excluding: "a"), 0)
     }
 
     func testOver99ReadsNinetyNinePlus() {
-        let all = (0..<121).map { chat("c\($0)", unread: 1) }
-        XCTAssertEqual(CountBadge.text(ConversationStore.otherUnreadChats(in: all, excluding: "c0")), "99+")
+        let all = [chat("a"), chat("big", unread: 120)]
+        XCTAssertEqual(CountBadge.text(ConversationStore.otherUnreadMessages(in: all, excluding: "a")), "99+")
     }
 }

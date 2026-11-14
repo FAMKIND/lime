@@ -10898,3 +10898,25 @@ Settings, profile and groups: the 13 majors (audit rows 341, 342, 344, 609, 612�
 - **Installed (the 183c commit):** the 13 mini, the iPad (4) and Jean's 12 mini (app code changed: the band-scan hand-over).
 - **For the user (gate, 13 mini):** (a) scan a band's QR code (or paste a band link into the scanner): it closes and "Join <band>?" opens every time, including right after the app starts; (b) **by hand, two checks for the skips:** in the podcast studio, open the microphone menu and choose AirPods or another input: does the choice change? and in a chat, swipe from the left edge: does it go back?
 - **For plot:** (1) the edge swipe may be a real gap on iOS 26+ for every screen with a hidden navigation bar (lime's `swipeBackEnabled()` does not restore it in a bare repro on the iOS 27 simulator); needs the by-hand check, then a brief if it fails; enabling the iOS 26 content-pop gesture is the candidate fix but risks the swipe-to-reply; (2) the studio mic menu: same by-hand check; (3) the standing flakes: `Jam188b` subtitle typing, `ChatOpens` thread test, the test-runner launch error under load; (4) `test-full.sh` runs share one result bundle and log under `$TMPDIR`: overlapping runs overwrite each other.
+
+## LIME-331
+
+**Brief:** no dark ring on your reaction; Back counts unread messages wherever it leads to the list.
+- **Reactions:** `ReactionCircle`: yours is the accent fill with no stroke; others keep the 0.5 pt hairline; with **Differentiate Without Color** on, yours gets the 1.5 pt `Theme.text` ring as before.
+- **Count:** `ConversationStore.otherUnreadMessages(in:excluding:)` = the sum of `unreadCount` over accepted, non-request chats except this one (a chat marked unread counts 1; 120 → "99+" via `CountBadge.text`). VoiceOver value "5 unread messages" / "1 unread message". The tab badge and app icon still count chats (unchanged). Unit tests: this chat excluded, marked-unread = 1, none = 0, requests excluded, 99+.
+- **`ChatView` entry points (all six creations):**
+
+| Where created | Back goes to | Number |
+|---|---|---|
+| `RootView` link tab, `Conversation.ID` (the list, a notification, a share, a new chat) | the Messages list when this chat is the first screen over it (`store.path.count <= 1`); else the screen beneath (a profile, a shared list, Requests) | `.linkRoot`: shown only when it leads to the list |
+| `RootView` link tab, `ChatTarget` (a Messages search result) | the Messages search screen (part of Messages) | `.always` (plot named "a search in Messages") |
+| `RootView` Calls tab, `Conversation.ID` and `ChatTarget` | the Calls list / its search | off |
+| `JamPage` jam stack, `Conversation.ID` and `ChatTarget` | the jam screen | off |
+| a thread over its chat | the chat | not a `ChatView` Back |
+
+  A notification builds a fresh path with the chat first, so it shows the number (it was already `true` before; the user's chat probably had only one unread chat, which showed "1", or was reached another way).
+- **Test changes:** `BackUnread325UITests` checks the spoken words ("N unread messages", "1 unread message" or nothing): a tab-based inference was flaky under load (the sample data's unread chats differ while it loads); a debug run showed the sample list has one chat with 2 unread messages, so with it open Back is empty. No visual tests.
+- **Gate (iOS):** `check-warnings.sh` 0; Release device build OK; unit 755 run, 0 failed; full UI suite (3 clones, 81 min): 552 run, 7 skipped, 2 failed, both passed when re-run alone (`BackUnread325UITests` ×3, `Jam188nUITests` composer-focus flake).
+- **Installed:** the 13 mini, the iPad (4) and Jean's 12 mini.
+- **For the user (gate, 13 mini; the iPad sends):** the five steps in the brief. Step 3 needs the iPad to send 3 messages in one chat and 2 in another, then open a third chat from Messages: Back shows ‹ 5.
+- **For plot:** (1) Back from a chat opened via **Messages search** goes to the search screen, not the list; I showed the number there because the brief named search: say if it should be off. (2) a chat opened from a profile in the Messages tab shows no number (Back goes to the profile): matches the brief's "off where Back returns somewhere else".
