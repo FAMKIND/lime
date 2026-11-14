@@ -11050,3 +11050,13 @@ Settings, profile and groups: the 13 majors (audit rows 341, 342, 344, 609, 612�
 - **Installed (this commit):** the 13 mini and the iPad (4). **Jean's 12 mini: "Insufficient storage"** again.
 - **For the user (gate, 13 mini):** open a group with a long name while other chats are unread: a clear gap after ‹ 3; the name on one line with "…", the members line under it.
 - **For plot:** (a) the shift is by digit count (the toolbar centres the title, so I could not anchor it to the capsule): a very large text size with a number is only checked at accessibility3 on one chat. (b) The 8 pt trailing space is an addition. (c) Jean's 12 mini has now refused 334, 333 and 335: it needs space freed.
+
+## LIME-336
+
+**Brief:** skip swift-format on the generated Swift bindings (plot-Mac's ask from LIME-601).
+
+**Survey:** `ios/generate.sh` is only xcodegen (it does not run the bindgen); the `uniffi-bindgen generate … --language swift` call is in `core/build-ios.sh`, so I timed that command directly on the built library (27,384 lines): **3 s with the default format, 1 s with `--no-format`** (this Mac has swift-format via `xcrun`; it did not hang here, so the ~1 h hang is specific to the Mac that hit it). The two outputs are identical to the file in the tree.
+
+**The change:** `--no-format` added to that one call in `core/build-ios.sh`, with the one-line comment. Nothing else (`check-android.sh` and `mac/` untouched).
+- **Verification:** `build-ios.sh` runs; Debug and Release device builds succeed; `check-warnings.sh` 0 (the unformatted file adds none); unit `Block333Tests`, `Block334Tests`, `ThreadTests`, `BackUnread325Tests` pass (not the whole unit suite). No install (build only).
+- **For plot:** times above (before 3 s, after 1 s, here: no hang). Note for plot-Mac: the brief's "clean `ios/generate.sh`" is the xcodegen step; the bindgen step is `core/build-ios.sh`.

@@ -26,9 +26,10 @@ done
 # Swift bindings, generated from the compiled library (UniFFI "library mode").
 GEN="$CORE_DIR/target/uniffi-out"
 rm -rf "$GEN" && mkdir -p "$GEN"
+# swift-format on the 27k-line file can hang; the file is git-ignored, so its formatting is never seen (LIME-336).
 cargo run --quiet --release --features cli --bin uniffi-bindgen -- \
   generate --library "$CORE_DIR/target/aarch64-apple-ios-sim/release/liblime_core.a" \
-  --language swift --out-dir "$GEN"
+  --language swift --no-format --out-dir "$GEN"
 
 # The C header and module map go into the xcframework; the Swift file is compiled into the app.
 HEADERS="$CORE_DIR/target/xcframework-headers"
