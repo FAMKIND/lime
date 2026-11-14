@@ -10986,3 +10986,21 @@ Settings, profile and groups: the 13 majors (audit rows 341, 342, 344, 609, 612�
 - **Installed:** the 13 mini, the iPad (4) and Jean's 12 mini (checked that the binary carries the new strings).
 - **For the user (gate, 13 mini; the iPad is another account in a shared group):** the five steps in the brief. Step 2 needs the iPad to send a group message and react to yours: nothing should notify and the row should be collapsed with no reaction face.
 - **For plot:** (1) **Back's number** (325/331) still counts unread messages including a blocked person's; say if it should skip them. (2) **Jam comment notifications** do not exist as local banners here, so nothing to filter; the count line "N comments" still counts a blocked person's comment. (3) The profile ⋯ for a contact still uses `store.block` (equivalent to `blockPerson` for a chat). (4) Android adopts the same rules from 329 plus the search change (core).
+
+## LIME-332
+
+**Brief:** a blocked person's messages and comments stop counting.
+
+**Survey:** (1) A chat's unread count is core's `unread` (messages, replies included) plus `markedUnread`; the app holds the chat's messages, so the unread ones are the newest incoming messages, as many as `unread`: the app **can** tell which are from a blocked sender **without a new core call** (the same assumption 330's badge rule made). Replies are not in the timeline, so when `unread` exceeds the incoming messages there, the rest cannot be attributed and is **kept** (counted). (2) Every "N comments" (feed card, the card's action row beside 💬, the reader's counts line, the player's pill, VoiceOver's card label) reads `ConversationStore.jamCounts(postID)`: one place.
+
+**The change:** `BlockedPeople.unreadMessages(_:blocked:)` (a chat's unread messages without the blocked people's; a chat marked unread by hand still counts 1) and `BlockedPeople.visibleCommentCount(total:comments:blocked:)` (core's published count minus the blocked authors' published comments; the collapsed rows stay). **Back's number** (`otherUnreadMessages`, now takes `blocked`) and **`jamCounts`** (every comment number, spoken and shown) use them; Unblock restores both. **Also the same one rule:** a **Messages row's own number** (the green count, the bold, and VoiceOver's "N unread") uses `unreadMessages`, so a group whose only unread messages are a blocked person's no longer looks unread.
+
+**Survey (3), other numbers that count a blocked person (fixed above or listed for plot):**
+- Fixed: the Messages row's unread count (same rule as Back's).
+- **For plot (not fixed):** (a) **"N replies"** under a message and in the thread header (core's reply count: it cannot say who replied without a core call); (b) the **jam "New comments" dot and the profile's Activity list**: `unseen` counts a blocked commenter's new comment, and Activity shows "X commented on your post" with their words (a leak: a one-line filter in `jamActivity` would hide it); (c) Back's number still counts replies that are not in the timeline (above); (d) the like counts and likers' faces on jam posts include a blocked person (a person's like is not a message or comment).
+
+**Tests (unit, `Block332Tests`, 5):** Back's number with a blocked sender's unread messages in another chat (skipped; counts again after Unblock); a mix in one group (only the others count; older read messages ignored); a hand-marked unread chat (still 1); replies outside the timeline kept, a one-to-one never filtered; "N comments" with one blocked commenter (a pending one never counted; Unblock restores). `Block330Tests`, `BackUnread325Tests` and `AppIcon292Tests` pass. No new UI tests (a number's rule); I ran the related UI classes anyway (`LimeUITestsMessages`, `Block330UITests`, `BackUnread325UITests`, `Jam189cUITests`): 28 run, 0 failed. Not the full suite (no label's words changed).
+- **Gate:** `check-warnings.sh` 0; Release device build OK.
+- **Installed (332):** the 13 mini, the iPad (4) and Jean's 12 mini.
+- **For the user (gate, 13 mini):** with the iPad blocked from 330's check, the iPad sends two messages in the shared group while the 13 mini is in another chat: Back's number doesn't change; the iPad comments on a post: the count doesn't change. Unblock: both count again.
+- **For plot:** the list above.

@@ -29,6 +29,24 @@ enum BlockedPeople {
 }
 
 extension BlockedPeople {
+    /// The unread messages in a chat without the blocked people's (LIME-332): the numbers Back and a Messages row show. In a group the unread ones are the newest
+    /// incoming messages (as many as the chat's unread count, which can also count replies that are not in the timeline: those are kept); a chat marked unread by hand
+    /// still counts 1, as a row always did.
+    static func unreadMessages(_ conversation: Conversation, blocked: Set<String>) -> Int {
+        let base = conversation.unreadCount
+        guard conversation.unread > 0, conversation.isGroup, !blocked.isEmpty else { return base }
+        let tail = conversation.messages.filter { !$0.isOwn && !$0.isSystem }.suffix(conversation.unread)
+        let fromOthers = tail.filter { !isBlocked($0.senderID, in: blocked) }.count + max(0, conversation.unread - tail.count)
+        return conversation.markedUnread ? max(fromOthers, 1) : fromOthers
+    }
+
+    /// "N comments" without the blocked people's (LIME-332): `total` is what core counted (published comments); the collapsed rows stay, only the count drops them.
+    static func visibleCommentCount(total: Int, comments: [JamCommentInfo], blocked: Set<String>) -> Int {
+        guard !blocked.isEmpty else { return total }
+        let theirs = comments.filter { $0.state == "published" && isBlocked($0.author, in: blocked) }.count
+        return max(0, total - theirs)
+    }
+
     /// Does this chat count as unread for a badge? Not when all its unread messages are from blocked people (LIME-330): a chat marked unread by hand still does.
     static func countsAsUnread(_ conversation: Conversation, blocked: Set<String>) -> Bool {
         guard conversation.isUnread else { return false }

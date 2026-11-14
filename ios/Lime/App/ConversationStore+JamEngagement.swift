@@ -10,6 +10,15 @@ struct DemoEngagement {
 extension ConversationStore {
     /// A post's numbers: the writer's latest tally (mine are counted live), my own heart at once.
     func jamCounts(_ postID: String) -> JamCountsInfo {
+        var counts = rawJamCounts(postID)
+        // A blocked person's comments are not counted (LIME-332): the collapsed rows stay, the number drops them.
+        if !blockedIDs.isEmpty {
+            counts.comments = UInt32(BlockedPeople.visibleCommentCount(total: Int(counts.comments), comments: jamComments(postID), blocked: blockedIDs))
+        }
+        return counts
+    }
+
+    private func rawJamCounts(_ postID: String) -> JamCountsInfo {
         _ = jamEngagement   // a heart or a comment redraws what shows it
         #if DEBUG
         if isDemo {

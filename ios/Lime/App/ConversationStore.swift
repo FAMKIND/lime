@@ -361,10 +361,10 @@ final class ConversationStore {
 
     /// The number on a chat's Back (LIME-331): the unread **messages** in the other accepted chats, as the numbers in the Messages list add up (a chat marked unread by
     /// hand counts 1, as its row does). The tab badge and the app icon still count chats.
-    nonisolated static func otherUnreadMessages(in conversations: [Conversation], excluding id: Conversation.ID) -> Int {
-        conversations.filter { !$0.isRequest && $0.id != id }.reduce(0) { $0 + $1.unreadCount }
+    nonisolated static func otherUnreadMessages(in conversations: [Conversation], excluding id: Conversation.ID, blocked: Set<String> = []) -> Int {
+        conversations.filter { !$0.isRequest && $0.id != id }.reduce(0) { $0 + BlockedPeople.unreadMessages($1, blocked: blocked) }
     }
-    func otherUnreadMessages(excluding id: Conversation.ID) -> Int { Self.otherUnreadMessages(in: conversations, excluding: id) }
+    func otherUnreadMessages(excluding id: Conversation.ID) -> Int { Self.otherUnreadMessages(in: conversations, excluding: id, blocked: blockedIDs) }
 
     /// Where the database lives (tests use a temporary folder; nil is Application Support).
     private let storageLocation: StorageBootstrap.Location?

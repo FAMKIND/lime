@@ -677,6 +677,9 @@ struct ConversationRow: View {
     static let thumbnailSize: CGFloat = 34
 
     private var line: ListPreview { ListPreview.make(conversation, blocked: store.blockedIDs) }
+    /// The row's unread number without a blocked person's messages (LIME-332); the row is unread while it is more than 0.
+    private var unreadShown: Int { BlockedPeople.unreadMessages(conversation, blocked: store.blockedIDs) }
+    private var isUnread: Bool { unreadShown > 0 }
     private var preview: String { line.plain }
     private var time: String { MessageFormat.listTime(conversation.activityAt ?? conversation.lastMessage?.date) }
     /// The person's status, read with the row (their badge is drawn on the avatar, which the row's one element hides): ", Away" (LIME-321).
@@ -711,7 +714,7 @@ struct ConversationRow: View {
                 // At the accessibility sizes the time goes under the name instead of squeezing it.
                 (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2)) : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 6))) {
                     Text(conversation.title)
-                        .font(Theme.font(.body, weight: conversation.isUnread ? .bold : .semibold))
+                        .font(Theme.font(.body, weight: isUnread ? .bold : .semibold))
                         .foregroundStyle(Theme.text)
                         .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
                         .layoutPriority(2)
@@ -752,8 +755,8 @@ struct ConversationRow: View {
                             .accessibilityIdentifier("row-thumb-\(conversation.id)")
                     }
                     // Unread is bold plus this number; a chat marked unread by hand counts as 1.
-                    if conversation.isUnread {
-                        CountBadge(count: conversation.unreadCount)
+                    if isUnread {
+                        CountBadge(count: unreadShown)
                             .accessibilityIdentifier("count-badge-\(conversation.id)")
                     }
                 }
@@ -764,7 +767,7 @@ struct ConversationRow: View {
         .padding(.vertical, 15)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(conversation.title)\(label.map { " (\($0))" } ?? "")\(statusWords)\(conversation.isPinned ? ", pinned" : "")\(notifications.settings.isMuted(conversation.id) ? ", muted" : ""), \(preview), \(time)\(conversation.isUnread ? ", \(conversation.unreadCount) unread" : "")")
+        .accessibilityLabel("\(conversation.title)\(label.map { " (\($0))" } ?? "")\(statusWords)\(conversation.isPinned ? ", pinned" : "")\(notifications.settings.isMuted(conversation.id) ? ", muted" : ""), \(preview), \(time)\(isUnread ? ", \(unreadShown) unread" : "")")
         .accessibilityAddTraits(.isButton)
     }
 
@@ -782,8 +785,8 @@ struct ConversationRow: View {
                     .accessibilityIdentifier("row-line2-\(conversation.id)")
             }
         } else {
-            previewText.font(Theme.font(.subheadline, weight: conversation.isUnread ? .semibold : .regular))
-                .foregroundStyle(conversation.isUnread ? Theme.text : Theme.textSecondary).lineLimit(2)
+            previewText.font(Theme.font(.subheadline, weight: isUnread ? .semibold : .regular))
+                .foregroundStyle(isUnread ? Theme.text : Theme.textSecondary).lineLimit(2)
         }
     }
 
