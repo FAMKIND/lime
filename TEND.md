@@ -11060,3 +11060,11 @@ Settings, profile and groups: the 13 majors (audit rows 341, 342, 344, 609, 612â
 **The change:** `--no-format` added to that one call in `core/build-ios.sh`, with the one-line comment. Nothing else (`check-android.sh` and `mac/` untouched).
 - **Verification:** `build-ios.sh` runs; Debug and Release device builds succeed; `check-warnings.sh` 0 (the unformatted file adds none); unit `Block333Tests`, `Block334Tests`, `ThreadTests`, `BackUnread325Tests` pass (not the whole unit suite). No install (build only).
 - **For plot:** times above (before 3 s, after 1 s, here: no hang). Note for plot-Mac: the brief's "clean `ios/generate.sh`" is the xcodegen step; the bindgen step is `core/build-ios.sh`.
+
+## LIME-337
+
+**Brief:** guard two lines Mac Catalyst can't compile (plot-Mac's ask from LIME-603, sent to tend-iOS by mistake; the edits were already made and the brief says keep them).
+
+**The change:** `Core/Calls/GroupCallManager.swift` `logCameraSupport()`: the `AVCaptureSession` multitasking-camera log (its `session` and `device` lets with it, so Catalyst has no unused variables) inside `#if !targetEnvironment(macCatalyst)`. `Features/Chat/Composer/ComposerDocument.swift` `styled(_:traits:)`: under `#if targetEnvironment(macCatalyst)` it returns `slanted` (bold only, upright); otherwise the `withMatrix` fake italic as before. `git diff`: 6 added lines in those two files, nothing else. No behaviour change on iPhone/iPad.
+- **Verification:** iOS Debug and Release device builds succeed; `check-warnings.sh` 0; unit `ComposerDocumentTests` (17) and `TextPreferencesTests` (9) pass. I could not compile the Catalyst variant here (the project's supported platforms do not include Mac Catalyst on this Mac: `xcodebuild` found no destination), so the Catalyst side is checked by tend-Mac. No install, no gate.
+- **For plot:** plot-Mac can write its LIME-SYNC-M and drop its two patches once this is on main.

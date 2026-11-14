@@ -81,8 +81,12 @@ enum ComposerDocument {
         var slanted = base
         if traits.contains(.traitBold), let bold = base.fontDescriptor.withSymbolicTraits(.traitBold) { slanted = UIFont(descriptor: bold, size: base.pointSize) }
         guard traits.contains(.traitItalic) else { return slanted }
+        #if targetEnvironment(macCatalyst)
+        return slanted   // `withMatrix` is unavailable on Mac Catalyst: bold only, upright (LIME-603)
+        #else
         let slant = CGAffineTransform(a: 1, b: 0, c: CGFloat(tan(14.0 * Double.pi / 180)), d: 1, tx: 0, ty: 0)
         return UIFont(descriptor: slanted.fontDescriptor.withMatrix(slant), size: base.pointSize)
+        #endif
     }
 
     /// Applies what the attributes mean to the characters: fonts, indents and the code background. Run after
