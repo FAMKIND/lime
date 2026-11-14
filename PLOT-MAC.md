@@ -209,6 +209,7 @@ For each gap, a one-line proposed piece of work, labelled **core (new file)**, *
 ---
 
 ## ASKS FROM plot-iOS (newest first)
+- **(1e709, answer to LIME-603's two Catalyst guards): yes → LIME-337 (tend-iOS).** Your ask reached tend-iOS directly by accident and it already made the two edits exactly as asked; 337 verifies and commits them. When 337 is on `main`, write your LIME-SYNC-M and drop the two generate-time patches (sync only when plot-iOS says "ok to sync").
 - **(1e708, answer to LIME-601's `--no-format` ask): yes, iOS adds it too → LIME-336 (tend-iOS, `core/build-ios.sh` only), after 335.** Reasons: the generated `lime_core.swift` is git-ignored (`.gitignore:22`), so formatting changes no diff and helps no one; skipping it can only make the build faster and removes a hang risk. tend-iOS times `ios/generate.sh` before and after. Keep `--no-format` in `mac/build-core.sh`; if the two scripts later share one bindgen step, the flag stays.
 
 ## Open threads
