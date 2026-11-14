@@ -40,6 +40,9 @@ targets:
           - "Core/Generated/**"
           - "Config/BackendConfig.generated.swift"
           - "Resources/Sounds/README.md"
+          # Patched copies are written by generate.sh into Lime/Generated (TEND-MAC.md "Stand-ins").
+          - "Core/Calls/GroupCallManager.swift"
+          - "Features/Chat/Composer/ComposerDocument.swift"
       - path: Lime
     configFiles:
       Debug: Config/Base.xcconfig
@@ -58,6 +61,7 @@ targets:
         ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_ENTITLEMENTS: Config/LimeMac.entitlements
+        INFOPLIST_FILE: Config/Info.plist
         INFOPLIST_KEY_CFBundleDisplayName: lime
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.social-networking
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
@@ -71,6 +75,9 @@ targets:
     platform: iOS
     sources:
       - path: LimeMacUITests
+    configFiles:
+      Debug: Config/Base.xcconfig
+      Release: Config/Base.xcconfig
     dependencies:
       - target: LimeMac
     settings:
