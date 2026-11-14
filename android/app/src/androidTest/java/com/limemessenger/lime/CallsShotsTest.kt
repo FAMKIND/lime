@@ -120,4 +120,56 @@ class CallsShotsTest {
     @Test fun settings() = scr("8-call-settings") { CallSettingsScreen(CallPrefs(context.getSharedPreferences("lime.calls.shots", android.content.Context.MODE_PRIVATE)), onBack = {}) }
     @Test fun settingsDark() = scr("8-call-settings", dark = true) { CallSettingsScreen(CallPrefs(context.getSharedPreferences("lime.calls.shots", android.content.Context.MODE_PRIVATE)), onBack = {}) }
     @Test fun settingsLargest() = scr("9-call-settings-font2", font = 2f) { CallSettingsScreen(CallPrefs(context.getSharedPreferences("lime.calls.shots", android.content.Context.MODE_PRIVATE)), onBack = {}) }
+
+    // ---- LIME-425: the call screen (fake media; the screen is dark in both themes, as iOS's)
+    private class ShotMedia(private val events: com.limemessenger.lime.calls.CallMediaEvents) : com.limemessenger.lime.calls.CallMedia {
+        private val sdp = "v=0\r\na=fingerprint:sha-256 11:22:33:44\r\n"
+        override fun start(servers: List<com.limemessenger.lime.calls.CallIceServer>, relayOnly: Boolean) {}
+        override suspend fun makeOffer() = sdp
+        override suspend fun accept(offer: String) = sdp
+        override suspend fun apply(answer: String) {}
+        override fun add(candidates: List<com.limemessenger.lime.calls.RemoteCandidate>) {}
+        override fun setMuted(on: Boolean) {}
+        override suspend fun inboundAudio(): com.limemessenger.lime.calls.InboundAudio? = null
+        override fun close() {}
+    }
+    private object ShotAudio : com.limemessenger.lime.calls.CallAudioPort {
+        override fun start(speaker: Boolean) {}
+        override fun setSpeaker(on: Boolean) {}
+        override fun stop() {}
+        override fun startRingback() {}
+        override fun stopRingback() {}
+        override fun startRinging() {}
+        override fun stopRinging() {}
+    }
+    private val callJob = kotlinx.coroutines.Job()
+    private fun session() = com.limemessenger.lime.calls.CallSession(
+        context, { store }, { null }, { "t" }, { "me" }, kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main + callJob), nameOf = { "Autumn Reyes" },
+        mediaFactory = { ShotMedia(it) }, audio = ShotAudio, useService = false, opSender = { _, _, _ -> true },
+    )
+    private fun main(block: () -> Unit) = runBlocking(kotlinx.coroutines.Dispatchers.Main) { block() }
+    private fun emojiOf() = uniffi.lime_core.callEmoji("shots", "AB:CD", "01:23")
+
+    @Test fun callIncoming() {
+        val s = session(); main { s.driver.handle("call.offer", "in1", chats.conversations.first { it.title == "Autumn Reyes" }.members.first().id, org.json.JSONObject().put("sdp", "v=0\r\na=fingerprint:sha-256 AA:BB\r\n")) }
+        scr("10-call-incoming", after = { rule.waitUntil(5_000) { count("call-accept") > 0 } }) { com.limemessenger.lime.ui.calls.CallScreen(s, chats) }
+    }
+    @Test fun callCalling() {
+        val s = session(); main { s.call(chats.conversations.first { it.title == "Autumn Reyes" }.members.first().id, "Autumn Reyes") }
+        scr("11-call-calling", after = { rule.waitUntil(5_000) { count("call-status") > 0 } }) { com.limemessenger.lime.ui.calls.CallScreen(s, chats) }
+    }
+    private fun active(): com.limemessenger.lime.calls.CallSession {
+        val s = session(); val peer = chats.conversations.first { it.title == "Autumn Reyes" }.members.first().id
+        main { s.call(peer, "Autumn Reyes") }
+        rule.waitUntil(5_000) { s.driver.state.phase == uniffi.lime_core.CallPhaseKind.OUTGOING }
+        main { s.driver.handle("call.answer", s.driver.state.callId, peer, org.json.JSONObject().put("sdp", "v=0\r\nanswer")); s.driver.dispatch(uniffi.lime_core.CallMachineEvent.MediaUp); s.showEmojiForTest(emojiOf()) }
+        return s
+    }
+    @Test fun callActive() { val s = active(); scr("12-call-active", after = { rule.waitUntil(5_000) { count("call-emoji") > 0 } }) { com.limemessenger.lime.ui.calls.CallScreen(s, chats) } }
+    @Test fun callActiveMuted() { val s = active(); main { s.toggleMute(); s.toggleSpeaker() }; scr("13-call-active-muted-speaker", after = { rule.waitUntil(5_000) { count("call-emoji") > 0 } }) { com.limemessenger.lime.ui.calls.CallScreen(s, chats) } }
+    @Test fun callActiveLargest() { val s = active(); scr("14-call-active-font2", font = 2f, after = { rule.waitUntil(5_000) { count("call-emoji") > 0 } }) { com.limemessenger.lime.ui.calls.CallScreen(s, chats) } }
+    @Test fun callIncomingLargest() {
+        val s = session(); main { s.driver.handle("call.offer", "in2", chats.conversations.first { it.title == "Autumn Reyes" }.members.first().id, org.json.JSONObject().put("sdp", "v=0\r\na=fingerprint:sha-256 AA:BB\r\n")) }
+        scr("15-call-incoming-font2", font = 2f, after = { rule.waitUntil(5_000) { count("call-accept") > 0 } }) { com.limemessenger.lime.ui.calls.CallScreen(s, chats) }
+    }
 }

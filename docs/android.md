@@ -46,6 +46,27 @@ cd android
 - **Proving R8 did not break the app.** The release APK has no test-account sign-in, so the instrumented suite runs against **`releaseLike`**, a release build signed with the debug key: `GRADLE_TASK=connectedReleaseLikeAndroidTest tools/connected.sh -Plime.testBuildType=releaseLike -Pandroid.testInstrumentationRunnerArguments.notClass=com.limemessenger.lime.LinkPreviewTlsTest` (the TLS test uses a debug-only test CA the release types do not trust). `proguard-test-keep.pro` keeps the app's own classes and Kotlin/Compose whole in that type alone, because the test APK links to them by name; JNA, UniFFI's glue, CameraX and Media3 are shrunk exactly as in release.
 - **No test sign-in in release:** `tools/check-release-clean.sh` checks the APK and the AAB for the markers.
 
+## Dependencies (LIME-425)
+
+Every dependency, with its licence, where it comes from, and what it costs in the release APK. **Rule:** AndroidX and Kotlin only, plus what a brief names; pin the exact version; Maven Central unless noted; the release build still passes `tools/check-release-clean.sh`, 16 KB page alignment and R8 (`releaseLike`).
+
+| Dependency | Version | Licence | Repository | Used for | Release APK size |
+|---|---|---|---|---|---|
+| Jetpack Compose BOM, Material 3, Activity | 2026.09.00 / 1.13.0 | Apache-2.0 | Google | the UI | (the base) |
+| AndroidX Biometric | 1.1.0 | Apache-2.0 | Google | app lock | small |
+| CameraX (core, camera2, lifecycle, video, view) | 1.6.2 | Apache-2.0 | Google | photos, video messages | small |
+| AndroidX Media3 (exoplayer, ui) | 1.11.1 | Apache-2.0 | Google | video playback | small |
+| kotlinx-coroutines-android | 1.11.0 | Apache-2.0 | Maven Central | async | small |
+| JNA (aar) | 5.19.1 | Apache-2.0 / LGPL-2.1 (dual) | Maven Central | UniFFI's bridge to LimeCore | 0.2 MB |
+| LimeCore (our own, Rust) | this repo | MIT | built here (`buildCore`) | the core | 10.6 MB arm64, 11.9 MB x86_64 |
+| **`io.github.webrtc-sdk:android-prefixed`** | **150.7871.04** | **BSD-3-Clause** | Maven Central | **1:1 calls (LIME-425); group calls reuse it (LIME-428)** | **+28.6 MB APK (29.64 MB to 58.24 MB; the .so is 12.3 MB arm64 and 16.1 MB x86_64 uncompressed and 16 KB aligned, `zipalign -c -P 16` OK); the AAB (Play delivers one ABI) is 35.2 MB** |
+
+**Why this WebRTC build (LIME-425 survey, 2026-11-13; all of it read from Maven Central and the AAR, none from memory):** `io.github.webrtc-sdk:android-prefixed` is Google's `libwebrtc` as the webrtc-sdk project builds it for LiveKit: BSD-3-Clause, last release 2026-10-23 (inside 12 months), ABIs arm64-v8a, armeabi-v7a, x86 and x86_64, minSdk 21 (lime's is 26), **the arm64-v8a and x86_64 libraries are 16 KB page-aligned (`LOAD` alignment `0x4000`)**; the 32-bit ones are 4 KB aligned but lime ships arm64 and x86_64 only (`abiFilters`). **It is the very artifact LiveKit's Android SDK 2.30.0 depends on** (`io.livekit:livekit-android` 2.30.0's pom: `android-prefixed:150.7871.04`), so 1:1 now and groups later share ONE copy of the native code. Its classes live under `livekit.org.webrtc` and `livekit.org.jni_zero` (the prefix is what lets two WebRTC copies coexist). The unprefixed sibling `io.github.webrtc-sdk:android` (same version, 49 MB AAR) was not chosen: it would be a second copy next to LiveKit. Google's own `org.webrtc:google-webrtc` was not found on Maven Central today (metadata empty) and is unmaintained since 2019 (**unverified**). **R8:** the native library loads `livekit.org.jni_zero.JniZero` at `JNI_OnLoad`; with R8 on and no keep rule the process aborted (`ClassNotFoundException` in JNI), found by `WebRtcLoopbackTest` on `releaseLike`; `proguard-rules.pro` now keeps `livekit.org.webrtc.**` and `livekit.org.jni_zero.**`.
+
+### The foreground service of a call: the Play declaration (draft, for the Play Console form)
+
+*Foreground service type: **microphone** (`android:foregroundServiceType="microphone"`, permission `FOREGROUND_SERVICE_MICROPHONE`).* "lime is a private messenger for teachers. While a voice call is going, lime keeps a foreground service running so the call's audio continues when the screen turns off or the person switches to another app. The service starts only when the person places or answers a call and stops the moment the call ends. An ongoing notification names the person on the call and has a Hang up button, so the person always knows the microphone is in use. lime never records or stores call audio; it is end-to-end encrypted between the two phones." (The `phoneCall` type needs a Telecom registration; whether to adopt Telecom is the system-surface brief, LIME-427. The full-screen-intent declaration belongs to that brief.)
+
 ## Checking the core builds for Android
 
 ```sh

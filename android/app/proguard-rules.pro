@@ -11,3 +11,8 @@
 -keepclassmembers class * extends com.sun.jna.** { public *; }
 
 # Media3 and CameraX ship their own consumer rules (they are AndroidX); nothing more is needed here.
+
+# WebRTC (LIME-425): the native library (liblkjingle_peerconnection_so) calls these Java classes by name (and loads jni_zero's at JNI_OnLoad: R8 removed it and the process aborted).
+-keep class livekit.org.webrtc.** { *; }
+-keep class livekit.org.jni_zero.** { *; }
+-dontwarn livekit.org.**

@@ -102,6 +102,8 @@ dependencies {
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.ui)
     implementation(libs.kotlinx.coroutines.android)
+    // 1:1 calls (LIME-425): Google's libwebrtc as LiveKit's SDK ships it (BSD-3), so group calls (LIME-428) add no second copy of the native code.
+    implementation(libs.webrtc)
     implementation("net.java.dev.jna:jna:${libs.versions.jna.get()}@aar")
 
     testImplementation(libs.junit)

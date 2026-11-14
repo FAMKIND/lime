@@ -725,4 +725,24 @@
     <string name="calls_settings_volume">Call volume</string>
     <string name="calls_settings_volume_note">Changes how loud others sound in lime calls, on top of your phone\'s volume.</string>
     <string name="calls_settings_ring_note">lime has no push service yet, so a call rings only while lime is open.</string>
+
+    <!-- LIME-425: 1:1 audio calls -->
+    <string name="calls_channel">Calls</string>
+    <string name="calls_ongoing">Call with %1$s</string>
+    <string name="calls_ongoing_note">lime is using the microphone for this call.</string>
+    <string name="calls_hang_up">Hang up</string>
+    <string name="calls_unreachable">%1$s\u2019s phone may be off or lime closed</string>
+    <string name="calls_emoji_spoken">Emoji: %1$s</string>
+    <string name="calls_emoji_note">If you both see these same 4 emoji, in this order, your call is end-to-end encrypted and no one is in between. Read them to each other.</string>
+    <string name="calls_decline">Decline</string>
+    <string name="calls_accept">Accept</string>
+    <string name="calls_mute">Mute</string>
+    <string name="calls_speaker">Speaker</string>
+    <string name="calls_end">End call</string>
+    <string name="calls_on">On</string>
+    <string name="calls_off">Off</string>
+    <string name="calls_video_later_title">Video calls are not ready yet</string>
+    <string name="calls_video_later_body">Video calls arrive in the next update. Voice calls work now.</string>
+    <string name="calls_mic_title">lime needs the microphone</string>
+    <string name="calls_mic_body">To call, lime needs to use the microphone. You can allow it in Settings.</string>
 </resources>

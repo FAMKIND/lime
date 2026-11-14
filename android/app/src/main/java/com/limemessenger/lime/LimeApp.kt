@@ -23,6 +23,10 @@ class LimeApp : Application() {
     val appLock: com.limemessenger.lime.security.AppLock by lazy { com.limemessenger.lime.security.AppLock(getSharedPreferences("lime.lock", MODE_PRIVATE)) }
     val notificationPrefs: com.limemessenger.lime.chats.NotificationPrefs by lazy { com.limemessenger.lime.chats.NotificationPrefs(getSharedPreferences("lime.notify", MODE_PRIVATE)) }
     val themePrefs: com.limemessenger.lime.chats.ThemePrefs by lazy { com.limemessenger.lime.chats.ThemePrefs(getSharedPreferences("lime.theme", MODE_PRIVATE)) }
+    /** Hangs up the call that is going (the call notification's Hang up button); set by the signed-in screen. */
+    var callHangUp: (() -> Unit)? = null
+    /** The signed-in call session (a seam for the two-emulator media proof; nothing else reads it). */
+    var callSession: com.limemessenger.lime.calls.CallSession? = null
     val callPrefs: com.limemessenger.lime.calls.CallPrefs by lazy { com.limemessenger.lime.calls.CallPrefs(getSharedPreferences("lime.calls", MODE_PRIVATE)) }
     val mediaPrefs: com.limemessenger.lime.chats.MediaPrefs by lazy { com.limemessenger.lime.chats.MediaPrefs(getSharedPreferences("lime.media", MODE_PRIVATE)) }
 

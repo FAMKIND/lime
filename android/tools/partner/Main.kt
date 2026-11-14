@@ -385,6 +385,61 @@ fun main(args: Array<String>) {
                 Thread.sleep(2000)
             }
         }
+        "call-script" -> {
+            // LIME-425: Ben plays the other phone of the signalling test (made-up SDPs: no media): answers Ada's first call and waits for her hang-up (A), calls her and
+            // waits for her answer, hanging up after 2 s (B), says busy to her second call (C), declines her third (D), ignores her fourth until she gives up (E), and
+            // calls her once more for her to decline (F). Every step prints one `script: ...` line the staging class reads.
+            val fp = "AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89"
+            val sdp = "v=0\\r\\na=fingerprint:sha-256 $fp\\r\\n"
+            fun signal(op: String, id: String, extra: String = "") =
+                store.sendCallSignal(http, freshToken(http, tokens), adaId, op, "{\"call_id\":\"$id\"$extra}")
+            fun offerPayload() = ",\"video\":false,\"sdp\":\"$sdp\",\"fingerprint\":\"$fp\""
+            val queue = mutableListOf<uniffi.lime_core.CallEvent>()
+            fun waitFor(op: String, seconds: Int): uniffi.lime_core.CallEvent? {
+                val end = System.currentTimeMillis() + seconds * 1000L
+                while (System.currentTimeMillis() < end) {
+                    queue.firstOrNull { it.op == op }?.let { queue.remove(it); return it }
+                    runCatching { store.sync(http, freshToken(http, tokens)) }
+                    store.listConversations().firstOrNull { it.id == dm && it.requestState == "pending" }?.let { store.acceptRequest(dm) }
+                    queue += store.takeCallEvents()
+                    Thread.sleep(400)
+                }
+                return null
+            }
+            // The chat first: Ada's "Hello Ben" accepts the conversation (calls go only between accepted contacts).
+            val answered = mutableSetOf<String>()
+            runCatching { store.listMessages(dm) }.getOrNull()?.forEach { answered += it.id }
+            println("script: listening as $personaName (Ctrl-C to stop)")
+            while (true) {
+                runCatching { store.sync(http, freshToken(http, tokens)) }
+                store.listConversations().firstOrNull { it.id == dm && it.requestState == "pending" }?.let { store.acceptRequest(dm) }
+                val fresh = store.listMessages(dm).filter { it.senderId != null && it.id !in answered }
+                if (fresh.isNotEmpty()) { fresh.forEach { answered += it.id }; store.queueText(dm, "$personaName here: ready for calls"); store.deliverQueued(http, freshToken(http, tokens)); break }
+                Thread.sleep(1000)
+            }
+            println("script: chat accepted")
+            // A
+            waitFor("call.offer", 180)?.let { o ->
+                signal("call.ringing", o.callId); Thread.sleep(1000); signal("call.answer", o.callId, offerPayload()); println("script: A answered")
+                if (waitFor("call.end", 60) != null) println("script: A ended by Ada")
+            } ?: println("script: A no offer")
+            // B
+            val b = "partner-b-" + (System.currentTimeMillis() / 1000)
+            signal("call.offer", b, offerPayload()); println("script: B offered")
+            if (waitFor("call.ringing", 60) != null) println("script: B ringing at Ada")
+            if (waitFor("call.answer", 60) != null) { println("script: B answered by Ada"); Thread.sleep(2000); signal("call.end", b); println("script: B ended") }
+            // C
+            waitFor("call.offer", 120)?.let { o -> signal("call.busy", o.callId); println("script: C busy") }
+            // D
+            waitFor("call.offer", 120)?.let { o -> signal("call.decline", o.callId); println("script: D declined") }
+            // E
+            waitFor("call.offer", 120)?.let { o -> println("script: E ignoring"); if (waitFor("call.end", 60) != null) println("script: E ended by Ada") }
+            // F
+            val f = "partner-f-" + (System.currentTimeMillis() / 1000)
+            signal("call.offer", f, offerPayload()); println("script: F offered")
+            if (waitFor("call.decline", 60) != null) println("script: F declined by Ada")
+            println("script: done")
+        }
         "echo", "actions-echo", "call-miss" -> {
             // `actions-echo` (LIME-304) also reacts 👍 to each new message and prints "edited: …" / "deleted: …" when Ada changes one.
             val actions = command == "actions-echo"

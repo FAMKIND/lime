@@ -117,19 +117,41 @@ private fun SignedIn(session: AccountSession) {
     LaunchedEffect(chats) { lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { chats.runWhileForeground() } }
     val callsModel = remember(session) { com.limemessenger.lime.calls.CallsModel { session.store } }
     val callScope = rememberCoroutineScope()
-    val callDriver = remember(session) {
-        com.limemessenger.lime.calls.CallDriver(
-            store = { session.store }, transport = { session.transport }, token = { session.accessToken() }, myId = { session.userId }, scope = callScope,
+    var callNotice by remember { mutableStateOf(false) }
+    val callView = androidx.compose.ui.platform.LocalView.current
+    val callSession = remember(session) {
+        com.limemessenger.lime.calls.CallSession(
+            context = appContext, store = { session.store }, transport = { session.transport }, token = { session.accessToken() }, myId = { session.userId }, scope = callScope,
             // The chat may have arrived in this very sync (the list model has not read it yet): ask the core's list when the model does not know the person.
             nameOf = { id ->
                 val dm = { c: uniffi.lime_core.ConversationSummary -> !c.isGroup && c.members.firstOrNull()?.id == id }
                 chats.conversations.firstOrNull(dm)?.title ?: session.store?.let { core -> runCatching { core.listConversations() }.getOrNull()?.firstOrNull(dm)?.title } ?: id
             },
             onLogged = { callScope.launch { callsModel.reload(); chats.reload() } },
+            announce = { words -> callView.announceForAccessibility(words) },
         )
     }
-    callHooks.afterSync = { callDriver.handleArrivals(); callsModel.reload() }
-    var callNotice by remember { mutableStateOf(false) }
+    androidx.compose.runtime.DisposableEffect(callSession) {
+        (appContext as? com.limemessenger.lime.LimeApp)?.callHangUp = { callSession.hangUp() }
+        (appContext as? com.limemessenger.lime.LimeApp)?.callSession = callSession
+        onDispose { (appContext as? com.limemessenger.lime.LimeApp)?.callHangUp = null; (appContext as? com.limemessenger.lime.LimeApp)?.callSession = null }
+    }
+    callHooks.afterSync = { callSession.handleArrivals(); callsModel.reload() }
+    // The microphone is asked for when a call is placed or answered, never before (the same rule as a voice message).
+    var afterMic by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var micDenied by remember { mutableStateOf(false) }
+    val micLauncher = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
+        val next = afterMic; afterMic = null
+        if (granted) next?.invoke() else { micDenied = true; callSession.decline() }
+    }
+    val withMic: (() -> Unit) -> Unit = { action ->
+        if (androidx.core.content.ContextCompat.checkSelfPermission(appContext, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) action()
+        else { afterMic = action; micLauncher.launch(android.Manifest.permission.RECORD_AUDIO) }
+    }
+    // A voice call starts now; a video call arrives with LIME-426 and says so.
+    val placeCall: (String, String, Boolean) -> Unit = { id, name, video ->
+        if (video) callNotice = true else withMic { callSession.call(id, name) }
+    }
     var callSearchOpen by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(callsModel, chats.revision) { callsModel.reload() }
     var openId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -185,11 +207,15 @@ private fun SignedIn(session: AccountSession) {
     BackHandler(enabled = threadRoot == null && !groupInfoOpen && openId != null) { openId = null; focusMessage = null }
     BackHandler(enabled = openId == null && requestsOpen) { requestsOpen = false }
     BackHandler(enabled = openId == null && newMessageOpen) { newMessageOpen = false }
+    // A call fills the screen while it is going (the mini-bar to leave it is LIME-427): system back does not leave it.
+    BackHandler(enabled = callSession.inCall) { }
     val root = threadRoot
     val postOpen = jamPost
     val person = personProfile
     val writing = compose
-    if (writing != null) {
+    if (callSession.inCall) {
+        com.limemessenger.lime.ui.calls.CallScreen(callSession, chats, onAnswer = { withMic { callSession.answer() } })
+    } else if (writing != null) {
         com.limemessenger.lime.ui.jam.JamComposeScreen(jam, jamDrafts, writing, onDone = { compose = null })
     } else if (profileOpen) {
         SettingsScreen(session, onClose = { profileOpen = false }, chats = chats)
@@ -206,9 +232,9 @@ private fun SignedIn(session: AccountSession) {
     } else if (chatModel != null && root != null) {
         ThreadScreen(root, chatModel, onBack = { threadRoot = null })
     } else if (chatModel != null) {
-        ChatScreen(chatModel, chats, onBack = { openId = null; focusMessage = null }, focusMessageId = focusMessage, onOpenThread = { threadRoot = it }, onOpenProfile = { id, name -> personProfile = id to name }, onOpenGroup = { groupInfoOpen = true }, onCallBack = { _, _, _ -> callNotice = true })
+        ChatScreen(chatModel, chats, onBack = { openId = null; focusMessage = null }, focusMessageId = focusMessage, onOpenThread = { threadRoot = it }, onOpenProfile = { id, name -> personProfile = id to name }, onOpenGroup = { groupInfoOpen = true }, onCallBack = placeCall)
     } else if (callSearchOpen) {
-        com.limemessenger.lime.ui.calls.CallSearchScreen(callsModel, chats, onBack = { callSearchOpen = false }, onPlaceCall = { _, _, _ -> callNotice = true })
+        com.limemessenger.lime.ui.calls.CallSearchScreen(callsModel, chats, onBack = { callSearchOpen = false }, onPlaceCall = placeCall)
     } else if (searchOpen) {
         SearchScreen(chats, onBack = { searchOpen = false }, onOpenChat = { searchOpen = false; openId = it }, onOpenMessage = { chat, message -> searchOpen = false; focusMessage = message; openId = chat })
     } else if (groupStep != null) {
@@ -224,7 +250,7 @@ private fun SignedIn(session: AccountSession) {
             calls = {
                 com.limemessenger.lime.ui.calls.CallsScreen(
                     callsModel, chats, myName = session.profile?.displayName.orEmpty(), myTone = com.limemessenger.lime.chats.AvatarTone.tone(session.userId.orEmpty()),
-                    onProfile = { profileOpen = true }, onSearch = { callSearchOpen = true }, onPlaceCall = { _, _, _ -> callNotice = true },
+                    onProfile = { profileOpen = true }, onSearch = { callSearchOpen = true }, onPlaceCall = placeCall,
                 )
             }, jam = { JamFeedScreen(jam, onYours = { yourJam = true }, onOpen = { jamPost = it }) }, link = {
             ChatListScreen(
@@ -238,11 +264,16 @@ private fun SignedIn(session: AccountSession) {
         })
     }
     ArrivalBannerView(arrivals) { id -> openId = id; arrivals.dismiss() }
-    // Placing a call arrives with the media (LIME-425): until then a tap on Call says so, and sends nothing.
+    if (micDenied) androidx.compose.material3.AlertDialog(
+        onDismissRequest = { micDenied = false }, modifier = Modifier.testTag("call-mic-denied"),
+        title = { Text(stringResource(R.string.calls_mic_title)) }, text = { Text(stringResource(R.string.calls_mic_body)) },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = { micDenied = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.calls_not_ready_ok)) } },
+    )
+    // Video calls arrive with LIME-426: a tap on a video call says so, and sends nothing.
     if (callNotice) androidx.compose.material3.AlertDialog(
         onDismissRequest = { callNotice = false }, modifier = Modifier.testTag("call-not-ready"),
-        title = { Text(stringResource(R.string.calls_not_ready_title)) },
-        text = { Text(stringResource(R.string.calls_not_ready_body)) },
+        title = { Text(stringResource(R.string.calls_video_later_title)) },
+        text = { Text(stringResource(R.string.calls_video_later_body)) },
         confirmButton = { androidx.compose.material3.TextButton(onClick = { callNotice = false }, modifier = Modifier.heightIn(min = 48.dp).testTag("call-not-ready-ok")) { Text(stringResource(R.string.calls_not_ready_ok)) } },
     )
 }

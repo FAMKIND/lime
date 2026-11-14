@@ -20,7 +20,7 @@ for avd in ${AVDS:-lime-api36 lime-api26}; do
     ./gradlew -q installDebug installDebugAndroidTest || status=1
     # The server allows 10 device registrations per hour per account (staging's LIME_RATE_REGISTER_PER_HOUR), and every class registers Ada once, so
     # only the chat and groups tests run by default (LIME-303); STAGING_CLASSES="StagingSignInTest StagingChatTest" runs both.
-    for cls in ${STAGING_CLASSES:-StagingChatTest StagingGroupsTest StagingActionsTest StagingListTest StagingVoiceFilesTest StagingJamTest StagingJamWriteTest StagingModerationTest StagingGifTest StagingComposerTest StagingMentionTest StagingLinkPreviewTest StagingVideoTest StagingBlockGroupTest StagingJamPictureTest StagingBandTest StagingBandViewTest StagingCallsTest}; do
+    for cls in ${STAGING_CLASSES:-StagingChatTest StagingGroupsTest StagingActionsTest StagingListTest StagingVoiceFilesTest StagingJamTest StagingJamWriteTest StagingModerationTest StagingGifTest StagingComposerTest StagingMentionTest StagingLinkPreviewTest StagingVideoTest StagingBlockGroupTest StagingJamPictureTest StagingBandTest StagingBandViewTest StagingCallsTest StagingCallSignallingTest}; do
       tools/staging-test-accounts.sh --push >/dev/null || status=1
       tools/partner/run reset >/dev/null || status=1
       case "$cls" in
@@ -34,6 +34,11 @@ for avd in ${AVDS:-lime-api36 lime-api26}; do
         StagingActionsTest*)
           # Message actions (LIME-304): Ben reacts to every message and prints what Ada edits and deletes.
           tools/partner/run actions-echo >/tmp/lime-partner.log 2>&1 &
+          partner=$!
+          partner2= ;;
+        StagingCallSignallingTest*)
+          # Calls (LIME-425): Ben plays the other phone of every ending (answer, he calls, busy, decline, ignore, he calls): started BEFORE Ada acts.
+          tools/partner/run call-script >/tmp/lime-partner.log 2>&1 &
           partner=$!
           partner2= ;;
         StagingCallsTest*)
@@ -83,7 +88,7 @@ for avd in ${AVDS:-lime-api36 lime-api26}; do
           sleep 3
         done
         if [ -n "$link" ]; then
-          kill "$partner" $partner2 2>/dev/null; pkill -f "MainKt echo" 2>/dev/null; pkill -f "MainKt call-miss" 2>/dev/null; sleep 3
+          kill "$partner" $partner2 2>/dev/null; pkill -f "MainKt echo" 2>/dev/null; pkill -f "MainKt call-miss" 2>/dev/null; pkill -f "MainKt call-script" 2>/dev/null; sleep 3
           tools/partner/run band-join "$link" >/tmp/lime-partner.log 2>&1 &
           partner=$!
           if [ "$cls" = "StagingBandViewTest" ]; then
@@ -125,6 +130,13 @@ for avd in ${AVDS:-lime-api36 lime-api26}; do
         mkdir -p "$HOME/Desktop/lime-android-407"; adb exec-out run-as com.limemessenger.lime cat files/shots/15-link-bubble-real-chat.png > "$HOME/Desktop/lime-android-407/15-link-bubble-real-chat.png" 2>/dev/null
         # Ben must have received the card's fields (and the picture, decrypted): url, title, site, bytes.
         grep -Eq '^preview: https://example.org/lesson\|Fractions made visible\|example.org\|[1-9][0-9]* bytes' /tmp/lime-partner.log || { status=1; echo "$cls: Ben never got the card fields"; } ;; esac
+      case "$cls" in StagingCallSignallingTest*)
+        # Every scripted step happened on Ben's side: he answered Ada's call, called her, said busy, declined, ignored one until she gave up, and called once more.
+        # Ada's last decline is still on its way to Ben when her test ends: give the partner up to 30 s to read it.
+        i=0; while [ $i -lt 30 ] && ! grep -q "^script: F declined by Ada" /tmp/lime-partner.log; do sleep 1; i=$((i+1)); done
+        for step in "A answered" "A ended by Ada" "B offered" "B answered by Ada" "B ended" "C busy" "D declined" "E ended by Ada" "F offered" "F declined by Ada"; do
+          grep -q "^script: $step" /tmp/lime-partner.log || { status=1; echo "$cls: Ben never reached: $step"; }
+        done ;; esac
       case "$cls" in StagingCallsTest*)
         # Ben called Ada (a call.offer) and hung up (call.end): both ops went out.
         grep -Eq '^call: offered partner-call-' /tmp/lime-partner.log && grep -Eq '^call: ended partner-call-' /tmp/lime-partner.log || { status=1; echo "$cls: Ben never offered and ended the call"; } ;; esac
