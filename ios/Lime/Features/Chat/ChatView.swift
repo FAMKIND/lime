@@ -973,7 +973,7 @@ struct MessageBubble: View {
         .contentShape(Rectangle())
         .onTapGesture { if selection != nil { onToggleSelect?() } }
         .accessibilityElement(children: selection != nil || (oneStop && isPlain) ? .ignore : .contain)
-        .accessibilityLabel(selection != nil ? MessageSpeech.label(for: message, senderName: sender?.name) : (oneStop && isPlain ? MessageSpeech.label(for: message, senderName: sender?.name) : ""))
+        .accessibilityLabel(selection != nil ? MessageSpeech.label(for: message, senderName: sender?.name, blocked: store.blockedIDs) : (oneStop && isPlain ? MessageSpeech.label(for: message, senderName: sender?.name, blocked: store.blockedIDs) : ""))
         .modifier(MessageExtraActions(actions: oneStop && isPlain ? extraActions : []))
         .messageAccessibilityActions(oneStop && isPlain ? ax : nil)
         .accessibilityAddTraits(selection == true ? [.isButton, .isSelected] : (selection == false ? .isButton : []))
@@ -981,7 +981,7 @@ struct MessageBubble: View {
     }
 
     /// The header element of a message that keeps its own controls: who, when, state, reactions, replies (not the body, which its own parts read).
-    private var headerLabel: String { MessageSpeech.label(for: message, senderName: sender?.name, includeBody: false) }
+    private var headerLabel: String { MessageSpeech.label(for: message, senderName: sender?.name, includeBody: false, blocked: store.blockedIDs) }
 
     /// What the footer, the reaction pill, the replies row, the avatar and the links do by touch, as actions on the message's one stop.
     private var extraActions: [MessageExtraAction] {

@@ -291,7 +291,7 @@ struct ThreadView: View {
     }
 
     private var replyCountText: String {
-        let n = messages.dropFirst().filter { !$0.deleted }.count   // a deleted reply keeps its line below, but is not counted
+        let n = messages.dropFirst().filter { !$0.deleted && !store.isBlocked($0.senderID) }.count   // a deleted reply keeps its line below, but is not counted; nor is a blocked person's (LIME-333)
         return n == 0 ? "No replies yet" : "\(n) \(n == 1 ? "reply" : "replies")"
     }
 

@@ -6123,6 +6123,20 @@ fn a_heart_or_comment_from_someone_who_is_not_a_subscriber_is_ignored() {
     assert!(alice.store.list_jam_comments(post).unwrap().is_empty());
 }
 
+/// LIME-333: a blocked person's comment is published and stored as before, but does not raise the writer's "New comments" dot; someone else's does.
+#[test]
+fn a_blocked_persons_comment_does_not_raise_the_new_comments_dot() {
+    let (_server, transport, alice, bob, carol, _jam, post) = jam_with_two_subscribers();
+    alice.store.block_person(bob.user.clone()).unwrap();
+    bob.store.comment_on_jam_post(post.clone(), "from the blocked one".into(), None).unwrap();
+    rounds(&alice, &[&bob, &carol], &transport);
+    assert_eq!(alice.store.list_jam_comments(post.clone()).unwrap().len(), 1, "stored as before");
+    assert!(!counts_of(&alice, &post).unseen, "no dot for a blocked person's comment");
+    carol.store.comment_on_jam_post(post.clone(), "from someone else".into(), None).unwrap();
+    rounds(&alice, &[&bob, &carol], &transport);
+    assert!(counts_of(&alice, &post).unseen, "someone else's comment still raises it");
+}
+
 #[test]
 fn a_comment_is_published_by_the_writer_with_the_authors_own_signature_and_a_forged_one_fails() {
     let (_server, transport, alice, bob, carol, jam, post) = jam_with_two_subscribers();

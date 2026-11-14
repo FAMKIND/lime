@@ -35,9 +35,26 @@ extension BlockedPeople {
     static func unreadMessages(_ conversation: Conversation, blocked: Set<String>) -> Int {
         let base = conversation.unreadCount
         guard conversation.unread > 0, conversation.isGroup, !blocked.isEmpty else { return base }
-        let tail = conversation.messages.filter { !$0.isOwn && !$0.isSystem }.suffix(conversation.unread)
-        let fromOthers = tail.filter { !isBlocked($0.senderID, in: blocked) }.count + max(0, conversation.unread - tail.count)
+        let fromOthers = timelineUnread(conversation, blocked: blocked) + visibleUnreadReplies(conversation, blocked: blocked)
         return conversation.markedUnread ? max(fromOthers, 1) : fromOthers
+    }
+
+    /// The unread replies in a chat's threads (core's count; they are not in the timeline) and how many of them a blocked person wrote (LIME-333).
+    private static func replyUnread(_ conversation: Conversation) -> (total: Int, senders: [String]) {
+        let threads = conversation.messages.compactMap(\.thread)
+        return (threads.reduce(0) { $0 + $1.unread }, threads.flatMap(\.unreadSenders))
+    }
+
+    private static func visibleUnreadReplies(_ conversation: Conversation, blocked: Set<String>) -> Int {
+        let replies = replyUnread(conversation)
+        return max(0, replies.total - replies.senders.filter { isBlocked($0, in: blocked) }.count)
+    }
+
+    /// The unread messages in the timeline that are not a blocked person's: the newest incoming ones, as many as the chat's unread count less its unread replies.
+    private static func timelineUnread(_ conversation: Conversation, blocked: Set<String>) -> Int {
+        let count = max(0, conversation.unread - replyUnread(conversation).total)
+        let tail = conversation.messages.filter { !$0.isOwn && !$0.isSystem }.suffix(count)
+        return tail.filter { !isBlocked($0.senderID, in: blocked) }.count + max(0, count - tail.count)
     }
 
     /// "N comments" without the blocked people's (LIME-332): `total` is what core counted (published comments); the collapsed rows stay, only the count drops them.
@@ -47,13 +64,26 @@ extension BlockedPeople {
         return max(0, total - theirs)
     }
 
+    /// A post's numbers without the blocked people's (LIME-332, 333): comments, hearts and their faces; the "New comments" dot stays only if a published comment from
+    /// someone else (not me, not blocked) exists. Core stops raising the dot for a blocked person's new comments; this also covers one that was already there.
+    static func visibleCounts(_ counts: JamCountsInfo, comments: [JamCommentInfo], blocked: Set<String>, me: String) -> JamCountsInfo {
+        guard !blocked.isEmpty else { return counts }
+        var counts = counts
+        counts.comments = UInt32(visibleCommentCount(total: Int(counts.comments), comments: comments, blocked: blocked))
+        let theirHearts = counts.likers.filter { isBlocked($0, in: blocked) }.count
+        counts.likers = counts.likers.filter { !isBlocked($0, in: blocked) }
+        counts.likes = UInt32(max(0, Int(counts.likes) - theirHearts))
+        if counts.unseen {
+            counts.unseen = comments.contains { $0.state == "published" && $0.author != me && !isBlocked($0.author, in: blocked) }
+        }
+        return counts
+    }
+
     /// Does this chat count as unread for a badge? Not when all its unread messages are from blocked people (LIME-330): a chat marked unread by hand still does.
     static func countsAsUnread(_ conversation: Conversation, blocked: Set<String>) -> Bool {
         guard conversation.isUnread else { return false }
         if conversation.markedUnread || blocked.isEmpty || !conversation.isGroup || conversation.unread <= 0 { return true }
-        let tail = conversation.messages.filter { !$0.isOwn && !$0.isSystem }.suffix(conversation.unread)
-        guard !tail.isEmpty else { return true }
-        return !tail.allSatisfy { isBlocked($0.senderID, in: blocked) }
+        return timelineUnread(conversation, blocked: blocked) + visibleUnreadReplies(conversation, blocked: blocked) > 0
     }
 }
 

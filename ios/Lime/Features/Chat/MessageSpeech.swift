@@ -4,7 +4,7 @@ import Foundation
 /// <reactions>, <replies>". The pure part, so the words are tested without a screen.
 enum MessageSpeech {
     /// `senderName` is the other person's name (nil for my own messages, who read as "You").
-    static func label(for message: Message, senderName: String?, includeBody: Bool = true) -> String {
+    static func label(for message: Message, senderName: String?, includeBody: Bool = true, blocked: Set<String> = []) -> String {
         var parts: [String] = [message.isOwn ? "You" : (senderName ?? "Someone")]
         if includeBody { parts.append(body(of: message)) }
         if !message.deleted {
@@ -16,7 +16,7 @@ enum MessageSpeech {
                 parts.append("\(total) \(total == 1 ? "reaction" : "reactions"): " + message.reactions.map { "\($0.emoji) \($0.count)\($0.mine ? " (you)" : "")" }.joined(separator: ", "))
             }
             if let thread = message.thread {
-                parts.append("\(thread.replyCount) \(thread.replyCount == 1 ? "reply" : "replies")" + (thread.unread > 0 ? ", \(thread.unread) unread" : ""))
+                parts.append("\(thread.replyCount) \(thread.replyCount == 1 ? "reply" : "replies")" + (thread.visibleUnread(blocked: blocked) > 0 ? ", \(thread.visibleUnread(blocked: blocked)) unread" : ""))
             }
         }
         return parts.joined(separator: ", ")

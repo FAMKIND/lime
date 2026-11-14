@@ -1647,7 +1647,12 @@ impl LimeStore {
                             params![comment_id, post_id, jam_id, parent, sender, words, now, signed],
                         )
                         .map_err(db_err)?;
-                        conn.execute("UPDATE jam_posts SET unseen = 1 WHERE post_id = ?1", params![post_id]).map_err(db_err)?;
+                        // A blocked person's comment does not raise the "New comments" dot (LIME-333).
+                        conn.execute(
+                            "UPDATE jam_posts SET unseen = 1 WHERE post_id = ?1 AND NOT EXISTS (SELECT 1 FROM conversations b WHERE b.id = 'dm:' || ?2 AND b.request_state = 'blocked')",
+                            params![post_id, sender],
+                        )
+                        .map_err(db_err)?;
                         jam_store::mark_counts_dirty(conn, post_id)?;
                         self.announce_post_op(conn, state, me, jam_id, &post.tier, "jam.comment.published", json!({ "jam_id": jam_id, "post_id": post_id, "comment": signed }), now)?;
                         let _ = jam;

@@ -570,8 +570,11 @@ struct ThreadSummaryRow: View {
     let thread: ThreadInfo
     let action: () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(ConversationStore.self) private var store
 
     var body: some View {
+        // New replies from a blocked person are not new (LIME-333).
+        let unread = thread.visibleUnread(blocked: store.blockedIDs)
         Button(action: action) {
             HStack(spacing: 8) {
                 HStack(spacing: -6) {
@@ -584,7 +587,7 @@ struct ThreadSummaryRow: View {
                     .font(Theme.caption)
                     .foregroundStyle(Theme.text)
                     .fixedSize(horizontal: false, vertical: true)   // wraps at the larger text sizes
-                if thread.unread > 0 {
+                if unread > 0 {
                     // New replies: an accent dot (the count is in the accessibility label).
                     Circle().fill(Theme.accent).frame(width: 9, height: 9)
                 }
@@ -597,7 +600,7 @@ struct ThreadSummaryRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(thread.summaryText)\(thread.unread > 0 ? ", \(thread.unread) new" : "")")
+        .accessibilityLabel("\(thread.summaryText)\(unread > 0 ? ", \(unread) new" : "")")
         .accessibilityAddTraits(.isButton)
         .accessibilityIdentifier("thread-summary-\(messageID)")
     }
