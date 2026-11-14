@@ -75,7 +75,7 @@ private struct SignedInView: View {
         TabView(selection: Binding(get: { store.section }, set: { store.select($0) })) {
             linkTab(path: $store.path)
                 .tabItem { tabLabel("link", TabSymbols.link) }
-                .badge(store.chats.filter(\.isUnread).count)
+                .badge(store.unreadChatCount)
                 .tag(ConversationStore.Section.link)
             callTab(path: $store.callPath)
                 .tabItem { tabLabel("call", TabSymbols.call) }

@@ -17,6 +17,8 @@ struct GroupDetailsView: View {
     @State private var renaming = false
     @State private var newName = ""
     @State private var removing: GroupMemberInfo?
+    /// A member being blocked from their row (LIME-330).
+    @State private var blocking: BlockTarget?
     @State private var leaving = false
     @State private var deletingForEveryone = false
     @State private var clearing = false
@@ -94,6 +96,7 @@ struct GroupDetailsView: View {
                 if saved { Task { _ = await store.renameGroup(target.conversationID, to: newName); await refresh() } }
             }
         }
+        .blockPersonConfirm($blocking, store: store)
         .confirmSheet("Remove \(removing?.name ?? "")?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
             Button("Remove", role: .destructive) {
                 if let member = removing { Task { await store.removeFromGroup(target.conversationID, user: member.userId); await refresh() } }
@@ -455,7 +458,7 @@ struct GroupDetailsView: View {
             .buttonStyle(.plain)
             .accessibilityLabel(GroupMemberLabel.text(name: member.name, role: roleWord, keyNotAccepted: !member.isMe && keyChangePending(member)))
             .accessibilityIdentifier("group-member-open-\(member.userId)")
-            if member.canRemove || canMakeAdmin {
+            if member.canRemove || canMakeAdmin || !member.isMe {
                 Menu {
                     if canMakeAdmin {
                         Button { Task { await store.setGroupAdmin(target.conversationID, user: member.userId, admin: member.role != "admin"); await refresh() } } label: {
@@ -466,6 +469,10 @@ struct GroupDetailsView: View {
                     if member.canRemove {
                         Button(role: .destructive) { removing = member } label: { Label("Remove from group", systemImage: "person.badge.minus") }
                             .accessibilityIdentifier("group-remove-\(member.userId)")
+                    }
+                    if !member.isMe && !store.isBlocked(member.userId) {
+                        Button(role: .destructive) { blocking = BlockTarget(userID: member.userId, name: member.name) } label: { Label("Block \(member.name)", systemImage: "hand.raised") }
+                            .accessibilityIdentifier("group-block-\(member.userId)")
                     }
                 } label: { ToolIconLabel(symbol: "ellipsis") }
                     .accessibilityLabel("More for \(member.name)").accessibilityIdentifier("group-member-menu-\(member.userId)")

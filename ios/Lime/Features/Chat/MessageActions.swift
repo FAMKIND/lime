@@ -28,12 +28,14 @@ final class MessageActionsState {
     var deleting: [Message] = []
     /// A message being reported (LIME-191).
     var reporting: ReportTarget?
+    /// A person being blocked from a group message's menu (LIME-330): the confirmation is open.
+    var blocking: BlockTarget?
 }
 
 // LIME-133b: replaced by the core type MessageAction; delete this copy then.
 /// One thing a message's menu can do (LIME-130-1). The long-press menu and VoiceOver's actions are both built from `MessageActionPlan`, so they cannot drift.
 enum AppMessageAction: String, CaseIterable, Sendable {
-    case react = "React", reply = "Reply", forward = "Forward", edit = "Edit", copy = "Copy", saveGIF = "Save to my GIFs", select = "Select", report = "Report", delete = "Delete"
+    case react = "React", reply = "Reply", forward = "Forward", edit = "Edit", copy = "Copy", saveGIF = "Save to my GIFs", select = "Select", report = "Report", block = "Block", delete = "Delete"
     var title: String { rawValue }
     var symbol: String {
         switch self {
@@ -45,6 +47,7 @@ enum AppMessageAction: String, CaseIterable, Sendable {
         case .saveGIF: "square.and.arrow.down"
         case .select: "checkmark.circle"
         case .report: "flag"
+        case .block: "hand.raised"
         case .delete: "trash"
         }
     }
@@ -58,15 +61,19 @@ enum AppMessageAction: String, CaseIterable, Sendable {
         case .saveGIF: "action-save-gif"
         case .select: "action-select"
         case .report: "action-report"
+        case .block: "action-block"
         case .delete: "action-delete"
         }
     }
-    var destructive: Bool { self == .report || self == .delete }
+    var destructive: Bool { self == .report || self == .block || self == .delete }
+    /// "Block NAME" for the menu and VoiceOver (LIME-330); every other action is its own title.
+    func title(blockName: String?) -> String { self == .block ? "Block \(blockName ?? "")" : title }
 }
 
 /// Which actions a message offers, in the menu's order: the reaction row first, then Reply, Forward, Edit, Copy, Save to my GIFs, Select, Report, Delete.
 enum MessageActionPlan {
-    static func actions(for message: Message, inThread: Bool, now: Date = Date()) -> [AppMessageAction] {
+    /// `canBlock`: a group message from someone else you have not blocked: the menu then offers "Block NAME" after Report (LIME-330).
+    static func actions(for message: Message, inThread: Bool, now: Date = Date(), canBlock: Bool = false) -> [AppMessageAction] {
         let settled = !message.state.isInFlight && message.state != .failed
         var list: [AppMessageAction] = []
         if !message.deleted && settled { list.append(.react) }
@@ -78,6 +85,7 @@ enum MessageActionPlan {
         if !message.deleted, message.attachments.contains(where: { GIF.isGIF(mime: $0.mime) && !$0.removed }) { list.append(.saveGIF) }
         if message.call == nil { list.append(.select) }
         if !message.isOwn, !message.deleted, !message.isSystem, message.call == nil { list.append(.report) }
+        if canBlock, !message.isOwn, !message.deleted, !message.isSystem, message.call == nil { list.append(.block) }
         list.append(.delete)
         return list
     }
@@ -101,7 +109,9 @@ struct MessageAccessibility: Equatable {
     let message: Message
     let performer: MessageActionPerformer
     let more: () -> Void
-    static func == (lhs: MessageAccessibility, rhs: MessageAccessibility) -> Bool { lhs.message == rhs.message && lhs.performer == rhs.performer }
+    /// The sender's name when "Block NAME" is offered (a group message from someone you have not blocked), else nil (LIME-330).
+    var blockName: String?
+    static func == (lhs: MessageAccessibility, rhs: MessageAccessibility) -> Bool { lhs.message == rhs.message && lhs.performer == rhs.performer && lhs.blockName == rhs.blockName }
 }
 
 extension EnvironmentValues {
@@ -119,8 +129,8 @@ struct MessageAccessibilityActions: ViewModifier {
             // SwiftUI hands VoiceOver these in the reverse of the order they are written, so they are written backwards: React first … Delete, then More actions.
             content.accessibilityActions {
                 Button("More actions") { ax.more() }
-                ForEach(MessageActionPlan.actions(for: ax.message, inThread: ax.performer.inThread).reversed(), id: \.self) { action in
-                    Button(action.title) { ax.performer.perform(action, ax.message) }
+                ForEach(MessageActionPlan.actions(for: ax.message, inThread: ax.performer.inThread, canBlock: ax.blockName != nil).reversed(), id: \.self) { action in
+                    Button(action.title(blockName: ax.blockName)) { ax.performer.perform(action, ax.message) }
                 }
             }
         } else {
@@ -193,6 +203,7 @@ struct MessageActionsHost: ViewModifier {
                 }
             }
             .reportSheet(Binding(get: { state.reporting }, set: { state.reporting = $0 }))
+            .blockPersonConfirm(Binding(get: { state.blocking }, set: { state.blocking = $0 }), store: store)
             .sheet(isPresented: Binding(get: { state.forwarding != nil }, set: { if !$0 { state.forwarding = nil } })) {
                 if let messages = state.forwarding {
                     ForwardSheet(messageIDs: messages.map(\.id)) { sent in
@@ -219,7 +230,13 @@ struct MessageActionsHost: ViewModifier {
     private func liveChips(_ message: Message) -> [ReactionChip] {
         let live = store.conversation(conversationID)?.messages.first { $0.id == message.id }
             ?? store.threads.values.lazy.flatMap { $0 }.first { $0.id == message.id }
-        return (live ?? message).reactions
+        return (live ?? message).hidingBlockedReactions(store.blockedIDs).reactions
+    }
+
+    /// The sender's name when "Block NAME" is offered for this message: a group message from someone else you have not blocked (LIME-330).
+    private func blockOffer(_ message: Message) -> String? {
+        guard let sender = message.senderID, store.conversation(conversationID)?.isGroup == true, !store.isBlocked(sender) else { return nil }
+        return store.teacherName(sender)
     }
 
     /// Runs an action (a menu row, or an accessibility action: one path for both).
@@ -248,6 +265,7 @@ struct MessageActionsHost: ViewModifier {
             }
         case .select: selection = [message.id]
         case .report: state.reporting = store.reportTarget(message: message, conversationID: conversationID, from: message.senderID.map { store.teacherName($0) })
+        case .block: if let sender = message.senderID { state.blocking = BlockTarget(userID: sender, name: store.teacherName(sender)) }
         case .delete: state.deleting = [message]
         }
     }
@@ -384,7 +402,7 @@ struct MessageActionsHost: ViewModifier {
         ScrollView {
         VStack(spacing: 0) {
             // The reaction row is above; the rest follow the plan, the same list VoiceOver gets.
-            ForEach(MessageActionPlan.actions(for: message, inThread: inThread).filter { $0 != .react }, id: \.self) { action in
+            ForEach(MessageActionPlan.actions(for: message, inThread: inThread, canBlock: blockOffer(message) != nil).filter { $0 != .react }, id: \.self) { action in
                 if action == .forward, state.cannotForward.contains(message.id) {
                     VStack(spacing: 0) {
                         HStack(spacing: 12) {
@@ -404,7 +422,7 @@ struct MessageActionsHost: ViewModifier {
                     .accessibilityLabel("Forward, this file is no longer available")
                     .accessibilityIdentifier("action-forward-unavailable")
                 } else {
-                    row(action.symbol, action.title, id: action.identifier, destructive: action.destructive, last: action == .delete) { perform(action, on: message) }
+                    row(action.symbol, action.title(blockName: blockOffer(message)), id: action.identifier, destructive: action.destructive, last: action == .delete) { perform(action, on: message) }
                 }
             }
         }

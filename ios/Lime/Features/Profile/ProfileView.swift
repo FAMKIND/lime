@@ -70,6 +70,8 @@ struct ProfileView: View {
     @Environment(AccountSession.self) private var session
     @State private var confirmingMute = false
     @State private var confirmingBlock = false
+    /// Blocking someone who is not a chat of mine, from their profile (LIME-330).
+    @State private var blocking: BlockTarget?
     @State private var reporting: ReportTarget?
     @State private var confirmingDelete = false
     @State private var confirmingSignOut = false
@@ -253,9 +255,10 @@ struct ProfileView: View {
             Button("Cancel", role: .cancel) {}
         }
         .reportSheet($reporting)
+        .blockPersonConfirm($blocking, store: store)
         .confirmSheet("Block \(displayName)?", isPresented: $confirmingBlock) {
             Button("Block", role: .destructive) {
-                Task { await store.block("dm:\(route.userID)"); store.path = NavigationPath(); store.callPath = NavigationPath() }
+                Task { await store.block("dm:\(route.userID)"); Announce.say("\(displayName) blocked"); store.path = NavigationPath(); store.callPath = NavigationPath() }
             }
             .accessibilityIdentifier("profile-block-confirm")
             Button("Cancel", role: .cancel) {}
@@ -686,6 +689,14 @@ struct ProfileView: View {
                     .accessibilityIdentifier("profile-block")
                 Button(role: .destructive) { confirmingDelete = true } label: { Label("Delete chat", systemImage: "trash") }
                     .accessibilityIdentifier("profile-delete")
+            } else if !route.isMe {
+                // Someone met in a group or on jam, not a chat of mine: Report and Block all the same (LIME-330).
+                Button(role: .destructive) { reporting = store.reportTarget(personID: route.userID, name: displayName) } label: { Label("Report", systemImage: "flag") }
+                    .accessibilityIdentifier("profile-report")
+                if !store.isBlocked(route.userID) {
+                    Button(role: .destructive) { blocking = BlockTarget(userID: route.userID, name: displayName) } label: { Label("Block \(displayName)", systemImage: "hand.raised") }
+                        .accessibilityIdentifier("profile-block")
+                }
             }
         } label: { ToolIconLabel(symbol: "ellipsis") }
         .accessibilityLabel("More").accessibilityIdentifier("profile-more")

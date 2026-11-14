@@ -169,6 +169,34 @@ fn blocked_conversations_are_not_searched() {
 }
 
 #[test]
+fn a_blocked_persons_group_messages_are_not_searched_and_come_back_on_unblock() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(&dir);
+    chat(&store, "g1", "Grade 4 Team", &["Pat Doe", "Sam Park"]);
+    let from = |sender: &str, id: &str, body: &str, at: i64| {
+        store
+            .lock()
+            .execute(
+                "INSERT INTO messages (id, conversation_id, sender_id, body, sent_at, local_state) VALUES (?1, 'g1', ?2, ?3, ?4, 'received')",
+                params![id, sender, body, at],
+            )
+            .unwrap();
+    };
+    from("g1-0", "p1", "pizza at noon", 1);
+    from("g1-1", "s1", "pizza on friday", 2);
+    from("g1-0", "p2", "pizza reply", 3);
+    store.lock().execute("UPDATE messages SET thread_root = 's1' WHERE id = 'p2'", []).unwrap();
+    assert_eq!(find(&store, "pizza"), vec!["p2", "s1", "p1"], "Pat's and Sam's, the reply included, newest first");
+    store.block_person("g1-0".into()).unwrap();
+    assert_eq!(find(&store, "pizza"), vec!["s1"], "Pat is blocked: no message of Pat's is found, in the chat or in the thread find");
+    assert_eq!(ids(store.search_messages("pizza".into(), Some("g1".into()), 50).unwrap()), vec!["s1"]);
+    assert!(ids(store.search_replies("pizza".into(), "g1".into(), Some("s1".into()), 50).unwrap()).iter().all(|id| id != "p2"));
+    store.unblock("dm:g1-0".into()).unwrap();
+    assert_eq!(find(&store, "pizza"), vec!["p2", "s1", "p1"], "found again after Unblock");
+    assert_eq!(ids(store.search_replies("pizza".into(), "g1".into(), Some("s1".into()), 50).unwrap()), vec!["s1", "p2"]);
+}
+
+#[test]
 fn conversations_are_found_by_title_or_by_anyones_name() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(&dir);

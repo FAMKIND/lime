@@ -616,9 +616,10 @@ struct ListPreview: Equatable {
         return AttachmentFormat.summary(message.attachments) ?? ""
     }
 
-    static func make(_ conversation: Conversation) -> ListPreview {
+    /// `blocked` are the user ids you blocked (LIME-330): a group row whose newest thing is theirs reads "Message from someone you blocked", with no name and no words.
+    static func make(_ conversation: Conversation, blocked: Set<String> = []) -> ListPreview {
         // A reaction newer than the last message is the newest thing: "Jean reacted ❤️ to “True that”".
-        if let reaction = conversation.lastReaction {
+        if let reaction = conversation.lastReaction, !BlockedPeople.isBlocked(reaction.reactorID, in: blocked) {
             let who = reaction.reactorName.map { String($0.split(separator: " ").first ?? "") } ?? "You"
             let target = conversation.messages.first { $0.id == reaction.messageID }
             var gist = reaction.text.trimmingCharacters(in: .whitespaces)
@@ -629,6 +630,7 @@ struct ListPreview: Equatable {
             return line
         }
         guard let last = conversation.lastMessage else { return ListPreview() }
+        if conversation.isGroup, !last.isOwn, !last.isSystem, BlockedPeople.isBlocked(last.senderID, in: blocked) { return ListPreview(text: BlockedPeople.rowWords) }
         if last.isSystem { return ListPreview(text: last.text) }
         if last.deleted { return ListPreview(text: "This message was deleted") }
         var line = ListPreview()
@@ -674,7 +676,7 @@ struct ConversationRow: View {
     /// The photo or video thumbnail in the preview line (32-36 pt).
     static let thumbnailSize: CGFloat = 34
 
-    private var line: ListPreview { ListPreview.make(conversation) }
+    private var line: ListPreview { ListPreview.make(conversation, blocked: store.blockedIDs) }
     private var preview: String { line.plain }
     private var time: String { MessageFormat.listTime(conversation.activityAt ?? conversation.lastMessage?.date) }
     /// The person's status, read with the row (their badge is drawn on the avatar, which the row's one element hides): ", Away" (LIME-321).

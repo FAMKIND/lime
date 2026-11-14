@@ -61,6 +61,8 @@ final class ConversationStore {
 
     /// The screens pushed on Messages (chats by id, the Requests list).
     var path = NavigationPath()
+    /// The user ids of the people you blocked (LIME-330), from core's `blockedIds`: what collapses their messages, reactions and comments.
+    private(set) var blockedIDs: Set<String> = []
     /// The app's three sections (the system tab bar): link (Messages), call (Calls), jam. Each keeps its own navigation.
     enum Section: String, CaseIterable, Hashable { case link, call, jam }
     var section: Section = .link
@@ -650,6 +652,32 @@ final class ConversationStore {
         Task { await deliverNow() }
     }
 
+    /// Blocks any person, from where you meet them (LIME-330, core's `blockPerson`): a group message, a member, a profile, a jam comment. Their messages, reactions and
+    /// comments are then collapsed on this phone; they are not told.
+    func blockPerson(_ id: String, name: String) async {
+        #if DEBUG
+        if isDemo {
+            if !demoBlocked.contains(where: { $0.conversationId == "dm:\(id)" }) {
+                demoBlocked.append(BlockedPerson(conversationId: "dm:\(id)", name: name, tone: UInt32(AvatarTone.tone(for: id))))
+            }
+            blockedIDs.insert(id)
+            Announce.say("\(name) blocked")
+            return
+        }
+        #endif
+        guard let core else { return }
+        try? await Task.detached(priority: .userInitiated) { try core.blockPerson(userId: id) }.value
+        await reload()
+        Announce.say("\(name) blocked")
+        // A person who had your key makes it rotate: the server learns the new one and your other contacts get it.
+        Task { await deliverNow() }
+    }
+
+    func isBlocked(_ id: String?) -> Bool { BlockedPeople.isBlocked(id, in: blockedIDs) }
+
+    /// The unread chats for the tab and the app icon: a chat whose unread messages are all from blocked people does not count (LIME-330).
+    var unreadChatCount: Int { chats.filter { BlockedPeople.countsAsUnread($0, blocked: blockedIDs) }.count }
+
     // MARK: Search (on this phone only: nothing here touches the network)
 
     /// Chats whose name or title match, then messages whose text does.
@@ -727,6 +755,7 @@ final class ConversationStore {
         #if DEBUG
         if isDemo {
             demoBlocked.removeAll { $0.conversationId == id }
+            blockedIDs.remove(String(id.dropFirst(3)))
             return
         }
         #endif
@@ -786,7 +815,7 @@ final class ConversationStore {
         guard let index = conversations.firstIndex(where: { $0.id == id }), conversations[index].isUnread else { return }
         conversations[index].unread = 0
         conversations[index].markedUnread = false
-        if let notifications { await notifications.chatOpened(id); await notifications.updateBadge(unreadChats: conversations.filter(\.isUnread).count) }
+        if let notifications { await notifications.chatOpened(id); await notifications.updateBadge(unreadChats: unreadChatCount) }
         #if DEBUG
         if isDemo { return }
         #endif
@@ -841,6 +870,7 @@ final class ConversationStore {
         if isDemo { return }
         #endif
         guard let core else { return }
+        blockedIDs = Set((try? core.blockedIds()) ?? [])
         let open = openThreadIDs
         do {
             let loaded = try await Task.detached(priority: .userInitiated) { () -> ([Conversation], [String: [ThreadSummary]], [String: [MessageItem]], [UnreadReplies]) in
@@ -905,6 +935,8 @@ final class ConversationStore {
         for conversation in conversations {
             func make(_ message: Message, root: String?) -> IncomingMessage? {
                 guard let sender = message.senderID, !message.isSystem else { return nil }
+                // Nothing from a blocked person notifies: no banner, no sound (core's rule, LIME-330).
+                guard shouldNotify(senderId: sender, kind: conversation.isGroup ? .groupMessage : .directMessage, blockedIds: Array(blockedIDs)) else { return nil }
                 return IncomingMessage(
                     id: message.id, conversationID: conversation.id, conversationTitle: conversation.title, senderID: sender,
                     senderName: person(sender, in: conversation)?.name ?? conversation.title,
@@ -919,7 +951,7 @@ final class ConversationStore {
         notifications.emergencySound = candidates.contains { $0.emergency != nil } ? await emergencySettings().sound : false
         let arrivals = detector.arrivals(among: candidates)
         if !arrivals.isEmpty { await notifications.announce(arrivals) }
-        await notifications.updateBadge(unreadChats: conversations.filter(\.isUnread).count)
+        await notifications.updateBadge(unreadChats: unreadChatCount)
     }
 
     // MARK: Threads

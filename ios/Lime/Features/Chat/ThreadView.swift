@@ -23,6 +23,8 @@ struct ThreadView: View {
     /// How many of the newest replies are laid out (LIME-173); a thread rarely has more, and older ones come with the button under the root.
     @State private var replyWindow = ThreadWindow.first
 
+    /// Messages from blocked people revealed with Show, until you leave the replies (LIME-330).
+    @State private var revealedBlocked: Set<String> = []
     private var messages: [Message] { store.threads[target.rootID] ?? [] }
 
     /// Where the screen rests when it opens (and after a turn to landscape): the newest reply, or with none the first line of the root message.
@@ -277,8 +279,13 @@ struct ThreadView: View {
     }
 
     /// Whose message the replies answer ("You" for mine).
+    /// A message from someone you blocked, in a group, until Show (LIME-330): one quiet row, and the header does not name them.
+    private func isCollapsed(_ message: Message) -> Bool {
+        conversation?.isGroup == true && !message.isOwn && !message.isSystem && store.isBlocked(message.senderID) && !revealedBlocked.contains(message.id)
+    }
+
     private func rootAuthor(_ root: Message?) -> Person? {
-        guard let root else { return nil }
+        guard let root, !isCollapsed(root) else { return nil }
         if root.isOwn { return Person(id: store.meProvider().id, name: "You", tone: store.meProvider().tone) }
         return conversation.flatMap { store.person(root.senderID, in: $0) }
     }
@@ -288,7 +295,17 @@ struct ThreadView: View {
         return n == 0 ? "No replies yet" : "\(n) \(n == 1 ? "reply" : "replies")"
     }
 
+    @ViewBuilder
     private func bubble(_ message: Message, isRoot: Bool) -> some View {
+        if isCollapsed(message) {
+            BlockedMessagesRow(count: 1, show: { withMotion { _ = revealedBlocked.insert(message.id) } }, idSuffix: message.id)
+                .padding(.bottom, 8)
+        } else {
+            openBubble(message.hidingBlockedReactions(store.blockedIDs), isRoot: isRoot)
+        }
+    }
+
+    private func openBubble(_ message: Message, isRoot: Bool) -> some View {
         MessageBubble(message: message,
                       sender: conversation.flatMap { store.person(message.senderID, in: $0) },
                       showAvatar: !message.isOwn,

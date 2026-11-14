@@ -20,6 +20,8 @@ struct ChatView: View {
     /// "Waiting for internet": the one-line reason (LIME-142).
     @State private var offlineReason: String?
     @State private var confirmingBlock = false
+    /// Blocked people's messages revealed with Show, until you leave this chat (LIME-330).
+    @State private var revealedBlocked: Set<String> = []
     @State private var showingSeal = false
     // In-chat find (the header's magnifier): the matches, which one is current, and where to scroll.
     @State private var finding = false
@@ -176,7 +178,7 @@ struct ChatView: View {
     private func messageScroll(_ conversation: Conversation, top: CGFloat) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
-                let all = ChatRow.rows(for: conversation)
+                let all = rowsOf(conversation)
                 let rows = Array(ChatWindow.shown(all, window: windowRows))
                 let hidden = ChatWindow.hidden(total: all.count, window: windowRows)
                 let lastOwnID = conversation.messages.last(where: { $0.isOwn && !$0.isSystem })?.id
@@ -219,8 +221,8 @@ struct ChatView: View {
             #if DEBUG
             .task { if ProcessInfo.processInfo.arguments.contains("-lime-demo-reveal-times") { timeReveal = 1 } }
             #endif
-            .modifier(OlderOnScrollModifier(metrics: metrics, restorer: restorer, enabled: openSettled && !loadingOlder && ChatWindow.hidden(total: ChatRow.rows(for: conversation).count, window: windowRows) > 0) {
-                let all = ChatRow.rows(for: conversation)
+            .modifier(OlderOnScrollModifier(metrics: metrics, restorer: restorer, enabled: openSettled && !loadingOlder && ChatWindow.hidden(total: rowsOf(conversation).count, window: windowRows) > 0) {
+                let all = rowsOf(conversation)
                 loadOlder(proxy: proxy, firstShown: ChatWindow.shown(all, window: windowRows).first?.id, total: all.count)
             })
             #if DEBUG
@@ -234,7 +236,7 @@ struct ChatView: View {
             .scrollDismissesKeyboard(.interactively)
             .hidesKeyboardOnTap()
             .defaultScrollAnchor(.bottom)
-            .keepsNewestAboveKeyboard(proxy: proxy, newestID: ChatWindow.shown(ChatRow.rows(for: conversation), window: windowRows).last?.id)
+            .keepsNewestAboveKeyboard(proxy: proxy, newestID: ChatWindow.shown(rowsOf(conversation), window: windowRows).last?.id)
             .task(id: conversationID) {
                 // Opening a chat: once its rows have been laid out, settle at the newest message. `defaultScrollAnchor` alone is not
                 // enough on every iOS version (a chat pushed at launch opened at its top on iOS 18); this is a no-op when it worked.
@@ -243,12 +245,12 @@ struct ChatView: View {
                 settledOnce = true
                 #if DEBUG
                 openProbe.open(conversationID, messages: conversation.messages.count, loaded: store.isLoaded)
-                openProbe.log("window=\(windowRows) of \(ChatRow.rows(for: conversation).count) rows")
+                openProbe.log("window=\(windowRows) of \(rowsOf(conversation).count) rows")
                 #endif
                 for delay in [0, 120, 350] {
                     try? await Task.sleep(for: .milliseconds(delay))
                     #if DEBUG
-                    openProbe.log("scrollTo bottom after \(delay) ms: rows=\(ChatRow.rows(for: conversation).count) window=\(windowRows) messages=\(conversation.messages.count) loaded=\(store.isLoaded) target=\(openProbe.snap.contentH > 0 ? "laid out" : "not laid out yet")")
+                    openProbe.log("scrollTo bottom after \(delay) ms: rows=\(rowsOf(conversation).count) window=\(windowRows) messages=\(conversation.messages.count) loaded=\(store.isLoaded) target=\(openProbe.snap.contentH > 0 ? "laid out" : "not laid out yet")")
                     #endif
                     proxy.scrollTo("bottom", anchor: .bottom)
                     #if DEBUG
@@ -343,7 +345,7 @@ struct ChatView: View {
 
     /// Makes sure a message is among the rows shown, then asks for the scroll to it (a search hit, a quote, the unread marker).
     private func jump(to id: String, in conversation: Conversation) {
-        let all = ChatRow.rows(for: conversation)
+        let all = rowsOf(conversation)
         if let index = all.firstIndex(where: { $0.id == id }) {
             windowRows = ChatWindow.covering(index: index, total: all.count, window: windowRows)
         }
@@ -351,6 +353,10 @@ struct ChatView: View {
             try? await Task.sleep(for: .milliseconds(120))
             scrollRequest = ScrollRequest(id: id)
         }
+    }
+
+    private func rowsOf(_ conversation: Conversation) -> [ChatRow] {
+        ChatRow.rows(for: conversation, blocked: store.blockedIDs, revealed: revealedBlocked)
     }
 
     @ViewBuilder
@@ -382,7 +388,11 @@ struct ChatView: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.bottom, 2)
                                 .accessibilityIdentifier("deleted-run")
-                        case .message(let message, let showAvatar):
+                        case .blockedRun(let messages):
+                            BlockedMessagesRow(count: messages.count, show: { withMotion { revealedBlocked.formUnion(messages.map(\.id)) } }, idSuffix: messages[0].id)
+                                .padding(.bottom, 8)
+                        case .message(let rawMessage, let showAvatar):
+                            let message = rawMessage.hidingBlockedReactions(store.blockedIDs)
                             MessageBubble(message: message,
                                           sender: store.person(message.senderID, in: conversation),
                                           showAvatar: showAvatar,
@@ -823,6 +833,7 @@ struct ChatView: View {
 final class FrameBox { var frame: CGRect = .zero }
 
 struct MessageBubble: View {
+    @Environment(ConversationStore.self) private var store
     let message: Message
     let sender: Person?
     let showAvatar: Bool
@@ -1073,7 +1084,9 @@ struct MessageBubble: View {
     /// What VoiceOver, Switch Control and Voice Control get on this message: the menu's actions and "More actions" (LIME-130-1). Not in select mode.
     private var ax: MessageAccessibility? {
         guard selection == nil, !liftedOnly, onActions != nil, let performer else { return nil }
-        return MessageAccessibility(message: message, performer: performer, more: { lift() })
+        let inGroup = store.conversation(conversationID)?.isGroup == true
+        let blockName = (inGroup && message.senderID != nil && !store.isBlocked(message.senderID)) ? (sender?.name ?? message.senderID) : nil
+        return MessageAccessibility(message: message, performer: performer, more: { lift() }, blockName: blockName)
     }
 
     /// A long-press: a light haptic, the bubble's place on the screen, then the menu.

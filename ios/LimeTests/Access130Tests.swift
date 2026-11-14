@@ -74,10 +74,10 @@ final class Access130Tests: XCTestCase {
 
     func testTheMenuOrderIsTheDocumentedOne() {
         let all = AppMessageAction.allCases.map(\.title)
-        XCTAssertEqual(all, ["React", "Reply", "Forward", "Edit", "Copy", "Save to my GIFs", "Select", "Report", "Delete"])
+        XCTAssertEqual(all, ["React", "Reply", "Forward", "Edit", "Copy", "Save to my GIFs", "Select", "Report", "Block", "Delete"])
         let gif = AttachmentItem(id: "g", mime: "image/gif", name: "a.gif", size: 10)
         let list = plan(message(own: false, text: "Fun", attachments: [gif]))
-        XCTAssertEqual(list, all.filter { $0 != "Edit" })
+        XCTAssertEqual(list, all.filter { $0 != "Edit" && $0 != "Block" }, "Block only where the caller offers it: a group message (LIME-330)")
     }
 
     func testCallControlsNeverHideWhileVoiceOverOrSwitchControlRuns() {

@@ -113,6 +113,7 @@ impl LimeStore {
                  JOIN messages m ON m.id = message_fts.message_id
                  JOIN conversations c ON c.id = message_fts.conversation_id
                  WHERE message_fts MATCH ?1 AND c.request_state != 'blocked' AND message_fts.conversation_id = ?2
+                   AND NOT EXISTS (SELECT 1 FROM conversations b WHERE b.id = 'dm:' || m.sender_id AND b.request_state = 'blocked')
                    AND ((?3 IS NULL AND m.thread_root IS NOT NULL) OR (?3 IS NOT NULL AND (m.thread_root = ?3 OR m.id = ?3)))
                  ORDER BY m.sent_at ASC, m.id ASC LIMIT ?4",
             )
@@ -161,6 +162,7 @@ impl LimeStore {
              JOIN messages m ON m.id = message_fts.message_id
              JOIN conversations c ON c.id = message_fts.conversation_id
              WHERE message_fts MATCH ?1 AND c.request_state != 'blocked'
+               AND NOT EXISTS (SELECT 1 FROM conversations b WHERE b.id = 'dm:' || m.sender_id AND b.request_state = 'blocked')
                AND (?2 IS NULL OR (message_fts.conversation_id = ?2 AND m.thread_root IS NULL))
              ORDER BY {order} LIMIT ?3",
             start = MATCH_START as u32,

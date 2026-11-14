@@ -10,6 +10,8 @@ struct ChatRow: Identifiable {
         case system(Message)
         /// Two or more deleted messages in a row, as one line: "3 messages deleted".
         case deletedRun(count: Int)
+        /// Messages from people you blocked (LIME-330), one or several in a row, as one collapsed row with Show.
+        case blockedRun(messages: [Message])
     }
 
     let id: String
@@ -21,7 +23,8 @@ struct ChatRow: Identifiable {
     /// Messages from one sender this close together are one run.
     static let runGap: TimeInterval = 5 * 60
 
-    static func rows(for conversation: Conversation, calendar: Calendar = .current) -> [ChatRow] {
+    /// `blocked` are the user ids you blocked; in a group their messages (not revealed with Show) become `blockedRun` rows. `revealed` are the message ids Show opened.
+    static func rows(for conversation: Conversation, blocked: Set<String> = [], revealed: Set<String> = [], calendar: Calendar = .current) -> [ChatRow] {
         var result: [ChatRow] = []
         var lastDay: Date?
         var lastSender: String??
@@ -40,7 +43,29 @@ struct ChatRow: Identifiable {
             result.append(ChatRow(id: message.id, kind: .message(message, showAvatar: showAvatar)))
             lastSender = .some(message.senderID)
         }
-        return markingRunEnds(collapsingDeletedRuns(result))
+        let shown = conversation.isGroup ? collapsingBlocked(result, blocked: blocked, revealed: revealed) : result
+        return markingRunEnds(collapsingDeletedRuns(shown))
+    }
+
+    /// Runs of one or more messages from blocked people (not revealed) become one row each (LIME-330). A day line or anyone else's message ends a run.
+    static func collapsingBlocked(_ rows: [ChatRow], blocked: Set<String>, revealed: Set<String>) -> [ChatRow] {
+        guard !blocked.isEmpty else { return rows }
+        var out: [ChatRow] = []
+        var run: [Message] = []
+        func flush() {
+            if let first = run.first { out.append(ChatRow(id: "blocked-run-\(first.id)", kind: .blockedRun(messages: run))) }
+            run = []
+        }
+        for row in rows {
+            if case .message(let message, _) = row.kind, let sender = message.senderID, blocked.contains(sender), !revealed.contains(message.id) {
+                run.append(message)
+            } else {
+                flush()
+                out.append(row)
+            }
+        }
+        flush()
+        return out
     }
 
     /// Sets `endsRun` on every message row (a message ends its run unless the next row is a message by the same sender less than five minutes later).

@@ -110,6 +110,8 @@ struct ReactionPreview: Hashable, Sendable {
     let reactorName: String?
     let messageID: String
     let text: String
+    /// Who reacted, by user id (LIME-330: a blocked person's reaction is not shown); nil when it was me.
+    var reactorID: String? = nil
 }
 
 /// A link card under a message: the page's title and site, and a picture (an encrypted attachment).
@@ -126,6 +128,8 @@ struct ReactionChip: Hashable, Sendable, Identifiable {
     let count: Int
     let mine: Bool
     let people: [String]
+    /// The user ids of the same people, in the same order (LIME-330: so a blocked person's reaction can be left out); empty when not known.
+    var personIDs: [String] = []
     var id: String { emoji }
 }
 
@@ -229,7 +233,7 @@ extension Message {
         attachments = item.attachments.map(AttachmentItem.init)
         edited = item.edited
         deleted = item.deleted
-        reactions = item.reactions.map { ReactionChip(emoji: $0.emoji, count: Int($0.count), mine: $0.mine, people: $0.people) }
+        reactions = item.reactions.map { ReactionChip(emoji: $0.emoji, count: Int($0.count), mine: $0.mine, people: $0.people, personIDs: $0.personIds) }
         forwarded = item.forwarded
         threadRoot = item.threadRoot
         emergency = item.emergency.map(EmergencyCard.init)
@@ -253,7 +257,7 @@ extension Conversation {
             groupEnded: summary.groupEnded, myRole: summary.myRole,
             isGroupChat: summary.isGroup, emoji: summary.groupEmoji,
             latest: summary.lastMessage.map(Message.init), latestIsReply: summary.lastIsReply, markedUnread: summary.markedUnread,
-            lastReaction: summary.lastReaction.map { ReactionPreview(emoji: $0.emoji, reactorName: $0.reactorId == nil ? nil : $0.reactorName, messageID: $0.messageId, text: $0.text) },
+            lastReaction: summary.lastReaction.map { ReactionPreview(emoji: $0.emoji, reactorName: $0.reactorId == nil ? nil : $0.reactorName, messageID: $0.messageId, text: $0.text, reactorID: $0.reactorId) },
             activityAt: summary.activityAt > 0 ? Date(timeIntervalSince1970: Double(summary.activityAt) / 1000) : nil)
     }
 }

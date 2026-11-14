@@ -57,6 +57,9 @@ struct JamCommentCount: View {
 /// a comment, and the comments (one level of replies under their parent). A pending comment waits greyed for the writer's phone.
 struct JamEngagementSection: View {
     let post: JamPostInfo
+    /// Comments from blocked people revealed with Show, and the person being blocked from a comment (LIME-330).
+    @State private var revealedComments: Set<String> = []
+    @State private var blocking: BlockTarget?
     /// On the black player (LIME-189d): white text.
     var dark = false
     /// True while the comment field has the keyboard: the page hides its action pill then.
@@ -100,6 +103,7 @@ struct JamEngagementSection: View {
         }
         .onAppear { if mineJam { store.jamMarkSeen(post.postId) } }
         .reportSheet($reporting)
+        .blockPersonConfirm($blocking, store: store)
         .onChange(of: focused) { _, now in typing?.wrappedValue = now }
         // Room under the last comment: the action pill and the dock must not cover the field or the words (LIME-189d).
         .padding(.bottom, dark ? 24 : 96)
@@ -177,7 +181,18 @@ struct JamEngagementSection: View {
         return Calendar.current.isDateInToday(date) ? date.formatted(date: .omitted, time: .shortened) : JamDates.short(millis)
     }
 
+    /// A comment, or the quiet row for one from someone you blocked (LIME-330), until Show.
+    @ViewBuilder
     private func row(_ comment: JamCommentInfo, mineJam: Bool, writer: String) -> some View {
+        if !comment.mine, store.isBlocked(comment.author), !revealedComments.contains(comment.commentId) {
+            BlockedMessagesRow(count: 1, show: { withMotion { _ = revealedComments.insert(comment.commentId) } }, idSuffix: comment.commentId)
+                .accessibilityIdentifier("jam-comment-row-\(comment.commentId)")
+        } else {
+            openRow(comment, mineJam: mineJam, writer: writer)
+        }
+    }
+
+    private func openRow(_ comment: JamCommentInfo, mineJam: Bool, writer: String) -> some View {
         let person = store.teacher(comment.author)
         let pending = comment.state == "pending"
         let stale = pending && Date().timeIntervalSince1970 * 1000 - Double(comment.created) > 86_400_000
@@ -202,6 +217,7 @@ struct JamEngagementSection: View {
             Menu {
                 if !comment.mine { Button(role: .destructive) { reporting = store.reportTarget(comment: comment) } label: { Label("Report", systemImage: "flag") }.accessibilityIdentifier("jam-comment-report") }
                 if !comment.mine && !mineJam { Button { Task { await store.messageWriter(post.author) } } label: { Label("Reply privately", systemImage: "paperplane") }.accessibilityIdentifier("jam-comment-private") }
+                if !comment.mine && !store.isBlocked(comment.author) { Button(role: .destructive) { blocking = BlockTarget(userID: comment.author, name: person.name) } label: { Label("Block \(person.name)", systemImage: "hand.raised") }.accessibilityIdentifier("jam-comment-block-\(comment.commentId)") }
                 if comment.mine { Button(role: .destructive) { Task { await store.jamDeleteComment(comment.commentId, postID: post.postId) } } label: { Label("Delete", systemImage: "trash") }.accessibilityIdentifier("jam-comment-delete") }
                 else if mineJam { Button(role: .destructive) { Task { await store.jamDeleteComment(comment.commentId, postID: post.postId) } } label: { Label("Remove", systemImage: "trash") }.accessibilityIdentifier("jam-comment-remove") }
             } label: {
