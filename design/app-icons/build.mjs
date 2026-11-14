@@ -18,6 +18,10 @@ const mark = (inner = INNER, extra = '') => `<g transform="${T}" stroke-linejoin
 const silhouette = (color, strokeWidth) => INNER.split('\n').filter((l) => /fill="#/.test(l) && !/fill="none"/.test(l))
   .map((l) => l.replace(/fill="#[0-9a-fA-F]+"/, `fill="${color}" stroke="${color}" stroke-width="${strokeWidth}"`)).join('\n');
 
+// 292d: the slice is ~68% of the tile in every icon but lime's own primary art (861 px * 0.81 = ~700 px of 1024), centred, the drip clear of the corners
+export const FIT = 0.81;
+export const fit = (g) => `<g transform="translate(512 512) scale(${FIT}) translate(-520 -520)">${g}</g>`;
+
 const files = {};   // relative path -> content
 const put = (rel, content) => { files[rel] = content; };
 
@@ -36,7 +40,7 @@ icons.lime = {
 icons.dark = {
   background: () => doc(`<rect width="${W}" height="${W}" fill="${PAL.ink}"/><circle cx="520" cy="520" r="560" fill="url(#g)"/>`,
     `<radialGradient id="g"><stop offset="0" stop-color="${PAL.lime}" stop-opacity="0.55"/><stop offset="0.55" stop-color="${PAL.lime}" stop-opacity="0.14"/><stop offset="1" stop-color="${PAL.lime}" stop-opacity="0"/></radialGradient>`),
-  mark: () => doc(`<g filter="url(#glow)">${mark()}</g>`,
+  mark: () => doc(`<g filter="url(#glow)">${fit(mark())}</g>`,
     `<filter id="glow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur in="SourceAlpha" stdDeviation="26" result="b"/><feFlood flood-color="${PAL.mint}" flood-opacity="0.55"/><feComposite in2="b" operator="in" result="g"/><feMerge><feMergeNode in="g"/><feMergeNode in="SourceGraphic"/></feMerge></filter>`),
 };
 
@@ -44,7 +48,7 @@ icons.dark = {
 icons.sticker = {
   background: () => doc(`<rect width="${W}" height="${W}" fill="url(#g)"/>`,
     `<linearGradient id="g" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="${PAL.lime}"/><stop offset="1" stop-color="${PAL.mint}"/></linearGradient>`),
-  mark: () => doc(`<g filter="url(#sh)"><g transform="${T}" stroke-linejoin="round">${silhouette('#ffffff', 22)}</g></g>${mark()}`,
+  mark: () => doc(fit(`<g filter="url(#sh)"><g transform="${T}" stroke-linejoin="round">${silhouette('#ffffff', 22)}</g></g>${mark()}`),
     `<filter id="sh" x="-20%" y="-20%" width="150%" height="150%"><feDropShadow dx="0" dy="18" stdDeviation="16" flood-color="${PAL.ink}" flood-opacity="0.35"/></filter>`),
   backgroundDark: () => doc(`<rect width="${W}" height="${W}" fill="url(#g)"/>`,
     `<linearGradient id="g" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#05361c"/><stop offset="1" stop-color="#0c7a3b"/></linearGradient>`),
@@ -62,7 +66,7 @@ const rainbowInner = (() => {
 })();
 icons.rainbow = {
   background: () => doc(`<rect width="${W}" height="${W}" fill="${PAL.paper}"/>`),
-  mark: () => doc(`<g filter="url(#sh)"><g transform="${T}" stroke-linejoin="round">${silhouette('#ffffff', 22)}</g></g>${mark(rainbowInner)}`,
+  mark: () => doc(fit(`<g filter="url(#sh)"><g transform="${T}" stroke-linejoin="round">${silhouette('#ffffff', 22)}</g></g>${mark(rainbowInner)}`),
     `<filter id="sh" x="-20%" y="-20%" width="150%" height="150%"><feDropShadow dx="0" dy="16" stdDeviation="14" flood-color="${PAL.ink}" flood-opacity="0.28"/></filter>`),
   backgroundDark: () => doc(`<rect width="${W}" height="${W}" fill="#1b1f1d"/>`),
 };

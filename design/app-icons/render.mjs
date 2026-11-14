@@ -13,12 +13,12 @@ await page.setViewport({ width: W, height: W, deviceScaleFactor: 1 });
 // the pixel icon: sample the real slice at 24x24 and keep three colours
 {
   const inner = fs.readFileSync(path.join(here, 'source', 'slice-paths.svg'), 'utf8');
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${W}" viewBox="0 0 ${W} ${W}"><g transform="translate(74.50 74.20) scale(3.5660)">${inner}</g></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${W}" viewBox="0 0 ${W} ${W}"><g transform="translate(512 512) scale(0.81) translate(-520 -520)"><g transform="translate(74.50 74.20) scale(3.5660)">${inner}</g></g></svg>`;
   const cells = await page.evaluate(async (svg, size, cell, palette) => {
     const img = new Image(); img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg); await img.decode();
     // 4x supersample, then each cell takes the colour most of its sub-pixels have (the ink outline wins from a quarter of them, so the lines survive)
     const sub = 4, n = size * sub; const c = document.createElement('canvas'); c.width = n; c.height = n; const g = c.getContext('2d');
-    const span = size * cell; g.drawImage(img, 520 - span / 2, 520 - span / 2, span, span, 0, 0, n, n);
+    const span = size * cell; g.drawImage(img, 512 - span / 2, 512 - span / 2, span, span, 0, 0, n, n);
     const d = g.getImageData(0, 0, n, n).data; const out = [];
     const rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
     const pal = palette.map((h) => ({ h, v: rgb(h) }));
@@ -30,11 +30,14 @@ await page.setViewport({ width: W, height: W, deviceScaleFactor: 1 });
         votes[bi]++;
       }
       if (solid < sub * sub * 0.45) continue;
-      const ink = votes[2]; let pick = ink >= solid * 0.25 ? 2 : (votes[0] >= votes[1] ? 0 : 1);
+      const ink = votes[2]; let pick = ink >= solid * 0.3 ? 2 : (votes[0] >= votes[1] ? 0 : 1);
       out.push({ x, y, c: pal[pick].h });
     }
     return out;
   }, svg, PIXEL.size, PIXEL.cell, [PAL.lime, PAL.mint, PAL.ink]);
+  // the dark rim: the cells on the edge of the silhouette are ink
+  const have = new Set(cells.map((c) => c.x + ',' + c.y));
+  for (const c of cells) if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => !have.has((c.x + dx) + ',' + (c.y + dy)))) c.c = PAL.ink;
   PIXEL.cells = cells;
 }
 
@@ -59,7 +62,8 @@ for (const [name, icon] of Object.entries(icons)) {
   const flat = flatten(bg, mk), flatDark = flatten(bgDark, mk);
   out(`${name}/${name}.svg`, flat); out(`${name}/${name}-dark.svg`, flatDark);
   // Tinted (Apple's guide): a greyscale mark on transparent; the system supplies the colour
-  const tinted = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${W}" viewBox="0 0 ${W} ${W}"><defs>${defsOf(mk)}<filter id="grey"><feColorMatrix type="saturate" values="0"/></filter></defs><g filter="url(#grey)">${bodyOf(mk)}</g></svg>\n`;
+  const tmk = icon.tintedMark ? icon.tintedMark() : mk;
+  const tinted = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${W}" viewBox="0 0 ${W} ${W}"><defs>${defsOf(tmk)}<filter id="grey"><feColorMatrix type="saturate" values="0"/></filter></defs><g filter="url(#grey)">${bodyOf(tmk)}</g></svg>\n`;
   out(`${name}/${name}-tinted.svg`, tinted);
   await png(flat, `png/${name}.png`); await png(flatDark, `png/${name}-dark.png`); await png(tinted, `png/${name}-tinted.png`, true);
   // the layers as PNGs, for the Icon Composer bundle (CoreSVG, which the icon compiler uses, has no filters: the art has them)
