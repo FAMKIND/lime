@@ -1,0 +1,6 @@
+Frameworks/
+Lime/Generated/
+build/
+DerivedData/
+*.xcodeproj
+tools/selftest/build/
