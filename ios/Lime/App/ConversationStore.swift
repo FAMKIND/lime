@@ -98,6 +98,8 @@ final class ConversationStore {
     var orgJoinStates: [String: String] = [:]
     /// An invite opened from a link, waiting for "Join?".
     var joiningBand: OrgInvite?
+    /// How many times the New Message sheet (which holds the scanner) has finished closing: a scan that hands over to "Join <band>?" waits for it (LIME-183c).
+    var newMessageDismissals = 0
     var demoOrgInviteOn = true
     /// Demo: drafts waiting for review in my band (LIME-273).
     var demoReviewItems: [ReviewItem] = []

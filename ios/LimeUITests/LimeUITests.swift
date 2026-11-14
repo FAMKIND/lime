@@ -2227,7 +2227,7 @@ final class LimeUITestsSettings: LimeUITestCase {
     }
 
     func testEdgeSwipeGoesBack() throws {
-        try XCTSkipIf(true, "known failing in the iOS 27 simulator: the scripted edge drag does not start the system back swipe (fails at 456a69d too); check by hand on a phone; LIME-183c")
+        try XCTSkipIf(true, "unresolved: the scripted left-edge drag goes back in a bare NavigationStack on the iOS 27 simulator, but not on a screen with a hidden navigation bar and lime's swipeBackEnabled(), nor in the chat (enabling interactiveContentPopGestureRecognizer as well fixed the bare repro, not the chat, and could fight swipe-to-reply); check by hand on a phone whether the edge swipe works in a chat; LIME-183c")
         let app = signedInApp()
         app.launch()
         let list = app.descendants(matching: .any)["messages-list"]

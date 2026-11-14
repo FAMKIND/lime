@@ -129,7 +129,7 @@ final class ChatOpensUITests: XCTestCase {
         XCTAssertTrue(scroll.waitForExistence(timeout: 8))
         let summary = any(app, "thread-summary-m100")
         var tries = 0
-        while !(summary.exists && summary.isHittable) && tries < 40 { scroll.swipeDown(velocity: .fast); tries += 1 }
+        while !(summary.exists && summary.isHittable) && tries < 120 { scroll.swipeDown(velocity: .fast); tries += 1 }   // 120, not 40: a fast swipe's distance varies with load (LIME-183c)
         XCTAssertTrue(summary.isHittable, "message 100 is on screen after scrolling up")
         let before = summary.frame.minY
         summary.tap()

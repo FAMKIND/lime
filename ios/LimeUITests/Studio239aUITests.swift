@@ -41,7 +41,7 @@ final class Studio239aUITests: LimeUITestCase {
     }
 
     func testTheMicMenuListsTheInputsAndRemembersTheChoice() throws {
-        try XCTSkipIf(true, "known failing in the iOS 27 simulator: a tap on a menu item in the studio does not close the menu or change the choice (the same symptom as Jam203s View post); LIME-183c")
+        try XCTSkipIf(true, "known failing: a tap on a mic menu item does not change the choice under XCUITest on the iOS 27 simulator. A bare SwiftUI Menu on a quiet screen and in a full-screen cover does take a tap, one on a screen redrawing 20 times a second does not, but the idle studio does not redraw (its body count stayed flat over 8 s), so the cause here is not found; check by hand on a phone that choosing AirPods works; LIME-183c")
         let app = XCUIApplication()
         app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-screen", "jam-mine"]
         app.launch()

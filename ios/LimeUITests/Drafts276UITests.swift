@@ -17,6 +17,8 @@ final class Drafts276UITests: LimeUITestCase {
 
     private func openDrafts(_ app: XCUIApplication) {
         let drafts = app.buttons["jam-segment-Drafts"]
+        // The pills scroll with the feed: tapping a row further down scrolls the feed itself (the demo has many drafts), so come back to the top first (LIME-183c).
+        for _ in 0..<8 where !drafts.waitForExistence(timeout: 1) { app.swipeDown() }
         XCTAssertTrue(drafts.waitForExistence(timeout: 10))
         for _ in 0..<4 where !drafts.isSelected {
             sleep(1)

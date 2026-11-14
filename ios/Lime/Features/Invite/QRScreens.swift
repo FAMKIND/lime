@@ -73,10 +73,13 @@ final class QRScanModel {
     func handle(_ text: String, store: ConversationStore) async {
         guard !handling else { return }
         handling = true
-        // A band's code (LIME-246d): the scanner closes and the app asks "Join <band>?" (a sheet cannot open over another, so it waits for this one to go).
+        // A band's code (LIME-246d): the scanner closes and the app asks "Join <band>?". A sheet cannot open over another, and SwiftUI would present it on
+        // the one still closing and take it down with that one: so wait until the New Message sheet has really gone (not for a fixed time: LIME-183c).
         if let invite = store.bandInvite(fromScan: text) {
+            let before = store.newMessageDismissals
             finish?()
-            try? await Task.sleep(for: .milliseconds(600))
+            for _ in 0..<60 where store.newMessageDismissals == before { try? await Task.sleep(for: .milliseconds(50)) }
+            try? await Task.sleep(for: .milliseconds(200))
             store.joiningBand = invite
             return
         }

@@ -30,7 +30,6 @@ final class Mention181UITests: LimeUITestCase {
     }
 
     func testPickingAPersonPutsTheirNameInTheFieldAndTheBubbleHasATappableMention() throws {
-        try XCTSkipIf(true, "known failing since before LIME-181: tapping the mention link in the bubble does not open the profile under XCTest (the link element exists); needs a look at whether a real tap works; LIME-183c")
         let app = open("", screen: "group")
         let field = field(app)
         field.typeText("hi @le")
@@ -46,8 +45,13 @@ final class Mention181UITests: LimeUITestCase {
         app.buttons["send-button"].tap()
         let mention = app.links["@Lee Wong"]
         XCTAssertTrue(mention.waitForExistence(timeout: 8), "the bubble has a mention element")
-        mention.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["profile-screen"].waitForExistence(timeout: 20), "tapping it opens their profile")
+        // The first tap only closes the keyboard (the composer still has focus after Send); the next one follows the link (checked by hand in LIME-183c).
+        let profile = app.descendants(matching: .any)["profile-screen"]
+        for _ in 0..<3 where !profile.exists {
+            mention.tap()
+            _ = profile.waitForExistence(timeout: 4)
+        }
+        XCTAssertTrue(profile.waitForExistence(timeout: 10), "tapping it opens their profile")
     }
 
     func testTheListFloatsAboveTheComposerAndDoesNotGrowIt() {

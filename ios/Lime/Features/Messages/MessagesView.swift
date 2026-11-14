@@ -44,7 +44,7 @@ struct MessagesView: View {
         }
         #endif
         .sheet(isPresented: $showAbout) { AboutView() }
-        .sheet(isPresented: $showNewMessage) { NewMessageSheet() }
+        .sheet(isPresented: $showNewMessage, onDismiss: { store.newMessageDismissals += 1 }) { NewMessageSheet() }
         .inviteFlow(start: $inviting, username: session.profile?.username)
         .sheet(isPresented: $showSettings) { SettingsView() }
         .sheet(isPresented: $showStatus, onDismiss: { if settingsAfterStatus { settingsAfterStatus = false; showSettings = true } }) {

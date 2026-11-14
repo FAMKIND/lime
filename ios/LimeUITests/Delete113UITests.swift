@@ -3,9 +3,8 @@ import XCTest
 /// LIME-113: delete your account (demo, with the stand-in backend), and a chat with a deleted account (demo).
 @MainActor
 final class Delete113UITests: LimeUITestCase {
-    func testDeleteAccountExplainsThenAsksForDELETEPasswordAndCode() throws {
-        try XCTSkipIf(true, "known failing (fails at 456a69d too): after the right code the demo leaves the profile on screen instead of returning to the welcome screen; needs a look at whether the demo or the app is wrong; LIME-183c")
-        let app = demoApp()
+    /// From Settings to the code step: the explanation, DELETE exactly, a refused wrong password, then the right password. Returns the code field.
+    private func reachTheCodeStep(_ app: XCUIApplication) -> XCUIElement {
         app.launch()
         openSettings(app)
         app.buttons["settings-account"].tap()
@@ -32,13 +31,32 @@ final class Delete113UITests: LimeUITestCase {
         XCTAssertTrue(code.waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["delete-confirm"].isEnabled)
         for _ in 0..<3 where !code.value(forKey: "hasKeyboardFocus").map({ ($0 as? Bool) ?? false })! { code.tap(); usleep(500_000) }
+        return code
+    }
+
+    func testDeleteAccountExplainsThenAsksForDELETEPasswordAndCode() {
+        let app = demoApp()
+        let code = reachTheCodeStep(app)
         code.typeText("000000")
         app.buttons["delete-confirm"].tap()
         XCTAssertTrue(app.staticTexts["delete-error"].waitForExistence(timeout: 5), "a wrong code deletes nothing")
-        code.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 6))
+        // (The system's "Save Password?" opens on the first submit and, in the iOS 27 simulator, leaves the keyboard dropping input afterwards, so the
+        // right code is a separate test with a fresh launch: LIME-183c.)
+    }
+
+    func testTheRightCodeDeletesTheAccountAndReturnsToTheWelcomeScreen() {
+        let app = demoApp()
+        let code = reachTheCodeStep(app)
         code.typeText("123456")
         app.buttons["delete-confirm"].tap()
-        XCTAssertTrue(app.buttons["welcome-continue"].waitForExistence(timeout: 15), "back at the welcome screen")
+        // The system may open "Save Password?" over it: answer Not Now while waiting for the welcome screen.
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        var welcome = false
+        for _ in 0..<12 where !welcome {
+            if app.buttons["welcome-continue"].waitForExistence(timeout: 2) { welcome = true; break }
+            for host in [app, springboard] where host.buttons["Not Now"].exists { host.buttons["Not Now"].tap() }
+        }
+        XCTAssertTrue(welcome, "back at the welcome screen")
     }
 
     func testAChatWithADeletedPersonLooksLikeAnyOldChatAndSendingShowsOneQuietLine() {
