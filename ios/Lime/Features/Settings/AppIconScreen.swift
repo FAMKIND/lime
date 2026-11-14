@@ -1,10 +1,11 @@
 import SwiftUI
 import UIKit
 
-/// The icons a person can choose for lime on the Home Screen (LIME-292b): lime's own and seven playful ones, all the lime logo. The choice is local to this
-/// phone (iOS keeps it), never sent. Each is an `AppIcon-<Title>` set in the asset catalog; lime's own is `AppIcon` (iOS calls it `nil`).
+/// The icons a person can choose for lime on the Home Screen (LIME-292b, 292c): lime's own and seven others, all the lime slice. The choice is local to this
+/// phone (iOS keeps it), never sent. Each is an Icon Composer bundle `AppIcon-<Title>.icon` (iOS makes its Dark, Clear and Tinted looks from the layers); lime's
+/// own is the `AppIcon` set (iOS calls it `nil`).
 enum AppIconChoice: String, CaseIterable, Identifiable {
-    case lime, dark, minimal, pixel, rainbow, notebook, chalkboard, apple
+    case lime, dark, sticker, notebook, chalkboard, pixel, rainbow, apple
 
     var id: String { rawValue }
 
@@ -12,11 +13,11 @@ enum AppIconChoice: String, CaseIterable, Identifiable {
         switch self {
         case .lime: "lime"
         case .dark: "Dark"
-        case .minimal: "Minimal"
-        case .pixel: "Pixel"
-        case .rainbow: "Rainbow"
+        case .sticker: "Sticker"
         case .notebook: "Notebook"
         case .chalkboard: "Chalkboard"
+        case .pixel: "Pixel"
+        case .rainbow: "Rainbow"
         case .apple: "Apple"
         }
     }
@@ -26,7 +27,22 @@ enum AppIconChoice: String, CaseIterable, Identifiable {
     var preview: String { "IconPreview-\(rawValue.prefix(1).uppercased())\(rawValue.dropFirst())" }
     var spokenName: String { "\(title) app icon" }
 
-    static func choice(forIconName name: String?) -> AppIconChoice { allCases.first { $0.iconName == name } ?? .lime }
+    static func choice(forIconName name: String?) -> AppIconChoice {
+        if name == Self.oldMinimal { return .sticker }
+        return allCases.first { $0.iconName == name } ?? .lime
+    }
+
+    /// The icon this build replaced: Minimal became Sticker (LIME-292c).
+    static let oldMinimal = "AppIcon-Minimal"
+
+    /// What to do about the icon iOS says is set: nothing when it is one of ours; Minimal moves to Sticker; anything else this build does not have goes back to lime's
+    /// own (never a blank icon). `to` is what `setAlternateIconName` takes.
+    static func migration(forIconName name: String?) -> (change: Bool, to: String?) {
+        guard let name else { return (false, nil) }
+        if allCases.contains(where: { $0.iconName == name }) { return (false, name) }
+        if name == oldMinimal { return (true, AppIconChoice.sticker.iconName) }
+        return (true, nil)
+    }
 
     /// Four columns; three then two at accessibility text sizes, so the icons grow and never shrink under 60 pt.
     static func columns(for size: DynamicTypeSize) -> Int {
@@ -34,10 +50,17 @@ enum AppIconChoice: String, CaseIterable, Identifiable {
         return size >= .accessibility3 ? 2 : 3
     }
 
+    /// Once a phone has an icon this build no longer has (Minimal became Sticker), move it, so the Home Screen never shows a blank one (LIME-292c).
+    @MainActor static func migrateIfNeeded() {
+        let step = migration(forIconName: UIApplication.shared.alternateIconName)
+        guard step.change, UIApplication.shared.supportsAlternateIcons else { return }
+        UIApplication.shared.setAlternateIconName(step.to) { _ in }
+    }
+
     static let footer = "The name \u{201C}lime\u{201D} stays the same on your Home Screen and in notifications."
 }
 
-/// Settings → Customize → App icon: a grid in one card, icons only (the names are for VoiceOver), a ring in lime's green round the one in use.
+/// Settings → Customize → App icon: a grid in one card, each icon with its name under it (as Signal's), a ring in lime's green round the one in use.
 struct AppIconScreen: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var current = AppIconChoice.choice(forIconName: UIApplication.shared.alternateIconName)
@@ -67,10 +90,20 @@ struct AppIconScreen: View {
         }
     }
 
-    /// The ring: lime's green (nudged just enough to keep 3:1 against the card, which a theme can change), a small gap, then the icon.
+    /// The ring: lime's green (nudged just enough to keep 3:1 against the card, which a theme can change), a small gap, then the icon, and its name under it.
     private func cell(_ choice: AppIconChoice, size: CGFloat) -> some View {
         let radius = size * 0.2237
-        return Image(choice.preview).resizable().interpolation(.high).scaledToFit()
+        return VStack(spacing: 4) {
+            icon(choice, size: size, radius: radius)
+            Text(choice.title).font(Theme.font(.footnote)).foregroundStyle(Theme.textSecondary).lineLimit(typeSize.isAccessibilitySize ? nil : 1)
+                .multilineTextAlignment(.center).minimumScaleFactor(0.85)
+        }
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .contentShape(Rectangle())
+    }
+
+    private func icon(_ choice: AppIconChoice, size: CGFloat, radius: CGFloat) -> some View {
+        Image(choice.preview).resizable().interpolation(.high).scaledToFit()
             .frame(width: size, height: size)
             .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 0.5))
@@ -79,8 +112,6 @@ struct AppIconScreen: View {
                 if choice == current { RoundedRectangle(cornerRadius: radius + 6, style: .continuous).strokeBorder(Self.ring, lineWidth: 3) }
             }
             .padding(2)
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .contentShape(Rectangle())
     }
 
     static var ring: Color {

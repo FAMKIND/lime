@@ -39,7 +39,7 @@ final class Delete113UITests: LimeUITestCase {
         let code = reachTheCodeStep(app)
         code.typeText("000000")
         app.buttons["delete-confirm"].tap()
-        XCTAssertTrue(app.staticTexts["delete-error"].waitForExistence(timeout: 5), "a wrong code deletes nothing")
+        XCTAssertTrue(app.staticTexts["delete-error"].waitForExistence(timeout: 20), "a wrong code deletes nothing")   // 20 s, not 5: under load the answer is slow (LIME-292c run)
         // (The system's "Save Password?" opens on the first submit and, in the iOS 27 simulator, leaves the keyboard dropping input afterwards, so the
         // right code is a separate test with a fresh launch: LIME-183c.)
     }

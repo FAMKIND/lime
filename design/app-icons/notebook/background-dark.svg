@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024"><defs>
+  <filter id="blobs" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.0085 0.012" numOctaves="3" seed="11" result="n"/>
+    <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 14 -5.0"/>
+  </filter>
+  <filter id="ribbons" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.016 0.022" numOctaves="2" seed="5" result="n"/>
+    <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  1 0 0 0 0"/>
+    <feComponentTransfer><feFuncA type="discrete" tableValues="0 0 0 0 0 0 0 0 1 1 0 0 0 0 0 0 0 0 0 0"/></feComponentTransfer>
+  </filter>
+  <filter id="specks" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="2" seed="23" result="n"/>
+    <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 12 -7.4"/>
+  </filter>
+  <linearGradient id="spine" x1="0" x2="1"><stop offset="0" stop-color="#050706"/><stop offset="0.55" stop-color="#181c1a"/><stop offset="1" stop-color="#0a0d0b"/></linearGradient>
+  <filter id="lsh" x="-10%" y="-10%" width="120%" height="125%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000" flood-opacity="0.4"/></filter></defs>
+  <rect width="1024" height="1024" fill="#f4f2ec"/>
+  <rect width="1024" height="1024" fill="#101311" filter="url(#blobs)"/>
+  <rect width="1024" height="1024" fill="#f4f2ec" filter="url(#ribbons)" opacity="0.55"/>
+  <rect width="1024" height="1024" fill="#101311" filter="url(#specks)" opacity="0.7"/><rect width="1024" height="1024" fill="#000" opacity="0.38"/><rect width="150" height="1024" fill="url(#spine)"/><rect x="144" width="6" height="1024" fill="#000" opacity="0.35"/>
+  <g filter="url(#lsh)"><rect x="250" y="232" width="620" height="560" rx="34" fill="#e9e7df"/></g>
+  <rect x="272" y="254" width="576" height="516" rx="20" fill="none" stroke="#131b17" stroke-opacity="0.18" stroke-width="3"/>
+  <line x1="330" y1="664" x2="790" y2="664" stroke="#131b17" stroke-opacity="0.55" stroke-width="5" stroke-linecap="round"/>
+  <line x1="330" y1="712" x2="730" y2="712" stroke="#131b17" stroke-opacity="0.55" stroke-width="5" stroke-linecap="round"/></svg>

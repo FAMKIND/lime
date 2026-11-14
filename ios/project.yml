@@ -52,8 +52,9 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.famkind.lime   # placeholder; confirm before registering with Apple
         TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        # LIME-292b: the choices in Settings → Customize → App icon are the AppIcon-<Name> sets beside AppIcon.
-        ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES
+        # LIME-292c: the choices in Settings → Customize → App icon are the Icon Composer bundles Resources/Icons/AppIcon-<Name>.icon (layers: iOS makes their
+        # Dark, Clear and Tinted looks), beside the primary AppIcon set (lime).
+        ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: "AppIcon-Dark AppIcon-Sticker AppIcon-Notebook AppIcon-Chalkboard AppIcon-Pixel AppIcon-Rainbow AppIcon-Apple"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: lime
         INFOPLIST_KEY_UILaunchScreen_Generation: YES

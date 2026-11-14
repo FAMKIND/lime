@@ -53,7 +53,7 @@ struct LimeApp: App {
                 #endif
                 .onGeometryChange(for: CGSize.self) { $0.size } action: { WindowMetrics.shared.size = $0 }
                 .limeTextSize()
-                .onAppear { WindowTextSize.start() }
+                .onAppear { WindowTextSize.start(); AppIconChoice.migrateIfNeeded() }
                 .environment(store)
                 .environment(session)
                 .environment(notifications)
