@@ -32,7 +32,7 @@ For plot: main's head at branch time was `67ae440a`; worktree path `~/Sites/lime
 
 ## LIME-601
 
-`mac/build-core.sh` builds LimeCore into `mac/Frameworks/LimeCoreFFI.xcframework` (slices `macos-arm64` and `ios-arm64-maccatalyst`) and the bindings into `mac/Lime/Generated/lime_core.swift`. `mac/tools/selftest/build.sh` builds and runs the self-test on this Mac: prints `lime core 0.1.0` and `Encryption self-test: passed`, exit 0. `cargo test` in `core/`: 564 passed, 0 failed. Nothing generated is tracked; the lane diff (`ios/ android/ site/ supabase/ server/ core/`) vs `main` is empty. `docs/mac.md` has "Building the core".
+`mac/build-core.sh` builds LimeCore into `mac/Frameworks/LimeCoreFFI.xcframework` (slices `macos-arm64` and `ios-arm64-maccatalyst`) and the bindings into `mac/Lime/Generated/lime_core.swift`. `mac/tools/selftest/build.sh` builds and runs the self-test on this Mac: prints `lime core 0.1.0` and `Encryption self-test: passed`, exit 0. `cargo test` in `core/`: 564 passed, 0 failed. Nothing generated is tracked; the lane diff vs the branch point (`git merge-base main mac`) is empty (`main` itself has since moved by a commit that touches `ios/`, so a plain diff against its tip is not empty; that is main's change, not this branch's). `docs/mac.md` has "Building the core".
 
 Survey: Xcode 27.0 on macOS 26.6.2; 1.99.0 installs `aarch64-apple-darwin` and `aarch64-apple-ios-macabi` with a prebuilt standard library (`rustup target add` in `core/`), so no nightly or `build-std`: DECISION M-A's cost is unchanged.
 
