@@ -398,7 +398,7 @@ struct OrgProfileView: View {
     // MARK: The hero
 
     private var headBlock: some View {
-        let screen = windowHeight > 0 ? windowHeight : UIScreen.main.bounds.height
+        let screen = windowHeight > 0 ? windowHeight : WindowMetrics.shared.size.height
         let inset = topInset > 0 ? topInset : 100
         let authors = store.orgAuthors(page)
         let cover = AvatarCache.shared.image(for: ConversationStore.jamCoverKey(page.jamId))

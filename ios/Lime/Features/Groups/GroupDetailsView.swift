@@ -239,7 +239,7 @@ struct GroupDetailsView: View {
 
     /// The hero: the group's photo blurred (or its tone), the avatar, the name in white, the count, and the glass tabs.
     private var headBlock: some View {
-        let screen = windowHeight > 0 ? windowHeight : UIScreen.main.bounds.height
+        let screen = windowHeight > 0 ? windowHeight : WindowMetrics.shared.size.height
         let inset = topInset > 0 ? topInset : 100
         let id = target.conversationID
         // The cover when it has one, else its photo blurred, else a gradient of its colour (LIME-257).

@@ -14,6 +14,7 @@ struct ChatView: View {
     /// The words of the search that led here: highlighted in the chat like find does.
     var focusWords: [String] = []
     @Environment(ConversationStore.self) private var store
+    @Environment(\.chatIsPaneRoot) private var chatIsPaneRoot
     @Environment(NotificationCoordinator.self) private var notifications
     @Environment(\.dismiss) private var dismiss
     @State private var composerModel = RichComposerModel()
@@ -43,7 +44,8 @@ struct ChatView: View {
     @State private var timeReveal: CGFloat = 0
     /// The chat has settled at its newest message once. Coming back from a screen pushed on top (a thread, a profile) re-runs the open task; it must
     /// leave the scroll where it was (LIME-234).
-    @State private var settledOnce = false
+    /// The chat this view has settled at the newest message for (LIME-338: per chat, not once per view, so a pane that shows another chat in the same view settles again).
+    @State private var settledConversation: String?
     /// The opening scroll is done: only now does scrolling near the top load older rows.
     @State private var openSettled = false
     /// The list's content height and offset, kept in a plain box (no redraws), to keep your place when older rows are added.
@@ -137,7 +139,7 @@ struct ChatView: View {
         .safeAreaBar(edge: .bottom) { bottomBar(conversation) }
         .safeAreaInset(edge: .top) { if finding { findBar }  }
         .navigationBarTitleDisplayMode(.inline)
-        .limeBack(unread: backUnread)
+        .limeBack(showsBack: !chatIsPaneRoot, unread: backUnread)
         .toolbar {
             // The avatar and name sit beside the system ‹, with no glass of their own, left-aligned in a width worked out from the screen's (the room between ‹ and the two circles; .principal would centre it);
             // the name truncates rather than vanishing (LIME-247, 247b).
@@ -246,8 +248,9 @@ struct ChatView: View {
                 // Opening a chat: once its rows have been laid out, settle at the newest message. `defaultScrollAnchor` alone is not
                 // enough on every iOS version (a chat pushed at launch opened at its top on iOS 18); this is a no-op when it worked.
                 // Not for a search result's jump to a message.
-                guard focusMessageID == nil, !settledOnce else { return }
-                settledOnce = true
+                guard focusMessageID == nil, settledConversation != conversationID else { return }
+                settledConversation = conversationID
+                openSettled = false
                 #if DEBUG
                 openProbe.open(conversationID, messages: conversation.messages.count, loaded: store.isLoaded)
                 openProbe.log("window=\(windowRows) of \(rowsOf(conversation).count) rows")
@@ -624,23 +627,25 @@ struct ChatView: View {
     private func header(_ conversation: Conversation) -> some View {
         HStack(spacing: 8) {
             let others = backUnread
-            Button { dismiss() } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 18))
-                        .foregroundStyle(Theme.text)
-                    if others > 0 { CountBadge(count: others) }
+            if !chatIsPaneRoot {   // the Mac shows the chat at the root of its own pane: nothing to go back to (LIME-338)
+                Button { dismiss() } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 18))
+                            .foregroundStyle(Theme.text)
+                        if others > 0 { CountBadge(count: others) }
+                    }
+                    .padding(.horizontal, others > 0 ? 12 : 0)
+                    .frame(minWidth: 48, minHeight: 48)
+                    .limeGlass()
+                    .animation(Motion.animation(.easeOut(duration: 0.2)), value: others)
                 }
-                .padding(.horizontal, others > 0 ? 12 : 0)
-                .frame(minWidth: 48, minHeight: 48)
-                .limeGlass()
-                .animation(Motion.animation(.easeOut(duration: 0.2)), value: others)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Back")
+                .accessibilityValue(others == 0 ? "" : others == 1 ? "1 unread message" : "\(others) unread messages")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityIdentifier("back-button")
             }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Back")
-            .accessibilityValue(others == 0 ? "" : others == 1 ? "1 unread message" : "\(others) unread messages")
-            .accessibilityAddTraits(.isButton)
-            .accessibilityIdentifier("back-button")
 
             titlePill(conversation)
             .layoutPriority(1)

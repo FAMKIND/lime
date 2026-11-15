@@ -69,6 +69,17 @@ private struct LimeBackModifier: ViewModifier {
     }
 }
 
+private struct ChatIsPaneRootKey: EnvironmentKey { static let defaultValue = false }
+
+extension EnvironmentValues {
+    /// True when the chat is the root of its own pane (the Mac shows the list and the chat side by side): there is nothing to go back to, so no Back (LIME-338).
+    /// Nothing in `ios/` sets it, so on the phones Back always shows; the Mac host sets it.
+    var chatIsPaneRoot: Bool {
+        get { self[ChatIsPaneRootKey.self] }
+        set { self[ChatIsPaneRootKey.self] = newValue }
+    }
+}
+
 extension View {
     /// Our ‹ on iOS 26; the system's before that.
     @ViewBuilder

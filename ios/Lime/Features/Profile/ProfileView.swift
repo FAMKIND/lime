@@ -296,7 +296,7 @@ struct ProfileView: View {
     /// screen's height and the avatar's centre at 29 %; the picture fills from the top edge behind it all: their background if there is one, else a default.
     @ViewBuilder
     private func headBlock(_ available: [Section]) -> some View {
-        let screen = windowHeight > 0 ? windowHeight : UIScreen.main.bounds.height
+        let screen = windowHeight > 0 ? windowHeight : WindowMetrics.shared.size.height
         let inset = topInset > 0 ? topInset : 100
         let shown = shownHero
         VStack(spacing: 0) {

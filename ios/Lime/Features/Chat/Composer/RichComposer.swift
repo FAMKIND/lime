@@ -113,10 +113,10 @@ final class RichComposerModel {
 
     private var line: CGFloat { textView?.font?.lineHeight ?? 20 }
     var fieldCap: CGFloat {
-        ComposerSizing.maxFieldHeight(window: windowHeight > 0 ? windowHeight : UIScreen.main.bounds.height, keyboard: keyboardHeight, topInset: topInset, bottomInset: bottomInset, strip: showsStrip, line: line)
+        ComposerSizing.maxFieldHeight(window: windowHeight > 0 ? windowHeight : WindowMetrics.shared.size.height, keyboard: keyboardHeight, topInset: topInset, bottomInset: bottomInset, strip: showsStrip, line: line)
     }
     var expandedFieldHeight: CGFloat {
-        ComposerSizing.expandedFieldHeight(window: windowHeight > 0 ? windowHeight : UIScreen.main.bounds.height, keyboard: keyboardHeight, topInset: topInset, bottomInset: bottomInset, strip: showsStrip, line: line)
+        ComposerSizing.expandedFieldHeight(window: windowHeight > 0 ? windowHeight : WindowMetrics.shared.size.height, keyboard: keyboardHeight, topInset: topInset, bottomInset: bottomInset, strip: showsStrip, line: line)
     }
 
     func toggleExpanded() {
