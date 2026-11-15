@@ -128,9 +128,21 @@ let session: Session = {
 /// Refreshes the session when it is within five minutes of expiring, and keeps the new tokens (a refresh token is single-use).
 func freshToken() -> String {
     if session.expires - Date().timeIntervalSince1970 > 300 { return session.access }
-    guard let (status, body) = try? jsonPost("/auth/v1/token?grant_type=refresh_token", ["refresh_token": session.refresh]), status == 200,
-          let a = body["access_token"] as? String, let r = body["refresh_token"] as? String
-    else { fail("could not refresh \(personaName)'s session: run mac/tools/staging-test-accounts.sh again") }
+    return refreshSession()
+}
+
+/// The session ended on the server (the password was changed, or the account signed out): say so and stop, never go quiet (LIME-606).
+func sessionEnded() -> Never {
+    fail("\(personaName)'s session ended: run mac/tools/staging-test-accounts.sh, then restart the partner")
+}
+
+/// Refreshes the session now. A refused refresh (400/401/403) means the session ended: exit non-zero; any other failure (no network, a 5xx) is a plain error.
+func refreshSession() -> String {
+    guard let (status, body) = try? jsonPost("/auth/v1/token?grant_type=refresh_token", ["refresh_token": session.refresh])
+    else { fail("could not refresh \(personaName)'s session: no answer from the server") }
+    if [400, 401, 403].contains(status) { sessionEnded() }
+    guard status == 200, let a = body["access_token"] as? String, let r = body["refresh_token"] as? String
+    else { fail("could not refresh \(personaName)'s session: the server answered \(status)") }
     session.access = a; session.refresh = r
     session.expires = Date().timeIntervalSince1970 + ((body["expires_in"] as? NSNumber)?.doubleValue ?? 3600)
     let out = try! JSONSerialization.data(withJSONObject: ["access": a, "refresh": r, "expires": session.expires])
@@ -162,9 +174,21 @@ catch { fail("could not register the device: \(error)") }
 
 func dmId(_ a: Account) -> String { "dm:\(a.userId)" }
 func words(_ text: String) -> String { String(messagePlainText(text: text).replacingOccurrences(of: "\n", with: " ").prefix(40)) }
+/// One line for a failed step, `<command>: <step> failed: <error>` (the same line twice in a row is printed once). A failure that is not
+/// "no network" also checks the session: if the server ended it, the partner exits non-zero instead of going quiet.
+var lastReported = ""
+var lastSessionCheck = Date.distantPast
+func report(_ step: String, _ error: Error) {
+    let line = "\(command): \(step) failed: \(error)"
+    if line != lastReported { print(line); fflush(stdout); lastReported = line }
+    if (error as? StoreError) != .Network, Date().timeIntervalSince(lastSessionCheck) > 60 { lastSessionCheck = Date(); _ = refreshSession() }
+}
+
 func syncAndAccept() {
-    _ = try? store.sync(transport: transport, authToken: freshToken())
-    for c in (try? store.listConversations()) ?? [] where c.requestState == "pending" { try? store.acceptRequest(conversationId: c.id) }
+    do { _ = try store.sync(transport: transport, authToken: freshToken()) } catch { report("sync", error) }
+    for c in (try? store.listConversations()) ?? [] where c.requestState == "pending" {
+        do { try store.acceptRequest(conversationId: c.id) } catch { report("accept", error) }
+    }
 }
 
 // MARK: commands
@@ -178,7 +202,7 @@ case "send":
     } catch { fail("send failed: \(error)") }
 
 case "status":
-    _ = try? store.sync(transport: transport, authToken: freshToken())
+    do { _ = try store.sync(transport: transport, authToken: freshToken()) } catch { report("sync", error) }
     let all = (try? store.listConversations()) ?? []
     print("\(personaName): device \(device.deviceId.prefix(8)); conversations: \(all.count)")
 
@@ -208,8 +232,8 @@ case "echo":
                 answered.insert(m.id)
                 // Never answer another echo (two echoes would talk forever).
                 if messagePlainText(text: m.text).hasSuffix("here: got") || messagePlainText(text: m.text).contains(" here: got \"") { continue }
-                _ = try? store.queueText(conversationId: c.id, text: "\(personaName) here: got \"\(words(m.text))\"")
-                _ = try? store.deliverQueued(transport: transport, authToken: freshToken())
+                do { _ = try store.queueText(conversationId: c.id, text: "\(personaName) here: got \"\(words(m.text))\"") } catch { report("queue", error); continue }
+                do { _ = try store.deliverQueued(transport: transport, authToken: freshToken()) } catch { report("deliver", error); continue }
                 print("echo: answered a message in \(c.title)"); fflush(stdout)
             }
         }
