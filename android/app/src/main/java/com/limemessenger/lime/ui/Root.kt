@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -130,13 +132,15 @@ private fun SignedIn(session: AccountSession) {
             onLogged = { callScope.launch { callsModel.reload(); chats.reload() } },
             announce = { words -> callView.announceForAccessibility(words) },
             lowData = { (appContext as? com.limemessenger.lime.LimeApp)?.callPrefs?.lowDataMode ?: false },
+            foreground = { (appContext as? com.limemessenger.lime.LimeApp)?.inForeground ?: true },
             cameraAllowed = { androidx.core.content.ContextCompat.checkSelfPermission(appContext, android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED },
         )
     }
     // The camera is held while lime is in the background (Android closes it for an app that is not in front) and comes back with it.
     androidx.compose.runtime.DisposableEffect(callSession, lifecycle) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) callSession.setBackgrounded(true) else if (event == Lifecycle.Event.ON_START) callSession.setBackgrounded(false)
+            if (event == Lifecycle.Event.ON_STOP) { (appContext as? com.limemessenger.lime.LimeApp)?.inForeground = false; callSession.setBackgrounded(true); callSession.appForeground(false) }
+            else if (event == Lifecycle.Event.ON_START) { (appContext as? com.limemessenger.lime.LimeApp)?.inForeground = true; callSession.setBackgrounded(false); callSession.appForeground(true) }
         }
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
@@ -234,14 +238,37 @@ private fun SignedIn(session: AccountSession) {
     BackHandler(enabled = threadRoot == null && !groupInfoOpen && openId != null) { openId = null; focusMessage = null }
     BackHandler(enabled = openId == null && requestsOpen) { requestsOpen = false }
     BackHandler(enabled = openId == null && newMessageOpen) { newMessageOpen = false }
-    // A call fills the screen while it is going (the mini-bar to leave it is LIME-427): system back does not leave it.
-    BackHandler(enabled = callSession.inCall) { }
+    // Back from the call screen puts the call away (the mini-bar returns to it); a video call floats (Picture in Picture) when it can.
+    val activity = remember(appContext) { generateSequence(callView.context) { (it as? android.content.ContextWrapper)?.baseContext }.filterIsInstance<com.limemessenger.lime.MainActivity>().firstOrNull() }
+    val keyguard = appContext.getSystemService(android.content.Context.KEYGUARD_SERVICE) as android.app.KeyguardManager
+    val minimize: () -> Unit = {
+        // Over the lock screen the call is the only thing that shows: it cannot be put away to the chats.
+        if (!keyguard.isKeyguardLocked) { if (callSession.video && activity?.enterCallPip() == true) { callSession.minimize() } else callSession.minimize() }
+    }
+    BackHandler(enabled = callSession.inCall && !callSession.minimized) { minimize() }
+    // The call shows over a locked phone only while it is going; an Answer tap on the notification answers it once the microphone is allowed.
+    LaunchedEffect(callSession.inCall) { if (!callSession.inCall) { activity?.setShowWhenLocked(false); activity?.setTurnScreenOn(false) } }
+    val appHandle = appContext as? com.limemessenger.lime.LimeApp
+    LaunchedEffect(appHandle?.answerRequest, callSession.phase) {
+        val wanted = appHandle?.answerRequest ?: return@LaunchedEffect
+        if (callSession.phase == uniffi.lime_core.CallPhaseKind.INCOMING && callSession.driver.state.callId == wanted) { appHandle.answerRequest = null; answerCall() }
+        else if (callSession.phase != uniffi.lime_core.CallPhaseKind.INCOMING) appHandle.answerRequest = null
+    }
     val root = threadRoot
     val postOpen = jamPost
     val person = personProfile
     val writing = compose
-    if (callSession.inCall) {
-        com.limemessenger.lime.ui.calls.CallScreen(callSession, chats, onAnswer = answerCall, onStartVideo = startVideo, onAllowBluetooth = allowBluetooth)
+    val miniBar = callSession.inCall && callSession.minimized
+    Column(Modifier.fillMaxSize()) {
+    if (miniBar) com.limemessenger.lime.ui.calls.CallMiniBar(callSession, chats)
+    Box(Modifier.weight(1f).then(if (miniBar) Modifier.consumeWindowInsets(androidx.compose.foundation.layout.WindowInsets.Companion.statusBars) else Modifier)) {
+    if (callSession.inCall && !callSession.minimized) {
+        if (appHandle?.inPip == true && callSession.video) {
+            val st = callSession.driver.state
+            val mem = chats.conversations.firstOrNull { !it.isGroup && it.members.firstOrNull()?.id == st.peerId }?.members?.firstOrNull()
+            val nm = st.peerName.ifEmpty { mem?.name.orEmpty() }
+            com.limemessenger.lime.ui.calls.CallPipView(callSession, nm, mem?.initials?.ifEmpty { null } ?: nm.take(1), mem?.tone?.toInt() ?: com.limemessenger.lime.chats.AvatarTone.tone(st.peerId))
+        } else com.limemessenger.lime.ui.calls.CallScreen(callSession, chats, onAnswer = answerCall, onStartVideo = startVideo, onAllowBluetooth = allowBluetooth, onMinimize = minimize)
     } else if (writing != null) {
         com.limemessenger.lime.ui.jam.JamComposeScreen(jam, jamDrafts, writing, onDone = { compose = null })
     } else if (profileOpen) {
@@ -289,6 +316,8 @@ private fun SignedIn(session: AccountSession) {
                 onSearch = { searchOpen = true },
             )
         })
+    }
+    }
     }
     ArrivalBannerView(arrivals) { id -> openId = id; arrivals.dismiss() }
     if (micDenied) androidx.compose.material3.AlertDialog(

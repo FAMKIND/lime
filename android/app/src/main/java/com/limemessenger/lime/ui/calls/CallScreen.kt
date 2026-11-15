@@ -60,7 +60,7 @@ import uniffi.lime_core.callStatusText
  * shows Decline and Accept. Dark, like iOS's call screen, so the buttons keep their contrast. The status line is a polite live region.
  */
 @Composable
-fun CallScreen(session: CallSession, chats: ChatsModel, modifier: Modifier = Modifier, onAnswer: () -> Unit = { session.answer() }, onStartVideo: () -> Unit = { session.toggleCamera() }, onAllowBluetooth: (() -> Unit)? = null) {
+fun CallScreen(session: CallSession, chats: ChatsModel, modifier: Modifier = Modifier, onAnswer: () -> Unit = { session.answer() }, onStartVideo: () -> Unit = { session.toggleCamera() }, onAllowBluetooth: (() -> Unit)? = null, onMinimize: (() -> Unit)? = null) {
     val state = session.driver.state
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(state.phase) { while (true) { nowMs = System.currentTimeMillis(); delay(500) } }
@@ -70,10 +70,14 @@ fun CallScreen(session: CallSession, chats: ChatsModel, modifier: Modifier = Mod
     val status = callStatusText(state, nowMs)
     val emojiSpoken = stringResource(R.string.calls_emoji_spoken, session.emoji.joinToString(", ") { it.name })
     if (session.video && state.phase != CallPhaseKind.INCOMING) {
-        VideoCallLayout(session, name, member?.initials?.ifEmpty { null } ?: name.take(1), member?.tone?.toInt() ?: com.limemessenger.lime.chats.AvatarTone.tone(state.peerId), status, emojiSpoken, modifier, onAllowBluetooth)
+        VideoCallLayout(session, name, member?.initials?.ifEmpty { null } ?: name.take(1), member?.tone?.toInt() ?: com.limemessenger.lime.chats.AvatarTone.tone(state.peerId), status, emojiSpoken, modifier, onAllowBluetooth, onMinimize)
         return
     }
-    Column(modifier.fillMaxSize().background(ink).systemBarsPadding().padding(horizontal = LimeSpacing.xxl).testTag("call-screen"), horizontalAlignment = Alignment.CenterHorizontally) {
+    Box(modifier.fillMaxSize().background(ink)) {
+    if (onMinimize != null && state.phase != CallPhaseKind.INCOMING) Box(Modifier.align(Alignment.TopEnd).systemBarsPadding().padding(top = 8.dp, end = LimeSpacing.l)) {
+        ToggleButton(Icons.Minimise, stringResource(R.string.calls_minimise), false, "call-minimize", size = 48.dp, toggle = false) { onMinimize() }
+    }
+    Column(Modifier.fillMaxSize().systemBarsPadding().padding(horizontal = LimeSpacing.xxl).testTag("call-screen"), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.height(48.dp))
         Avatar(member?.initials?.ifEmpty { null } ?: name.take(1), member?.tone?.toInt() ?: com.limemessenger.lime.chats.AvatarTone.tone(state.peerId), 96.dp)
         Spacer(Modifier.height(LimeSpacing.l))
@@ -119,6 +123,7 @@ fun CallScreen(session: CallSession, chats: ChatsModel, modifier: Modifier = Mod
                 RoundButton(Icons.PhoneDown, stringResource(R.string.calls_end), Lime.colors.danger, Color.White, "call-end", size = 64.dp) { session.hangUp() }
             }
         }
+    }
     }
 }
 

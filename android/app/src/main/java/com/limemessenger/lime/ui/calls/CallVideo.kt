@@ -70,7 +70,7 @@ private enum class Corner { TopEnd, BottomEnd, BottomStart, TopStart }
  * their contrast over any picture.
  */
 @Composable
-internal fun VideoCallLayout(session: CallSession, name: String, initials: String, tone: Int, status: String, emojiSpoken: String, modifier: Modifier = Modifier, onAllowBluetooth: (() -> Unit)? = null) {
+internal fun VideoCallLayout(session: CallSession, name: String, initials: String, tone: Int, status: String, emojiSpoken: String, modifier: Modifier = Modifier, onAllowBluetooth: (() -> Unit)? = null, onMinimize: (() -> Unit)? = null) {
     var swapped by rememberSaveable { mutableStateOf(false) }
     var corner by rememberSaveable { mutableStateOf(Corner.TopEnd) }
     var drag by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
@@ -152,6 +152,7 @@ internal fun VideoCallLayout(session: CallSession, name: String, initials: Strin
         ) {
             ToggleButton(if (session.cameraOn && session.hasLocalVideo) Icons.Video else Icons.VideoOff, stringResource(R.string.calls_camera), session.cameraOn && session.hasLocalVideo, "call-video", size = 56.dp) { session.toggleCamera() }
             ToggleButton(if (session.muted) Icons.MicOff else Icons.Mic, stringResource(R.string.calls_mute), session.muted, "call-mute", size = 56.dp) { session.toggleMute() }
+            if (onMinimize != null) ToggleButton(Icons.Minimise, stringResource(R.string.calls_minimise), false, "call-minimize", size = 56.dp, toggle = false) { onMinimize() }
             RouteButton(session, size = 56.dp, onAllowBluetooth = onAllowBluetooth)
             RoundButton(Icons.PhoneDown, stringResource(R.string.calls_end), Lime.colors.danger, Color.White, "call-end", size = 64.dp) { session.hangUp() }
         }
@@ -258,3 +259,9 @@ private fun routeWord(kind: CallRouteKind): String = stringResource(
         CallRouteKind.BLUETOOTH -> R.string.calls_route_bluetooth
     },
 )
+
+/** The video call floating in Picture in Picture: only the other person's picture (or their avatar), nothing to tap; the window's own button hangs up. */
+@Composable
+fun CallPipView(session: CallSession, name: String, initials: String, tone: Int) {
+    PictureLayer(session, Picture.Theirs, name, initials, tone, Modifier.fillMaxSize().testTag("call-pip"), tile = true)
+}

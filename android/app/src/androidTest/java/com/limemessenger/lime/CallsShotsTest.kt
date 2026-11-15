@@ -1,5 +1,8 @@
 package com.limemessenger.lime
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.Modifier
 import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -193,4 +196,9 @@ class CallsShotsTest {
     @Test fun videoMuted() { shotCamera = true; val s = videoCall(); main { s.toggleMute() }; scr("20-video-muted", after = { rule.waitUntil(5_000) { count("call-emoji") > 0 } }, body = video(s)) }
     @Test fun videoRouteMenu() { shotCamera = true; val s = videoCall(); scr("21-video-route-menu", after = { rule.waitUntil(5_000) { count("call-route") > 0 }; rule.onNodeWithTag("call-route", useUnmergedTree = true).performClick(); rule.waitUntil(5_000) { count("call-route-speaker") > 0 } }, body = video(s)) }
     @Test fun voiceWithVideoButton() { val s = active(); scr("22-voice-video-button", after = { rule.waitUntil(5_000) { count("call-start-video") > 0 } }, body = video(s)) }
+    @Test fun miniBar() { val s = active(); main { s.minimize() }; scr("23-mini-bar", after = { rule.waitUntil(5_000) { count("call-mini-bar") > 0 } }) { Column { com.limemessenger.lime.ui.calls.CallMiniBar(s, chats); Box(Modifier.weight(1f)) { TabContent() } } } }
+    @Test fun miniBarDark() { val s = active(); main { s.minimize() }; scr("23-mini-bar", dark = true, after = { rule.waitUntil(5_000) { count("call-mini-bar") > 0 } }) { Column { com.limemessenger.lime.ui.calls.CallMiniBar(s, chats); Box(Modifier.weight(1f)) { TabContent() } } } }
+    @Test fun miniBarLargest() { val s = active(); main { s.minimize() }; scr("24-mini-bar-font2", font = 2f, after = { rule.waitUntil(5_000) { count("call-mini-bar") > 0 } }) { Column { com.limemessenger.lime.ui.calls.CallMiniBar(s, chats); Box(Modifier.weight(1f)) { TabContent() } } } }
+    @Test fun settingsRing() { scr("25-call-settings-ring", after = { rule.waitUntil(5_000) { count("calls-ring-state") > 0 } }) { CallSettingsScreen(CallPrefs(context.getSharedPreferences("lime.calls.shots", android.content.Context.MODE_PRIVATE)), onBack = {}) } }
+    @Test fun settingsRingDenied() { scr("26-call-settings-ring-denied", after = { rule.waitUntil(5_000) { count("calls-ring-state") > 0 } }) { CallSettingsScreen(CallPrefs(context.getSharedPreferences("lime.calls.shots", android.content.Context.MODE_PRIVATE)), onBack = {}, surfaceOf = { com.limemessenger.lime.calls.IncomingCallNotifier.Surface(false, true, false) }) } }
 }

@@ -64,7 +64,12 @@ class CallSession(
     private val lowData: () -> Boolean = { false },
     /** Whether the camera permission is granted (a video call without it receives video and sends none). */
     private val cameraAllowed: () -> Boolean = { true },
+    /** lime is in front: the call screen is the ring; otherwise the incoming-call notification is. */
+    private val foreground: () -> Boolean = { true },
 ) {
+    /** The call screen is put away and the mini-bar shows instead (a voice call, or a video call that could not float). */
+    var minimized by mutableStateOf(false); private set
+    private var currentVideo = false
     var muted by mutableStateOf(false); private set
     /** Where the sound goes (the earpiece, the speaker, wired headphones or a Bluetooth headset). */
     var route by mutableStateOf(CallRouteKind.EARPIECE); private set
@@ -135,8 +140,11 @@ class CallSession(
 
     private val port = object : CallMediaPort {
         override fun startOutgoing(callId: String, video: Boolean) { currentCall = callId; place(callId, video) }
-        override fun showIncoming(callId: String, name: String, video: Boolean) { currentCall = callId; currentName = name; audio.startRinging() }
-        override fun acceptIncoming(callId: String, offerSdp: String, video: Boolean) { audio.stopRinging(); answerCall(callId, offerSdp) }
+        override fun showIncoming(callId: String, name: String, video: Boolean) {
+            currentCall = callId; currentName = name; currentVideo = video
+            if (foreground()) audio.startRinging() else audio.postIncoming(callId, name, video)
+        }
+        override fun acceptIncoming(callId: String, offerSdp: String, video: Boolean) { audio.stopRinging(); audio.cancelIncoming(); answerCall(callId, offerSdp) }
         override fun applyAnswer(callId: String, answerSdp: String) {
             remoteFingerprint = callFingerprint(answerSdp)
             scope.launch {
@@ -147,7 +155,7 @@ class CallSession(
         override fun remoteCandidates(callId: String, list: List<RemoteCandidate>) { val m = media; if (m != null) m.add(list) else pendingRemote += list }
         override fun startRingback() = audio.startRingback()
         override fun stopRingback() = audio.stopRingback()
-        override fun stopRinging() = audio.stopRinging()
+        override fun stopRinging() { audio.stopRinging(); audio.cancelIncoming() }
         override fun tearDown(callId: String) { closeMedia() }
     }
 
@@ -164,6 +172,15 @@ class CallSession(
         currentName = name
         driver.dispatch(CallMachineEvent.TapCall(newCallId(), peerId, name, video))
     }
+
+    /** lime came to the front or left it while a call is ringing: the call screen rings in front, the notification behind. */
+    fun appForeground(front: Boolean) {
+        if (phase != CallPhaseKind.INCOMING) return
+        if (front) { audio.cancelIncoming(); audio.startRinging() } else { audio.stopRinging(); audio.postIncoming(driver.state.callId, driver.state.peerName.ifEmpty { currentName }, driver.state.video) }
+    }
+
+    fun minimize() { if (inCall && phase != CallPhaseKind.INCOMING) { minimized = true; announce("Call minimised") } }
+    fun restore() { minimized = false }
 
     fun answer() = driver.dispatch(CallMachineEvent.TapAnswer)
     fun decline() = driver.dispatch(CallMachineEvent.TapDecline)
@@ -408,8 +425,8 @@ class CallSession(
     init {
         driver.onPhase = { before, after ->
             if (after == CallPhaseKind.ACTIVE && before != CallPhaseKind.ACTIVE) updateEmoji()
-            if (after == CallPhaseKind.IDLE) { emoji = emptyList(); muted = false; video = false; remoteMuted = false; routeToast = null; speakerWanted = false; route = CallRouteKind.EARPIECE; audio.onRoutesChanged = null; updateProximity() }
-            if (before == CallPhaseKind.INCOMING && after != CallPhaseKind.INCOMING) audio.stopRinging()
+            if (after == CallPhaseKind.IDLE) { minimized = false; emoji = emptyList(); muted = false; video = false; remoteMuted = false; routeToast = null; speakerWanted = false; route = CallRouteKind.EARPIECE; audio.onRoutesChanged = null; updateProximity() }
+            if (before == CallPhaseKind.INCOMING && after != CallPhaseKind.INCOMING) { audio.stopRinging(); audio.cancelIncoming() }
         }
     }
 }
@@ -477,6 +494,9 @@ interface CallAudioPort {
     fun current(): CallRouteKind = CallRouteKind.EARPIECE
     fun choose(kind: CallRouteKind) { setSpeaker(kind == CallRouteKind.SPEAKER) }
     fun setProximity(on: Boolean) {}
+    /** The incoming call as a notification (lime is not in front), and taking it away. */
+    fun postIncoming(callId: String, name: String, video: Boolean) {}
+    fun cancelIncoming() {}
     var onRoutesChanged: (() -> Unit)?
         get() = null
         set(value) {}
@@ -495,6 +515,9 @@ private class RealCallAudio(context: Context) : CallAudioPort {
     override fun current() = audio.current()
     override fun choose(kind: CallRouteKind) = audio.choose(kind)
     override fun setProximity(on: Boolean) = audio.setProximity(on)
+    private val appContext = context.applicationContext
+    override fun postIncoming(callId: String, name: String, video: Boolean) = IncomingCallNotifier.post(appContext, callId, name, video)
+    override fun cancelIncoming() = IncomingCallNotifier.cancel(appContext)
     override var onRoutesChanged: (() -> Unit)?
         get() = audio.onRoutesChanged
         set(value) { audio.onRoutesChanged = value }

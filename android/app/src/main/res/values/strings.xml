@@ -724,7 +724,7 @@
     <string name="calls_settings_low_data_note">Uses less data. Video looks softer but holds up better on a weak connection.</string>
     <string name="calls_settings_volume">Call volume</string>
     <string name="calls_settings_volume_note">Changes how loud others sound in lime calls, on top of your phone\'s volume.</string>
-    <string name="calls_settings_ring_note">lime has no push service yet, so a call rings only while lime is open.</string>
+    <string name="calls_settings_ring_note">lime has no push service yet, so a call rings only while lime is running (open or in the background). It does not ring if lime has been closed.</string>
 
     <!-- LIME-425: 1:1 audio calls -->
     <string name="calls_channel">Calls</string>
@@ -736,11 +736,29 @@
     <string name="calls_emoji_note">If you both see these same 4 emoji, in this order, your call is end-to-end encrypted and no one is in between. Read them to each other.</string>
     <string name="calls_decline">Decline</string>
     <string name="calls_accept">Accept</string>
+    <string name="calls_answer">Answer</string>
     <string name="calls_mute">Mute</string>
     <string name="calls_speaker">Speaker</string>
     <string name="calls_end">End call</string>
     <string name="calls_on">On</string>
     <string name="calls_off">Off</string>
+    <string name="calls_incoming_channel">Incoming calls</string>
+    <string name="calls_incoming_channel_note">Rings when someone calls you on lime while lime is running in the background.</string>
+    <string name="calls_incoming_voice">lime voice call</string>
+    <string name="calls_incoming_video">lime video call</string>
+    <string name="calls_minimise">Minimise</string>
+    <string name="calls_mini_label">Call with %1$s, %2$s</string>
+    <string name="calls_mini_return">Return to the call</string>
+    <string name="calls_pip_hang_up">Hang up</string>
+    <string name="calls_ring_title">Incoming calls</string>
+    <string name="calls_ring_on">Ring while lime is in the background: on</string>
+    <string name="calls_ring_off_notifications">Ring while lime is in the background: off. Notifications are off for lime.</string>
+    <string name="calls_ring_off_channel">Ring while lime is in the background: off. Incoming call notifications are turned off.</string>
+    <string name="calls_ring_fullscreen_on">Full-screen call on a locked phone: on</string>
+    <string name="calls_ring_fullscreen_off">Full-screen call on a locked phone: off. A call shows as a banner and rings.</string>
+    <string name="calls_ring_allow">Allow notifications</string>
+    <string name="calls_ring_phone_settings">Open the phone\'s settings</string>
+    <string name="calls_ring_fullscreen_settings">Allow full-screen calls</string>
     <string name="calls_video">Video</string>
     <string name="calls_camera">Camera</string>
     <string name="calls_flip">Flip camera</string>

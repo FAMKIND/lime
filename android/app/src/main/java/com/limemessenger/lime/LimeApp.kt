@@ -1,5 +1,7 @@
 package com.limemessenger.lime
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import android.app.Application
 import com.limemessenger.lime.auth.AccountSession
 import com.limemessenger.lime.auth.LiveAuthService
@@ -25,6 +27,12 @@ class LimeApp : Application() {
     val themePrefs: com.limemessenger.lime.chats.ThemePrefs by lazy { com.limemessenger.lime.chats.ThemePrefs(getSharedPreferences("lime.theme", MODE_PRIVATE)) }
     /** Hangs up the call that is going (the call notification's Hang up button); set by the signed-in screen. */
     var callHangUp: (() -> Unit)? = null
+    /** lime is in front (the call screen is the ring) or not (the incoming-call notification is); set by the signed-in screen's lifecycle observer. */
+    @Volatile var inForeground: Boolean = true
+    /** The call id an Answer tap on the incoming-call notification asked for; the signed-in screen answers it (after the microphone permission) and clears it. */
+    var answerRequest: String? by androidx.compose.runtime.mutableStateOf<String?>(null)
+    /** The activity is in Picture in Picture (a video call floating over other apps). */
+    var inPip: Boolean by androidx.compose.runtime.mutableStateOf(false)
     /** The signed-in call session (a seam for the two-emulator media proof; nothing else reads it). */
     var callSession: com.limemessenger.lime.calls.CallSession? = null
     val callPrefs: com.limemessenger.lime.calls.CallPrefs by lazy { com.limemessenger.lime.calls.CallPrefs(getSharedPreferences("lime.calls", MODE_PRIVATE)) }
