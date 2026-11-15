@@ -23,6 +23,7 @@ Three throwaway staging accounts: `mac-a/b/c@example.invalid` = Ada Mac (`ada_ma
 
 ```
 mac/tools/staging-test-accounts.sh            # create/reuse all three; fresh sessions in ~/.lime/mac-test-accounts.json (chmod 600)
+mac/tools/staging-test-accounts.sh --rotate-passwords   # NEW passwords: ends every session of the three accounts (the app's and the partner's)
 mac/tools/staging-test-accounts.sh --delete   # delete them and the file
 mac/tools/partner/build.sh                    # build the partner (needs mac/build-core.sh first)
 
@@ -36,6 +37,8 @@ $P --as b reset                                 # forget the store (when Ada's a
 
 The partner's encrypted store and its key live in `~/.lime/mac-partner/<a|b|c>/` (outside the repo, key chmod 600; test tooling only). The first message to someone is a chat request on their side: `echo` and `inbox` accept it. Mind the staging limit of 10 device registrations per account per hour.
 
+**Sessions and order (LIME-606).** Each account's password is kept in `~/.lime/mac-test-accounts.json` (chmod 600, outside the repo) and reused, so running the script, `run.sh` or `test.sh` again signs in again with the same password. On staging that does **not** end the sessions already open (probe: two password sign-ins, the first one still refreshes); only a password change does. So the order no longer matters: start the partner before or after `run.sh`. `--rotate-passwords` (or an account whose stored password stopped working) makes a new password and **ends every session**: the script says so, and a running partner prints `echo: sync failed: Unauthorized` and exits non-zero with "Ben's session ended: run mac/tools/staging-test-accounts.sh, then restart the partner". Any other failed sync, accept, queue or deliver prints one line (`echo: sync failed: <error>`; the same line twice in a row once).
+
 ## The app (LIME-603)
 
 Mac Catalyst, "Optimize Interface for Mac" (macOS 14+, Apple silicon, App Sandbox on), compiling `ios/Lime` by reference plus `mac/Lime/` (Mac-only Swift).
@@ -45,7 +48,7 @@ mac/run.sh     # build Debug, hand Ada Mac's tokens to the app, open it  (then, 
 mac/test.sh    # the UI test (LimeMacUITests) against staging, as Ada Mac, with the partner answering as Ben Mac
 ```
 
-- **No real sign-in.** Signed out, the window says "lime on your Mac links to your phone. Coming soon." A Debug build also has "Use a test account"; `mac/run.sh` hands Ada Mac's tokens (no password) over in a file in the app's container, and the app signs in through the same session code iOS uses and deletes the file. Any account that is not one of the three Mac test accounts is refused. Each `run.sh` makes fresh sessions for the test accounts, so start the partner after it.
+- **No real sign-in.** Signed out, the window says "lime on your Mac links to your phone. Coming soon." A Debug build also has "Use a test account"; `mac/run.sh` hands Ada Mac's tokens (no password) over in a file in the app's container, and the app signs in through the same session code iOS uses and deletes the file. Any account that is not one of the three Mac test accounts is refused. Each `run.sh` signs the test accounts in again with their stored passwords, which ends no session; the order of `run.sh` and the partner does not matter.
 - **Idiom.** `Config/Info.plist` sets `UIUserInterfaceIdiomMac` and `UIGlobalUserInterfaceIdiomMac`; `TARGETED_DEVICE_FAMILY "2,6"` alone gave the scaled iPad idiom (the window drew at 77%).
 - **Signing.** Automatic, with the team from the gitignored `mac/Local.xcconfig` (a copy of `ios/Local.xcconfig`). The Keychain under the sandbox needs `keychain-access-groups` (without it: error -34018).
 - **Generate-time patches.** `mac/generate.sh` writes patched copies of two `ios/` files (see TEND-MAC.md "Stand-ins") into the gitignored `mac/Lime/Generated/`.
