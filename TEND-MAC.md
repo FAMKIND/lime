@@ -124,3 +124,15 @@ For plot: **the three biggest gaps** (1) no own-device fan-out: sent messages, e
 **Side effects on staging:** my first run of the new script made new passwords for all three accounts (none were stored), which ended their old sessions once, and `--rotate-passwords` did it again during the check; the app and any running partner need a restart (`run.sh`, then the partner). Cleo's password was also changed by the probe, then replaced by the script.
 
 For plot: **no**: on staging a second password sign-in (same password) does not end the first session (A still refreshed after B signed in; only a password change ended a session), so the "sessions end on a fresh sign-in" risk was the test tooling's password rotation, not a Supabase setting. Production's setting is still not read, but a single-session limit would have shown the same on staging.
+
+## LIME-607 (2026-11-15): full-height hairline, space under the composer
+
+**What landed (one commit, `Brief: LIME-607`), `mac/Lime/MacRootView.swift` only:** (1) the sidebar's wash (`.background(Theme.surface.opacity(0.5).ignoresSafeArea())`) and the `Divider` (`.ignoresSafeArea(edges: .vertical)`) now run the full height of the window, through the title-bar area; the list and its "Messages" title stay below the traffic lights. (2) `MacDetail` gives its content a 12 pt bottom safe-area inset (`.safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: 12) }` on the `Group` inside the `NavigationStack`), so the composer sits about 16 pt above the window's bottom edge (the composer's own 4 pt plus 12). New screenshots replace `docs/design/mac/first-window-{light,dark}.png` (the Ben Mac chat open).
+
+**Survey.** The divider is a plain `Divider()` in an `HStack`, clipped by the title bar's top safe area. On iPhone the composer's gap under it is its own 4 pt (`ChatComposer.swift:150-153`) plus the home-indicator safe area, which a Mac window does not have. **No `ios/` edit.**
+
+**One attempt that did not work:** `.safeAreaPadding(.bottom, 12)` on `MacDetail` (outside the `NavigationStack`) changed nothing (the composer stayed 4 pt from the edge); the chat's bottom bar does not see a safe-area padding set outside the stack. The inset inside the stack does.
+
+**Verification.** Debug build, 0 warnings in `mac/` (touched file rebuilt); `mac/test.sh` passed (14.2 s; XCTest's runtime "main thread" notice from the existing test is not a build warning). Light and dark window-only screenshots checked by eye: the hairline touches the top, the composer has a gap, nothing else moved. The system appearance was switched to dark for the dark shot and set back to light.
+
+For plot: the hairline reaches the top of the window and the composer has about 16 pt under it, all in `mac/`; nothing needed from plot-iOS. Note for any future `ios/` change to the bottom bar: a safe-area inset must sit inside the `NavigationStack` to reach it.

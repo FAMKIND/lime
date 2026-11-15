@@ -55,8 +55,9 @@ private struct MacSignedInView: View {
             if nav.columns != .detailOnly {
                 MacSidebar()
                     .frame(width: 320)
-                    .background(Theme.surface.opacity(0.5))
-                Divider()
+                    // The wash and the hairline run the full height of the window, through the title-bar area (the list itself stays below it).
+                    .background(Theme.surface.opacity(0.5).ignoresSafeArea())
+                Divider().ignoresSafeArea(edges: .vertical)
             }
             MacDetail()
                 .frame(maxWidth: .infinity)
@@ -160,6 +161,8 @@ private struct MacDetail: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity).limeBackground()
                 }
             }
+            // A Mac window has no home-indicator safe area, which is what gives the composer its gap under it on iPhone: 12 pt, as in Messages.
+            .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: 12) }
             .navigationDestination(for: Conversation.ID.self) { ChatView(conversationID: $0) }
             .navigationDestination(for: ChatTarget.self) { ChatView(conversationID: $0.conversationID, focusMessageID: $0.messageID, focusWords: $0.words) }
             .navigationDestination(for: ThreadTarget.self) { ThreadView(target: $0).limeBack() }
