@@ -12,12 +12,27 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import livekit.org.webrtc.VideoSink
+import uniffi.lime_core.CallControlMessage
 import uniffi.lime_core.CallEmoji
 import uniffi.lime_core.CallMachineEvent
 import uniffi.lime_core.CallPhaseKind
+import uniffi.lime_core.CallRouteKind
 import uniffi.lime_core.LimeStore
+import uniffi.lime_core.RenegotiationVerdict
 import uniffi.lime_core.callEmoji
+import uniffi.lime_core.callCameraSending
+import uniffi.lime_core.callControlDescription
+import uniffi.lime_core.callControlState
 import uniffi.lime_core.callFingerprint
+import uniffi.lime_core.callProximityOn
+import uniffi.lime_core.callRemoteVideoShowing
+import uniffi.lime_core.callRenegotiationAnswer
+import uniffi.lime_core.callRenegotiationOffer
+import uniffi.lime_core.callRouteChoice
+import uniffi.lime_core.callRouteToast
+import uniffi.lime_core.callSpeakerByDefault
+import uniffi.lime_core.parseCallControl
 import uniffi.lime_core.callRelayAllowed
 import uniffi.lime_core.callRelayUnavailableWords
 
@@ -32,7 +47,7 @@ class CallSession(
     private val store: () -> LimeStore?,
     private val transport: () -> HttpTransport?,
     private val token: suspend () -> String,
-    myId: () -> String?,
+    private val myId: () -> String?,
     private val scope: CoroutineScope,
     nameOf: (String) -> String = { it },
     onLogged: () -> Unit = {},
@@ -45,9 +60,31 @@ class CallSession(
     private val useService: Boolean = true,
     /** Where the call ops go instead of the server (tests): peer, op, payload; true when sent. */
     private val opSender: ((String, String, JSONObject) -> Boolean)? = null,
+    /** Low Data Mode (Settings → Calls): a smaller picture and a cap on what the camera sends. */
+    private val lowData: () -> Boolean = { false },
+    /** Whether the camera permission is granted (a video call without it receives video and sends none). */
+    private val cameraAllowed: () -> Boolean = { true },
 ) {
     var muted by mutableStateOf(false); private set
-    var speaker by mutableStateOf(false); private set
+    /** Where the sound goes (the earpiece, the speaker, wired headphones or a Bluetooth headset). */
+    var route by mutableStateOf(CallRouteKind.EARPIECE); private set
+    val speaker: Boolean get() = route == CallRouteKind.SPEAKER
+    /** "Audio now on Speaker" for two seconds after the route changes during a call. */
+    var routeToast by mutableStateOf<String?>(null); private set
+    /** The call is a video call (it may start as voice and turn to video). */
+    var video by mutableStateOf(false); private set
+    /** My camera is on (the person's choice; it may still be held by another app). */
+    var cameraOn by mutableStateOf(true); private set
+    var cameraHeld by mutableStateOf(false); private set
+    var remoteMuted by mutableStateOf(false); private set
+    var remoteCameraOn by mutableStateOf(true); private set
+    private var remoteReceiving by mutableStateOf(false)
+    /** The other person's picture is on the screen (their camera is on and their video is arriving), otherwise their avatar. */
+    val remoteVideoShowing: Boolean get() = callRemoteVideoShowing(video, remoteCameraOn, remoteReceiving)
+    val hasLocalVideo: Boolean get() = media?.hasLocalVideo == true
+    private var renegotiating = false
+    private var speakerWanted = false
+    private var toastJob: Job? = null
     var emoji by mutableStateOf<List<CallEmoji>>(emptyList()); private set
     /** Something to tell the person after a call went wrong (shown by the app). */
     var notice by mutableStateOf<String?>(null)
@@ -70,6 +107,16 @@ class CallSession(
                     val items = outbound.toList(); outbound.clear(); batcher = null
                     sendIce(items)
                 }
+            }
+        }
+        override fun onControlOpen() { scope.launch { sendState() } }
+        override fun onControl(text: String) { scope.launch { handleControl(text) } }
+        override fun onRemoteVideo(receiving: Boolean) { scope.launch { remoteReceiving = receiving } }
+        override fun onCameraInterrupted(held: Boolean) {
+            scope.launch {
+                if (!inCall) return@launch
+                cameraHeld = held
+                media?.setVideo(sending()); sendState()
             }
         }
         override fun onConnection(up: Boolean) {
@@ -112,18 +159,143 @@ class CallSession(
     // ---- what the person does
 
     /** Calls someone by voice (the microphone permission has been asked for by now). */
-    fun call(peerId: String, name: String) {
+    fun call(peerId: String, name: String, video: Boolean = false) {
         if (inCall) return
         currentName = name
-        driver.dispatch(CallMachineEvent.TapCall(newCallId(), peerId, name, false))
+        driver.dispatch(CallMachineEvent.TapCall(newCallId(), peerId, name, video))
     }
 
     fun answer() = driver.dispatch(CallMachineEvent.TapAnswer)
     fun decline() = driver.dispatch(CallMachineEvent.TapDecline)
     fun hangUp() = driver.dispatch(CallMachineEvent.TapHangUp)
 
-    fun toggleMute() { muted = !muted; media?.setMuted(muted) }
-    fun toggleSpeaker() { speaker = !speaker; audio.setSpeaker(speaker) }
+    fun toggleMute() { muted = !muted; media?.setMuted(muted); sendState() }
+    fun toggleSpeaker() { speakerWanted = !speaker; audio.setSpeaker(speakerWanted); refreshRoute(announce = false) }
+
+    /** The route picker: the sound goes to this route (the speaker is the person's choice; any other is "the best of the rest"). */
+    fun chooseRoute(kind: CallRouteKind) {
+        speakerWanted = kind == CallRouteKind.SPEAKER
+        audio.choose(kind)
+        refreshRoute(announce = false)
+    }
+
+    /** The phone's audio devices changed (a permission was granted): the route is chosen again from what is there. */
+    fun audioRoutesChanged() { if (inCall) { if (!speakerWanted) audio.setSpeaker(false); refreshRoute(announce = true) } }
+
+    /** lime went to the background (or came back): the camera is held, as another app's use of it is, and the other side is told. */
+    fun setBackgrounded(away: Boolean) {
+        if (!inCall || !hasLocalVideo) return
+        cameraHeld = away
+        media?.setVideo(sending())
+        if (!away) media?.restartCamera()
+        sendState()
+    }
+
+    /** The routes this phone has now (for the picker). */
+    fun routes(): List<CallRouteKind> = audio.available()
+
+    private fun refreshRoute(announce: Boolean) {
+        val before = route
+        route = audio.current()
+        updateProximity()
+        if (announce && route != before && inCall) {
+            val words = callRouteToast(route)
+            routeToast = words; announce(words)
+            toastJob?.cancel(); toastJob = scope.launch { delay(2_000); routeToast = null }
+        }
+    }
+
+    private fun updateProximity() { audio.setProximity(inCall && callProximityOn(video, route)) }
+
+    /** Where my camera's picture goes (the small tile) and where the other person's goes; the call screen's views set and clear these. */
+    fun attachLocal(sink: VideoSink?) { media?.attachLocal(sink); localSink = sink }
+    fun attachRemote(sink: VideoSink?) { media?.attachRemote(sink); remoteSink = sink }
+    private var localSink: VideoSink? = null
+    private var remoteSink: VideoSink? = null
+
+    fun toggleCamera() {
+        val m = media ?: return
+        if (!m.hasLocalVideo) { scope.launch { startVideo() }; return }
+        cameraOn = !cameraOn
+        m.setVideo(sending()); sendState()
+    }
+    fun flipCamera() { media?.flipCamera() }
+
+    private fun sending() = callCameraSending(video, media?.hasLocalVideo == true, cameraOn, cameraHeld)
+
+    // ---- the in-call control channel (iOS `lime-ctl`): my state, and the renegotiation that turns a voice call into video
+
+    /** My microphone and camera state, sent once the channel opens and on every change. */
+    fun sendState() { if (inCall) media?.sendControl(callControlState(muted, sending())) }
+
+    private fun control(sdp: String, offer: Boolean): Boolean {
+        val text = callControlDescription(offer, sdp) ?: return false
+        return media?.sendControl(text) == true
+    }
+
+    /** Adds my camera and tells the other side. A voice call becomes a video call (the one call, recorded as video). */
+    suspend fun startVideo() {
+        val m = media ?: return
+        if (phase != CallPhaseKind.ACTIVE || renegotiating) return
+        val id = driver.state.callId
+        try {
+            m.addLocalVideo()
+            renegotiating = true
+            val sdp = m.renegotiationOffer()
+            if (driver.state.callId != id) return
+            if (!control(sdp, offer = true)) { renegotiating = false; return }
+            cameraOn = true; makeVideo()
+            sendState()
+        } catch (e: Exception) { renegotiating = false }
+    }
+
+    /** The call is video now: the screen turns to video and the sound moves to the speaker (as iOS). */
+    private fun makeVideo() {
+        if (!video) { video = true; speakerWanted = callSpeakerByDefault(true); audio.setSpeaker(speakerWanted); refreshRoute(announce = false); driver.markVideo() }
+    }
+
+    suspend fun handleControl(text: String) {
+        if (!inCall) return
+        when (val message = parseCallControl(text)) {
+            is CallControlMessage.State -> {
+                message.muted?.let { remoteMuted = it }
+                message.camera?.let { remoteCameraOn = it }
+            }
+            is CallControlMessage.Offer -> receivedOffer(message.sdp)
+            is CallControlMessage.Answer -> receivedAnswer(message.sdp)
+            CallControlMessage.Ignored -> {}
+        }
+    }
+
+    private suspend fun receivedOffer(sdp: String) {
+        val m = media ?: return
+        when (callRenegotiationOffer(phase == CallPhaseKind.ACTIVE, sdp, remoteFingerprint, renegotiating, myId().orEmpty(), driver.state.peerId)) {
+            RenegotiationVerdict.KEY_CHANGED -> { driver.dispatch(CallMachineEvent.MediaFailed); return }
+            RenegotiationVerdict.GLARE, RenegotiationVerdict.IGNORE -> return
+            RenegotiationVerdict.ACCEPT -> {}
+        }
+        val id = driver.state.callId
+        try {
+            val answer = m.accept(sdp)
+            if (driver.state.callId != id) return
+            renegotiating = false
+            if (!control(answer, offer = false)) return
+            if (!video) makeVideo()
+            if (!m.hasLocalVideo) cameraOn = false
+            sendState()
+        } catch (e: Exception) {}
+    }
+
+    private suspend fun receivedAnswer(sdp: String) {
+        val m = media ?: return
+        when (callRenegotiationAnswer(phase == CallPhaseKind.ACTIVE, renegotiating, sdp, remoteFingerprint)) {
+            RenegotiationVerdict.KEY_CHANGED -> { driver.dispatch(CallMachineEvent.MediaFailed); return }
+            RenegotiationVerdict.GLARE, RenegotiationVerdict.IGNORE -> return
+            RenegotiationVerdict.ACCEPT -> {}
+        }
+        try { m.apply(sdp) } catch (e: Exception) {}
+        renegotiating = false
+    }
 
     /** What arrived from the other phone since the last sync. */
     fun handleArrivals() = driver.handleArrivals()
@@ -147,8 +319,17 @@ class CallSession(
         val m = mediaFactory(events)
         media = m
         if (carried.isNotEmpty()) m.add(carried)
-        muted = false; speaker = false; emoji = emptyList(); localFingerprint = null; remoteFingerprint = null
-        audio.start(speaker = false)
+        video = driver.state.video
+        muted = false; emoji = emptyList(); localFingerprint = null; remoteFingerprint = null
+        cameraOn = true; cameraHeld = false; remoteMuted = false; remoteCameraOn = true; remoteReceiving = false; renegotiating = false
+        speakerWanted = callSpeakerByDefault(video)
+        val camera = cameraAllowed()
+        if (video && !camera) cameraOn = false
+        m.configure(video, camera, lowData())
+        audio.onRoutesChanged = { scope.launch { refreshRoute(announce = true) } }
+        audio.start(speaker = speakerWanted)
+        refreshRoute(announce = false)
+        m.attachLocal(localSink); m.attachRemote(remoteSink)
         if (useService) CallService.start(context, currentName)
         return m
     }
@@ -211,6 +392,7 @@ class CallSession(
 
     private fun closeMedia() {
         media?.close(); media = null
+        renegotiating = false; remoteReceiving = false
         batcher?.cancel(); batcher = null; outbound.clear(); pendingRemote.clear()
         audio.stop()
         if (useService) CallService.stop(context)
@@ -221,11 +403,12 @@ class CallSession(
 
     /** What the call received so far (a media proof and the diagnostics). */
     suspend fun inboundAudio(): InboundAudio? = media?.inboundAudio()
+    suspend fun videoStats(): VideoStats? = media?.videoStats()
 
     init {
         driver.onPhase = { before, after ->
             if (after == CallPhaseKind.ACTIVE && before != CallPhaseKind.ACTIVE) updateEmoji()
-            if (after == CallPhaseKind.IDLE) { emoji = emptyList(); muted = false; speaker = false }
+            if (after == CallPhaseKind.IDLE) { emoji = emptyList(); muted = false; video = false; remoteMuted = false; routeToast = null; speakerWanted = false; route = CallRouteKind.EARPIECE; audio.onRoutesChanged = null; updateProximity() }
             if (before == CallPhaseKind.INCOMING && after != CallPhaseKind.INCOMING) audio.stopRinging()
         }
     }
@@ -241,11 +424,37 @@ interface CallMedia {
     fun setMuted(on: Boolean)
     suspend fun inboundAudio(): InboundAudio?
     fun close()
+    /** Before `start`: whether this is a video call and Low Data Mode is on. */
+    fun configure(video: Boolean, camera: Boolean, lowData: Boolean) {}
+    val hasLocalVideo: Boolean get() = false
+    fun sendControl(text: String): Boolean = false
+    fun addLocalVideo() {}
+    suspend fun renegotiationOffer(): String = ""
+    fun setVideo(on: Boolean) {}
+    fun flipCamera() {}
+    fun restartCamera() {}
+    fun attachLocal(sink: VideoSink?) {}
+    fun attachRemote(sink: VideoSink?) {}
+    suspend fun videoStats(): VideoStats? = null
 }
 
 private class RealCallMedia(context: Context, events: CallMediaEvents) : CallMedia {
     private val media = WebRtcCallMedia(context, events)
-    override fun start(servers: List<CallIceServer>, relayOnly: Boolean) = media.start(servers, relayOnly)
+    private var video = false
+    private var camera = false
+    private var lowData = false
+    override fun configure(video: Boolean, camera: Boolean, lowData: Boolean) { this.video = video; this.camera = camera; this.lowData = lowData }
+    override fun start(servers: List<CallIceServer>, relayOnly: Boolean) = media.start(servers, relayOnly, video, camera, lowData)
+    override val hasLocalVideo: Boolean get() = media.hasLocalVideo
+    override fun sendControl(text: String) = media.sendControl(text)
+    override fun addLocalVideo() = media.addLocalVideo()
+    override suspend fun renegotiationOffer() = media.renegotiationOffer()
+    override fun setVideo(on: Boolean) = media.setVideo(on)
+    override fun flipCamera() = media.flipCamera()
+    override fun restartCamera() = media.restartCamera()
+    override fun attachLocal(sink: VideoSink?) = media.attachLocal(sink)
+    override fun attachRemote(sink: VideoSink?) = media.attachRemote(sink)
+    override suspend fun videoStats() = media.videoStats()
     override suspend fun makeOffer() = media.makeOffer()
     override suspend fun accept(offer: String) = media.accept(offer)
     override suspend fun apply(answer: String) = media.apply(answer)
@@ -264,6 +473,13 @@ interface CallAudioPort {
     fun stopRingback()
     fun startRinging()
     fun stopRinging()
+    fun available(): List<CallRouteKind> = listOf(CallRouteKind.EARPIECE, CallRouteKind.SPEAKER)
+    fun current(): CallRouteKind = CallRouteKind.EARPIECE
+    fun choose(kind: CallRouteKind) { setSpeaker(kind == CallRouteKind.SPEAKER) }
+    fun setProximity(on: Boolean) {}
+    var onRoutesChanged: (() -> Unit)?
+        get() = null
+        set(value) {}
 }
 
 private class RealCallAudio(context: Context) : CallAudioPort {
@@ -275,4 +491,11 @@ private class RealCallAudio(context: Context) : CallAudioPort {
     override fun stopRingback() = audio.stopRingback()
     override fun startRinging() = audio.startRinging()
     override fun stopRinging() = audio.stopRinging()
+    override fun available() = audio.available()
+    override fun current() = audio.current()
+    override fun choose(kind: CallRouteKind) = audio.choose(kind)
+    override fun setProximity(on: Boolean) = audio.setProximity(on)
+    override var onRoutesChanged: (() -> Unit)?
+        get() = audio.onRoutesChanged
+        set(value) { audio.onRoutesChanged = value }
 }

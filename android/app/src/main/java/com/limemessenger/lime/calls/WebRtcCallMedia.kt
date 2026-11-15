@@ -4,7 +4,12 @@ import android.content.Context
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
 import livekit.org.webrtc.AudioTrack
+import livekit.org.webrtc.Camera2Enumerator
+import livekit.org.webrtc.CameraVideoCapturer
 import livekit.org.webrtc.DataChannel
+import livekit.org.webrtc.DefaultVideoDecoderFactory
+import livekit.org.webrtc.DefaultVideoEncoderFactory
+import livekit.org.webrtc.EglBase
 import livekit.org.webrtc.IceCandidate
 import livekit.org.webrtc.MediaConstraints
 import livekit.org.webrtc.MediaStream
@@ -14,7 +19,16 @@ import livekit.org.webrtc.RTCStatsReport
 import livekit.org.webrtc.RtpReceiver
 import livekit.org.webrtc.SdpObserver
 import livekit.org.webrtc.SessionDescription
+import livekit.org.webrtc.SurfaceTextureHelper
+import livekit.org.webrtc.VideoFrame
+import livekit.org.webrtc.VideoSink
+import livekit.org.webrtc.VideoSource
+import livekit.org.webrtc.VideoTrack
 import livekit.org.webrtc.audio.JavaAudioDeviceModule
+import uniffi.lime_core.callVideoCapture
+import uniffi.lime_core.callVideoMaxBitrate
+import uniffi.lime_core.callVideoMaxFps
+import java.nio.ByteBuffer
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -31,6 +45,14 @@ interface CallMediaEvents {
     fun onLocalCandidate(sdp: String, mid: String?, index: Int)
     /** The media path is up (`true`) or has failed (`false`). */
     fun onConnection(up: Boolean)
+    /** The in-call control channel (`lime-ctl`) opened: send my state. */
+    fun onControlOpen() {}
+    /** A text message from the other phone over the control channel. */
+    fun onControl(text: String) {}
+    /** The other person's video is arriving (the first frame came) or stopped being drawn. */
+    fun onRemoteVideo(receiving: Boolean) {}
+    /** The camera was taken away (another app has it, or it failed) or is back. */
+    fun onCameraInterrupted(held: Boolean) {}
 }
 
 /**
@@ -47,9 +69,27 @@ class WebRtcCallMedia(context: Context, private val events: CallMediaEvents) {
     private var gathered = CompletableDeferred<Unit>()
     private var descriptionSent = false
     @Volatile private var closed = false
+    private var control: DataChannel? = null
+    private var videoSource: VideoSource? = null
+    private var videoTrack: VideoTrack? = null
+    private var capturer: CameraVideoCapturer? = null
+    private var helper: SurfaceTextureHelper? = null
+    private var front = true
+    private var lowData = false
+    private var remoteSeen = false
+    private val localProxy = ProxySink()
+    private val remoteProxy = ProxySink { if (!remoteSeen && !closed) { remoteSeen = true; events.onRemoteVideo(true) } }
 
-    /** Starts the peer connection with the servers; `relayOnly` is "Always relay calls". */
-    fun start(servers: List<CallIceServer>, relayOnly: Boolean) {
+    val hasLocalVideo: Boolean get() = videoTrack != null
+
+    /** Where my camera's picture is drawn (the call screen's small tile), or nothing. */
+    fun attachLocal(sink: VideoSink?) { localProxy.target = sink }
+    /** Where the other person's picture is drawn, or nothing. */
+    fun attachRemote(sink: VideoSink?) { remoteProxy.target = sink }
+
+    /** Starts the peer connection with the servers; `relayOnly` is "Always relay calls"; `video` adds the camera (a video call). */
+    fun start(servers: List<CallIceServer>, relayOnly: Boolean, video: Boolean = false, camera: Boolean = video, lowData: Boolean = false) {
+        this.lowData = lowData
         val factory = factory(appContext)
         val ice = servers.map { s ->
             PeerConnection.IceServer.builder(s.urls).also { b -> if (s.username != null) b.setUsername(s.username); if (s.credential != null) b.setPassword(s.credential) }.createIceServer()
@@ -81,18 +121,117 @@ class WebRtcCallMedia(context: Context, private val events: CallMediaEvents) {
             override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>?) {}
             override fun onAddStream(stream: MediaStream?) {}
             override fun onRemoveStream(stream: MediaStream?) {}
-            override fun onDataChannel(channel: DataChannel?) {}
+            override fun onDataChannel(channel: DataChannel?) { if (channel != null && channel.label() == CONTROL_LABEL && control == null) watch(channel) }
             override fun onRenegotiationNeeded() {}
-            override fun onAddTrack(receiver: RtpReceiver?, streams: Array<out MediaStream>?) {}
+            override fun onAddTrack(receiver: RtpReceiver?, streams: Array<out MediaStream>?) {
+                val remote = receiver?.track() as? VideoTrack ?: return
+                remote.addSink(remoteProxy)
+            }
         }) ?: error("no peer connection")
         pc = connection
         val source = factory.createAudioSource(MediaConstraints())
         val audio = factory.createAudioTrack("lime-audio", source)
         track = audio
-        connection.addTrack(audio, listOf("lime-call"))
+        connection.addTrack(audio, listOf("lime-audio-stream"))
+        if (video && camera) addLocalVideo()
+        // A video call without a camera (no permission) still receives the other person's picture.
+        else if (video) connection.addTransceiver(livekit.org.webrtc.MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO, livekit.org.webrtc.RtpTransceiver.RtpTransceiverInit(livekit.org.webrtc.RtpTransceiver.RtpTransceiverDirection.RECV_ONLY))
     }
 
-    private suspend fun create(offer: Boolean): SessionDescription = suspendCancellableCoroutine { cont ->
+    private fun watch(channel: DataChannel) {
+        control = channel
+        channel.registerObserver(object : DataChannel.Observer {
+            override fun onBufferedAmountChange(previous: Long) {}
+            override fun onStateChange() { if (channel.state() == DataChannel.State.OPEN && !closed) events.onControlOpen() }
+            override fun onMessage(buffer: DataChannel.Buffer) {
+                if (buffer.binary || closed) return
+                val bytes = ByteArray(buffer.data.remaining()).also { buffer.data.get(it) }
+                events.onControl(String(bytes, Charsets.UTF_8))
+            }
+        })
+    }
+
+    /** Sends a control message; false when the channel is not open. */
+    fun sendControl(text: String): Boolean {
+        val channel = control ?: return false
+        if (channel.state() != DataChannel.State.OPEN) return false
+        return channel.send(DataChannel.Buffer(ByteBuffer.wrap(text.toByteArray(Charsets.UTF_8)), false))
+    }
+
+    /** Adds my camera: a video track from the phone's camera at the size the settings choose (720p at 24 fps, Low Data 360p at 15), drawn in the local tile. */
+    fun addLocalVideo() {
+        val connection = pc ?: error("not started")
+        if (videoTrack != null) return
+        val factory = factory(appContext)
+        val source = factory.createVideoSource(false)
+        val track = factory.createVideoTrack("lime-video", source)
+        videoSource = source; videoTrack = track
+        track.addSink(localProxy)
+        connection.addTrack(track, listOf("lime-video-stream"))
+        applyLimits()
+        startCapture(source)
+    }
+
+    private fun startCapture(source: VideoSource) {
+        val enumerator = Camera2Enumerator(appContext)
+        val names = enumerator.deviceNames
+        val name = names.firstOrNull { if (front) enumerator.isFrontFacing(it) else enumerator.isBackFacing(it) } ?: names.firstOrNull() ?: return
+        val handler = object : CameraVideoCapturer.CameraEventsHandler {
+            override fun onCameraError(errorDescription: String?) { if (!closed) events.onCameraInterrupted(true) }
+            override fun onCameraDisconnected() { if (!closed) events.onCameraInterrupted(true) }
+            override fun onCameraFreezed(errorDescription: String?) {}
+            override fun onCameraOpening(cameraName: String?) {}
+            override fun onFirstFrameAvailable() { if (!closed) events.onCameraInterrupted(false) }
+            override fun onCameraClosed() {}
+        }
+        val capture = enumerator.createCapturer(name, handler) ?: return
+        val textureHelper = SurfaceTextureHelper.create("lime-capture", eglBase.eglBaseContext)
+        helper = textureHelper
+        capture.initialize(textureHelper, appContext, source.capturerObserver)
+        val plan = callVideoCapture(lowData, false, false)
+        capture.startCapture(plan.width.toInt(), plan.height.toInt(), plan.fps.toInt())
+        capturer = capture
+    }
+
+    /** Low Data Mode caps what the video sender may use. */
+    private fun applyLimits() {
+        val connection = pc ?: return
+        connection.senders.filter { it.track()?.kind() == "video" }.forEach { sender ->
+            val parameters = sender.parameters
+            parameters.encodings.forEach { e ->
+                e.maxBitrateBps = callVideoMaxBitrate(lowData)?.toInt()
+                e.maxFramerate = callVideoMaxFps(lowData)?.toInt()
+            }
+            sender.parameters = parameters
+        }
+    }
+
+    /** The camera sends (true) or shows nothing (false: the other side sees my avatar, not a black picture). */
+    fun setVideo(on: Boolean) { videoTrack?.setEnabled(on) }
+
+    /** The camera comes back after another app or the background had it: capture starts again from a clean capturer. */
+    fun restartCamera() {
+        val source = videoSource ?: return
+        runCatching { capturer?.stopCapture(); capturer?.dispose() }
+        runCatching { helper?.dispose() }
+        capturer = null; helper = null
+        startCapture(source)
+    }
+
+    /** The other camera, front to back or back to front. */
+    fun flipCamera() {
+        front = !front
+        capturer?.switchCamera(null)
+    }
+
+    /** My description with the camera added, to send over the control channel (no new gathering: the media rides the same connection). */
+    suspend fun renegotiationOffer(): String {
+        val connection = pc ?: error("not started")
+        setLocal(create(offer = true, video = true))
+        return connection.localDescription.description
+    }
+
+    private suspend fun create(offer: Boolean, video: Boolean = videoTrack != null): SessionDescription = suspendCancellableCoroutine { cont ->
         val observer = object : SdpObserver {
             override fun onCreateSuccess(description: SessionDescription) { cont.resume(description) }
             override fun onCreateFailure(error: String?) { cont.resumeWithException(IllegalStateException("create failed: $error")) }
@@ -100,7 +239,10 @@ class WebRtcCallMedia(context: Context, private val events: CallMediaEvents) {
             override fun onSetFailure(error: String?) {}
         }
         val connection = pc ?: run { cont.resumeWithException(IllegalStateException("not started")); return@suspendCancellableCoroutine }
-        if (offer) connection.createOffer(observer, MediaConstraints().also { it.mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true")) })
+        if (offer) connection.createOffer(observer, MediaConstraints().also {
+            it.mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"))
+            it.mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveVideo", if (video) "true" else "false"))
+        })
         else connection.createAnswer(observer, MediaConstraints())
     }
 
@@ -133,6 +275,8 @@ class WebRtcCallMedia(context: Context, private val events: CallMediaEvents) {
 
     /** My offer, as SDP text, with the candidates gathered so far. */
     suspend fun makeOffer(): String {
+        // The control channel is made before the offer so it is in the description.
+        if (control == null) pc?.createDataChannel(CONTROL_LABEL, DataChannel.Init().also { it.ordered = true })?.let { watch(it) }
         setLocal(create(offer = true))
         return described()
     }
@@ -185,22 +329,50 @@ class WebRtcCallMedia(context: Context, private val events: CallMediaEvents) {
         }
     }
 
+    /** What the call received and sent as video so far (the proof and the diagnostics line). */
+    suspend fun videoStats(): VideoStats? = withTimeoutOrNull(6_000) {
+        val connection = pc ?: return@withTimeoutOrNull null
+        suspendCancellableCoroutine<VideoStats?> { cont ->
+            connection.getStats { report: RTCStatsReport ->
+                fun video(type: String) = report.statsMap.values.firstOrNull { it.type == type && (it.members["kind"] == "video" || it.members["mediaType"] == "video") }
+                val inbound = video("inbound-rtp"); val outbound = video("outbound-rtp")
+                fun num(o: livekit.org.webrtc.RTCStats?, k: String) = (o?.members?.get(k) as? Number)?.toLong() ?: 0L
+                if (inbound == null && outbound == null) cont.resume(null) else cont.resume(
+                    VideoStats(framesReceived = num(inbound, "framesReceived"), framesDecoded = num(inbound, "framesDecoded"), bytesReceived = num(inbound, "bytesReceived"), framesSent = num(outbound, "framesSent"), bytesSent = num(outbound, "bytesSent")),
+                )
+            }
+        }
+    }
+
     fun close() {
         closed = true
         runCatching { track?.setEnabled(false) }
+        runCatching { capturer?.stopCapture() }
+        runCatching { capturer?.dispose() }
+        runCatching { videoTrack?.removeSink(localProxy); videoTrack?.dispose() }
+        runCatching { videoSource?.dispose() }
+        runCatching { helper?.dispose() }
+        localProxy.target = null; remoteProxy.target = null
+        runCatching { control?.close(); control?.dispose() }
         runCatching { pc?.close() }
-        pc = null; track = null
+        pc = null; track = null; control = null; capturer = null; videoTrack = null; videoSource = null; helper = null
     }
 
     companion object {
         /** The most the description waits for candidates (it also goes as soon as gathering is complete). */
         var gatherMillis = 1_000L
+        /** The one EGL context the camera, the encoder, the decoder and the video views share. */
+        val eglBase: EglBase by lazy { EglBase.create() }
+        const val CONTROL_LABEL = "lime-ctl"
         @Volatile private var factory: PeerConnectionFactory? = null
         private fun factory(context: Context): PeerConnectionFactory = factory ?: synchronized(this) {
             factory ?: run {
                 PeerConnectionFactory.initialize(PeerConnectionFactory.InitializationOptions.builder(context).createInitializationOptions())
                 val audio = JavaAudioDeviceModule.builder(context).setUseHardwareAcousticEchoCanceler(true).setUseHardwareNoiseSuppressor(true).createAudioDeviceModule()
-                PeerConnectionFactory.builder().setAudioDeviceModule(audio).createPeerConnectionFactory().also { factory = it }
+                PeerConnectionFactory.builder().setAudioDeviceModule(audio)
+                    .setVideoEncoderFactory(DefaultVideoEncoderFactory(eglBase.eglBaseContext, true, true))
+                    .setVideoDecoderFactory(DefaultVideoDecoderFactory(eglBase.eglBaseContext))
+                    .createPeerConnectionFactory().also { factory = it }
             }
         }
     }
@@ -208,3 +380,12 @@ class WebRtcCallMedia(context: Context, private val events: CallMediaEvents) {
 
 /** The inbound audio statistics of a call. */
 data class InboundAudio(val bytes: Long, val packets: Long, val level: Double, val sentBytes: Long = 0L, val sentPackets: Long = 0L)
+
+/** The video statistics of a call. */
+data class VideoStats(val framesReceived: Long, val framesDecoded: Long, val bytesReceived: Long, val framesSent: Long, val bytesSent: Long)
+
+/** A video sink whose target can change (the call screen's views come and go; the track stays). */
+class ProxySink(private val seen: (() -> Unit)? = null) : VideoSink {
+    @Volatile var target: VideoSink? = null
+    override fun onFrame(frame: VideoFrame) { seen?.invoke(); target?.onFrame(frame) }
+}

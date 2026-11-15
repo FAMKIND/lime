@@ -174,5 +174,8 @@ class CallDriver(
         return if (single.isEmpty()) emptyList() else listOf(RemoteCandidate(single, payload.optString("sdpMid").ifEmpty { null }, payload.optInt("sdpMLineIndex", 0)))
     }
 
+    /** A voice call turned to video: the call is recorded as the kind it ended as (iOS). */
+    fun markVideo() { if (!state.video) state = state.copy(video = true) }
+
     fun reset() { timers.values.forEach { it.cancel() }; timers.clear(); state = callMachineNew() }
 }

@@ -70,6 +70,7 @@ class CallScreenUiTest {
         var onSpeaker = false
         override fun start(speaker: Boolean) {}
         override fun setSpeaker(on: Boolean) { onSpeaker = on }
+        override fun current() = if (onSpeaker) uniffi.lime_core.CallRouteKind.SPEAKER else uniffi.lime_core.CallRouteKind.EARPIECE
         override fun stop() {}
         override fun startRingback() {}
         override fun stopRingback() {}

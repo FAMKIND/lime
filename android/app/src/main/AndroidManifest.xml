@@ -6,7 +6,9 @@
     <!-- Only when a voice message is recorded: asked at the first press of the microphone button, never before. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
-    <!-- Calls (LIME-425): audio focus and the speaker (normal permissions); the foreground service of a call, type microphone (API 34+ names it); BLUETOOTH_CONNECT is for headset routing and is asked for in LIME-426. -->
+    <!-- Calls (LIME-425): audio focus and the speaker (normal permissions); the foreground service of a call, type microphone (API 34+ names it); BLUETOOTH_CONNECT (a runtime permission on Android 12+) lets the call send its sound to a Bluetooth headset and is asked for only when the person opens the audio-output list and chooses to allow it; WAKE_LOCK holds the proximity sensor's screen-off lock during a voice call at the ear (LIME-426). -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />

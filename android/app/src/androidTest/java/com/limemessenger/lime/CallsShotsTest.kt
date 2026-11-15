@@ -132,7 +132,10 @@ class CallsShotsTest {
         override fun setMuted(on: Boolean) {}
         override suspend fun inboundAudio(): com.limemessenger.lime.calls.InboundAudio? = null
         override fun close() {}
+        override val hasLocalVideo: Boolean get() = shotCamera
+        override fun sendControl(text: String) = true
     }
+    companion object { @Volatile var shotCamera = false }
     private object ShotAudio : com.limemessenger.lime.calls.CallAudioPort {
         override fun start(speaker: Boolean) {}
         override fun setSpeaker(on: Boolean) {}
@@ -172,4 +175,22 @@ class CallsShotsTest {
         val s = session(); main { s.driver.handle("call.offer", "in2", chats.conversations.first { it.title == "Autumn Reyes" }.members.first().id, org.json.JSONObject().put("sdp", "v=0\r\na=fingerprint:sha-256 AA:BB\r\n")) }
         scr("15-call-incoming-font2", font = 2f, after = { rule.waitUntil(5_000) { count("call-accept") > 0 } }) { com.limemessenger.lime.ui.calls.CallScreen(s, chats) }
     }
+
+    // ---- LIME-426: video and routes (the screen is dark in both themes; the picture itself is in the two-emulator proof's screenshots)
+    private fun videoCall(): com.limemessenger.lime.calls.CallSession {
+        val s = session(); val peer = chats.conversations.first { it.title == "Autumn Reyes" }.members.first().id
+        main { s.call(peer, "Autumn Reyes", video = true) }
+        rule.waitUntil(5_000) { s.driver.state.phase == uniffi.lime_core.CallPhaseKind.OUTGOING }
+        main { s.driver.handle("call.answer", s.driver.state.callId, peer, org.json.JSONObject().put("sdp", "v=0\r\na=fingerprint:sha-256 CC:DD\r\n")); s.driver.dispatch(uniffi.lime_core.CallMachineEvent.MediaUp); s.showEmojiForTest(emojiOf()) }
+        return s
+    }
+    private val video get() = { s: com.limemessenger.lime.calls.CallSession -> @Composable { com.limemessenger.lime.ui.calls.CallScreen(s, chats) } }
+    @Test fun videoCalling() { val s = session(); val peer = chats.conversations.first { it.title == "Autumn Reyes" }.members.first().id; main { s.call(peer, "Autumn Reyes", video = true) }; scr("16-video-calling", after = { rule.waitUntil(5_000) { count("call-status") > 0 } }, body = video(s)) }
+    @Test fun videoActive() { shotCamera = true; val s = videoCall(); scr("17-video-active", after = { rule.waitUntil(5_000) { count("call-emoji") > 0 } }, body = video(s)) }
+    @Test fun videoActiveDark() { shotCamera = true; val s = videoCall(); scr("17-video-active", dark = true, after = { rule.waitUntil(5_000) { count("call-emoji") > 0 } }, body = video(s)) }
+    @Test fun videoActiveLargest() { shotCamera = true; val s = videoCall(); scr("18-video-active-font2", font = 2f, after = { rule.waitUntil(5_000) { count("call-emoji") > 0 } }, body = video(s)) }
+    @Test fun videoCameraOffRemoteMuted() { shotCamera = false; val s = videoCall(); main { runBlocking { s.handleControl("{\"t\":\"state\",\"muted\":true,\"camera\":false}") } }; scr("19-video-camera-off-remote-muted", after = { rule.waitUntil(5_000) { count("call-remote-muted") > 0 } }, body = video(s)) }
+    @Test fun videoMuted() { shotCamera = true; val s = videoCall(); main { s.toggleMute() }; scr("20-video-muted", after = { rule.waitUntil(5_000) { count("call-emoji") > 0 } }, body = video(s)) }
+    @Test fun videoRouteMenu() { shotCamera = true; val s = videoCall(); scr("21-video-route-menu", after = { rule.waitUntil(5_000) { count("call-route") > 0 }; rule.onNodeWithTag("call-route", useUnmergedTree = true).performClick(); rule.waitUntil(5_000) { count("call-route-speaker") > 0 } }, body = video(s)) }
+    @Test fun voiceWithVideoButton() { val s = active(); scr("22-voice-video-button", after = { rule.waitUntil(5_000) { count("call-start-video") > 0 } }, body = video(s)) }
 }

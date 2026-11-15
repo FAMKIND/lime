@@ -117,7 +117,7 @@ private fun SignedIn(session: AccountSession) {
     LaunchedEffect(chats) { lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { chats.runWhileForeground() } }
     val callsModel = remember(session) { com.limemessenger.lime.calls.CallsModel { session.store } }
     val callScope = rememberCoroutineScope()
-    var callNotice by remember { mutableStateOf(false) }
+    var cameraDenied by remember { mutableStateOf(false) }
     val callView = androidx.compose.ui.platform.LocalView.current
     val callSession = remember(session) {
         com.limemessenger.lime.calls.CallSession(
@@ -129,7 +129,17 @@ private fun SignedIn(session: AccountSession) {
             },
             onLogged = { callScope.launch { callsModel.reload(); chats.reload() } },
             announce = { words -> callView.announceForAccessibility(words) },
+            lowData = { (appContext as? com.limemessenger.lime.LimeApp)?.callPrefs?.lowDataMode ?: false },
+            cameraAllowed = { androidx.core.content.ContextCompat.checkSelfPermission(appContext, android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED },
         )
+    }
+    // The camera is held while lime is in the background (Android closes it for an app that is not in front) and comes back with it.
+    androidx.compose.runtime.DisposableEffect(callSession, lifecycle) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) callSession.setBackgrounded(true) else if (event == Lifecycle.Event.ON_START) callSession.setBackgrounded(false)
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
     }
     androidx.compose.runtime.DisposableEffect(callSession) {
         (appContext as? com.limemessenger.lime.LimeApp)?.callHangUp = { callSession.hangUp() }
@@ -148,10 +158,27 @@ private fun SignedIn(session: AccountSession) {
         if (androidx.core.content.ContextCompat.checkSelfPermission(appContext, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) action()
         else { afterMic = action; micLauncher.launch(android.Manifest.permission.RECORD_AUDIO) }
     }
-    // A voice call starts now; a video call arrives with LIME-426 and says so.
-    val placeCall: (String, String, Boolean) -> Unit = { id, name, video ->
-        if (video) callNotice = true else withMic { callSession.call(id, name) }
+    // The camera is asked for when a video call is placed or the camera is turned on mid-call, never before.
+    var afterCamera by remember { mutableStateOf<((Boolean) -> Unit)?>(null) }
+    val cameraLauncher = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
+        val next = afterCamera; afterCamera = null
+        next?.invoke(granted)
     }
+    val withCamera: ((Boolean) -> Unit) -> Unit = { action ->
+        if (androidx.core.content.ContextCompat.checkSelfPermission(appContext, android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED) action(true)
+        else { afterCamera = action; cameraLauncher.launch(android.Manifest.permission.CAMERA) }
+    }
+    // Bluetooth headsets (Android 12+): the permission is asked for from the audio-output list, never before.
+    val bluetoothLauncher = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { callSession.audioRoutesChanged() }
+    val allowBluetooth: (() -> Unit)? = if (android.os.Build.VERSION.SDK_INT >= 31) ({ bluetoothLauncher.launch(android.Manifest.permission.BLUETOOTH_CONNECT) }) else null
+    // A voice call starts now; a video call asks for the camera as well (without it the call is not placed: the person can still call by voice).
+    val placeCall: (String, String, Boolean) -> Unit = { id, name, video ->
+        if (video) withMic { withCamera { ok -> if (ok) callSession.call(id, name, video = true) else cameraDenied = true } } else withMic { callSession.call(id, name) }
+    }
+    // Answering a video call asks for the camera too; without it the call is answered with the camera off.
+    val answerCall: () -> Unit = { withMic { if (callSession.video) withCamera { callSession.answer() } else callSession.answer() } }
+    // "Video" in a voice call, or "Camera" when the camera is not on yet: asks, then adds the camera.
+    val startVideo: () -> Unit = { withCamera { ok -> if (ok) callSession.toggleCamera() else cameraDenied = true } }
     var callSearchOpen by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(callsModel, chats.revision) { callsModel.reload() }
     var openId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -214,7 +241,7 @@ private fun SignedIn(session: AccountSession) {
     val person = personProfile
     val writing = compose
     if (callSession.inCall) {
-        com.limemessenger.lime.ui.calls.CallScreen(callSession, chats, onAnswer = { withMic { callSession.answer() } })
+        com.limemessenger.lime.ui.calls.CallScreen(callSession, chats, onAnswer = answerCall, onStartVideo = startVideo, onAllowBluetooth = allowBluetooth)
     } else if (writing != null) {
         com.limemessenger.lime.ui.jam.JamComposeScreen(jam, jamDrafts, writing, onDone = { compose = null })
     } else if (profileOpen) {
@@ -269,12 +296,10 @@ private fun SignedIn(session: AccountSession) {
         title = { Text(stringResource(R.string.calls_mic_title)) }, text = { Text(stringResource(R.string.calls_mic_body)) },
         confirmButton = { androidx.compose.material3.TextButton(onClick = { micDenied = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.calls_not_ready_ok)) } },
     )
-    // Video calls arrive with LIME-426: a tap on a video call says so, and sends nothing.
-    if (callNotice) androidx.compose.material3.AlertDialog(
-        onDismissRequest = { callNotice = false }, modifier = Modifier.testTag("call-not-ready"),
-        title = { Text(stringResource(R.string.calls_video_later_title)) },
-        text = { Text(stringResource(R.string.calls_video_later_body)) },
-        confirmButton = { androidx.compose.material3.TextButton(onClick = { callNotice = false }, modifier = Modifier.heightIn(min = 48.dp).testTag("call-not-ready-ok")) { Text(stringResource(R.string.calls_not_ready_ok)) } },
+    if (cameraDenied) androidx.compose.material3.AlertDialog(
+        onDismissRequest = { cameraDenied = false }, modifier = Modifier.testTag("call-camera-denied"),
+        title = { Text(stringResource(R.string.calls_camera_title)) }, text = { Text(stringResource(R.string.calls_camera_body)) },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = { cameraDenied = false }, modifier = Modifier.heightIn(min = 48.dp).testTag("call-camera-denied-ok")) { Text(stringResource(R.string.calls_not_ready_ok)) } },
     )
 }
 
