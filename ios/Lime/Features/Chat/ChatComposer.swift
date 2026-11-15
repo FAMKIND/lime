@@ -219,6 +219,11 @@ struct ChatComposer: View {
         #if DEBUG
         .task { if store.demoDrafts { drafts = ChatComposer.demoDrafts }; recorder.simulated = store.isDemo }
         .onAppear { model.onPasteGIF = { data in addGIF(data: data, name: "Pasted GIF.gif") } }
+        // Return sends with a hardware keyboard (LIME-339): the same path as the arrow button, which is only there when there is something to send.
+        .onAppear {
+            model.returnHasDraft = { canSend && !recorder.isRecording }
+            model.onReturn = { send() }
+        }
         #endif
     }
 

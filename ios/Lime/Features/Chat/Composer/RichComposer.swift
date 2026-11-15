@@ -21,6 +21,10 @@ final class RichComposerModel {
     var hasText = false
     /// A GIF pasted into the field (LIME-206): the chat adds it to the message as the GIF itself. Nil where pasting a picture means nothing.
     @ObservationIgnored var onPasteGIF: ((Data) -> Void)?
+    /// Sends the message, as the arrow button does (LIME-339). Set by the chat composers only: where it is nil (the jam editor) Return is always a new line.
+    @ObservationIgnored var onReturn: (() -> Void)?
+    /// Is there anything to send (text, or a picked attachment)? Asked on each Return, with `onReturn`.
+    @ObservationIgnored var returnHasDraft: (() -> Bool)?
     /// What is written, as plain text (the link card looks for an address in it).
     private(set) var plainText = ""
     var hasSelection = false
@@ -588,9 +592,37 @@ final class ComposerTextView: UITextView {
         return resigned
     }
 
-    /// Tab and Shift-Tab on a hardware keyboard indent and outdent inside a list; elsewhere Tab does what it did.
+    /// Return sends here (LIME-339): a chat composer, on the Mac or an iPad with a hardware keyboard, with no input method mid-composition. Read on each key press, so a
+    /// keyboard attached or removed while the app runs is followed. Shift-Return and Option-Return are not this command, so they reach the text and make a new line.
+    private var returnSends: Bool {
+        guard model?.onReturn != nil else { return false }
+        return ReturnKeyPlan.sends(idiom: ReturnKeyPlan.currentIdiom, hasHardwareKeyboard: ReturnKeyPlan.hasHardwareKeyboard, modifiers: [], hasMarkedText: markedTextRange != nil, draftIsEmpty: false)
+    }
+
+    @objc private func sendFromKeyboard() {
+        guard let model, let send = model.onReturn else { return }
+        let hasDraft = model.returnHasDraft?() ?? model.canSend
+        // An empty draft: Return does nothing (it is not a new line either).
+        if ReturnKeyPlan.sends(idiom: ReturnKeyPlan.currentIdiom, hasHardwareKeyboard: ReturnKeyPlan.hasHardwareKeyboard, modifiers: [], hasMarkedText: markedTextRange != nil, draftIsEmpty: !hasDraft) { send() }
+    }
+
+    override var accessibilityHint: String? {
+        get {
+            let base = super.accessibilityHint
+            guard returnSends else { return base }
+            return [base, ReturnKeyPlan.hint].compactMap { $0 }.joined(separator: ". ")
+        }
+        set { super.accessibilityHint = newValue }
+    }
+
+    /// Tab and Shift-Tab on a hardware keyboard indent and outdent inside a list; elsewhere Tab does what it did. Return sends where `returnSends`.
     override var keyCommands: [UIKeyCommand]? {
-        let inherited = super.keyCommands ?? []
+        var inherited = super.keyCommands ?? []
+        if returnSends {
+            let send = UIKeyCommand(title: "Send", action: #selector(sendFromKeyboard), input: "\r", modifierFlags: [])
+            send.wantsPriorityOverSystemBehavior = true
+            inherited.insert(send, at: 0)
+        }
         guard ComposerDocument.state(in: textStorage, selection: selectedRange, typing: [:]).inList else { return inherited }
         let indent = UIKeyCommand(title: "Indent", action: #selector(indentList), input: "\t", modifierFlags: [])
         let outdent = UIKeyCommand(title: "Outdent", action: #selector(outdentList), input: "\t", modifierFlags: .shift)
