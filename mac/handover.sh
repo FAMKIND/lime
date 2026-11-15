@@ -2,7 +2,7 @@
 # Makes fresh sessions for the three Mac test accounts and hands Ada Mac's tokens (no password) to the sandboxed app, the way Android's --push
 # hands them to the emulator: a file in the app's own container. The app (Debug only, `-lime-use-test-account`) signs in with them through
 # the same session code iOS uses and deletes the file. Only the three Mac test accounts are accepted (mac/Lime/MacTestAccount.swift).
-# Each run ends the older sessions on the server, so start the partner (`partner --as b echo`) AFTER this.
+# Re-running keeps the accounts' passwords, so it does not end the partner's or the app's sessions (LIME-606).
 set -e
 cd "$(dirname "$0")"
 BUNDLE_ID="com.famkind.lime"

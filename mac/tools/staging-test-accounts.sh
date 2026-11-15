@@ -5,8 +5,14 @@
 #   mac-c@example.invalid  "Cleo Mac" @cleo_mac
 # and writes their fresh sessions to ~/.lime/mac-test-accounts.json (chmod 600, outside the repo).
 #
-#   staging-test-accounts.sh            create/reuse all three, sign each in fresh, mark the session verified, write the file
-#   staging-test-accounts.sh --delete   delete all three accounts and the file
+#   staging-test-accounts.sh                      create/reuse all three, sign each in fresh, mark the session verified, write the file
+#   staging-test-accounts.sh --rotate-passwords   as above, but give every account a NEW password: this ENDS every session of the
+#                                                 three accounts (the app's and the partner's); restart them afterwards
+#   staging-test-accounts.sh --delete             delete all three accounts and the file
+#
+# Each account's password is kept in the file (chmod 600, outside the repo, throwaway staging accounts) and reused, so running this
+# again signs in again with the SAME password, which on staging does not end the sessions already open (LIME-606 probe). A password
+# is made only for a new account, for one whose stored password no longer works, or with --rotate-passwords.
 #
 # The keys are read exactly as core/run-integration.sh staging reads them: into this process's memory only, never printed or
 # written. It touches nothing on staging except these three accounts (and their profile rows).
@@ -77,14 +83,24 @@ def jwt_session_id(token):
     return json.loads(base64.urlsafe_b64decode(part + "=" * (-len(part) % 4)))["session_id"]
 
 def ensure():
+    try: stored = json.load(open(FILE)).get("accounts", {})
+    except (OSError, ValueError): stored = {}
+    rotated = []
     existing = {u["email"]: u for u in all_users() if u.get("email") in {a["email"] for a in ACCOUNTS.values()}}
     out = {}
     for key, acc in ACCOUNTS.items():
-        password = secrets.token_urlsafe(24)  # a new password each run: no secret has to be kept anywhere
+        password = None if ROTATE else (stored.get(key) or {}).get("password")
         if acc["email"] in existing:
             user = existing[acc["email"]]
-            call("PUT", f"/auth/v1/admin/users/{user['id']}", {"password": password, "email_confirm": True})
+            if password:  # does the stored password still work? (it does not after a password change made elsewhere)
+                probe = call("POST", "/auth/v1/token?grant_type=password", {"email": acc["email"], "password": password}, key=anon, ok=(200, 400))
+                if "access_token" not in probe: password = None
+            if not password:
+                password = secrets.token_urlsafe(24)
+                call("PUT", f"/auth/v1/admin/users/{user['id']}", {"password": password, "email_confirm": True})
+                rotated.append(acc["email"])
         else:
+            password = password or secrets.token_urlsafe(24)
             user = call("POST", "/auth/v1/admin/users", {"email": acc["email"], "password": password, "email_confirm": True})
         uid = user["id"]
         call("POST", "/rest/v1/profiles", {"user_id": uid, "display_name": acc["display_name"], "username": acc["username"]},
@@ -92,16 +108,19 @@ def ensure():
         session = call("POST", "/auth/v1/token?grant_type=password", {"email": acc["email"], "password": password}, key=anon)
         call("POST", "/rest/v1/auth_proofs", {"session_id": jwt_session_id(session["access_token"]), "user_id": uid, "password_ok": True, "code_ok": True},
              headers={"Prefer": "return=minimal"})
-        out[key] = {**acc, "user_id": uid, "access_token": session["access_token"], "refresh_token": session["refresh_token"],
+        out[key] = {**acc, "password": password, "user_id": uid, "access_token": session["access_token"], "refresh_token": session["refresh_token"],
                     "expires_at": int(time.time()) + int(session.get("expires_in", 3600))}
     os.makedirs(os.path.dirname(FILE), exist_ok=True)
     fd = os.open(FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f: json.dump({"api_url": base, "accounts": out}, f, indent=1)
     os.chmod(FILE, 0o600)
     print("wrote", FILE, "for", ", ".join(a["email"] for a in ACCOUNTS.values()))
+    if rotated:
+        print("NEW password for", ", ".join(rotated), "- this ended every session of " + ("these accounts" if len(rotated) > 1 else "that account") + ": restart the app and the partner")
     return out
 
+ROTATE = mode == "--rotate-passwords"
 if mode == "--delete": delete_all()
-elif mode == "ensure": ensure()
-else: sys.exit("usage: staging-test-accounts.sh [--delete]")
+elif mode in ("ensure", "--rotate-passwords"): ensure()
+else: sys.exit("usage: staging-test-accounts.sh [--rotate-passwords | --delete]")
 PY
