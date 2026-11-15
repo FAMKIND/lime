@@ -35,6 +35,8 @@ class LimeApp : Application() {
     var inPip: Boolean by androidx.compose.runtime.mutableStateOf(false)
     /** The signed-in call session (a seam for the two-emulator media proof; nothing else reads it). */
     var callSession: com.limemessenger.lime.calls.CallSession? = null
+    /** The signed-in group call session (a seam for the staging group-call proof). */
+    var groupCallSession: com.limemessenger.lime.calls.GroupCallSession? = null
     val callPrefs: com.limemessenger.lime.calls.CallPrefs by lazy { com.limemessenger.lime.calls.CallPrefs(getSharedPreferences("lime.calls", MODE_PRIVATE)) }
     val mediaPrefs: com.limemessenger.lime.chats.MediaPrefs by lazy { com.limemessenger.lime.chats.MediaPrefs(getSharedPreferences("lime.media", MODE_PRIVATE)) }
 

@@ -150,7 +150,25 @@ private fun SignedIn(session: AccountSession) {
         (appContext as? com.limemessenger.lime.LimeApp)?.callSession = callSession
         onDispose { (appContext as? com.limemessenger.lime.LimeApp)?.callHangUp = null; (appContext as? com.limemessenger.lime.LimeApp)?.callSession = null }
     }
-    callHooks.afterSync = { callSession.handleArrivals(); callsModel.reload() }
+    // Group calls: one phone is in one call at a time (1:1 or group); the chat's bar, the screen, the mini-bar and the ring prompt.
+    var groupRing by remember { mutableStateOf<Pair<uniffi.lime_core.GroupCallInfo, Boolean>?>(null) }
+    val groupSession = remember(session) {
+        com.limemessenger.lime.calls.GroupCallSession(
+            context = appContext, store = { session.store }, transport = { session.transport }, token = { session.accessToken() }, scope = callScope,
+            nameOfUser = { id -> chats.conversations.firstNotNullOfOrNull { c -> c.members.firstOrNull { it.id == id }?.name } ?: id },
+            myName = { session.profile?.displayName.orEmpty() },
+            announce = { words -> callView.announceForAccessibility(words) },
+            onRing = { info, video ->
+                if ((appContext as? com.limemessenger.lime.LimeApp)?.inForeground != false) groupRing = info to video
+                else com.limemessenger.lime.calls.IncomingCallNotifier.postGroup(appContext, appContext.getString(R.string.group_call_started, info.startedByName))
+            },
+        )
+    }
+    androidx.compose.runtime.DisposableEffect(groupSession) {
+        (appContext as? com.limemessenger.lime.LimeApp)?.groupCallSession = groupSession
+        onDispose { (appContext as? com.limemessenger.lime.LimeApp)?.groupCallSession = null }
+    }
+    callHooks.afterSync = { callSession.handleArrivals(); groupSession.handleArrivals(); callsModel.reload() }
     // The microphone is asked for when a call is placed or answered, never before (the same rule as a voice message).
     var afterMic by remember { mutableStateOf<(() -> Unit)?>(null) }
     var micDenied by remember { mutableStateOf(false) }
@@ -171,6 +189,13 @@ private fun SignedIn(session: AccountSession) {
     val withCamera: ((Boolean) -> Unit) -> Unit = { action ->
         if (androidx.core.content.ContextCompat.checkSelfPermission(appContext, android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED) action(true)
         else { afterCamera = action; cameraLauncher.launch(android.Manifest.permission.CAMERA) }
+    }
+    // Group calls ask for the microphone (and the camera for video; without it the call is joined by voice).
+    val startGroup: (String, Boolean) -> Unit = { conversationId, video ->
+        if (!callSession.inCall && !groupSession.inCall) withMic { if (video) withCamera { ok -> groupSession.start(conversationId, ok) } else groupSession.start(conversationId, false) }
+    }
+    val joinGroup: (uniffi.lime_core.GroupCallInfo) -> Unit = { info ->
+        if (!callSession.inCall && !groupSession.inCall) withMic { if (info.video) withCamera { ok -> groupSession.join(info.callId, ok) } else groupSession.join(info.callId, false) }
     }
     // Bluetooth headsets (Android 12+): the permission is asked for from the audio-output list, never before.
     val bluetoothLauncher = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { callSession.audioRoutesChanged() }
@@ -246,6 +271,7 @@ private fun SignedIn(session: AccountSession) {
         if (!keyguard.isKeyguardLocked) { if (callSession.video && activity?.enterCallPip() == true) { callSession.minimize() } else callSession.minimize() }
     }
     BackHandler(enabled = callSession.inCall && !callSession.minimized) { minimize() }
+    BackHandler(enabled = groupSession.inCall && !groupSession.minimized) { if (!keyguard.isKeyguardLocked) groupSession.minimize() }
     // The call shows over a locked phone only while it is going; an Answer tap on the notification answers it once the microphone is allowed.
     LaunchedEffect(callSession.inCall) { if (!callSession.inCall) { activity?.setShowWhenLocked(false); activity?.setTurnScreenOn(false) } }
     val appHandle = appContext as? com.limemessenger.lime.LimeApp
@@ -258,11 +284,15 @@ private fun SignedIn(session: AccountSession) {
     val postOpen = jamPost
     val person = personProfile
     val writing = compose
-    val miniBar = callSession.inCall && callSession.minimized
+    val miniBar = (callSession.inCall && callSession.minimized) || (groupSession.inCall && groupSession.minimized)
+    val groupTitle = groupSession.call?.let { c -> chats.conversations.firstOrNull { it.id == c.conversationId }?.title } ?: stringResource(R.string.group_call_default_title)
     Column(Modifier.fillMaxSize()) {
-    if (miniBar) com.limemessenger.lime.ui.calls.CallMiniBar(callSession, chats)
+    if (callSession.inCall && callSession.minimized) com.limemessenger.lime.ui.calls.CallMiniBar(callSession, chats)
+    else if (groupSession.inCall && groupSession.minimized) com.limemessenger.lime.ui.calls.GroupCallMiniBar(groupSession, groupTitle)
     Box(Modifier.weight(1f).then(if (miniBar) Modifier.consumeWindowInsets(androidx.compose.foundation.layout.WindowInsets.Companion.statusBars) else Modifier)) {
-    if (callSession.inCall && !callSession.minimized) {
+    if (groupSession.inCall && !groupSession.minimized) {
+        com.limemessenger.lime.ui.calls.GroupCallScreen(groupSession, groupTitle, onMinimize = { if (!keyguard.isKeyguardLocked) groupSession.minimize() }, onToggleCamera = { if (groupSession.cameraOn) groupSession.toggleCamera() else withCamera { ok -> if (ok) groupSession.toggleCamera() else cameraDenied = true } })
+    } else if (callSession.inCall && !callSession.minimized) {
         if (appHandle?.inPip == true && callSession.video) {
             val st = callSession.driver.state
             val mem = chats.conversations.firstOrNull { !it.isGroup && it.members.firstOrNull()?.id == st.peerId }?.members?.firstOrNull()
@@ -286,7 +316,9 @@ private fun SignedIn(session: AccountSession) {
     } else if (chatModel != null && root != null) {
         ThreadScreen(root, chatModel, onBack = { threadRoot = null })
     } else if (chatModel != null) {
-        ChatScreen(chatModel, chats, onBack = { openId = null; focusMessage = null }, focusMessageId = focusMessage, onOpenThread = { threadRoot = it }, onOpenProfile = { id, name -> personProfile = id to name }, onOpenGroup = { groupInfoOpen = true }, onCallBack = placeCall)
+        ChatScreen(chatModel, chats, onBack = { openId = null; focusMessage = null }, focusMessageId = focusMessage, onOpenThread = { threadRoot = it }, onOpenProfile = { id, name -> personProfile = id to name }, onOpenGroup = { groupInfoOpen = true }, onCallBack = placeCall,
+            groupCall = remember(chats.revision, openId, groupSession.call) { openId?.let { id -> runCatching { session.store?.activeGroupCall(id) }.getOrNull() } },
+            onStartGroupCall = startGroup, onJoinGroupCall = joinGroup, groupCallBusy = groupSession.inCall || callSession.inCall)
     } else if (callSearchOpen) {
         com.limemessenger.lime.ui.calls.CallSearchScreen(callsModel, chats, onBack = { callSearchOpen = false }, onPlaceCall = placeCall)
     } else if (searchOpen) {
@@ -320,6 +352,15 @@ private fun SignedIn(session: AccountSession) {
     }
     }
     ArrivalBannerView(arrivals) { id -> openId = id; arrivals.dismiss() }
+    groupRing?.let { (info, video) ->
+        val conversation = chats.conversations.firstOrNull { it.id == info.conversationId }?.title ?: ""
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { groupRing = null }, modifier = Modifier.testTag("group-call-ring"),
+            title = { Text(stringResource(R.string.group_call_ring_title, info.startedByName, stringResource(if (video) R.string.group_call_start_video else R.string.group_call_start_voice).lowercase(), conversation)) },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { groupRing = null; joinGroup(info) }, modifier = Modifier.heightIn(min = 48.dp).testTag("group-call-ring-join")) { Text(stringResource(R.string.group_call_join)) } },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { groupRing = null }, modifier = Modifier.heightIn(min = 48.dp).testTag("group-call-ring-not-now")) { Text(stringResource(R.string.group_call_not_now)) } },
+        )
+    }
     if (micDenied) androidx.compose.material3.AlertDialog(
         onDismissRequest = { micDenied = false }, modifier = Modifier.testTag("call-mic-denied"),
         title = { Text(stringResource(R.string.calls_mic_title)) }, text = { Text(stringResource(R.string.calls_mic_body)) },

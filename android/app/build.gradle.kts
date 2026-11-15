@@ -104,6 +104,9 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     // 1:1 calls (LIME-425): Google's libwebrtc as LiveKit's SDK ships it (BSD-3), so group calls (LIME-428) add no second copy of the native code.
     implementation(libs.webrtc)
+    // Group calls (LIME-428): LiveKit's Android SDK 2.30.0 (Apache-2.0); it uses the same WebRTC build as above.
+    implementation(libs.livekit)
+    implementation(libs.protobuf.javalite)
     implementation("net.java.dev.jna:jna:${libs.versions.jna.get()}@aar")
 
     testImplementation(libs.junit)

@@ -24,6 +24,13 @@ for avd in ${AVDS:-lime-api36 lime-api26}; do
       tools/staging-test-accounts.sh --push >/dev/null || status=1
       tools/partner/run reset >/dev/null || status=1
       case "$cls" in
+        StagingGroupCallTest*)
+          # Group calls (LIME-428): Ben and Cleo accept the group and JOIN its call (no media): started BEFORE Ada acts.
+          tools/partner/run group-call-join >/tmp/lime-partner.log 2>&1 &
+          partner=$!
+          tools/partner/run reset --as cleo >/dev/null || status=1
+          tools/partner/run group-call-join --as cleo >/tmp/lime-partner-cleo.log 2>&1 &
+          partner2=$! ;;
         StagingGroupsTest*|StagingMentionTest*|StagingBlockGroupTest*)
           # Groups (LIME-303): Ben and Cleo both answer in every group and accept invitations (a fresh store each).
           tools/partner/run reset --as cleo >/dev/null || status=1
@@ -107,6 +114,7 @@ for avd in ${AVDS:-lime-api36 lime-api26}; do
       echo "$out" | grep -q "^OK" || { status=1; echo "$out" | head -12; }
       # Groups: the partners must have seen Ada leave.
       # (Ada's leave is delivered in the test's last second: give the partner up to 40 s to poll it.)
+      case "$cls" in StagingGroupCallTest*) mkdir -p "$HOME/Desktop/lime-android-calls2"; adb exec-out run-as com.limemessenger.lime cat files/group-call-proof.txt > "$HOME/Desktop/lime-android-calls2/group-call-proof-ada.txt" 2>/dev/null; cp /tmp/lime-partner.log "$HOME/Desktop/lime-android-calls2/group-call-partner-ben.log"; cp /tmp/lime-partner-cleo.log "$HOME/Desktop/lime-android-calls2/group-call-partner-cleo.log" ;; esac
       case "$cls" in StagingGroupsTest*) for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -qi "system: .*left" /tmp/lime-partner.log && break; sleep 2; done ;; esac
       case "$cls" in StagingGroupsTest*) grep -qi "system: .*left" /tmp/lime-partner.log || { status=1; echo "$cls: the partner never saw Ada leave"; } ;; esac
       case "$cls" in StagingActionsTest*)

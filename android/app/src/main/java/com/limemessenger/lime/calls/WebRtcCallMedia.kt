@@ -363,6 +363,8 @@ class WebRtcCallMedia(context: Context, private val events: CallMediaEvents) {
         var gatherMillis = 1_000L
         /** The one EGL context the camera, the encoder, the decoder and the video views share. */
         val eglBase: EglBase by lazy { EglBase.create() }
+        /** Loads WebRTC's native code (a group call's key provider needs it before any peer connection exists). */
+        fun ensureLoaded(context: Context) { factory(context.applicationContext) }
         const val CONTROL_LABEL = "lime-ctl"
         @Volatile private var factory: PeerConnectionFactory? = null
         private fun factory(context: Context): PeerConnectionFactory = factory ?: synchronized(this) {

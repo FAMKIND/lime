@@ -150,6 +150,12 @@ import uniffi.lime_core.messagePlainText
 fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenThread: (MessageItem) -> Unit = {}, modifier: Modifier = Modifier, onOpenProfile: (String, String) -> Unit = { _, _ -> }, onOpenGroup: () -> Unit = {}, focusMessageId: String? = null,
     /** Calls someone back (a call bubble in a chat, after asking). */
     onCallBack: (peerId: String, name: String, video: Boolean) -> Unit = { _, _, _ -> },
+    /** The call that is on in this group now (null: none), and what the bar above the messages does: start a voice or video call, join the one that is on. */
+    groupCall: uniffi.lime_core.GroupCallInfo? = null,
+    onStartGroupCall: (conversationId: String, video: Boolean) -> Unit = { _, _ -> },
+    onJoinGroupCall: (uniffi.lime_core.GroupCallInfo) -> Unit = {},
+    /** This phone is in a call already (the bar is hidden). */
+    groupCallBusy: Boolean = false,
     /** Photos already in the composer's draft strip (screenshots and tests: the Photo Picker cannot be driven headless). */
     seedPhotos: List<OutgoingAttachment> = emptyList(),
     /** A message already being edited (tests: a local-only message is not offered Edit, as the core only lets a sent or sending one be edited). */
@@ -225,7 +231,11 @@ fun ChatScreen(model: ChatModel, chats: ChatsModel, onBack: () -> Unit, onOpenTh
                 val chosen = selection
                 if (chosen != null) SelectionBar(chosen.size, onCancel = { selection = null },
                     onForward = { forwarding = chosen.toList() }, onDelete = { deleting = model.messages.filter { it.id in chosen } })
-                else Header(summary, chats.myName, chats.myTone, chats.otherUnreadChats(model.conversationId), onBack, onOpenGroup) { m -> onOpenProfile(m.id, m.name) }
+                else Column {
+                    Header(summary, chats.myName, chats.myTone, chats.otherUnreadChats(model.conversationId), onBack, onOpenGroup) { m -> onOpenProfile(m.id, m.name) }
+                    if (summary != null && summary.isGroup && !summary.isRequest && summary.groupEnded == null)
+                        com.limemessenger.lime.ui.calls.GroupCallBar(groupCall, busy = groupCallBusy, onStart = { video -> onStartGroupCall(model.conversationId, video) }, onJoin = onJoinGroupCall)
+                }
             },
         ) { headerDp ->
             LazyColumn(Modifier.fillMaxSize().testTag("chat-messages"), state = listState, contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 12.dp, end = 12.dp, top = headerDp + 8.dp, bottom = 8.dp)) {

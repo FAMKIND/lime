@@ -502,7 +502,7 @@ interface CallAudioPort {
         set(value) {}
 }
 
-private class RealCallAudio(context: Context) : CallAudioPort {
+internal class RealCallAudio(context: Context) : CallAudioPort {
     private val audio = CallAudio(context)
     override fun start(speaker: Boolean) = audio.start(speaker)
     override fun setSpeaker(on: Boolean) = audio.setSpeaker(on)

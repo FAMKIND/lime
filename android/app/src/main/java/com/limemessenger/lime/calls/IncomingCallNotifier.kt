@@ -100,6 +100,16 @@ object IncomingCallNotifier {
         runCatching { (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NOTIFICATION_ID, build(context, callId, name, video)) }
     }
 
+    /** A group call has started (a banner while lime is in the background; tapping it opens lime, where the chat says "Join the call"). Never a full-screen intent: a group call does not take the screen. */
+    fun postGroup(context: Context, title: String) {
+        if (!surface(context).ringsInBackground) return
+        createChannel(context)
+        val open = PendingIntent.getActivity(context, 14, Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE)
+        val n = Notification.Builder(context, CHANNEL).setSmallIcon(R.mipmap.ic_launcher).setContentTitle(title).setCategory(Notification.CATEGORY_CALL)
+            .setAutoCancel(true).setContentIntent(open).setTimeoutAfter(60_000L).build()
+        runCatching { (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NOTIFICATION_ID + 1, n) }
+    }
+
     fun cancel(context: Context) {
         (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(NOTIFICATION_ID)
     }

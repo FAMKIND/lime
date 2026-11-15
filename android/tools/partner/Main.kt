@@ -12,6 +12,7 @@
 //                           what it receives ("jam: subscriber …", "jam: comment …", "jam: like …")
 //   partner status          print what Ben's store holds
 //   partner actions-echo    like echo, and also reacts 👍 to every new message and prints "edited: …" / "deleted: …" when Ada edits or deletes one (LIME-304)
+//   partner group-call-join accepts group invitations and joins every group call that starts (LIME-428: no media), printing `group-call: ...` lines
 //   partner group-echo      like echo, for every GROUP: accept invitations and answer each new message from someone else with: Ben here: got "<first 40 chars>"
 //   partner accept          accept every pending chat request and group invitation once, then stop
 //   --as ben|cleo           (anywhere on the line) who this partner is; Cleo has her own store under ~/.lime/android-partner/cleo/
@@ -561,6 +562,35 @@ fun main(args: Array<String>) {
                     }
                 } catch (e: Exception) {
                     System.err.println("group-echo: ${e::class.simpleName} (will retry)")
+                }
+                Thread.sleep(2000)
+            }
+        }
+        "group-call-join" -> {
+            // LIME-428: Ben accepts group invitations and JOINS every group call that starts (the core's `join_group_call`: his sender key goes to everyone in the call, theirs come back as `key` events),
+            // with no media (the partner has no LiveKit). Every step prints one `group-call: ...` line the staging class reads.
+            println("group-call: listening as $personaName (Ctrl-C to stop)")
+            var joined: String? = null
+            while (true) {
+                try {
+                    store.sync(http, freshToken(http, tokens))
+                    for (c in store.listConversations().filter { it.requestState == "pending" }) { store.acceptRequest(c.id); println("group-call: accepted an invitation") }
+                    for (e in store.takeGroupCallEvents()) {
+                        when (e.kind) {
+                            "started" -> if (joined == null) { val j = store.joinGroupCall(e.callId); joined = e.callId; println("group-call: joined ${e.callId} as ${j.participant} with ${j.participants.size} already in it")
+                                val lk = runCatching { store.fetchLivekitToken(http, freshToken(http, tokens), j.call.room, j.participant) }
+                                println("group-call: livekit " + (lk.getOrNull()?.let { "token ok (host ${java.net.URI(it.url).host}, ttl ${it.ttlSeconds}s)" } ?: "NOT AVAILABLE ${lk.exceptionOrNull()?.let { it::class.simpleName } ?: "(none returned)"}")) }
+                            "joined" -> println("group-call: ${e.userId} joined")
+                            "key" -> println("group-call: key from ${e.participant} index ${e.keyIndex} (${e.key?.size} bytes)")
+                            "left" -> println("group-call: ${e.userId} left")
+                            else -> println("group-call: event ${e.kind}")
+                        }
+                    }
+                    val report = store.deliverGroupCallOps(http, freshToken(http, tokens))
+                    if (report.sent > 0u) println("group-call: sent ${report.sent} ops, ${report.keysSent} keys")
+                    joined?.let { id -> val st = store.groupCallEmojiState(id); if (st.ready) println("group-call: emoji ${st.emoji.joinToString("") { it.emoji }}") }
+                } catch (e: Exception) {
+                    System.err.println("group-call: ${e::class.simpleName} ${e.message?.take(80)} (will retry)")
                 }
                 Thread.sleep(2000)
             }
