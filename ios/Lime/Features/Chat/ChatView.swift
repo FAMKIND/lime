@@ -1567,6 +1567,7 @@ struct CallMenuButton: View {
                     .frame(width: 44, height: 44).contentShape(Rectangle())
             }
         }
+        .menuIndicator(.hidden)   // Mac Catalyst draws a chevron on a Menu by itself; the custom label already shows none on iPhone and iPad (LIME-338b)
         .accessibilityLabel("Call \(name)")
         .accessibilityIdentifier("\(id)-button")
     }
