@@ -29,6 +29,7 @@ struct MacApp: App {
             MacRootView()
                 .frame(minWidth: 720, minHeight: 480)
                 .buttonStyle(.plain)   // iOS's own look: on the Mac idiom a bare Button otherwise gets a grey square behind lime's capsules
+                .menuIndicator(.hidden)   // Catalyst draws a chevron on every Menu button by itself; Apple Messages shows none (an environment value, so every Menu below inherits it)
                 .limeTextSize()
                 .onAppear { WindowTextSize.start(); AppIconChoice.migrateIfNeeded(); Self.limitWindowSize() }
                 .environment(store)

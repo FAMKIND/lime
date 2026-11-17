@@ -147,3 +147,15 @@ For plot: the hairline reaches the top of the window and the composer has about 
 **338's "can drop" (not adopted here, that is LIME-605):** `MacRequestsRow` (use `RequestsRow`), the Mac's own Back hiding (use the pane-root environment value), and the `WindowMetrics` setting from the pane.
 
 For plot: nothing is on `main` yet, so plot-iOS has nothing to `git pull`; it needs the user to run `git push origin mac:main` (or allow tend-Mac to). The `send-button` flake on the first UI-test run after a core change is worth watching.
+
+## LIME-609 (2026-11-16): no menu chevrons
+
+**Cause and change:** Catalyst draws a chevron on every SwiftUI `Menu` button by itself. One line in `mac/Lime/MacApp.swift`, at the root of the window's content: `.menuIndicator(.hidden)` (an environment value, so every `Menu` below inherits it). No `ios/` edit. Survey: `grep` of `ios/Lime` finds about 40 `Menu {` / `Menu(` uses (chat call menu, profile, group details, jam, composer plus-menu, filters) and **no** `UIButton` or `showsMenuAsPrimaryAction`, so there is no UIKit menu the environment value can't reach. 338b had already put `.menuIndicator(.hidden)` on `CallMenuButton` (`ChatView.swift:1570`), but the header's other call menu (`callMenu`, `ChatView.swift:711`) still drew one on the Mac before this.
+
+**Seen (window-only screenshots, light, Ben Mac):** the chat header's camera has no chevron (`docs/design/mac/609-chat-header.png`); the profile's camera and ••• have none (`609-profile.png`). Before the change the header camera showed one (the 605 screenshots). The other `Menu`s (jam, group details, composer plus-menu) were **not opened**: they inherit the same value but I did not look at each.
+
+**Not verified by me:** that each menu still **opens** on click. A window-only screenshot does not include a popup menu, a region capture picked up another app's window (deleted, not kept), and the accessibility tree exposed no menu items. The change only hides the indicator, so behaviour should not change; the user's gate covers it.
+
+**Checks:** 0 warnings (Debug build). `mac/test.sh`: `TEST SUCCEEDED` (1 test, 0 failures) on two runs, **but both runs' partner exited at start with `could not register the device: RateLimited`, and the script exited 1** (its trap `kill`s a dead partner). So the echo half of the test is not proven this time; the test's echo lookup also matches an older echo whose number starts with the same digit as the new message's, so it can pass without a live partner. Not a 609 effect (no logic changed). Probably the staging device-registration rate limit after many partner starts today.
+
+For plot: **no chevron survived that I saw, so no ask 8.** The partner registers a new device on every start and can hit `RateLimited` on staging: worth knowing for linked devices (a Mac that links and re-links will meet the same limit). The UI test's echo lookup is weak (matches by the message's first 20 characters, which includes only the first digit of the number): a fix belongs to a later brief.
