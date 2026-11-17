@@ -51,7 +51,18 @@ impl LimeStore {
     }
 
     pub fn set_emergency_settings(&self, settings: EmergencySettings) -> Result<(), StoreError> {
-        self.with_conn(|conn| emergency::save_settings(conn, &settings))
+        self.with_conn(|conn| {
+            emergency::save_settings(conn, &settings)?;
+            // My emergency choices follow me to my other devices (LIME-340b; nothing with one device).
+            crate::client::own_devices_enqueue(
+                conn,
+                &serde_json::json!({
+                    "kind": "setting", "name": "emergency",
+                    "group_id": settings.group_id, "school_actions": settings.school_actions, "sound": settings.sound,
+                    "last_students": settings.last_students, "last_place": settings.last_place,
+                }),
+            )
+        })
     }
 }
 

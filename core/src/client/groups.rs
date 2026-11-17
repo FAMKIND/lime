@@ -494,6 +494,8 @@ impl LimeStore {
             let inner = SealedInner { sender_user: me.to_owned(), sender_device: state.device_id.clone(), sender_cert: state.cert(), op: op.clone() };
             let inner_text = String::from_utf8(inner.to_bytes()).map_err(|_| StoreError::BadMessage)?;
             groups::insert_op(conn, group_id, &op.op_id, &op.op_type, me, &op.hlc, &op.parents, &op.payload, &inner_text, now)?;
+            // My other devices get the same signed op (LIME-340b): a group or band I make or change here is there too (nothing with one device).
+            crate::client::own_devices_enqueue(conn, &json!({ "kind": "group_op", "inner": inner_text }))?;
             let after = groups::rebuild(conn, group_id, me, now)?.state;
             crate::store::group_calls::on_membership_changed(conn, group_id, me, now)?;
             // Everyone who was in the group, and everyone who is: the removed person needs to hear it too.

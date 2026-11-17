@@ -274,7 +274,83 @@ impl LimeStore {
 
 /// Applies a copy that arrived from one of my other devices (already checked: identified, my master key, not this device, signature good). Never makes a copy of
 /// its own. `Ok(true)` when it changed something new (a message that was not here).
-pub(crate) fn apply_own_copy(conn: &Connection, me: &str, cert: &SenderCert, payload: &Value, now: i64) -> Result<bool, StoreError> {
+impl LimeStore {
+    pub(crate) fn apply_own_copy(&self, conn: &Connection, state: &AccountState, me: &str, cert: &SenderCert, payload: &Value, now: i64) -> Result<bool, StoreError> {
+        match payload.get("kind").and_then(Value::as_str) {
+            // A group or band state op I made on my other device (create, add, remove, rename, photo, style, role, leave, delete, band marks...), signed there and
+            // kept with its certificate like any group op: applied as if I had made it here. Only when it is from that very device and its signature holds.
+            Some("group_op") => {
+                let Some(inner) = payload.get("inner").and_then(Value::as_str).and_then(|text| SealedInner::from_bytes(text.as_bytes())) else { return Ok(false) };
+                if inner.sender_user != me || inner.sender_device != cert.device_id || inner.sender_cert != *cert || !inner.op.verify(&cert.signing_key) {
+                    return Ok(false);
+                }
+                self.apply_group_op(conn, me, me, &inner, cert, now)?;
+                Ok(false)
+            }
+            // A jam I followed on my other device: followed here too (the writer welcomes this device with the keys), or left here too.
+            Some("jam") => {
+                let Some(jam_id) = payload.get("jam_id").and_then(Value::as_str).filter(|id| !id.is_empty() && id.len() <= 64) else { return Ok(false) };
+                match payload.get("op").and_then(Value::as_str) {
+                    Some("subscribe") => {
+                        let Some(writer) = payload.get("writer").and_then(Value::as_str).filter(|w| !w.is_empty() && *w != me) else { return Ok(false) };
+                        if crate::store::jam::jam_id_of(&crate::store::jam::conversation_id(jam_id)).is_none() {
+                            return Ok(false);
+                        }
+                        crate::client::jam::subscribe_in(conn, state, jam_id, writer, now)?;
+                    }
+                    Some("unsubscribe") => {
+                        let _ = crate::client::jam::unsubscribe_local(conn, jam_id);
+                    }
+                    _ => {}
+                }
+                Ok(false)
+            }
+            // The settings that follow me. (Themes, chat looks, drafts, my private labels and the like are never copied.)
+            Some("setting") => {
+                apply_setting(conn, payload, now)?;
+                Ok(false)
+            }
+            _ => apply_basic_copy(conn, me, cert, payload, now),
+        }
+    }
+}
+
+fn apply_setting(conn: &Connection, payload: &Value, now: i64) -> Result<(), StoreError> {
+    let conversation = payload.get("conversation").and_then(Value::as_str).filter(|c| conversation_ok(c));
+    let on = payload.get("on").and_then(Value::as_bool);
+    match payload.get("name").and_then(Value::as_str) {
+        Some("pin") => {
+            if let (Some(conversation), Some(on)) = (conversation, on) {
+                conn.execute("UPDATE conversations SET is_pinned = ?2 WHERE id = ?1", params![conversation, on]).map_err(db_err)?;
+            }
+        }
+        Some("marked_unread") => {
+            if let (Some(conversation), Some(on)) = (conversation, on) {
+                conn.execute("UPDATE conversations SET marked_unread = ?2 WHERE id = ?1", params![conversation, on]).map_err(db_err)?;
+            }
+        }
+        Some("status") => {
+            if let Some(status) = payload.get("status").and_then(crate::store::status::parse) {
+                crate::store::status::store_mine(conn, &status, now)?;
+            }
+        }
+        Some("emergency") => {
+            let text = |k: &str| payload.get(k).and_then(Value::as_str).map(str::to_owned);
+            let settings = crate::store::emergency::EmergencySettings {
+                group_id: text("group_id").unwrap_or_default(),
+                school_actions: payload.get("school_actions").and_then(Value::as_bool).unwrap_or(true),
+                sound: payload.get("sound").and_then(Value::as_bool).unwrap_or(false),
+                last_students: payload.get("last_students").and_then(Value::as_u64).unwrap_or(0).min(u64::from(u32::MAX)) as u32,
+                last_place: text("last_place").unwrap_or_default(),
+            };
+            crate::store::emergency::save_settings(conn, &settings)?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+pub(crate) fn apply_basic_copy(conn: &Connection, me: &str, cert: &SenderCert, payload: &Value, now: i64) -> Result<bool, StoreError> {
     match payload.get("kind").and_then(Value::as_str) {
         Some("op") => {
             let (Some(to), Some(op)) = (payload.get("to").and_then(Value::as_str), payload.get("op").and_then(Op::from_json)) else { return Ok(false) };

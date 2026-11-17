@@ -367,6 +367,35 @@ fn blob_text_to_ref(value: &Value) -> Option<jam_store::BlobRef> {
     Some(jam_store::BlobRef { blob_id: id.to_owned(), key: vodozemac::base64_encode(&key), sha256: sha.to_ascii_lowercase(), size })
 }
 
+/// Starts following a jam on this device: the jam's row (asked, not yet welcomed) and the `jam.subscribe` op queued for the writer. `false` when there was
+/// nothing to do (it is mine, someone else's, or already followed or asked). Shared by `subscribe_to_jam` and a copy from my other device (LIME-340b).
+pub(crate) fn subscribe_in(conn: &Connection, state: &AccountState, jam_id: &str, writer: &str, now: i64) -> Result<bool, StoreError> {
+    if let Some(existing) = jam_store::get(conn, jam_id)? {
+        if existing.mine || existing.writer != writer || matches!(existing.status.as_str(), "active" | "requested") {
+            return Ok(false);
+        }
+        conn.execute("UPDATE jams SET status = 'requested' WHERE jam_id = ?1", params![jam_id]).map_err(db_err)?;
+    } else {
+        conn.execute(
+            "INSERT INTO jams (jam_id, writer, title, about, topics, tiers, state_hlc, mine, status, ended, created)
+             VALUES (?1, ?2, '', '', '[]', '[\"free\"]', '', 0, 'requested', 0, ?3)",
+            params![jam_id, writer, now],
+        )
+        .map_err(db_err)?;
+    }
+    let op = signed_op(conn, state, "jam.subscribe", jam_id, None, json!({ "jam_id": jam_id }), now)?;
+    queue_op(conn, jam_id, writer, &op)?;
+    Ok(true)
+}
+
+/// Stops following a jam on this device (nothing is sent): the row, and never followed automatically again (LIME-210e). The jam is returned.
+pub(crate) fn unsubscribe_local(conn: &Connection, jam_id: &str) -> Result<jam_store::JamRow, StoreError> {
+    let jam = jam_store::get(conn, jam_id)?.filter(|j| !j.mine).ok_or(StoreError::NotFound)?;
+    conn.execute("UPDATE jams SET status = 'left' WHERE jam_id = ?1", params![jam_id]).map_err(db_err)?;
+    conn.execute("INSERT OR IGNORE INTO jam_follow_off (jam_id) VALUES (?1)", params![jam_id]).map_err(db_err)?;
+    Ok(jam)
+}
+
 #[uniffi::export]
 impl LimeStore {
     /// Makes a jam with me as its writer. Returns its conversation id (`jam:<id>`). Every jam has a free tier.
@@ -460,21 +489,11 @@ impl LimeStore {
         }
         let now = now_ms();
         self.with_conn(|conn| {
-            if let Some(existing) = jam_store::get(conn, &jam_id)? {
-                if existing.mine || existing.writer != writer_user_id || matches!(existing.status.as_str(), "active" | "requested") {
-                    return Ok(());
-                }
-                conn.execute("UPDATE jams SET status = 'requested' WHERE jam_id = ?1", params![jam_id]).map_err(db_err)?;
-            } else {
-                conn.execute(
-                    "INSERT INTO jams (jam_id, writer, title, about, topics, tiers, state_hlc, mine, status, ended, created)
-                     VALUES (?1, ?2, '', '', '[]', '[\"free\"]', '', 0, 'requested', 0, ?3)",
-                    params![jam_id, writer_user_id, now],
-                )
-                .map_err(db_err)?;
+            if subscribe_in(conn, &state, &jam_id, &writer_user_id, now)? {
+                // My other devices subscribe too (LIME-340b): the writer then welcomes each of them with the keys.
+                crate::client::own_devices_enqueue(conn, &json!({ "kind": "jam", "op": "subscribe", "jam_id": jam_id, "writer": writer_user_id }))?;
             }
-            let op = signed_op(conn, &state, "jam.subscribe", &jam_id, None, json!({ "jam_id": jam_id }), now)?;
-            queue_op(conn, &jam_id, &writer_user_id, &op)
+            Ok(())
         })
     }
 
@@ -484,12 +503,10 @@ impl LimeStore {
         self.registered_user(&state)?;
         let now = now_ms();
         self.with_conn(|conn| {
-            let jam = jam_store::get(conn, &jam_id)?.filter(|j| !j.mine).ok_or(StoreError::NotFound)?;
-            conn.execute("UPDATE jams SET status = 'left' WHERE jam_id = ?1", params![jam_id]).map_err(db_err)?;
-            // By hand: this jam is never followed automatically again (LIME-210e).
-            conn.execute("INSERT OR IGNORE INTO jam_follow_off (jam_id) VALUES (?1)", params![jam_id]).map_err(db_err)?;
+            let jam = unsubscribe_local(conn, &jam_id)?;
             let op = signed_op(conn, &state, "jam.unsubscribe", &jam_id, None, json!({ "jam_id": jam_id }), now)?;
-            queue_op(conn, &jam_id, &jam.writer, &op)
+            queue_op(conn, &jam_id, &jam.writer, &op)?;
+            crate::client::own_devices_enqueue(conn, &json!({ "kind": "jam", "op": "unsubscribe", "jam_id": jam_id }))
         })
     }
 

@@ -107,6 +107,17 @@ pub(crate) fn dequeue(conn: &Connection, peer: &str) -> Result<(), StoreError> {
     Ok(())
 }
 
+/// Keeps my status on this device (nothing is told to anyone).
+pub(crate) fn store_mine(conn: &Connection, status: &StatusInfo, now: i64) -> Result<(), StoreError> {
+    conn.execute(
+        "INSERT INTO my_status (id, state, until, then_state, then_until, updated_at) VALUES (1, ?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT (id) DO UPDATE SET state = ?1, until = ?2, then_state = ?3, then_until = ?4, updated_at = ?5",
+        params![status.state, status.until, status.then_state, status.then_until, now],
+    )
+    .map_err(db_err)?;
+    Ok(())
+}
+
 pub(crate) fn current_payload(conn: &Connection) -> Option<Value> {
     mine(conn).map(|s| payload(&s))
 }
@@ -123,14 +134,11 @@ impl LimeStore {
             return Ok(());
         }
         let now = super::now_ms();
-        conn.execute(
-            "INSERT INTO my_status (id, state, until, then_state, then_until, updated_at) VALUES (1, ?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT (id) DO UPDATE SET state = ?1, until = ?2, then_state = ?3, then_until = ?4, updated_at = ?5",
-            params![status.state, status.until, status.then_state, status.then_until, now],
-        )
-        .map_err(db_err)?;
+        store_mine(&conn, &status, now)?;
         let peers = super::delivery::accepted_peers(&conn)?;
-        queue_notices(&conn, &peers, now)
+        queue_notices(&conn, &peers, now)?;
+        // My status is the same on my other devices (LIME-340b; they tell nobody again: my contacts were told from here).
+        crate::client::own_devices_enqueue(&conn, &serde_json::json!({ "kind": "setting", "name": "status", "status": payload(&status) }))
     }
 
     /// The status I last set, if any.

@@ -9287,3 +9287,133 @@ fn a_contact_cannot_send_me_a_copy_that_claims_to_be_mine() {
     sync(&alice, &transport);
     assert_eq!(texts(&alice, &bob), vec!["hi"], "Bob's dressed-up message was not stored");
 }
+
+// ------------------------------------------------------------------------------- LIME-340b: groups, subscriptions and settings reach my other devices
+
+#[test]
+fn a_group_made_on_one_device_appears_on_the_other_which_reads_the_next_message_and_a_member_added_there_shows_too() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    let (dave, _) = party(&server, "dave", 5);
+    let alice2 = second_device(&server, &alice, 4);
+    know_each_other(&transport, [&alice, &alice2]);
+    let chat = alice.store.create_group("Grade 4 Team".into(), Some("🍎".into()), vec!["bob".into(), "carol".into()]).unwrap();
+    deliver(&alice, &transport);
+    for p in [&bob, &carol, &alice2] {
+        sync(p, &transport);
+    }
+    let on_two = alice2.store.group_details(chat.clone()).unwrap();
+    assert_eq!((on_two.name.as_str(), on_two.my_role.as_str(), on_two.members.len()), ("Grade 4 Team", "owner", 3), "the group, and my place in it, on my other device");
+    assert_eq!(names_in(&alice2, &chat), names_in(&alice, &chat));
+    // The next message in it, from someone else, is read on both.
+    bob.store.accept_request(chat.clone()).unwrap();
+    say_in(&bob, &transport, &chat, "hello team");
+    sync(&alice, &transport);
+    sync(&alice2, &transport);
+    assert_eq!(group_texts(&alice, &chat), vec!["hello team"]);
+    assert_eq!(group_texts(&alice2, &chat), vec!["hello team"], "the other device reads the next message");
+    // A member added on the first device shows on the second.
+    alice.store.add_group_members(chat.clone(), vec!["dave".into()]).unwrap();
+    deliver(&alice, &transport);
+    sync(&alice2, &transport);
+    let people: Vec<String> = names_in(&alice2, &chat).into_iter().map(|(user, _)| user).collect();
+    assert!(people.contains(&"dave".to_owned()), "the new member is on my other device too: {people:?}");
+    let _ = dave;
+    // A rename follows, and so does leaving.
+    alice.store.rename_group(chat.clone(), "Fourth grade".into()).unwrap();
+    deliver(&alice, &transport);
+    sync(&alice2, &transport);
+    assert_eq!(alice2.store.group_details(chat.clone()).unwrap().name, "Fourth grade");
+}
+
+#[test]
+fn a_jam_followed_on_one_device_is_followed_on_the_other_which_reads_the_next_post() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let bob2 = second_device(&server, &bob, 4);
+    know_each_other(&transport, [&bob, &bob2]);
+    let jam = new_jam(&alice);
+    bob.store.subscribe_to_jam(jam.clone(), alice.user.clone()).unwrap();
+    // Everything waiting goes round: Bob's subscribe and the copy, the writer's welcome to each of Bob's devices.
+    for _ in 0..3 {
+        deliver(&bob, &transport);
+        sync(&alice, &transport);
+        deliver(&alice, &transport);
+        for p in [&bob, &bob2] {
+            sync(p, &transport);
+            deliver(p, &transport);
+        }
+    }
+    let post = publish(&alice, &jam, "Next week's plan", "free");
+    for _ in 0..3 {
+        catch_up(&alice, &[&bob, &bob2], &transport);
+    }
+    for p in [&bob, &bob2] {
+        let posts = p.store.list_jam_posts(jam.clone()).unwrap();
+        assert!(posts.iter().any(|x| x.post_id == post), "{} reads the post", p.device);
+    }
+    // Leaving on one leaves on the other.
+    bob.store.unsubscribe_from_jam(jam.clone()).unwrap();
+    deliver(&bob, &transport);
+    sync(&bob2, &transport);
+    assert_eq!(bob2.store.jam(jam.clone()).unwrap().map(|j| j.status), Some("left".to_owned()));
+}
+
+#[test]
+fn a_pin_a_marked_unread_chat_a_status_and_emergency_choices_follow_but_a_private_label_does_not() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let alice2 = second_device(&server, &alice, 3);
+    know_each_other(&transport, [&alice, &alice2]);
+    say(&alice, &bob, &transport, "hi");
+    sync(&alice2, &transport);
+    let chat_of = |p: &Party| p.store.list_conversations().unwrap().into_iter().find(|c| c.id == "dm:bob").unwrap();
+    alice.store.set_pinned("dm:bob".into(), true).unwrap();
+    alice.store.set_marked_unread("dm:bob".into(), true).unwrap();
+    alice.store.set_my_status(crate::StatusInfo { state: "dnd".into(), until: None, then_state: None, then_until: None }).unwrap();
+    alice.store.set_emergency_settings(crate::EmergencySettings { group_id: "grp:x".into(), school_actions: false, sound: true, last_students: 12, last_place: "Gym".into() }).unwrap();
+    alice.store.set_contact_label("bob".into(), Some("Grade 4 buddy".into())).unwrap();
+    deliver(&alice, &transport);
+    sync(&alice2, &transport);
+    let pinned = chat_of(&alice2);
+    assert!(pinned.is_pinned, "the pin followed");
+    assert!(pinned.marked_unread, "marked unread followed");
+    assert_eq!(alice2.store.my_status().unwrap().map(|s| s.state), Some("dnd".to_owned()), "my status followed");
+    let settings = alice2.store.emergency_settings().unwrap();
+    assert_eq!((settings.group_id.as_str(), settings.school_actions, settings.sound, settings.last_students, settings.last_place.as_str()), ("grp:x", false, true, 12, "Gym"));
+    assert_eq!(alice2.store.contact_label("bob".into()).unwrap(), None, "a private label is local by design: it did not follow");
+    // Unpinning follows too.
+    alice.store.set_pinned("dm:bob".into(), false).unwrap();
+    deliver(&alice, &transport);
+    sync(&alice2, &transport);
+    assert!(!chat_of(&alice2).is_pinned);
+    // Applying copies made no copies of their own.
+    assert_eq!(own_outbox(&alice2), 0);
+}
+
+#[test]
+fn with_one_device_a_group_a_subscription_and_the_settings_queue_nothing_and_send_nothing() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    let chat = alice.store.create_group("Team".into(), None, vec!["bob".into(), "carol".into()]).unwrap();
+    alice.store.rename_group(chat, "Team B".into()).unwrap();
+    alice.store.set_pinned("dm:bob".into(), true).ok();
+    alice.store.set_my_status(crate::StatusInfo { state: "dnd".into(), until: None, then_state: None, then_until: None }).unwrap();
+    alice.store.set_emergency_settings(crate::EmergencySettings::default()).unwrap();
+    let jam = new_jam(&bob);
+    alice.store.subscribe_to_jam(jam, bob.user.clone()).unwrap();
+    assert_eq!(own_outbox(&alice), 0, "nothing queued for devices that do not exist");
+    forget_requests(&server);
+    deliver(&alice, &transport);
+    assert_eq!(server.mailbox_len(&alice.device), 0, "nothing is sent back to myself");
+    let state = alice.store.load_or_create_account().unwrap();
+    let cached: i64 = alice.store.lock().query_row("SELECT COUNT(*) FROM peer_devices WHERE user_id = ?1", rusqlite::params![state.user_id.unwrap()], |r| r.get(0)).unwrap();
+    assert_eq!(cached, 0, "and no cache of my own devices is made");
+    let _ = carol;
+}

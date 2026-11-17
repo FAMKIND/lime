@@ -1651,7 +1651,7 @@ impl LimeStore {
                 if let Some(session) = &session {
                     save_session(conn, &self.pickle_key, &sender, &cert.device_id, &peer_identity, session, true, now)?;
                 }
-                own_devices::apply_own_copy(conn, me, cert, &inner.op.payload, now).map(|_| ())
+                self.apply_own_copy(conn, state, me, cert, &inner.op.payload, now).map(|_| ())
             })?;
             self.with_conn(|conn| observe_hlc(conn, remote_hlc, now).map(|_| ()))?;
             // Not a message for anyone to be told about: it is what I did myself.

@@ -651,14 +651,23 @@ impl LimeStore {
     pub fn set_pinned(&self, conversation_id: String, pinned: bool) -> Result<(), StoreError> {
         let conn = self.lock();
         let changed = conn.execute("UPDATE conversations SET is_pinned = ?2 WHERE id = ?1", params![conversation_id, pinned]).map_err(db_err)?;
-        if changed == 0 { Err(StoreError::NotFound) } else { Ok(()) }
+        if changed == 0 {
+            return Err(StoreError::NotFound);
+        }
+        // Pins follow me to my other devices (LIME-340b; nothing with one device).
+        crate::client::own_devices_enqueue(&conn, &serde_json::json!({ "kind": "setting", "name": "pin", "conversation": conversation_id, "on": pinned }))
+
     }
 
     /// Marks a conversation unread by hand (or read again); opening it reads it.
     pub fn set_marked_unread(&self, conversation_id: String, unread: bool) -> Result<(), StoreError> {
         let conn = self.lock();
         let changed = conn.execute("UPDATE conversations SET marked_unread = ?2 WHERE id = ?1", params![conversation_id, unread]).map_err(db_err)?;
-        if changed == 0 { Err(StoreError::NotFound) } else { Ok(()) }
+        if changed == 0 {
+            return Err(StoreError::NotFound);
+        }
+        crate::client::own_devices_enqueue(&conn, &serde_json::json!({ "kind": "setting", "name": "marked_unread", "conversation": conversation_id, "on": unread }))
+
     }
 
     /// Deletes a chat for me: its messages and files go from this phone and the chat leaves the list. A new message from the
