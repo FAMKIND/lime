@@ -12,7 +12,7 @@ tend-Mac's lane (from `PLOT-MAC.md` `## MAC LANE RULES`):
 
 Logic written in `mac/` that should live in core or shared Swift:
 
-- `mac/Lime/MacRootView.swift` `MacSidebar` and `MacRequestsRow`: a Messages list for a split window, written from `ConversationRow` because `MessagesView` is the whole phone screen and `RequestsRow` is private. The chat filters, search, swipe actions (mute, delete, pin, unread) and the empty/banner states of `MessagesView` are not in it (LIME-603 hides them).
+- `mac/Lime/MacRootView.swift` `MacSidebar` and `MacRequestsRow`: a Messages list for a split window, written from `ConversationRow` because `MessagesView` is the whole phone screen. `RequestsRow` is internal now (LIME-338) but is a `NavigationLink(value: MessagesRoute.requests)`, which draws greyed out with a chevron in the Mac sidebar (no stack handles the route), so `MacRequestsRow` **stays** (LIME-605b) until plot-iOS splits the row's look from its link (ask 11). `MacSidebar` stays until the iPad split view after TestFlight. The chat filters, search, swipe actions (mute, delete, pin, unread) and the empty/banner states of `MessagesView` are not in it (LIME-603 hides them).
 
 ## Asks for plot-iOS
 
@@ -159,3 +159,16 @@ For plot: nothing is on `main` yet, so plot-iOS has nothing to `git pull`; it ne
 **Checks:** 0 warnings (Debug build). `mac/test.sh`: `TEST SUCCEEDED` (1 test, 0 failures) on two runs, **but both runs' partner exited at start with `could not register the device: RateLimited`, and the script exited 1** (its trap `kill`s a dead partner). So the echo half of the test is not proven this time; the test's echo lookup also matches an older echo whose number starts with the same digit as the new message's, so it can pass without a live partner. Not a 609 effect (no logic changed). Probably the staging device-registration rate limit after many partner starts today.
 
 For plot: **no chevron survived that I saw, so no ask 8.** The partner registers a new device on every start and can hit `RateLimited` on staging: worth knowing for linked devices (a Mac that links and re-links will meet the same limit). The UI test's echo lookup is weak (matches by the message's first 20 characters, which includes only the first digit of the number): a fix belongs to a later brief.
+
+## LIME-605 (2026-11-17): no Back in the chat pane (605b: `MacRequestsRow` stays)
+
+**Changed:** one line in `mac/Lime/MacRootView.swift`: `.environment(\.chatIsPaneRoot, true)` on the detail pane's root `ChatView` (LIME-338's value; the chats pushed onto `store.path` keep their Back). "Mac debt" updated: `MacRequestsRow` stays.
+
+**Tried and reverted (the reason for 605b):** swapping `MacRequestsRow` for iOS's `RequestsRow`. It is a `NavigationLink(value: MessagesRoute.requests)` and the sidebar has no stack, so it drew greyed out with a chevron, wrapped text and different insets: `docs/design/mac/605-requestsrow-disabled.png` (kept as the evidence). Nothing of the swap is in the commit.
+
+**Ask 8(6), newest message behind the composer: not reproduced, no ask 7.** Cases tried, window-only screenshots: (a) a chat open (opened from the list), Ben sent 4 messages while it was open: the newest bubble and its time sit clear above the composer; (b) the chat opened from the list while 4 messages from Ben were arriving: the same. `docs/design/mac/605-open-while-arriving.png`, and `605-chat-no-back.png` (final build, chat with no Back, newest messages visible). 338's per-chat settle may not be what fixed it: the pane already gave each chat `.id(id)`. I did not try ⌘] (the keyboard shortcut) on the chats.
+**Honest limits:** cases (a) and (b) were driven before the "Driving the app" rule, with clicks by screen position (the Ben row at a fixed offset), and the partner (Ben's `send`) was started several times that day (three or more starts of Ben's and one of Cleo's, with test.sh's). Not repeated under the new rules: the partner-start limit was already spent (`RateLimited`, see 609). The final screenshot was taken with accessibility actions only. Also: the two UI-test runs after 609 passed with **no** partner running, confirmed now by two unanswered messages in Ben's chat ("Hello from the Mac 91327 / 91410", no echo): the test's echo lookup matches an older echo, so `mac/test.sh` does not prove the partner answers.
+
+**Checks:** 0 warnings (Debug build). `mac/test.sh` not re-run (it starts a partner; the start limit is spent; the change is one environment value).
+
+For plot: ask 8(6) can be closed as not reproduced on the Mac. Ask 11 (split `RequestsRow`'s look from its link) is yours; `MacRequestsRow` stays until a sync brings it. The UI test's echo assertion is too weak (it can pass with no partner): a small later brief should make it match the exact text.

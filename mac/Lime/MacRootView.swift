@@ -156,6 +156,7 @@ private struct MacDetail: View {
                     RequestsView()
                 } else if let id = nav.selection, store.conversation(id) != nil {
                     ChatView(conversationID: id).id(id)
+                        .environment(\.chatIsPaneRoot, true)   // the chat is the root of this pane: no Back (LIME-338)
                 } else {
                     Text("Choose a chat").font(Theme.title).foregroundStyle(Theme.textSecondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity).limeBackground()
