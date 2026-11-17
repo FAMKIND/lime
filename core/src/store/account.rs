@@ -14,7 +14,7 @@ pub(crate) fn load_account(
 ) -> Result<Option<AccountState>, StoreError> {
     let row = conn
         .query_row(
-            "SELECT olm_pickle, master_secret, device_id, user_id, registered, hlc_wall, hlc_counter
+            "SELECT olm_pickle, master_secret, device_id, user_id, registered, hlc_wall, hlc_counter, master_public, device_signature
              FROM account WHERE id = 1",
             [],
             |r| {
@@ -26,22 +26,31 @@ pub(crate) fn load_account(
                     r.get::<_, bool>(4)?,
                     r.get::<_, i64>(5)?,
                     r.get::<_, i64>(6)?,
+                    r.get::<_, Option<String>>(7)?,
+                    r.get::<_, Option<String>>(8)?,
                 ))
             },
         )
         .optional()
         .map_err(db_err)?;
-    let Some((olm, master, device_id, user_id, registered, wall, counter)) = row else {
+    let Some((olm, master, device_id, user_id, registered, wall, counter, vouched_key, vouched_signature)) = row else {
         return Ok(None);
     };
     let account = Account::from_pickle(
         AccountPickle::from_encrypted(&olm, pickle_key).map_err(|_| StoreError::BadMessage)?,
     );
-    let secret = vodozemac::base64_decode(&master).map_err(|_| StoreError::BadMessage)?;
-    let secret: [u8; 32] = secret.try_into().map_err(|_| StoreError::BadMessage)?;
+    // A computer holds no master secret: the column is empty and the master's key and signature are kept beside it (LIME-341a).
+    let master = if master.is_empty() {
+        None
+    } else {
+        let secret = vodozemac::base64_decode(&master).map_err(|_| StoreError::BadMessage)?;
+        let secret: [u8; 32] = secret.try_into().map_err(|_| StoreError::BadMessage)?;
+        Some(Ed25519SecretKey::from_slice(&secret))
+    };
     Ok(Some(AccountState {
         account,
-        master: Ed25519SecretKey::from_slice(&secret),
+        master,
+        vouched: vouched_key.zip(vouched_signature),
         device_id,
         user_id,
         registered,
@@ -55,14 +64,18 @@ pub(crate) fn save_account(
     state: &AccountState,
 ) -> Result<(), StoreError> {
     let olm = state.account.pickle().encrypt(pickle_key);
-    let master = vodozemac::base64_encode(state.master.to_bytes().as_slice());
+    let master = state.master.as_ref().map(|m| vodozemac::base64_encode(m.to_bytes().as_slice())).unwrap_or_default();
+    let (vouched_key, vouched_signature) = match &state.vouched {
+        Some((key, signature)) => (Some(key.clone()), Some(signature.clone())),
+        None => (None, None),
+    };
     conn.execute(
-        "INSERT INTO account (id, olm_pickle, master_secret, device_id, user_id, registered, hlc_wall, hlc_counter, created_at)
-         VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, CAST(strftime('%s', 'now') AS INTEGER) * 1000)
+        "INSERT INTO account (id, olm_pickle, master_secret, device_id, user_id, registered, hlc_wall, hlc_counter, created_at, master_public, device_signature)
+         VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, CAST(strftime('%s', 'now') AS INTEGER) * 1000, ?8, ?9)
          ON CONFLICT (id) DO UPDATE SET olm_pickle = ?1, master_secret = ?2, device_id = ?3,
-           user_id = ?4, registered = ?5",
+           user_id = ?4, registered = ?5, master_public = ?8, device_signature = ?9",
         // The clock is moved only by tick_hlc / observe_hlc (atomically), never from a stale copy.
-        params![olm, master, state.device_id, state.user_id, state.registered, state.hlc.wall, state.hlc.counter],
+        params![olm, master, state.device_id, state.user_id, state.registered, state.hlc.wall, state.hlc.counter, vouched_key, vouched_signature],
     )
     .map_err(db_err)?;
     Ok(())

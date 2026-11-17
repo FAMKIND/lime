@@ -334,6 +334,12 @@ fn apply_setting(conn: &Connection, payload: &Value, now: i64) -> Result<(), Sto
                 crate::store::status::store_mine(conn, &status, now)?;
             }
         }
+        // My delivery key was rotated on my other device (a block): the one key of the account (LIME-341a).
+        Some("delivery_key") => {
+            if let Some(key) = payload.get("key").and_then(Value::as_str).and_then(|k| vodozemac::base64_decode(k).ok()) {
+                delivery::install_key(conn, &key, now)?;
+            }
+        }
         Some("emergency") => {
             let text = |k: &str| payload.get(k).and_then(Value::as_str).map(str::to_owned);
             let settings = crate::store::emergency::EmergencySettings {

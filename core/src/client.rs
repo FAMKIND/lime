@@ -56,6 +56,7 @@ pub(crate) mod link_preview_rules;
 pub(crate) mod jam;
 mod handover;
 mod own_devices;
+mod linked_device;
 
 /// Queues something for my other devices (a no-op with one device): for the store-level actions (a chat read, a person blocked).
 #[cfg(test)]
@@ -153,6 +154,10 @@ impl LimeStore {
     ) -> Result<DeviceInfo, StoreError> {
         let _guard = self.protocol_lock.lock().unwrap_or_else(|e| e.into_inner());
         let mut state = self.load_or_create_account()?;
+        // A computer registers only once a phone has certified its keys (LIME-341a): without that the server would take it for a new account's keys.
+        if !state.is_certified() {
+            return Err(StoreError::MasterKeyNotOnDevice);
+        }
         let cert = state.cert();
 
         let (status, body) = call(

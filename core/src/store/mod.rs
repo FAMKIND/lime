@@ -84,6 +84,8 @@ pub enum StoreError {
     /// The server does not accept this session (a 401 or 403): it ended, was never fully verified,
     /// or this device was replaced. The person must sign in again.
     Unauthorized,
+    /// This device does not hold the account's master key (a computer linked to the account): what was asked needs a phone or tablet (LIME-341a).
+    MasterKeyNotOnDevice,
 }
 
 impl std::fmt::Display for StoreError {
@@ -105,6 +107,7 @@ impl std::fmt::Display for StoreError {
             StoreError::KeyMismatch => "a person's master key changed",
             StoreError::RateLimited => "too many requests; try again shortly",
             StoreError::Unauthorized => "the session ended; sign in again",
+            StoreError::MasterKeyNotOnDevice => "this device does not hold the account's master key",
         };
         f.write_str(text)
     }
@@ -457,6 +460,10 @@ impl LimeStore {
         if delivery::unshare(&conn, peer)? {
             let now = now_ms();
             delivery::rotate(&conn, now)?;
+            // The new key reaches my other devices (LIME-341a): one that kept the old one would put its hash back on the server at its next launch and
+            // lock every contact out of sealed sends. (Nothing with one device.)
+            let (key, _) = delivery::current(&conn, now)?;
+            crate::client::own_devices_enqueue(&conn, &serde_json::json!({ "kind": "setting", "name": "delivery_key", "key": vodozemac::base64_encode(&key) }))?;
             // The photo key is rotated with it: the person just blocked can no longer open my contacts-only photo
             // (the next delivery re-uploads it under the new key).
             photos::rotate_key(&conn, now)?;

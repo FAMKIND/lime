@@ -1009,6 +1009,9 @@ const MIGRATIONS: &[&str] = &[
          payload    TEXT NOT NULL,
          created_at INTEGER NOT NULL
      );",
+    // (LIME-341a) A device without the master secret (a computer linked to the account): the master's public key and its signature over this device's keys.
+    "ALTER TABLE account ADD COLUMN master_public TEXT;
+     ALTER TABLE account ADD COLUMN device_signature TEXT;",
 ];
 
 /// The schema version this build writes.

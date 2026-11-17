@@ -1569,7 +1569,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
     {
         let conn = alice.store.lock();
         conn.execute_batch(
-            "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
+            "ALTER TABLE account DROP COLUMN master_public; ALTER TABLE account DROP COLUMN device_signature; DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
              DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP INDEX olm_sessions_by_peer; DROP TABLE received_ciphertexts; DROP TABLE emergency_messages; DROP TABLE emergency_settings; DROP TABLE mesh_outbox; DROP TABLE mesh_packets; DROP TABLE mesh_seen; DROP TABLE mesh_uploaded; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
              DROP TRIGGER my_gifs_fts_insert; DROP TRIGGER my_gifs_fts_update; DROP TRIGGER my_gifs_fts_delete; DROP TABLE my_gifs_fts; DROP TABLE my_gifs; DROP TABLE draft_files; DROP TABLE draft_outbox; DROP TABLE draft_authors; DROP TABLE draft_chunks; DROP TABLE drafts; DROP TABLE deleted_peers; DROP TABLE session_repairs; DROP TABLE profile_key_requests; DROP TABLE my_extra; DROP TABLE extras; DROP TRIGGER jam_posts_fts_insert; DROP TRIGGER jam_posts_fts_update; DROP TRIGGER jam_posts_fts_delete; DROP TABLE jam_fts; DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jam_handovers; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_credits; DROP TABLE jam_credit_requests; DROP TABLE jam_credit_wires; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_blob_deletes; DROP TABLE jam_reactions; DROP TABLE jam_my_reactions; DROP TABLE jam_comments; DROP TABLE jam_counts; DROP TABLE jam_counts_out; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; DROP TABLE open_outbox; DROP TABLE jam_follow_off; DROP TABLE contact_jam_checks; DROP TABLE community_joins; DROP TABLE open_fts; DROP TABLE open_seen; ALTER TABLE conversations DROP COLUMN group_tone; ALTER TABLE conversations DROP COLUMN group_cover; ALTER TABLE conversations DROP COLUMN group_org; ALTER TABLE conversations DROP COLUMN group_parent; ALTER TABLE conversations DROP COLUMN group_parent_open; DROP TABLE org_joins; DROP TABLE series_meta; PRAGMA user_version = 9;",
@@ -3528,7 +3528,7 @@ fn forget_requests(server: &Arc<FakeServer>) {
 fn add_linked_device(server: &Arc<FakeServer>, owner: &Party) -> String {
     let first = owner.store.load_or_create_account().unwrap();
     let mut second = crate::keys::AccountState::create();
-    second.master = vodozemac::Ed25519SecretKey::from_slice(&first.master.to_bytes());
+    second.master = Some(vodozemac::Ed25519SecretKey::from_slice(&first.master.as_ref().unwrap().to_bytes()));
     second.account.generate_one_time_keys(3);
     let cert = second.cert();
     let mut state = server.state.lock().unwrap();
@@ -9065,8 +9065,8 @@ fn second_device(server: &Arc<FakeServer>, first: &Party, key: u8) -> Party {
     let store = LimeStore::open(dir.path().join("lime.db").to_string_lossy().into_owned(), vec![key; 32]).unwrap();
     let transport: Arc<dyn Transport> = server.clone();
     let mut state = store.load_or_create_account().unwrap();
-    let master = first.store.load_or_create_account().unwrap().master.to_bytes();
-    state.master = vodozemac::Ed25519SecretKey::from_slice(&master);
+    let master = first.store.load_or_create_account().unwrap().master.as_ref().unwrap().to_bytes();
+    state.master = Some(vodozemac::Ed25519SecretKey::from_slice(&master));
     store.with_conn(|conn| crate::store::account::save_account(conn, &store.pickle_key, &state)).unwrap();
     let info = store.register_device(transport, first.token.clone()).unwrap();
     Party { store, user: first.user.clone(), token: first.token.clone(), device: info.device_id, _dir: dir }
@@ -9416,4 +9416,171 @@ fn with_one_device_a_group_a_subscription_and_the_settings_queue_nothing_and_sen
     let cached: i64 = alice.store.lock().query_row("SELECT COUNT(*) FROM peer_devices WHERE user_id = ?1", rusqlite::params![state.user_id.unwrap()], |r| r.get(0)).unwrap();
     assert_eq!(cached, 0, "and no cache of my own devices is made");
     let _ = carol;
+}
+
+
+// ------------------------------------------------------------------------------------- LIME-341a: a second device on the same account
+
+/// A computer for `phone`'s account: its own keys, certified by the phone, the account's delivery key, registered. Returns it as a party.
+fn computer_for(server: &Arc<FakeServer>, phone: &Party, key: u8) -> Party {
+    let dir = tempfile::tempdir().unwrap();
+    let store = LimeStore::open(dir.path().join("lime.db").to_string_lossy().into_owned(), vec![key; 32]).unwrap();
+    let transport: Arc<dyn Transport> = server.clone();
+    let request = store.device_only_request(phone.user.clone()).unwrap();
+    let certificate = phone.store.certify_device(request).unwrap();
+    store.finish_device_only(certificate, phone.store.test_delivery_key()).unwrap();
+    let info = store.register_device(transport, phone.token.clone()).unwrap();
+    Party { store, user: phone.user.clone(), token: phone.token.clone(), device: info.device_id, _dir: dir }
+}
+
+/// A tablet for `phone`'s account: from the master secret and the account's delivery key.
+fn tablet_for(server: &Arc<FakeServer>, phone: &Party, key: u8) -> Party {
+    let dir = tempfile::tempdir().unwrap();
+    let store = LimeStore::open(dir.path().join("lime.db").to_string_lossy().into_owned(), vec![key; 32]).unwrap();
+    let transport: Arc<dyn Transport> = server.clone();
+    let secret = phone.store.load_or_create_account().unwrap().master.as_ref().unwrap().to_bytes().to_vec();
+    store.set_up_linked_device(phone.user.clone(), secret, phone.store.test_delivery_key()).unwrap();
+    let info = store.register_device(transport, phone.token.clone()).unwrap();
+    Party { store, user: phone.user.clone(), token: phone.token.clone(), device: info.device_id, _dir: dir }
+}
+
+fn all_know_each_other(transport: &Arc<dyn Transport>, devices: &[&Party]) {
+    for party in devices {
+        let state = party.store.load_or_create_account().unwrap();
+        assert_eq!(party.store.refresh_own_devices(transport, &party.token, &state, &party.user).unwrap(), devices.len());
+    }
+}
+
+#[test]
+fn a_computer_and_a_tablet_of_the_same_account_receive_sealed_messages_with_no_token_and_one_delivery_key() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let key_before = alice.store.test_delivery_key();
+    let computer = computer_for(&server, &alice, 3);
+    let tablet = tablet_for(&server, &alice, 4);
+    // (d) the one delivery key: byte-identical on all three devices, and Alice's did not change.
+    assert_eq!(alice.store.test_delivery_key(), key_before);
+    assert_eq!(computer.store.test_delivery_key(), key_before, "the computer holds the account's key, it did not make its own");
+    assert_eq!(tablet.store.test_delivery_key(), key_before, "so does the tablet");
+    // The new devices put the same hash on the server again: nothing changed there.
+    for p in [&computer, &tablet] {
+        deliver(p, &transport);
+    }
+    assert_eq!(server.state.lock().unwrap().delivery_access.get("alice").cloned(), Some(expected_hash(&key_before)), "the server still holds the one key's hash");
+    // A sealed message is accepted only from someone this device already knows (their master key is pinned): the link package (LIME-341b) carries the contacts'
+    // pinned keys, so here the two new devices are given Bob's the way the package will.
+    let bob_master = bob.store.load_or_create_account().unwrap().master_key();
+    for p in [&computer, &tablet] {
+        p.store.with_conn(|conn| crate::store::account::pin_master_key(conn, "bob", &bob_master)).unwrap();
+    }
+    // (a) Bob sends sealed: A, the computer and the tablet all receive it, with no token (no identified fallback).
+    let (with_before, without_before) = {
+        let state = server.state.lock().unwrap();
+        (state.sends_with_token, state.sends_without_token)
+    };
+    say(&bob, &alice, &transport, "to all three");
+    let (with_after, without_after) = {
+        let state = server.state.lock().unwrap();
+        (state.sends_with_token, state.sends_without_token)
+    };
+    assert_eq!(with_after, with_before, "no request carried a token: nothing went identified");
+    assert!(without_after >= without_before + 3, "one sealed send per device");
+    for p in [&alice, &computer, &tablet] {
+        sync(p, &transport);
+        assert!(texts(p, &bob).contains(&"to all three".to_owned()), "{} received it: {:?} pending {:?} mailbox {:?}", p.device, texts(p, &bob), pending_rows(p), mailbox_of(&server, &p.device));
+    }
+    let denied = bob.store.lock().query_row("SELECT denied FROM contact_delivery_keys WHERE user_id = 'alice'", [], |r| r.get::<_, bool>(0)).unwrap();
+    assert!(!denied, "Bob was never refused: no 403");
+    // The computer and the tablet also send as me: Bob receives it as from Alice (a send from a new device needs no key of Bob's: it goes identified until the
+    // package has carried the contacts' delivery keys, LIME-341b).
+    say(&computer, &bob, &transport, "from the computer");
+    say(&tablet, &bob, &transport, "from the tablet");
+    sync(&bob, &transport);
+    let heard = texts(&bob, &alice);
+    assert!(heard.contains(&"from the computer".to_owned()) && heard.contains(&"from the tablet".to_owned()), "{heard:?}");
+}
+
+#[test]
+fn a_tablet_certifies_a_further_device_a_computer_cannot_and_neither_panics() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let tablet = tablet_for(&server, &alice, 4);
+    // (b) the tablet makes a computer.
+    let from_tablet = computer_for(&server, &tablet, 5);
+    all_know_each_other(&transport, &[&alice, &tablet, &from_tablet]);
+    // (c) a computer cannot certify: a clear error.
+    let request = alice.store.certify_device(crate::keys::DeviceRequest { device_id: "x".into(), identity_key: "y".into(), signing_key: "z".into() }).unwrap();
+    assert_eq!(request.device_id, "x");
+    let ask = crate::keys::DeviceRequest { device_id: uuid::Uuid::new_v4().to_string(), identity_key: "AA".into(), signing_key: "BB".into() };
+    assert!(matches!(from_tablet.store.certify_device(ask), Err(crate::store::StoreError::MasterKeyNotOnDevice)));
+    // A computer that has not been certified cannot register, and says why.
+    let dir = tempfile::tempdir().unwrap();
+    let lone = LimeStore::open(dir.path().join("lime.db").to_string_lossy().into_owned(), vec![9; 32]).unwrap();
+    lone.device_only_request("alice".into()).unwrap();
+    let transport2: Arc<dyn Transport> = server.clone();
+    assert!(matches!(lone.register_device(transport2, alice.token.clone()), Err(crate::store::StoreError::MasterKeyNotOnDevice)));
+    // A certificate for other keys, or from another master, is refused.
+    let other = LimeStore::open(dir.path().join("two.db").to_string_lossy().into_owned(), vec![8; 32]).unwrap();
+    let mine = other.device_only_request("alice".into()).unwrap();
+    let cert_for_another = alice.store.certify_device(crate::keys::DeviceRequest { device_id: mine.device_id.clone(), identity_key: "AA".into(), signing_key: mine.signing_key.clone() }).unwrap();
+    assert!(other.finish_device_only(cert_for_another, alice.store.test_delivery_key()).is_err(), "a certificate for other keys");
+    // A store that already has an account cannot be turned into a linked device.
+    assert!(matches!(alice.store.device_only_request("alice".into()), Err(crate::store::StoreError::Rejected)));
+    assert!(matches!(alice.store.set_up_linked_device("alice".into(), vec![1; 32], vec![2; 32]), Err(crate::store::StoreError::Rejected)));
+}
+
+#[test]
+fn own_copies_reach_the_computer_and_the_tablet_and_a_dressed_up_copy_from_a_contact_does_not() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let computer = computer_for(&server, &alice, 3);
+    let tablet = tablet_for(&server, &alice, 4);
+    all_know_each_other(&transport, &[&alice, &computer, &tablet]);
+    // (e) what I send on the phone is mine on both.
+    say(&alice, &bob, &transport, "from the phone");
+    for p in [&computer, &tablet] {
+        sync(p, &transport);
+        assert_eq!(mine(p, "bob"), vec![(None, "from the phone".to_owned(), "sent".to_owned())], "{}: mine, in dm:bob", p.device);
+    }
+    // A pin set on the tablet shows on the phone and the computer (a copy from a device the master vouches for, a computer included).
+    tablet.store.set_pinned("dm:bob".into(), true).unwrap();
+    deliver(&tablet, &transport);
+    for p in [&alice, &computer] {
+        sync(p, &transport);
+        assert!(p.store.list_conversations().unwrap().into_iter().find(|c| c.id == "dm:bob").unwrap().is_pinned, "{} follows the tablet", p.device);
+    }
+    // Bob dresses a message up as one of my copies: none of my three devices stores it.
+    say(&bob, &alice, &transport, "hi");
+    let op = crate::protocol::Op { op_id: "forged-2".into(), op_type: "message.send".into(), conversation_id: "dm:bob".into(), hlc: crate::protocol::Hlc::default().render(), parents: vec![], payload: serde_json::json!({ "text": "never written by me" }), sig: String::new() };
+    let payload = serde_json::json!({ "kind": "op", "to": "dm:bob", "op": op.to_json() });
+    let mut state = bob.store.load_or_create_account().unwrap();
+    bob.store.send_control_op(&transport, &bob.token, &mut state, &bob.user, &alice.user, "own.copy", payload).unwrap();
+    for p in [&alice, &computer, &tablet] {
+        sync(p, &transport);
+        assert!(!texts(p, &bob).contains(&"never written by me".to_owned()), "{} did not store the forged copy", p.device);
+    }
+}
+
+#[test]
+fn a_block_on_one_device_gives_the_new_delivery_key_to_the_others_so_none_puts_the_old_one_back() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    befriend(&alice, &bob, &transport);
+    befriend(&alice, &carol, &transport);
+    let tablet = tablet_for(&server, &alice, 4);
+    all_know_each_other(&transport, &[&alice, &tablet]);
+    let old = alice.store.test_delivery_key();
+    alice.store.block_sender("dm:bob".into()).unwrap();
+    let new = alice.store.test_delivery_key();
+    assert_ne!(new, old, "a block rotates the key");
+    deliver(&alice, &transport);
+    sync(&tablet, &transport);
+    assert_eq!(tablet.store.test_delivery_key(), new, "the tablet has the new key");
+    deliver(&tablet, &transport);
+    assert_eq!(server.state.lock().unwrap().delivery_access.get("alice").cloned(), Some(expected_hash(&new)), "the tablet did not put the old key back");
 }

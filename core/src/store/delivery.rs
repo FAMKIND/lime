@@ -93,6 +93,21 @@ pub(crate) fn current(conn: &Connection, now_ms: i64) -> Result<(Vec<u8>, bool),
     Ok((key, false))
 }
 
+/// Puts the account's existing delivery key on this device (a device linked to the account, LIME-341a, or my other device telling me the key was rotated):
+/// the one key is shared by all of my devices, so a new device never makes its own. Its hash goes to the server again with the next delivery (the same value).
+pub(crate) fn install_key(conn: &Connection, key: &[u8], now_ms: i64) -> Result<(), StoreError> {
+    if key.len() != KEY_BYTES {
+        return Err(StoreError::BadMessage);
+    }
+    conn.execute(
+        "INSERT INTO delivery_state (id, key, uploaded, rotated_at) VALUES (1, ?1, 0, ?2)
+         ON CONFLICT (id) DO UPDATE SET key = ?1, uploaded = 0, rotated_at = ?2",
+        params![vodozemac::base64_encode(key), now_ms],
+    )
+    .map_err(db_err)?;
+    Ok(())
+}
+
 /// A new key (a block): nobody has it yet, and the server has not seen its hash.
 pub(crate) fn rotate(conn: &Connection, now_ms: i64) -> Result<(), StoreError> {
     conn.execute(
