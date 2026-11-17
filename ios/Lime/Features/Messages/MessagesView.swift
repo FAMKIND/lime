@@ -421,44 +421,53 @@ struct OfflineSheet: View {
     }
 }
 
-/// The first row of Messages while strangers' first messages are waiting.
-struct RequestsRow: View {
+/// The first row of Messages while strangers' first messages are waiting: the look of the row (LIME-338c: the Mac puts it in its own button) and, below, the row as a link.
+struct RequestsRowLabel: View {
     let count: Int
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        NavigationLink(value: MessagesRoute.requests) {
-            HStack(spacing: 12) {
-                Image(systemName: "envelope.badge")
-                    .font(.system(size: 22))
-                    .foregroundStyle(Theme.accentInk)
-                    .frame(width: 52, height: 52)
-                    .background(Theme.accent, in: Circle())
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Requests").font(Theme.title).foregroundStyle(Theme.text)
-                    Text(count == 1 ? "1 person wants to message you" : "\(count) people want to message you")
-                        .font(Theme.secondary).foregroundStyle(Theme.textSecondary)
-                }
-                // At the accessibility sizes the sentence already says how many; the badge would only squeeze it.
-                if !typeSize.isAccessibilitySize {
-                    Spacer(minLength: 4)
-                    Text("\(count)")
-                        .font(Theme.font(.caption, weight: .semibold))
-                        .foregroundStyle(Theme.accentInk)
-                        .frame(minWidth: 22)
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Theme.accent, in: Capsule())
-                }
+        HStack(spacing: 12) {
+            Image(systemName: "envelope.badge")
+                .font(.system(size: 22))
+                .foregroundStyle(Theme.accentInk)
+                .frame(width: 52, height: 52)
+                .background(Theme.accent, in: Circle())
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Requests").font(Theme.title).foregroundStyle(Theme.text)
+                Text(count == 1 ? "1 person wants to message you" : "\(count) people want to message you")
+                    .font(Theme.secondary).foregroundStyle(Theme.textSecondary)
             }
-            .padding(.horizontal, 8).padding(.vertical, 12)
-            .contentShape(Rectangle())
+            // At the accessibility sizes the sentence already says how many; the badge would only squeeze it.
+            if !typeSize.isAccessibilitySize {
+                Spacer(minLength: 4)
+                Text("\(count)")
+                    .font(Theme.font(.caption, weight: .semibold))
+                    .foregroundStyle(Theme.accentInk)
+                    .frame(minWidth: 22)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Theme.accent, in: Capsule())
+            }
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 8).padding(.vertical, 12)
+        .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Requests, \(count == 1 ? "1 person wants" : "\(count) people want") to message you")
-        .accessibilityAddTraits(.isButton)
         .accessibilityIdentifier("requests-row")
+    }
+}
+
+/// The row as it is in Messages: the look above, as a link to the Requests screen.
+struct RequestsRow: View {
+    let count: Int
+
+    var body: some View {
+        NavigationLink(value: MessagesRoute.requests) {
+            RequestsRowLabel(count: count)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(.isButton)
     }
 }
 
