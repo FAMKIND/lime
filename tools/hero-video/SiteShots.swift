@@ -17,10 +17,10 @@ final class SiteShots: XCTestCase {
     func testChats() {
         let a = app("site-link", extra: ["-lime-demo-autoreply", "Sending it now. Thanks for asking!"])
         snap("link-list")
-        row(a, "dm:mei"); snap("link-chat")
+        row(a, "dm:talia"); snap("link-chat")
         let field = a.textViews["composer-field"]; XCTAssertTrue(field.waitForExistence(timeout: 8)); field.tap(); sleep(1)
-        field.typeText("Can you share the fraction"); sleep(1); snap("link-typing-1")
-        field.typeText(" wall?"); sleep(1); snap("link-typing")
+        field.typeText("Can you share the poem"); sleep(1); snap("link-typing-1")
+        field.typeText(" of the week list?"); sleep(1); snap("link-typing")
         a.buttons["send-button"].tap(); sleep(1); snap("link-sent")
         sleep(3); snap("link-reply")
         let reply = a.staticTexts["Sending it now. Thanks for asking!"]; if reply.waitForExistence(timeout: 5) { reply.press(forDuration: 0.9); sleep(2); snap("link-bar"); let heart = a.buttons["react-❤️"]; if heart.waitForExistence(timeout: 3) { heart.tap(); sleep(1); snap("link-reacted") } }
@@ -28,7 +28,7 @@ final class SiteShots: XCTestCase {
     func testGroup() {
         let a = app("site-link", extra: [])
         row(a, "grp:demo1"); snap("link-group")
-        let title = a.staticTexts["Grade 4 Team"].firstMatch; if title.exists { title.tap(); sleep(2); snap("link-group-info") }
+        let title = a.staticTexts["8th Grade Team"].firstMatch; if title.exists { title.tap(); sleep(2); snap("link-group-info") }
     }
     func testCall() { _ = app("site-call"); sleep(3); snap("link-call") }
     func testOffline() {
@@ -41,6 +41,12 @@ final class SiteShots: XCTestCase {
     }
     private func ids(_ a: XCUIApplication, _ n: String) { try? a.debugDescription.write(toFile: "/tmp/286r/\(n).txt", atomically: true, encoding: .utf8) }
     private func tap(_ a: XCUIApplication, _ id: String, wait: Double = 6) { let e = a.descendants(matching: .any).matching(identifier: id).firstMatch; XCTAssertTrue(e.waitForExistence(timeout: wait), id); e.tap(); sleep(2) }
+    /// Scrolls the feed until the element is on screen (the feed is lazy: a card below the fold does not exist yet), then taps it.
+    private func reveal(_ a: XCUIApplication, _ id: String) {
+        let e = a.descendants(matching: .any).matching(identifier: id).firstMatch
+        for _ in 0..<8 { if e.exists && e.isHittable { break }; a.swipeUp(); sleep(1) }
+        XCTAssertTrue(e.exists, id); e.tap(); sleep(2)
+    }
 
     private func tapLabel(_ a: XCUIApplication, _ label: String) { let e = a.buttons[label].firstMatch; if e.waitForExistence(timeout: 6) { e.tap() } else { a.staticTexts[label].firstMatch.tap() }; sleep(2) }
 
@@ -48,6 +54,7 @@ final class SiteShots: XCTestCase {
         let a = app("site-jam"); sleep(2); snap("jam-feed")
         a.swipeUp(); sleep(1); snap("jam-feed2")
         a.swipeUp(); sleep(1); snap("jam-feed3")
+        a.swipeUp(); sleep(1); snap("jam-feed4")
     }
     func testJamArticle() {
         let a = app("site-jam"); sleep(2)
@@ -57,11 +64,11 @@ final class SiteShots: XCTestCase {
     func testJamPodcasts() {
         let a = app("site-jam"); sleep(2)
         tap(a, "jam-segment-Podcasts"); snap("jam-podcasts")
-        tap(a, "jam-audio-play-site-sam-pod-audio"); sleep(1); snap("jam-podcast-playing"); ids(a, "ids-playing")
+        tap(a, "jam-audio-play-site-adaeze-pod-audio"); sleep(1); snap("jam-podcast-playing"); ids(a, "ids-playing")
     }
     func testJamSeries() {
         let a = app("site-jam"); sleep(2)
-        tap(a, "jam-card-series-site-sam-2"); snap("jam-series"); ids(a, "ids-series")
+        reveal(a, "jam-card-series-site-luis-2"); snap("jam-series"); ids(a, "ids-series")
     }
     func testJamBand() {
         let a = app("site-jam"); sleep(2)
@@ -77,6 +84,6 @@ final class SiteShots: XCTestCase {
     }
     func testJamMembers() {
         let a = app("site-jam"); sleep(2)
-        tap(a, "jam-post-site-sci-2"); snap("jam-members-post")
+        reveal(a, "jam-post-site-sci-2"); snap("jam-members-post")
     }
 }
