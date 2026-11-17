@@ -135,3 +135,15 @@ For plot: **no**: on staging a second password sign-in (same password) does not 
 **Verification.** Debug build, 0 warnings in `mac/` (touched file rebuilt); `mac/test.sh` passed (14.2 s; XCTest's runtime "main thread" notice from the existing test is not a build warning). Light and dark window-only screenshots checked by eye: the hairline touches the top, the composer has a gap, nothing else moved. The system appearance was switched to dark for the dark shot and set back to light.
 
 For plot: the hairline reaches the top of the window and the composer has about 16 pt under it, all in `mac/`; nothing needed from plot-iOS. Note for any future `ios/` change to the bottom bar: a safe-area inset must sit inside the `NavigationStack` to reach it.
+
+## LIME-SYNC-M1 (2026-11-16): merge main, drop the Catalyst patches
+
+**Merged:** `origin/main` (`c4c9d738`: 337, 338, 338b, 339, 340, 345) into `mac` as `2e6216f2` (`Merge main into mac (LIME-SYNC-M1)`), then `1c31a712` `chore(mac): drop the Catalyst patches (LIME-337 landed)`. **Conflicts: none.** Survey first: `~/Sites/lime` had no uncommitted work under `ios/` or `core/` (only plot's `PLOT-*.md` and untracked site/public files); the lane held (empty diff outside the Mac files); `mac/LimeMacUITests` had no `composer-hide-keyboard` lookup. **Removed:** the patch block in `mac/generate.sh`, the two excludes in `mac/project.yml`, the two stale patched copies in the gitignored `mac/Lime/Generated/` (left in place they would have compiled twice), and the "Stand-ins" entries (marked dropped); ask 1 marked done.
+
+**Checks on the merged tree:** `cargo test` in `core/`: 574 passed, 0 failed. `mac/build-core.sh`: ok (core warnings are in `core/`, pre-existing). `mac/generate.sh`: exit 0. Mac Debug and Release builds: 0 warnings, 0 errors in `mac/` and `ios/`. `mac/tools/selftest/build.sh`: "Encryption self-test: passed". The partner was rebuilt (it links the core). `mac/test.sh`: **failed on its first run** (`MacWindowTests.swift:30`, `send-button` not found; Ben's echo was listening, so not the echo failure) and **passed on the immediate rerun** (1 test, 0 failures, Ben answered). Cause of the first failure not established; the identifier is unchanged in `ios/` (`ChatComposer.swift:144`). The stores opened fine with 340's core (app and partner both ran).
+
+**The push:** `origin/main` was still `c4c9d738` and the merge is a fast-forward of it. **`git push origin mac:main` was denied by the harness's permission classifier, so it was NOT run; `main` is unchanged.** `mac` was pushed on its own.
+
+**338's "can drop" (not adopted here, that is LIME-605):** `MacRequestsRow` (use `RequestsRow`), the Mac's own Back hiding (use the pane-root environment value), and the `WindowMetrics` setting from the pane.
+
+For plot: nothing is on `main` yet, so plot-iOS has nothing to `git pull`; it needs the user to run `git push origin mac:main` (or allow tend-Mac to). The `send-button` flake on the first UI-test run after a core change is worth watching.
