@@ -24,3 +24,12 @@ The quote portrait is a placeholder too, until a real teacher agrees (the user's
 
 ## LIME-284e15 (the "Built into lime" screens)
 Screens are lime's own demo captures (default look, demo names, no students), made with `tools/hero-video/` (the report sheet by `SafetyShot.swift`): `built-calls`, `built-bands`, `built-series` (the jam recording's poster), `built-yours`, `built-safety` (`.avif` / `.webp`), and `built-offline.svg` (the drawn relay illustration). No Pexels material.
+
+## LIME-347 (the page)
+| Use | File | Source |
+| --- | --- | --- |
+| Hero chips "Dr. Okome" and "Rich Calton" (`chip-okome.webp` / `.avif`, `chip-calton.webp` / `.avif`; 120 px crops on the face; they replace the "Mrs Flowers" and "High Desert Teachers" chips, and "Ms Park" moves to the third slot) | the two portraits the user supplied, `design/people/okome-portrait.png` and `design/people/calton-portrait.png`, **both shown with permission**, each linking to their own real work (https://africamigration.com/ , https://www.harlemlive.net/publications/) | the user |
+| Closing card (`join.webp` / `.avif`; three women in bright print dresses by a river, hands raised: the user's photo, 1176 × 1568, cropped to 1176 × 662 at its native size, not scaled up) | `design/site/join-group.png` | **Pexels (free for commercial use; the user, 2026-11-17); author and photo URL to add** (no `design/site/join-group-source.txt` yet) |
+| *No longer used on the page:* `group.webp` / `.avif` (the rooftop table photo, now only a link card picture in the demo), `avatar.webp` / `.avif` (Mrs Flowers' chip), `chip-desert*` (High Desert Teachers' chip) | | |
+
+The quote ("feels good to lime with friends…") is now attributed to an invented teacher, "Adaeze Nwosu, chemistry teacher, Queens"; the portrait behind it is the same placeholder as before. The note under the jam phone says: "Demo: tap the phone. Dr. Okome and Rich Calton appear with permission; other names and photos are illustrative."
