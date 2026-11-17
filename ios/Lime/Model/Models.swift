@@ -141,6 +141,14 @@ struct ThreadInfo: Hashable, Sendable {
     let repliers: [Person]
     /// Replies from others not yet seen in the thread.
     let unread: Int
+    /// Who wrote those unread replies (the newest `unread` of them from others), so a blocked person's can be left out of the numbers (LIME-333). Empty when not known.
+    var unreadSenders: [String] = []
+
+    /// The unread replies without the blocked people's (LIME-333). `unread` stays what core counted (reading the thread takes all of it off the chat's number).
+    func visibleUnread(blocked: Set<String>) -> Int {
+        guard !blocked.isEmpty else { return unread }
+        return max(0, unread - unreadSenders.filter { BlockedPeople.isBlocked($0, in: blocked) }.count)
+    }
 
     /// `me` is how the app shows the signed-in person (LimeCore calls them "me").
     init(_ summary: ThreadSummary, me: Person) {
@@ -150,11 +158,12 @@ struct ThreadInfo: Hashable, Sendable {
         unread = Int(summary.unread)
     }
 
-    init(replyCount: Int, lastReplyAt: Date, repliers: [Person], unread: Int) {
+    init(replyCount: Int, lastReplyAt: Date, repliers: [Person], unread: Int, unreadSenders: [String] = []) {
         self.replyCount = replyCount
         self.lastReplyAt = lastReplyAt
         self.repliers = repliers
         self.unread = unread
+        self.unreadSenders = unreadSenders
     }
 
     /// "1 reply · 6:35 PM", or the date instead of the time when the last reply was not today.

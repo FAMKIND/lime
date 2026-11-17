@@ -422,7 +422,7 @@ struct OfflineSheet: View {
 }
 
 /// The first row of Messages while strangers' first messages are waiting.
-private struct RequestsRow: View {
+struct RequestsRow: View {
     let count: Int
     @Environment(\.dynamicTypeSize) private var typeSize
 

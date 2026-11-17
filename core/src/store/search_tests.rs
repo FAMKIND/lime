@@ -325,3 +325,40 @@ fn jam_posts_already_here_are_back_filled_by_the_migration() {
     let store = open(&dir);
     assert_eq!(jam_ids(&store, "circles"), vec!["old"]);
 }
+
+/// LIME-333: a blocked person's replies are not in a thread's count, faces or last-reply time, and a thread with only their replies is not listed; Unblock brings them back.
+#[test]
+fn a_blocked_persons_replies_are_not_counted_in_a_thread_summary() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(&dir);
+    chat(&store, "g1", "Staff", &["Pat", "Sam"]);
+    let from = |sender: &str, id: &str, at: i64, root: Option<&str>| {
+        store
+            .lock()
+            .execute(
+                "INSERT INTO messages (id, conversation_id, sender_id, body, sent_at, local_state, thread_root) VALUES (?1, 'g1', ?2, 'x', ?3, 'received', ?4)",
+                params![id, sender, at, root],
+            )
+            .unwrap();
+    };
+    from("g1-1", "root1", 1, None);
+    from("g1-1", "root2", 2, None);
+    from("g1-0", "a1", 10, Some("root1"));
+    from("g1-1", "a2", 11, Some("root1"));
+    from("g1-0", "a3", 12, Some("root1"));
+    from("g1-0", "b1", 13, Some("root2"));
+    let summaries = |store: &LimeStore| {
+        let mut all = store.list_thread_summaries("g1".into()).unwrap();
+        all.sort_by(|a, b| a.root_id.cmp(&b.root_id));
+        all
+    };
+    let before = summaries(&store);
+    assert_eq!(before.iter().map(|t| (t.root_id.as_str(), t.reply_count)).collect::<Vec<_>>(), vec![("root1", 3), ("root2", 1)]);
+    store.block_person("g1-0".into()).unwrap();
+    let after = summaries(&store);
+    assert_eq!(after.len(), 1, "root2 has only Pat's reply: no thread line");
+    assert_eq!((after[0].root_id.as_str(), after[0].reply_count, after[0].last_reply_at), ("root1", 1, 11), "only Sam's reply counts, and the last reply is Sam's");
+    assert_eq!(after[0].repliers.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(), vec!["g1-1"], "Pat's face is gone");
+    store.unblock("dm:g1-0".into()).unwrap();
+    assert_eq!(summaries(&store), before, "Unblock: everything is back");
+}

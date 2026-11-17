@@ -120,11 +120,14 @@ struct ChatComposer: View {
                     .accessibilityAddTraits(model.toolbarVisible ? [.isSelected] : [])
                     // Hides and reveals the keyboard (LIME-175); always in the row, so nothing moves. Also on an iPad: the app is an iPhone app there and gets
                     // the iPhone-style keyboard, which has no hide key of its own (LIME-175c).
-                    Button { trace("composer tap keyboard"); model.toggleKeyboard() } label: {
-                        Image(systemName: model.editing ? "keyboard.chevron.compact.down" : "keyboard").font(.system(size: 20)).foregroundStyle(Theme.text)
-                            .frame(width: 44, height: 44)
+                    // A Mac has no on-screen keyboard to hide or show (LIME-338b); iPhone and iPad keep it.
+                    if UIDevice.current.userInterfaceIdiom != .mac {
+                        Button { trace("composer tap keyboard"); model.toggleKeyboard() } label: {
+                            Image(systemName: model.editing ? "keyboard.chevron.compact.down" : "keyboard").font(.system(size: 20)).foregroundStyle(Theme.text)
+                                .frame(width: 44, height: 44)
+                        }
+                        .accessibilityLabel(model.editing ? "Hide keyboard" : "Show keyboard").accessibilityIdentifier("composer-hide-keyboard")
                     }
-                    .accessibilityLabel(model.editing ? "Hide keyboard" : "Show keyboard").accessibilityIdentifier("composer-hide-keyboard")
                 }
                 .opacity(recorder.isRecording ? 0 : 1).allowsHitTesting(!recorder.isRecording)
                 Spacer(minLength: 0)
@@ -219,6 +222,11 @@ struct ChatComposer: View {
         #if DEBUG
         .task { if store.demoDrafts { drafts = ChatComposer.demoDrafts }; recorder.simulated = store.isDemo }
         .onAppear { model.onPasteGIF = { data in addGIF(data: data, name: "Pasted GIF.gif") } }
+        // Return sends with a hardware keyboard (LIME-339): the same path as the arrow button, which is only there when there is something to send.
+        .onAppear {
+            model.returnHasDraft = { canSend && !recorder.isRecording }
+            model.onReturn = { send() }
+        }
         #endif
     }
 
@@ -570,8 +578,11 @@ struct ThreadSummaryRow: View {
     let thread: ThreadInfo
     let action: () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(ConversationStore.self) private var store
 
     var body: some View {
+        // New replies from a blocked person are not new (LIME-333).
+        let unread = thread.visibleUnread(blocked: store.blockedIDs)
         Button(action: action) {
             HStack(spacing: 8) {
                 HStack(spacing: -6) {
@@ -584,7 +595,7 @@ struct ThreadSummaryRow: View {
                     .font(Theme.caption)
                     .foregroundStyle(Theme.text)
                     .fixedSize(horizontal: false, vertical: true)   // wraps at the larger text sizes
-                if thread.unread > 0 {
+                if unread > 0 {
                     // New replies: an accent dot (the count is in the accessibility label).
                     Circle().fill(Theme.accent).frame(width: 9, height: 9)
                 }
@@ -597,7 +608,7 @@ struct ThreadSummaryRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(thread.summaryText)\(thread.unread > 0 ? ", \(thread.unread) new" : "")")
+        .accessibilityLabel("\(thread.summaryText)\(unread > 0 ? ", \(unread) new" : "")")
         .accessibilityAddTraits(.isButton)
         .accessibilityIdentifier("thread-summary-\(messageID)")
     }

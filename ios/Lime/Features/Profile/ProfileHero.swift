@@ -182,7 +182,7 @@ struct ProfileHeroBackground: View {
     /// The default (no background chosen or visible) is a blurred photo or a tone: decorative everywhere, also in tests.
     var isDefault = false
     /// The screen's height, which every proportion is a share of.
-    var screenHeight: CGFloat = UIScreen.main.bounds.height
+    var screenHeight: CGFloat = WindowMetrics.shared.size.height
     /// A background video (LIME-226b): the still is its poster, shown first and whenever the video is not playing.
     var videoURL: URL? = nil
     var playVideo = false

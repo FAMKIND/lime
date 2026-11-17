@@ -23,7 +23,9 @@ pub struct ThreadSummary {
 
 #[uniffi::export]
 impl LimeStore {
-    /// Every thread in a conversation that has at least one reply (and whose root message is here).
+    /// Every thread in a conversation that has at least one reply (and whose root message is here). Replies from a blocked person (LIME-333) are not counted,
+    /// not in the repliers, not in the last-reply time, and a thread with only their replies is not listed; `unread` stays the raw count (the app, which holds the
+    /// replies, takes theirs off). Unblock brings them all back.
     pub fn list_thread_summaries(&self, conversation_id: String) -> Result<Vec<ThreadSummary>, StoreError> {
         let conn = self.lock();
         let mut statement = conn
@@ -31,6 +33,7 @@ impl LimeStore {
                 "SELECT r.thread_root, count(*), max(r.sent_at)
                  FROM messages r JOIN messages root ON root.id = r.thread_root AND root.conversation_id = r.conversation_id
                  WHERE r.conversation_id = ?1 AND r.thread_root IS NOT NULL AND r.hidden = 0 AND r.deleted = 0
+                   AND NOT EXISTS (SELECT 1 FROM conversations b WHERE b.id = 'dm:' || r.sender_id AND b.request_state = 'blocked')
                  GROUP BY r.thread_root",
             )
             .map_err(db_err)?;
@@ -45,7 +48,9 @@ impl LimeStore {
                 .prepare(
                     "SELECT m.sender_id, COALESCE(p.name, m.sender_id), COALESCE(p.tone, 0)
                      FROM messages m LEFT JOIN people p ON p.id = m.sender_id
-                     WHERE m.thread_root = ?1 AND m.hidden = 0 AND m.deleted = 0 ORDER BY m.sent_at DESC, m.id DESC",
+                     WHERE m.thread_root = ?1 AND m.hidden = 0 AND m.deleted = 0
+                       AND NOT EXISTS (SELECT 1 FROM conversations b WHERE b.id = 'dm:' || m.sender_id AND b.request_state = 'blocked')
+                     ORDER BY m.sent_at DESC, m.id DESC",
                 )
                 .map_err(db_err)?;
             let mut repliers: Vec<MemberInfo> = Vec::new();

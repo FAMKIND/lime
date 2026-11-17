@@ -215,7 +215,7 @@ final class ComposerPanelInputView: UIInputView {
 
     init(content: AnyView, height: CGFloat) {
         host = UIHostingController(rootView: content)
-        super.init(frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: height), inputViewStyle: .keyboard)
+        super.init(frame: CGRect(x: 0, y: 0, width: WindowMetrics.shared.size.width, height: height), inputViewStyle: .keyboard)
         allowsSelfSizing = true
         host.view.backgroundColor = .clear
         host.view.translatesAutoresizingMaskIntoConstraints = false

@@ -11,9 +11,10 @@ extension ConversationStore {
     /// A post's numbers: the writer's latest tally (mine are counted live), my own heart at once.
     func jamCounts(_ postID: String) -> JamCountsInfo {
         var counts = rawJamCounts(postID)
-        // A blocked person's comments are not counted (LIME-332): the collapsed rows stay, the number drops them.
+        // A blocked person leaves no trace in the numbers (LIME-332, 333): their comments, hearts and faces are not counted, and a "New comments" dot needs a
+        // comment from someone else. The collapsed comment rows stay.
         if !blockedIDs.isEmpty {
-            counts.comments = UInt32(BlockedPeople.visibleCommentCount(total: Int(counts.comments), comments: jamComments(postID), blocked: blockedIDs))
+            counts = BlockedPeople.visibleCounts(counts, comments: jamComments(postID), blocked: blockedIDs, me: meProvider().id)
         }
         return counts
     }
@@ -120,13 +121,15 @@ extension ConversationStore {
         for post in known.values {
             let counts = jamCounts(post.postId)
             for comment in jamComments(post.postId) {
+                // A blocked person's words are left out of Activity (not collapsed: it is a list of things to look at) (LIME-333).
+                if isBlocked(comment.author) { continue }
                 if comment.author == who {
                     out.append(JamActivityItem(id: "c-" + comment.commentId, post: post, who: who, kind: comment.parentId == nil ? .commented : .replied, text: comment.text, date: comment.created))
                 } else if who == me && comment.state == "published" && isMyJamPost(post) {
                     out.append(JamActivityItem(id: "n-" + comment.commentId, post: post, who: comment.author, kind: .commentedOnMine, text: comment.text, date: comment.created))
                 }
             }
-            let liked = who == me ? counts.likedByMe : counts.likers.contains(who)
+            let liked = who == me ? counts.likedByMe : (!isBlocked(who) && counts.likers.contains(who))
             if liked { out.append(JamActivityItem(id: "l-" + post.postId, post: post, who: who, kind: .liked, text: "", date: post.created)) }
         }
         return Array(out.sorted { $0.date > $1.date }.prefix(60))

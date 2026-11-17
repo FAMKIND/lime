@@ -916,9 +916,11 @@ final class GroupCallManager {
 
     private func logCameraSupport() {
         guard video, cameraObservers.isEmpty else { return }
+        #if !targetEnvironment(macCatalyst)   // multitasking camera access does not exist on Mac Catalyst (LIME-603)
         let session = AVCaptureSession()
         let device = UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
         diag.log("group camera: \(device), multitasking camera access supported=\(session.isMultitaskingCameraAccessSupported) enabled=\(session.isMultitaskingCameraAccessEnabled)")
+        #endif
         let center = NotificationCenter.default
         cameraObservers.append(center.addObserver(forName: AVCaptureSession.wasInterruptedNotification, object: nil, queue: .main) { [weak self] note in
             guard let self else { return }

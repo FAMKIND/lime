@@ -451,6 +451,8 @@ impl LimeStore {
         self.set_request_state(&conversation_id, "blocked")?;
         let Some(peer) = conversation_id.strip_prefix("dm:") else { return Ok(()) };
         let conn = self.lock();
+        // My other devices are told (nothing with one device; LIME-340).
+        crate::client::own_devices_enqueue(&conn, &serde_json::json!({ "kind": "block", "user": peer, "on": true }))?;
         delivery::dequeue_share(&conn, peer)?;
         if delivery::unshare(&conn, peer)? {
             let now = now_ms();
@@ -613,6 +615,9 @@ impl LimeStore {
         if changed == 0 {
             return Err(StoreError::NotFound);
         }
+        if let Some(peer) = conversation_id.strip_prefix("dm:") {
+            crate::client::own_devices_enqueue(&conn, &serde_json::json!({ "kind": "block", "user": peer, "on": false }))?;
+        }
         // They no longer have to be shut out: give them the current key again. (Not to a person blocked without ever having a chat, LIME-329: they never had it,
         // and unblocking must not hand a stranger the means to send to you.)
         if let Some(peer) = conversation_id.strip_prefix("dm:") {
@@ -693,11 +698,16 @@ impl LimeStore {
     /// Marks a conversation as read.
     pub fn mark_read(&self, conversation_id: String) -> Result<(), StoreError> {
         let conn = self.lock();
-        conn.execute(
-            "UPDATE conversations SET unread = 0, marked_unread = 0 WHERE id = ?1 AND (unread != 0 OR marked_unread != 0)",
-            params![conversation_id],
-        )
-        .map_err(db_err)?;
+        let changed = conn
+            .execute(
+                "UPDATE conversations SET unread = 0, marked_unread = 0 WHERE id = ?1 AND (unread != 0 OR marked_unread != 0)",
+                params![conversation_id],
+            )
+            .map_err(db_err)?;
+        if changed > 0 {
+            // My other devices read it too (nothing with one device; LIME-340).
+            crate::client::own_devices_enqueue(&conn, &serde_json::json!({ "kind": "read", "conversation": conversation_id }))?;
+        }
         Ok(())
     }
 

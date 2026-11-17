@@ -2061,7 +2061,13 @@ final class LimeUITestsSettings: LimeUITestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.clearAndType("x")
         XCTAssertTrue(app.buttons["editor-save"].isEnabled)
-        app.buttons["editor-clear"].tap()
+        // The Clear button slides in as the first letter is typed, and a tap while it is still arriving is lost (the screen shows the same text and Save stays on): tap
+        // again until Save greys (LIME-345; the app's rule was right: an empty name cannot be saved).
+        for _ in 0..<4 where app.buttons["editor-save"].isEnabled {
+            if app.buttons["editor-clear"].waitForExistence(timeout: 2) { app.buttons["editor-clear"].tap() }
+            let greyed = expectation(for: NSPredicate(format: "isEnabled == false"), evaluatedWith: app.buttons["editor-save"])
+            _ = XCTWaiter().wait(for: [greyed], timeout: 1.5)
+        }
         XCTAssertFalse(app.buttons["editor-save"].isEnabled)
         XCTAssertEqual(app.staticTexts["editor-error"].label, "Your name can't be empty.")
     }

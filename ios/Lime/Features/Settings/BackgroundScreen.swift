@@ -18,7 +18,7 @@ struct BackgroundScreen: View {
             // The preview is this phone's hero shape: what the photo will fill (LIME-217c). A clear box sets the size and the picture is only drawn over it:
             // a `scaledToFill` image as the sized view would take its own (pixel) size and make the whole page wider than the screen (LIME-225b).
             Color.clear
-                .aspectRatio(HeroShape.aspect(screenWidth: UIScreen.main.bounds.width, screenHeight: UIScreen.main.bounds.height), contentMode: .fit)
+                .aspectRatio(HeroShape.aspect(screenWidth: WindowMetrics.shared.size.width, screenHeight: WindowMetrics.shared.size.height), contentMode: .fit)
                 .frame(maxHeight: 300)
                 .overlay {
                     if let current {
@@ -266,7 +266,7 @@ struct BackgroundCropScreen: View {
 
     /// The part of the frame this phone's hero shows: the full width, centred, as tall as the hero's shape says (never more than the frame).
     private func heroWindow(in viewport: CGSize) -> CGRect {
-        let aspect = HeroShape.aspect(screenWidth: UIScreen.main.bounds.width, screenHeight: UIScreen.main.bounds.height)
+        let aspect = HeroShape.aspect(screenWidth: WindowMetrics.shared.size.width, screenHeight: WindowMetrics.shared.size.height)
         let height = min(viewport.height, viewport.width / aspect)
         return CGRect(x: 0, y: (viewport.height - height) / 2, width: viewport.width, height: height)
     }

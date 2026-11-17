@@ -14,6 +14,7 @@ struct ChatView: View {
     /// The words of the search that led here: highlighted in the chat like find does.
     var focusWords: [String] = []
     @Environment(ConversationStore.self) private var store
+    @Environment(\.chatIsPaneRoot) private var chatIsPaneRoot
     @Environment(NotificationCoordinator.self) private var notifications
     @Environment(\.dismiss) private var dismiss
     @State private var composerModel = RichComposerModel()
@@ -43,7 +44,8 @@ struct ChatView: View {
     @State private var timeReveal: CGFloat = 0
     /// The chat has settled at its newest message once. Coming back from a screen pushed on top (a thread, a profile) re-runs the open task; it must
     /// leave the scroll where it was (LIME-234).
-    @State private var settledOnce = false
+    /// The chat this view has settled at the newest message for (LIME-338: per chat, not once per view, so a pane that shows another chat in the same view settles again).
+    @State private var settledConversation: String?
     /// The opening scroll is done: only now does scrolling near the top load older rows.
     @State private var openSettled = false
     /// The list's content height and offset, kept in a plain box (no redraws), to keep your place when older rows are added.
@@ -137,11 +139,16 @@ struct ChatView: View {
         .safeAreaBar(edge: .bottom) { bottomBar(conversation) }
         .safeAreaInset(edge: .top) { if finding { findBar }  }
         .navigationBarTitleDisplayMode(.inline)
-        .limeBack(unread: backUnread)
+        .limeBack(showsBack: !chatIsPaneRoot, unread: backUnread)
         .toolbar {
             // The avatar and name sit beside the system ‹, with no glass of their own, left-aligned in a width worked out from the screen's (the room between ‹ and the two circles; .principal would centre it);
             // the name truncates rather than vanishing (LIME-247, 247b).
-            ToolbarItem(placement: .principal) { titlePill(conversation).frame(width: max(120, WindowMetrics.shared.size.width - 196), alignment: .leading).fixedSize(horizontal: false, vertical: true) }
+            ToolbarItem(placement: .principal) {
+                // With a number Back is a capsule, wider than the circle this was laid out beside: the title moves right by the difference so the gap after Back is the same (LIME-335).
+                titlePill(conversation)
+                    .frame(width: max(120, WindowMetrics.shared.size.width - 196) - titleShift, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, titleShift).padding(.trailing, 8)   // and 8 pt before the search circle, which a long name used to touch
+            }
                 .sharedBackgroundVisibility(.hidden)
             // Search and the call button are two 44 pt circles of our own glass (the system's would be a capsule), last; a fixed gap keeps them apart.
             ToolbarItem(placement: .topBarTrailing) {
@@ -241,8 +248,9 @@ struct ChatView: View {
                 // Opening a chat: once its rows have been laid out, settle at the newest message. `defaultScrollAnchor` alone is not
                 // enough on every iOS version (a chat pushed at launch opened at its top on iOS 18); this is a no-op when it worked.
                 // Not for a search result's jump to a message.
-                guard focusMessageID == nil, !settledOnce else { return }
-                settledOnce = true
+                guard focusMessageID == nil, settledConversation != conversationID else { return }
+                settledConversation = conversationID
+                openSettled = false
                 #if DEBUG
                 openProbe.open(conversationID, messages: conversation.messages.count, loaded: store.isLoaded)
                 openProbe.log("window=\(windowRows) of \(rowsOf(conversation).count) rows")
@@ -433,6 +441,18 @@ struct ChatView: View {
     /// The name and the line under it are one line, and wrap at the larger sizes instead of being cut (LIME-130-3a).
     private var headerLines: Int? { globalTypeSize >= .accessibility1 ? nil : 2 }
 
+    /// Does the title have a line under the name (a group's members, my label for them, a status)?
+    private func hasSecondLine(_ conversation: Conversation) -> Bool {
+        if conversation.isGroup { return true }
+        guard let person = conversation.members.first else { return false }
+        if person.label != nil { return true }
+        return store.status(of: person.id).flatMap { StatusPlan.caption(state: $0.state, until: $0.until) } != nil
+    }
+
+    /// The name is one line (ending in "…") when something sits under it, so it never pushes that line down; with nothing under it it may use two. At the accessibility
+    /// sizes nothing is cut off (LIME-130, 335).
+    private func nameLines(_ conversation: Conversation) -> Int? { globalTypeSize >= .accessibility1 ? nil : (hasSecondLine(conversation) ? 1 : 2) }
+
     private func titlePill(_ conversation: Conversation) -> some View {
         HStack(spacing: 8) {
             ConversationAvatar(conversation: conversation, size: 36)
@@ -442,7 +462,7 @@ struct ChatView: View {
                     Text(conversation.title)
                         .font(Theme.font(.subheadline, weight: .semibold))
                         .foregroundStyle(Theme.text)
-                        .lineLimit(headerLines)
+                        .lineLimit(nameLines(conversation))
                     // "Verified in person" (they scanned each other's QR codes): a small seal after the name, with the date when tapped.
                     if conversation.verified && !conversation.isGroup {
                         Button { showingSeal = true } label: {
@@ -593,6 +613,10 @@ struct ChatView: View {
 
     // MARK: Header
 
+    /// How far the title moves right: the capsule of a one-digit number is about 23 pt wider than the plain circle, but the system centres the title, so it takes 16 pt
+    /// of shift to leave the same 10 pt gap (measured on the 13 mini simulator); "10" to "99" and "99+" widen the badge by about 5 and 14 pt more.
+    private var titleShift: CGFloat { backUnread == 0 ? 0 : (backUnread < 10 ? 16 : (backUnread < 100 ? 21 : 30)) }
+
     /// The unread messages in the other chats, shown beside Back when Back returns to the Messages list (LIME-325, 331). On iOS 26 and later the ‹ is `limeBack`'s (LIME-334:
     /// the number was only ever in the iOS 17-25 header below, so it never showed there); both read this.
     private var backUnread: Int {
@@ -603,23 +627,25 @@ struct ChatView: View {
     private func header(_ conversation: Conversation) -> some View {
         HStack(spacing: 8) {
             let others = backUnread
-            Button { dismiss() } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 18))
-                        .foregroundStyle(Theme.text)
-                    if others > 0 { CountBadge(count: others) }
+            if !chatIsPaneRoot {   // the Mac shows the chat at the root of its own pane: nothing to go back to (LIME-338)
+                Button { dismiss() } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 18))
+                            .foregroundStyle(Theme.text)
+                        if others > 0 { CountBadge(count: others) }
+                    }
+                    .padding(.horizontal, others > 0 ? 12 : 0)
+                    .frame(minWidth: 48, minHeight: 48)
+                    .limeGlass()
+                    .animation(Motion.animation(.easeOut(duration: 0.2)), value: others)
                 }
-                .padding(.horizontal, others > 0 ? 12 : 0)
-                .frame(minWidth: 48, minHeight: 48)
-                .limeGlass()
-                .animation(Motion.animation(.easeOut(duration: 0.2)), value: others)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Back")
+                .accessibilityValue(others == 0 ? "" : others == 1 ? "1 unread message" : "\(others) unread messages")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityIdentifier("back-button")
             }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Back")
-            .accessibilityValue(others == 0 ? "" : others == 1 ? "1 unread message" : "\(others) unread messages")
-            .accessibilityAddTraits(.isButton)
-            .accessibilityIdentifier("back-button")
 
             titlePill(conversation)
             .layoutPriority(1)
@@ -973,7 +999,7 @@ struct MessageBubble: View {
         .contentShape(Rectangle())
         .onTapGesture { if selection != nil { onToggleSelect?() } }
         .accessibilityElement(children: selection != nil || (oneStop && isPlain) ? .ignore : .contain)
-        .accessibilityLabel(selection != nil ? MessageSpeech.label(for: message, senderName: sender?.name) : (oneStop && isPlain ? MessageSpeech.label(for: message, senderName: sender?.name) : ""))
+        .accessibilityLabel(selection != nil ? MessageSpeech.label(for: message, senderName: sender?.name, blocked: store.blockedIDs) : (oneStop && isPlain ? MessageSpeech.label(for: message, senderName: sender?.name, blocked: store.blockedIDs) : ""))
         .modifier(MessageExtraActions(actions: oneStop && isPlain ? extraActions : []))
         .messageAccessibilityActions(oneStop && isPlain ? ax : nil)
         .accessibilityAddTraits(selection == true ? [.isButton, .isSelected] : (selection == false ? .isButton : []))
@@ -981,7 +1007,7 @@ struct MessageBubble: View {
     }
 
     /// The header element of a message that keeps its own controls: who, when, state, reactions, replies (not the body, which its own parts read).
-    private var headerLabel: String { MessageSpeech.label(for: message, senderName: sender?.name, includeBody: false) }
+    private var headerLabel: String { MessageSpeech.label(for: message, senderName: sender?.name, includeBody: false, blocked: store.blockedIDs) }
 
     /// What the footer, the reaction pill, the replies row, the avatar and the links do by touch, as actions on the message's one stop.
     private var extraActions: [MessageExtraAction] {
@@ -1541,6 +1567,7 @@ struct CallMenuButton: View {
                     .frame(width: 44, height: 44).contentShape(Rectangle())
             }
         }
+        .menuIndicator(.hidden)   // Mac Catalyst draws a chevron on a Menu by itself; the custom label already shows none on iPhone and iPad (LIME-338b)
         .accessibilityLabel("Call \(name)")
         .accessibilityIdentifier("\(id)-button")
     }

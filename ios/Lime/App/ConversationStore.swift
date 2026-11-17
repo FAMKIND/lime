@@ -892,7 +892,15 @@ final class ConversationStore {
             let me = meProvider()
             conversations = loaded.0.map { conversation in
                 var conversation = conversation
-                let byRoot = Dictionary(uniqueKeysWithValues: (loaded.1[conversation.id] ?? []).map { ($0.rootId, ThreadInfo($0, me: me)) })
+                let unreadReplies = loaded.3.filter { $0.conversationID == conversation.id }
+                let byRoot = Dictionary(uniqueKeysWithValues: (loaded.1[conversation.id] ?? []).map { summary -> (String, ThreadInfo) in
+                    var info = ThreadInfo(summary, me: me)
+                    // Who wrote the unread replies (the newest ones from others), so a blocked person's can be left out of the numbers (LIME-333).
+                    if let thread = unreadReplies.first(where: { $0.root == summary.rootId }) {
+                        info.unreadSenders = thread.items.filter { $0.id != thread.root }.compactMap(\.senderId).suffix(Int(summary.unread)).map { $0 }
+                    }
+                    return (summary.rootId, info)
+                })
                 for index in conversation.messages.indices {
                     conversation.messages[index].thread = byRoot[conversation.messages[index].id]
                 }
