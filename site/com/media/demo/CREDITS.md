@@ -36,7 +36,7 @@ The link and jam phones were re-shot from lime's own iOS app in the simulator's 
 | **Dr. Mojúbàolú Olúfúnké Okome** (with permission) | Her portrait (avatar), as editor of the band "Ìrìnkèrindò: a Journal of African Migration", with link cards to her real pieces: "Women, Water, and Migration In Africa"; "African Immigrant Innovation in 21st Century Giving"; "African Diaspora Families & Changing Gender Relations: A Focus on GBV & IPV"; address https://africamigration.com/. The card pictures are Pexels photos (below), not images from her site. Nothing is written for her. | portrait: the user's own file `design/people/okome-portrait.png` |
 | **Rich Calton** (with permission) | His portrait (avatar) and a post sharing "The Legacy of HarlemLIVE: Empowering Youth Through Journalism and Experiential Learning", third edition (2026), as a link card to https://www.harlemlive.net/publications/ with only the publisher's own words: "From 1996 to 2011, teenagers in Harlem ran a real newsroom." No book cover. | portrait: `design/people/calton-portrait.png` |
 
-The site's two credit chips ("Dr. Okome", "Rich Calton") use the same portraits (`chip-okome.*`, `chip-calton.*`, 120 px crops on the face) and link to those two real addresses.
+(LIME-347b: the site's hero chips are the invented teachers again; the two portraits appear only in this jam demo and on limemessenger.org.)
 
 ### The invented cast (Talia Brooks, Luis Ortega, Adaeze Nwosu, Kofi Mensah, Ms Park, Mrs Flowers) and their photos
 Profile photos (square crops on the face, in the app screenshots only; every other name keeps its initials). Pexels, free to use; credited anyway. No child is the subject of any photo.

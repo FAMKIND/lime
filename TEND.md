@@ -11204,3 +11204,15 @@ Done by 02:00 (the run was allowed until 06:30; everything finished, nothing was
 - **Not deployed:** nothing (the .com deploy command is `infra/invite/deploy.sh`, not run). The local servers I started are stopped.
 - **Not exercised:** Safari, Firefox and VoiceOver on either site.
 - **Open from earlier today:** Jean's 12 mini still has not taken 333–339 (storage / developer disk image).
+
+## Install (2026-11-17, main at `ec7d880e`)
+Debug build of main installed on the **13 mini, the iPad (4) and Jean's 12 mini: all three took it** (the first time Jean's phone has taken a build since 332, so it now has 333–339 and everything after). Built one device at a time with `-allowProvisioningUpdates`.
+
+## LIME-347b
+
+**Brief:** the hero chips go back to the invented teachers.
+
+**The change (`site/com/index.html`):** the `.chips` block is back exactly as at `2cd5a5ab^` (Mrs Flowers, Ms Park, High Desert Teachers; `data-illustrative`; links to `#about`; images `avatar.*`, `chip-park.webp`, `chip-desert*`): **`git diff 2cd5a5ab^ -- site/com/index.html` shows no chip change** (it shows only the quote, the join photo and the jam-phone note from 347). Everything else from 347 stays, **including the join card's low placement (not moved: yours to decide)**. `media/chip-okome.*` and `media/chip-calton.*` were referenced only by CREDITS.md, so they are deleted and both CREDITS files say the chips are the invented teachers again and that the two portraits appear only in the jam demo and on limemessenger.org.
+- **Verification:** "Okome" and "Calton" now appear in `site/com/index.html` only in the jam-phone note (line 158), never in `.chips`; served with `python3 -m http.server 8284 -d site/com`, Chrome at 1280 and 390: the rotator shows the three chips in turn (Mrs Flowers, Ms Park, High Desert Teachers), every chip image loads, no horizontal overflow, no broken image (the two empty `img.sp` slots are the demo player's placeholders). Screenshots: `docs/qa-shots/347b/`. No deploy.
+- **Gate (you):** http://localhost:8284/ (run `cd ~/Sites/lime && python3 -m http.server 8284 -d site/com`), also deciding the join card.
+- **For plot:** the old chip files `avatar.*`, `chip-park.webp`, `chip-desert*` are used again; `group.*` is still unused on the page.
