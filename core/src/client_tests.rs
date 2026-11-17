@@ -9584,3 +9584,294 @@ fn a_block_on_one_device_gives_the_new_delivery_key_to_the_others_so_none_puts_t
     deliver(&tablet, &transport);
     assert_eq!(server.state.lock().unwrap().delivery_access.get("alice").cloned(), Some(expected_hash(&new)), "the tablet did not put the old key back");
 }
+
+
+// ------------------------------------------------------------------------------------- LIME-341b: the link package and its QR pairing
+
+use crate::client::link::{LinkNew, LinkOld};
+
+/// Pairs `phone` with a new empty store, confirms both codes, streams the package. Returns the chunks and the new store (not yet applied).
+fn pair(phone: &Party, is_computer: bool, key: u8) -> (Arc<LinkNew>, Arc<LinkOld>, Arc<LimeStore>, tempfile::TempDir) {
+    let dir = tempfile::tempdir().unwrap();
+    let store = LimeStore::open(dir.path().join("lime.db").to_string_lossy().into_owned(), vec![key; 32]).unwrap();
+    let new = LinkNew::offer(store.clone(), is_computer, Some(phone.user.clone())).unwrap();
+    let old = LinkOld::accept(phone.store.clone(), new.qr()).unwrap();
+    new.accept_hello(old.hello()).unwrap();
+    assert_eq!(new.check_code().unwrap(), old.check_code(), "both show the same six digits");
+    (new, old, store, dir)
+}
+
+fn stream(new: &LinkNew, old: &LinkOld) -> Vec<Vec<u8>> {
+    old.confirm_code();
+    new.confirm_code();
+    let mut chunks = Vec::new();
+    while let Some(chunk) = old.export_next_chunk().unwrap() {
+        chunks.push(chunk);
+    }
+    chunks
+}
+
+/// A whole link: the package, the registration and both devices' lists. Returns the new device as a party.
+fn link(server: &Arc<FakeServer>, phone: &Party, is_computer: bool, key: u8) -> Party {
+    let (new, old, store, dir) = pair(phone, is_computer, key);
+    let chunks = stream(&new, &old);
+    for chunk in chunks {
+        new.import_chunk(chunk).unwrap();
+    }
+    let applied = new.import_finish().unwrap();
+    assert_eq!((applied.user_id.as_str(), applied.is_computer), (phone.user.as_str(), is_computer));
+    let transport: Arc<dyn Transport> = server.clone();
+    let info = store.register_device(transport.clone(), phone.token.clone()).unwrap();
+    store.link_refresh_devices(transport.clone(), phone.token.clone()).unwrap();
+    phone.store.link_refresh_devices(transport, phone.token.clone()).unwrap();
+    Party { store, user: phone.user.clone(), token: phone.token.clone(), device: info.device_id, _dir: dir }
+}
+
+fn account_row_exists(store: &LimeStore) -> bool {
+    store.with_conn(|conn| Ok(crate::store::account::load_account(conn, &store.pickle_key)?.is_some())).unwrap()
+}
+
+#[test]
+fn a_computer_linked_by_qr_reads_sends_and_follows_as_me_without_the_master_secret_or_pinning_anyone_by_hand() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    let (dave, _) = party(&server, "dave", 4);
+    // What the phone has: a blocked person (first: a block makes a new delivery key, so it happens before anyone is given the current one), a friend, a group
+    // Bob made, a jam Carol writes, a pin and a status.
+    dave.store.start_dm("alice".into(), "alice".into()).unwrap();
+    say(&dave, &alice, &transport, "hi");
+    sync(&alice, &transport);
+    alice.store.block_sender("dm:dave".into()).unwrap();
+    befriend(&alice, &bob, &transport);
+    let chat = bob.store.create_group("Grade 4 Team".into(), None, vec!["alice".into(), "carol".into()]).unwrap();
+    deliver(&bob, &transport);
+    sync(&alice, &transport);
+    alice.store.accept_request(chat.clone()).unwrap();
+    let jam = new_jam(&carol);
+    join_jam(&carol, &alice, &jam, &transport);
+    alice.store.set_pinned("dm:bob".into(), true).unwrap();
+    alice.store.set_my_status(crate::store::status::StatusInfo { state: "dnd".into(), until: None, then_state: None, then_until: None }).unwrap();
+    let key_before = alice.store.test_delivery_key();
+
+    let computer = link(&server, &alice, true, 7);
+
+    // (b) no master secret on the computer, and it cannot certify.
+    let secret_column: String = computer.store.with_conn(|conn| conn.query_row("SELECT master_secret FROM account", [], |r| r.get(0)).map_err(crate::store::db_err)).unwrap();
+    assert_eq!(secret_column, "", "the master secret column is empty");
+    let ask = crate::keys::DeviceRequest { device_id: "x".into(), identity_key: "AA".into(), signing_key: "BB".into() };
+    assert!(matches!(computer.store.certify_device(ask), Err(crate::store::StoreError::MasterKeyNotOnDevice)));
+    assert_eq!(computer.store.test_delivery_key(), key_before, "the one delivery key");
+    assert_eq!(alice.store.test_delivery_key(), key_before);
+
+    // What came across.
+    let on_c = |id: &str| computer.store.list_conversations().unwrap().into_iter().find(|c| c.id == id);
+    assert!(on_c("dm:bob").unwrap().is_pinned, "the pin");
+    assert!(computer.store.list_blocked().unwrap().iter().any(|b| b.conversation_id == "dm:dave"), "the block");
+    assert!(on_c(&chat).is_some(), "the group");
+    assert_eq!(names_in(&computer, &chat), names_in(&alice, &chat), "its members and roles");
+    assert_eq!(computer.store.my_status().unwrap().unwrap().state, "dnd", "the status");
+    assert!(computer.store.jam(jam.clone()).unwrap().is_some(), "the jam is being followed");
+
+    // (a) Bob sends sealed: A and C receive, no token, nobody pinned by hand, no 403.
+    let (with_before, _) = { let s = server.state.lock().unwrap(); (s.sends_with_token, s.sends_without_token) };
+    say(&bob, &alice, &transport, "to my two devices");
+    let with_after = server.state.lock().unwrap().sends_with_token;
+    assert_eq!(with_after, with_before, "nothing went identified");
+    for p in [&alice, &computer] {
+        sync(p, &transport);
+        assert!(texts(p, &bob).contains(&"to my two devices".to_owned()), "{} received it", p.device);
+    }
+    // C sends sealed to Bob.
+    say(&computer, &bob, &transport, "from the computer");
+    sync(&bob, &transport);
+    assert!(texts(&bob, &alice).contains(&"from the computer".to_owned()));
+    let denied: bool = bob.store.lock().query_row("SELECT denied FROM contact_delivery_keys WHERE user_id = 'alice'", [], |r| r.get(0)).unwrap();
+    assert!(!denied, "no 403");
+    // The next group message reaches C, and C posts in the group as me.
+    say_in(&bob, &transport, &chat, "group news");
+    sync(&alice, &transport);
+    sync(&computer, &transport);
+    assert!(group_texts(&computer, &chat).contains(&"group news".to_owned()), "C reads the group: {:?}", group_texts(&computer, &chat));
+    say_in(&computer, &transport, &chat, "from C in the group");
+    sync(&bob, &transport);
+    assert!(group_texts(&bob, &chat).contains(&"from C in the group".to_owned()));
+    // The next post of the jam reaches C.
+    publish(&carol, &jam, "After the link", "free");
+    for _ in 0..3 {
+        sync(&carol, &transport);
+        deliver(&carol, &transport);
+        sync(&computer, &transport);
+        deliver(&computer, &transport);
+    }
+    assert!(jam_posts_of(&computer, &jam).contains(&"After the link".to_owned()), "C reads the jam: {:?}", jam_posts_of(&computer, &jam));
+}
+
+#[test]
+fn a_tablet_linked_by_qr_holds_the_master_secret_and_can_link_a_further_computer() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let tablet = link(&server, &alice, false, 5);
+    let secret = |p: &Party| p.store.load_or_create_account().unwrap().master.as_ref().map(|m| m.to_bytes().to_vec());
+    assert_eq!(secret(&tablet), secret(&alice), "the tablet holds the account's master secret");
+    assert_eq!(tablet.store.test_delivery_key(), alice.store.test_delivery_key());
+    // (c) the tablet links a computer of its own accord.
+    let computer = link(&server, &tablet, true, 6);
+    assert!(secret(&computer).is_none());
+    say(&bob, &alice, &transport, "to all three");
+    for p in [&alice, &tablet, &computer] {
+        sync(p, &transport);
+        assert!(texts(p, &bob).contains(&"to all three".to_owned()), "{} received it", p.device);
+    }
+    // A computer cannot link anyone: its QR scan is refused with MasterKeyNotOnDevice.
+    let (other_new, _old, _store, _dir) = pair(&alice, true, 8);
+    assert!(matches!(LinkOld::accept(computer.store.clone(), other_new.qr()), Err(crate::store::StoreError::MasterKeyNotOnDevice)));
+}
+
+#[test]
+fn a_link_that_is_not_right_fails_and_leaves_the_new_store_empty() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let empty = |store: &LimeStore| {
+        !account_row_exists(store) && store.with_conn(|conn| Ok(conn.query_row("SELECT (SELECT COUNT(*) FROM peers) + (SELECT COUNT(*) FROM conversations) + (SELECT COUNT(*) FROM delivery_state)", [], |r| r.get::<_, i64>(0)).unwrap())).unwrap() == 0
+    };
+    // Nothing moves before both people confirm.
+    let (new, old, store, _dir) = pair(&alice, true, 11);
+    assert!(matches!(old.export_next_chunk(), Err(crate::store::StoreError::Rejected)), "the phone sends nothing before the confirmation");
+    old.confirm_code();
+    let first = old.export_next_chunk().unwrap().unwrap();
+    assert!(matches!(new.import_chunk(first), Err(crate::store::StoreError::Rejected)), "the new device takes nothing before its own confirmation");
+    assert!(empty(&store));
+    // A tampered chunk.
+    let (new, old, store, _dir) = pair(&alice, true, 12);
+    let mut chunks = stream(&new, &old);
+    assert!(chunks.len() >= 3, "a manifest, data and a digest");
+    let last = chunks.len() - 1;
+    chunks[1][5] ^= 1;
+    let failed = chunks.into_iter().any(|c| new.import_chunk(c).is_err());
+    assert!(failed && new.import_finish().is_err() && empty(&store), "a changed chunk");
+    // A reordered pair.
+    let (new, old, store, _dir) = pair(&alice, true, 13);
+    let mut chunks = stream(&new, &old);
+    chunks.swap(0, 1);
+    assert!(chunks.into_iter().any(|c| new.import_chunk(c).is_err()) && new.import_finish().is_err() && empty(&store), "reordered chunks");
+    // A dropped chunk.
+    let (new, old, store, _dir) = pair(&alice, true, 14);
+    let mut chunks = stream(&new, &old);
+    chunks.remove(1);
+    assert!(chunks.into_iter().any(|c| new.import_chunk(c).is_err()) && new.import_finish().is_err() && empty(&store), "a dropped chunk");
+    let _ = last;
+    // A stream cut short (no digest) cannot be finished.
+    let (new, old, store, _dir) = pair(&alice, true, 15);
+    let chunks = stream(&new, &old);
+    for c in &chunks[..chunks.len() - 1] {
+        new.import_chunk(c.clone()).unwrap();
+    }
+    assert!(new.import_finish().is_err() && empty(&store), "the digest never came");
+    // The stream replayed to another new device (other keys) is refused.
+    let (new, old, _store, _dir) = pair(&alice, true, 16);
+    let recorded = stream(&new, &old);
+    let (other, other_old, other_store, _d2) = pair(&alice, true, 17);
+    other_old.confirm_code();
+    other.confirm_code();
+    assert!(recorded.into_iter().any(|c| other.import_chunk(c).is_err()) && other.import_finish().is_err() && empty(&other_store), "a replayed stream");
+    // A wrong secret: a QR whose secret was changed gets a hello the new device does not accept.
+    let dir = tempfile::tempdir().unwrap();
+    let fresh = LimeStore::open(dir.path().join("lime.db").to_string_lossy().into_owned(), vec![18; 32]).unwrap();
+    let new = LinkNew::offer(fresh.clone(), false, Some("alice".into())).unwrap();
+    let body = new.qr().strip_prefix("lime-link-v1:").unwrap().to_owned();
+    let mut bytes = vodozemac::base64_decode(&body).unwrap();
+    bytes[40] ^= 1;
+    let forged = format!("lime-link-v1:{}", vodozemac::base64_encode(bytes));
+    let old = LinkOld::accept(alice.store.clone(), forged).unwrap();
+    assert!(new.accept_hello(old.hello()).is_err(), "a hello made with another secret");
+    // The same QR twice: the second scan fails (the first one may have been anyone's).
+    let (new, _old, _store, _dir) = pair(&alice, false, 19);
+    assert!(matches!(LinkOld::accept(alice.store.clone(), new.qr()), Err(crate::store::StoreError::Rejected)), "a QR works once");
+    // An expired QR, refused by the phone; and a hello to a new device whose QR is older than ten minutes.
+    let dir = tempfile::tempdir().unwrap();
+    let old_store = LimeStore::open(dir.path().join("lime.db").to_string_lossy().into_owned(), vec![20; 32]).unwrap();
+    let stale = LinkNew::offer_at(old_store.clone(), false, Some("alice".into()), crate::store::now_ms() - 11 * 60 * 1000).unwrap();
+    assert!(matches!(LinkOld::accept(alice.store.clone(), stale.qr()), Err(crate::store::StoreError::Rejected)), "the phone refuses an expired QR");
+    let dir = tempfile::tempdir().unwrap();
+    let old_store = LimeStore::open(dir.path().join("lime.db").to_string_lossy().into_owned(), vec![21; 32]).unwrap();
+    let stale = LinkNew::offer_at(old_store.clone(), false, Some("alice".into()), crate::store::now_ms() - 11 * 60 * 1000).unwrap();
+    let phone_clock = crate::store::now_ms() - 5 * 60 * 1000;
+    let accepted = LinkOld::accept_at(alice.store.clone(), &stale.qr(), phone_clock).unwrap();
+    assert!(stale.accept_hello(accepted.hello()).is_err(), "the new device refuses once ten minutes have passed");
+    // A QR for another account is refused.
+    let dir = tempfile::tempdir().unwrap();
+    let st = LimeStore::open(dir.path().join("lime.db").to_string_lossy().into_owned(), vec![22; 32]).unwrap();
+    let other = LinkNew::offer(st, false, Some("somebody-else".into())).unwrap();
+    assert!(matches!(LinkOld::accept(alice.store.clone(), other.qr()), Err(crate::store::StoreError::Rejected)));
+    // A store that already has an account cannot be linked into.
+    assert!(matches!(LinkNew::offer(bob.store.clone(), false, None), Err(crate::store::StoreError::Rejected)));
+}
+
+#[test]
+fn a_move_qr_and_a_link_qr_are_never_taken_for_each_other() {
+    let server = FakeServer::new();
+    let (alice, _transport) = party(&server, "alice", 1);
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("new.db").to_string_lossy().into_owned();
+    let moving = crate::client::transfer::TransferNew::offer("alice".into(), path).unwrap();
+    assert!(LinkOld::accept(alice.store.clone(), moving.qr()).is_err(), "a Move QR given to Link");
+    let (link_new, _old, _store, _dir) = pair(&alice, false, 30);
+    assert!(crate::client::transfer::TransferOld::accept(alice.store.clone(), link_new.qr()).is_err(), "a Link QR given to Move");
+}
+
+#[test]
+fn the_package_holds_only_what_it_should_and_never_a_session_or_the_pickled_account() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let chat = bob.store.create_group("Staff".into(), None, vec!["alice".into()]).unwrap();
+    deliver(&bob, &transport);
+    sync(&alice, &transport);
+    alice.store.accept_request(chat.clone()).unwrap();
+    say_in(&bob, &transport, &chat, "a group message that stays here");
+    sync(&alice, &transport);
+    alice.store.queue_text("dm:bob".into(), "a draft-ish note".into()).unwrap();
+    // Things that must stay behind: Olm and Megolm sessions exist on the phone.
+    let sessions: Vec<String> = alice.store.with_conn(|conn| {
+        let mut out = Vec::new();
+        for (table, column) in [("olm_sessions", "session_pickle"), ("group_inbound_sessions", "pickle")] {
+            let mut stmt = conn.prepare(&format!("SELECT {column} FROM {table}")).map_err(crate::store::db_err)?;
+            out.extend(stmt.query_map([], |r| r.get::<_, String>(0)).map_err(crate::store::db_err)?.collect::<Result<Vec<_>, _>>().map_err(crate::store::db_err)?);
+        }
+        Ok(out)
+    }).unwrap();
+    assert!(!sessions.is_empty(), "the phone has sessions");
+    let pickle: String = alice.store.with_conn(|conn| conn.query_row("SELECT olm_pickle FROM account", [], |r| r.get(0)).map_err(crate::store::db_err)).unwrap();
+    let request = crate::keys::DeviceRequest { device_id: "d".into(), identity_key: "AA".into(), signing_key: "BB".into() };
+    let secret = alice.store.load_or_create_account().unwrap().master.as_ref().unwrap().to_bytes();
+    let secret_b64 = vodozemac::base64_encode(*secret);
+    for full in [true, false] {
+        let bytes = alice.store.with_conn(|conn| crate::client::link::build_package(conn, &alice.store.pickle_key, full, if full { None } else { Some(&request) })).unwrap();
+        let text = String::from_utf8(bytes.clone()).unwrap();
+        let package: Value = serde_json::from_slice(&bytes).unwrap();
+        // By table: only the list, and none of the never-list.
+        for table in package["tables"].as_object().unwrap().keys() {
+            assert!(crate::client::link::TABLES.contains(&table.as_str()), "{table} is on the list");
+        }
+        for never in ["olm_sessions", "group_inbound_sessions", "group_outbound_sessions", "account", "messages", "drafts", "contact_labels", "mesh_outbox", "mesh_packets", "my_extra", "extras", "pending_inbound"] {
+            assert!(package["tables"].get(never).is_none(), "{never} never travels");
+        }
+        for pickle_text in sessions.iter().chain(std::iter::once(&pickle)) {
+            assert!(!text.contains(pickle_text.as_str()), "no pickled session or account in the package");
+        }
+        assert!(!text.contains("a group message that stays here") && !text.contains("a draft-ish note"), "no messages (341c)");
+        // The master secret only for a phone or tablet.
+        assert_eq!(text.contains(&secret_b64), full, "the master secret travels only when the new device is a phone or tablet");
+        assert_eq!(package["certificate"].is_null(), full);
+        eprintln!("link package ({}): {} bytes, {} contacts, {} chats", if full { "phone/tablet" } else { "computer" }, bytes.len(), package["tables"]["peers"].as_array().unwrap().len(), package["tables"]["conversations"].as_array().unwrap().len());
+    }
+    // The tables hold no one's messages and no sessions: spot-check the people table has only names.
+    assert!(sessions.iter().all(|s| !s.is_empty()));
+}

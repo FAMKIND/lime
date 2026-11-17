@@ -32,14 +32,14 @@ use crate::store::{db_err, LimeStore, StoreError};
 const VERSION: u8 = 1;
 /// What a QR starts with, so the app can tell a move from any other code.
 const QR_PREFIX: &str = "lime-move1:";
-const SECRET_LEN: usize = 16;
+pub(super) const SECRET_LEN: usize = 16;
 /// The plaintext size of a data chunk.
-const CHUNK: usize = 256 * 1024;
+pub(super) const CHUNK: usize = 256 * 1024;
 const LABEL: &[u8] = b"lime-move-v1";
 
-const KIND_MANIFEST: u8 = 0;
-const KIND_DATA: u8 = 1;
-const KIND_FINAL: u8 = 2;
+pub(super) const KIND_MANIFEST: u8 = 0;
+pub(super) const KIND_DATA: u8 = 1;
+pub(super) const KIND_FINAL: u8 = 2;
 /// The app's own items (LIME-272c: its settings and chat wallpapers), sent between the manifest and the data, and checked by the same digest.
 const KIND_EXTRA: u8 = 3;
 /// The most the app may add (settings and a few wallpaper pictures).
@@ -79,21 +79,21 @@ struct Manifest {
 }
 
 /// The keys both phones derive.
-struct Session {
-    data: [u8; 32],
-    ack: [u8; 32],
-    code: String,
+pub(super) struct Session {
+    pub(super) data: [u8; 32],
+    pub(super) ack: [u8; 32],
+    pub(super) code: String,
 }
 
 fn hkdf_expand(salt: &[u8], ikm: &[u8], info: &[u8], out: &mut [u8]) -> Result<(), StoreError> {
     Hkdf::<Sha256>::new(Some(salt), ikm).expand(info, out).map_err(|_| StoreError::BadMessage)
 }
 
-fn transcript(new_pub: &[u8; 32], old_pub: &[u8; 32], user_id: &str) -> Vec<u8> {
-    let mut t = LABEL.to_vec();
+pub(super) fn transcript(label: &[u8], new_pub: &[u8; 32], old_pub: &[u8; 32], user_id: &[u8]) -> Vec<u8> {
+    let mut t = label.to_vec();
     t.extend_from_slice(new_pub);
     t.extend_from_slice(old_pub);
-    t.extend_from_slice(user_id.as_bytes());
+    t.extend_from_slice(user_id);
     t
 }
 
@@ -104,7 +104,7 @@ fn with_label(label: &[u8], transcript: &[u8]) -> Vec<u8> {
     info
 }
 
-fn mac(key: &[u8], parts: &[&[u8]]) -> Result<Vec<u8>, StoreError> {
+pub(super) fn mac(key: &[u8], parts: &[&[u8]]) -> Result<Vec<u8>, StoreError> {
     let mut m = Hmac::<Sha256>::new_from_slice(key).map_err(|_| StoreError::BadMessage)?;
     for part in parts {
         m.update(part);
@@ -112,7 +112,7 @@ fn mac(key: &[u8], parts: &[&[u8]]) -> Result<Vec<u8>, StoreError> {
     Ok(m.finalize().into_bytes().to_vec())
 }
 
-fn mac_matches(key: &[u8], parts: &[&[u8]], tag: &[u8]) -> Result<bool, StoreError> {
+pub(super) fn mac_matches(key: &[u8], parts: &[&[u8]], tag: &[u8]) -> Result<bool, StoreError> {
     let mut m = Hmac::<Sha256>::new_from_slice(key).map_err(|_| StoreError::BadMessage)?;
     for part in parts {
         m.update(part);
@@ -121,9 +121,9 @@ fn mac_matches(key: &[u8], parts: &[&[u8]], tag: &[u8]) -> Result<bool, StoreErr
 }
 
 /// Both phones' keys from the one-time keys, the secret and the account. `ours` is this phone's secret key, `theirs` the other's public key.
-fn derive(ours: &Curve25519SecretKey, theirs: &[u8; 32], secret: &[u8; SECRET_LEN], new_pub: &[u8; 32], old_pub: &[u8; 32], user_id: &str) -> Result<(Session, [u8; 32]), StoreError> {
+pub(super) fn derive(label: &[u8], ours: &Curve25519SecretKey, theirs: &[u8; 32], secret: &[u8; SECRET_LEN], new_pub: &[u8; 32], old_pub: &[u8; 32], user_id: &[u8]) -> Result<(Session, [u8; 32]), StoreError> {
     let shared = ours.diffie_hellman(&Curve25519PublicKey::from_bytes(*theirs)).ok_or(StoreError::BadMessage)?;
-    let t = transcript(new_pub, old_pub, user_id);
+    let t = transcript(label, new_pub, old_pub, user_id);
     let mut data = [0u8; 32];
     let mut ack = [0u8; 32];
     let mut hello = [0u8; 32];
@@ -142,42 +142,42 @@ fn nonce_of(counter: u64) -> [u8; 12] {
     nonce
 }
 
-fn seal_chunk(key: &[u8; 32], counter: u64, kind: u8, payload: &[u8]) -> Result<Vec<u8>, StoreError> {
+pub(super) fn seal_chunk(label: &[u8], key: &[u8; 32], counter: u64, kind: u8, payload: &[u8]) -> Result<Vec<u8>, StoreError> {
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| StoreError::BadMessage)?;
     let mut plain = Vec::with_capacity(payload.len() + 1);
     plain.push(kind);
     plain.extend_from_slice(payload);
     cipher
-        .encrypt(Nonce::from_slice(&nonce_of(counter)), Payload { msg: &plain, aad: &aad_of(counter) })
+        .encrypt(Nonce::from_slice(&nonce_of(counter)), Payload { msg: &plain, aad: &aad_of(label, counter) })
         .map_err(|_| StoreError::BadMessage)
 }
 
-fn open_chunk(key: &[u8; 32], counter: u64, sealed: &[u8]) -> Result<(u8, Vec<u8>), StoreError> {
+pub(super) fn open_chunk(label: &[u8], key: &[u8; 32], counter: u64, sealed: &[u8]) -> Result<(u8, Vec<u8>), StoreError> {
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| StoreError::BadMessage)?;
     let plain = cipher
-        .decrypt(Nonce::from_slice(&nonce_of(counter)), Payload { msg: sealed, aad: &aad_of(counter) })
+        .decrypt(Nonce::from_slice(&nonce_of(counter)), Payload { msg: sealed, aad: &aad_of(label, counter) })
         .map_err(|_| StoreError::BadMessage)?;
     let (kind, payload) = plain.split_first().ok_or(StoreError::BadMessage)?;
     Ok((*kind, payload.to_vec()))
 }
 
-fn aad_of(counter: u64) -> Vec<u8> {
-    let mut aad = LABEL.to_vec();
+fn aad_of(label: &[u8], counter: u64) -> Vec<u8> {
+    let mut aad = label.to_vec();
     aad.extend_from_slice(&counter.to_be_bytes());
     aad
 }
 
-fn random<const N: usize>() -> Result<[u8; N], StoreError> {
+pub(super) fn random<const N: usize>() -> Result<[u8; N], StoreError> {
     let mut out = [0u8; N];
     getrandom::getrandom(&mut out).map_err(|_| StoreError::BadMessage)?;
     Ok(out)
 }
 
-fn io_err(_: std::io::Error) -> StoreError {
+pub(super) fn io_err(_: std::io::Error) -> StoreError {
     StoreError::Database
 }
 
-fn hex(bytes: &[u8]) -> String {
+pub(super) fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
@@ -232,7 +232,7 @@ impl TransferOld {
         }
         let ours = Curve25519SecretKey::new();
         let old_pub = Curve25519PublicKey::from(&ours).to_bytes();
-        let (session, hello_key) = derive(&ours, &new_pub, &secret, &new_pub, &old_pub, &user_id)?;
+        let (session, hello_key) = derive(LABEL, &ours, &new_pub, &secret, &new_pub, &old_pub, user_id.as_bytes())?;
         // The hello proves the secret was known: only a holder of it derives the key behind this tag.
         let mut hello = old_pub.to_vec();
         hello.extend_from_slice(&mac(&hello_key, &[&old_pub, &new_pub])?);
@@ -273,7 +273,7 @@ impl TransferOld {
                 st.db_size = manifest.db_size;
                 st.snapshot = Some((file, path));
                 st.stage = if !st.extra.is_empty() { Stage::Extra } else if manifest.db_size == 0 { Stage::Final } else { Stage::Data };
-                seal_chunk(&key, counter, KIND_MANIFEST, &serde_json::to_vec(&manifest).map_err(|_| StoreError::BadMessage)?)?
+                seal_chunk(LABEL, &key, counter, KIND_MANIFEST, &serde_json::to_vec(&manifest).map_err(|_| StoreError::BadMessage)?)?
             }
             Stage::Extra => {
                 let end = (st.extra_sent + CHUNK).min(st.extra.len());
@@ -283,7 +283,7 @@ impl TransferOld {
                 if end >= st.extra.len() {
                     st.stage = if st.db_size == 0 { Stage::Final } else { Stage::Data };
                 }
-                seal_chunk(&key, counter, KIND_EXTRA, &piece)?
+                seal_chunk(LABEL, &key, counter, KIND_EXTRA, &piece)?
             }
             Stage::Data => {
                 let mut buf = vec![0u8; CHUNK];
@@ -302,12 +302,12 @@ impl TransferOld {
                 if n < CHUNK || st.sent >= st.db_size {
                     st.stage = Stage::Final;
                 }
-                seal_chunk(&key, counter, KIND_DATA, &buf)?
+                seal_chunk(LABEL, &key, counter, KIND_DATA, &buf)?
             }
             Stage::Final => {
                 let digest = st.hasher.clone().finalize();
                 st.stage = Stage::Done;
-                seal_chunk(&key, counter, KIND_FINAL, &digest)?
+                seal_chunk(LABEL, &key, counter, KIND_FINAL, &digest)?
             }
             Stage::Done => {
                 st.remove_snapshot();
@@ -496,7 +496,7 @@ impl TransferNew {
         }
         let old_pub: [u8; 32] = hello[..32].try_into().map_err(|_| StoreError::BadMessage)?;
         let new_pub = Curve25519PublicKey::from(&st.ours).to_bytes();
-        let (session, hello_key) = derive(&st.ours, &old_pub, &st.secret, &new_pub, &old_pub, &self.user_id)?;
+        let (session, hello_key) = derive(LABEL, &st.ours, &old_pub, &st.secret, &new_pub, &old_pub, self.user_id.as_bytes())?;
         if !mac_matches(&hello_key, &[&old_pub, &new_pub], &hello[32..])? {
             return Err(StoreError::BadMessage);
         }
@@ -588,7 +588,7 @@ impl TransferNew {
             return Err(StoreError::Rejected);
         }
         let key = st.session.as_ref().ok_or(StoreError::Rejected)?.data;
-        let (kind, payload) = open_chunk(&key, st.counter, chunk)?;
+        let (kind, payload) = open_chunk(LABEL, &key, st.counter, chunk)?;
         match (st.counter, kind) {
             (0, KIND_MANIFEST) => {
                 let manifest: Manifest = serde_json::from_slice(&payload).map_err(|_| StoreError::BadMessage)?;

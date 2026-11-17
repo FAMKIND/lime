@@ -37,7 +37,7 @@ pub(crate) struct AccountState {
 }
 
 /// A new device's public keys, handed to a phone to certify (LIME-341a).
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
 pub struct DeviceRequest {
     pub device_id: String,
     pub identity_key: String,
@@ -45,7 +45,7 @@ pub struct DeviceRequest {
 }
 
 /// The master key's word for a device: its keys and the master's signature over them (LIME-341a). Made on a phone for a computer.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
 pub struct DeviceCertificate {
     pub device_id: String,
     pub identity_key: String,

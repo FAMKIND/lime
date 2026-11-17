@@ -57,6 +57,7 @@ pub(crate) mod jam;
 mod handover;
 mod own_devices;
 mod linked_device;
+pub(crate) mod link;
 
 /// Queues something for my other devices (a no-op with one device): for the store-level actions (a chat read, a person blocked).
 #[cfg(test)]
