@@ -40,9 +40,6 @@ targets:
           - "Core/Generated/**"
           - "Config/BackendConfig.generated.swift"
           - "Resources/Sounds/README.md"
-          # Patched copies are written by generate.sh into Lime/Generated (TEND-MAC.md "Stand-ins").
-          - "Core/Calls/GroupCallManager.swift"
-          - "Features/Chat/Composer/ComposerDocument.swift"
       - path: Lime
     configFiles:
       Debug: Config/Base.xcconfig
