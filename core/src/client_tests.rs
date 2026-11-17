@@ -9056,3 +9056,234 @@ fn an_edit_can_describe_a_photo_and_add_a_transcript_to_files_the_post_already_h
     }
     assert_eq!(bob.store.list_jam_attachments(post).unwrap()[1].alt, "");
 }
+
+// ----------------------------------------------------------------------------------------------------------- LIME-340: copies to my own devices
+
+/// A real second device of `first`'s account (same master key and user, its own keys and mailbox), registered on the server.
+fn second_device(server: &Arc<FakeServer>, first: &Party, key: u8) -> Party {
+    let dir = tempfile::tempdir().unwrap();
+    let store = LimeStore::open(dir.path().join("lime.db").to_string_lossy().into_owned(), vec![key; 32]).unwrap();
+    let transport: Arc<dyn Transport> = server.clone();
+    let mut state = store.load_or_create_account().unwrap();
+    let master = first.store.load_or_create_account().unwrap().master.to_bytes();
+    state.master = vodozemac::Ed25519SecretKey::from_slice(&master);
+    store.with_conn(|conn| crate::store::account::save_account(conn, &store.pickle_key, &state)).unwrap();
+    let info = store.register_device(transport, first.token.clone()).unwrap();
+    Party { store, user: first.user.clone(), token: first.token.clone(), device: info.device_id, _dir: dir }
+}
+
+/// Both devices learn that the account has two (what the linking flow does).
+fn know_each_other(transport: &Arc<dyn Transport>, devices: [&Party; 2]) {
+    for party in devices {
+        let state = party.store.load_or_create_account().unwrap();
+        assert_eq!(party.store.refresh_own_devices(transport, &party.token, &state, &party.user).unwrap(), 2);
+    }
+}
+
+fn mine(p: &Party, peer: &str) -> Vec<(Option<String>, String, String)> {
+    p.store.list_messages(format!("dm:{peer}")).unwrap().into_iter().map(|m| (m.sender_id, m.text, m.local_state)).collect()
+}
+
+fn own_outbox(p: &Party) -> i64 {
+    p.store.lock().query_row("SELECT COUNT(*) FROM own_copy_outbox", [], |r| r.get(0)).unwrap()
+}
+
+#[test]
+fn with_one_device_nothing_is_copied_nothing_is_stored_and_the_send_count_is_unchanged() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    say(&alice, &bob, &transport, "first");
+    forget_requests(&server);
+    say(&alice, &bob, &transport, "second");
+    assert_eq!(requests_of(&server), ["send"], "one send to Bob's one device, nothing for me");
+    alice.store.mark_read("dm:bob".into()).unwrap();
+    alice.store.block_sender("dm:bob".into()).unwrap();
+    assert_eq!(own_outbox(&alice), 0, "nothing queued for devices that do not exist");
+    let state = alice.store.load_or_create_account().unwrap();
+    assert_eq!(alice.store.refresh_own_devices(&transport, &alice.token, &state, &alice.user).unwrap(), 1);
+    let cached: i64 = alice.store.lock().query_row("SELECT COUNT(*) FROM peer_devices WHERE user_id = 'alice'", [], |r| r.get(0)).unwrap();
+    assert_eq!(cached, 0, "a one-device account keeps no cache of itself");
+}
+
+#[test]
+fn a_message_i_send_lands_as_mine_on_my_other_device_in_the_chat_with_the_contact_and_the_contact_gets_it_once() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let alice2 = second_device(&server, &alice, 3);
+    know_each_other(&transport, [&alice, &alice2]);
+    say(&alice, &bob, &transport, "hello Bob");
+    assert_eq!(own_outbox(&alice), 0, "the copy was sent in the same pass");
+    sync(&alice2, &transport);
+    assert_eq!(mine(&alice2, "bob"), vec![(None, "hello Bob".to_owned(), "sent".to_owned())], "mine, in dm:bob, not a chat with myself");
+    assert!(alice2.store.list_messages("dm:alice".into()).unwrap_or_default().is_empty());
+    assert_eq!(alice2.store.list_conversations().unwrap().iter().filter(|c| c.id == "dm:bob").count(), 1);
+    // Not unread, and the first device is unchanged.
+    assert_eq!(alice2.store.list_conversations().unwrap().iter().find(|c| c.id == "dm:bob").unwrap().unread, 0);
+    sync(&bob, &transport);
+    assert_eq!(texts(&bob, &alice), vec!["hello Bob"]);
+    // A second copy of the same message is a duplicate, not a second message.
+    sync(&alice2, &transport);
+    assert_eq!(mine(&alice2, "bob").len(), 1);
+}
+
+#[test]
+fn an_edit_a_delete_a_reaction_read_state_and_a_block_follow_to_my_other_device() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let alice2 = second_device(&server, &alice, 3);
+    know_each_other(&transport, [&alice, &alice2]);
+    let deliver = |p: &Party| p.store.deliver_queued(transport.clone(), p.token.clone()).unwrap();
+
+    say(&alice, &bob, &transport, "typo");
+    say(&alice, &bob, &transport, "to delete");
+    sync(&alice2, &transport);
+    let ids: Vec<String> = alice.store.list_messages("dm:bob".into()).unwrap().into_iter().map(|m| m.id).collect();
+
+    alice.store.edit_message("dm:bob".into(), ids[0].clone(), "fixed".into()).unwrap();
+    alice.store.delete_message_for_everyone("dm:bob".into(), ids[1].clone()).unwrap();
+    alice.store.react("dm:bob".into(), ids[0].clone(), "👍".into(), true).unwrap();
+    deliver(&alice);
+    sync(&alice2, &transport);
+    let on_two = alice2.store.list_messages("dm:bob".into()).unwrap();
+    assert_eq!(on_two[0].text, "fixed", "the edit followed");
+    assert!(on_two[0].edited);
+    assert!(on_two[1].deleted, "the delete followed");
+    assert!(on_two[0].reactions.iter().any(|r| r.emoji == "👍" && r.mine), "my reaction followed, as mine");
+
+    // Read state: Bob writes, both devices have it unread; reading it on the second device reads it on the first.
+    say(&bob, &alice, &transport, "are you there?");
+    sync(&alice, &transport);
+    sync(&alice2, &transport);
+    let unread = |p: &Party| p.store.list_conversations().unwrap().into_iter().find(|c| c.id == "dm:bob").unwrap().unread;
+    assert_eq!((unread(&alice), unread(&alice2)), (1, 1));
+    alice2.store.mark_read("dm:bob".into()).unwrap();
+    deliver(&alice2);
+    sync(&alice, &transport);
+    assert_eq!(unread(&alice), 0, "read on the other device");
+
+    // A block follows, and so does the unblock.
+    alice.store.block_sender("dm:bob".into()).unwrap();
+    deliver(&alice);
+    sync(&alice2, &transport);
+    let state_of = |p: &Party| p.store.list_conversations().unwrap().into_iter().find(|c| c.id == "dm:bob").map(|c| c.request_state.clone());
+    let blocked_on_two = alice2.store.blocked_ids().unwrap();
+    assert_eq!(blocked_on_two, vec!["bob".to_owned()], "blocked there too: {:?}", state_of(&alice2));
+    alice.store.unblock("dm:bob".into()).unwrap();
+    deliver(&alice);
+    sync(&alice2, &transport);
+    assert!(alice2.store.blocked_ids().unwrap().is_empty(), "and unblocked");
+}
+
+#[test]
+fn a_copy_applied_on_the_other_device_makes_no_copy_of_its_own() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let alice2 = second_device(&server, &alice, 3);
+    know_each_other(&transport, [&alice, &alice2]);
+    say(&alice, &bob, &transport, "hello");
+    sync(&alice2, &transport);
+    alice2.store.deliver_queued(transport.clone(), alice2.token.clone()).unwrap();
+    assert_eq!(own_outbox(&alice2), 0, "no echo");
+    assert_eq!(server.mailbox_len(&alice.device), 0, "nothing came back to the first device");
+}
+
+#[test]
+fn a_group_message_i_send_reaches_my_other_device_as_mine_and_a_group_message_from_others_reaches_both() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    let alice2 = second_device(&server, &alice, 4);
+    know_each_other(&transport, [&alice, &alice2]);
+    // Bob makes the group, so the group's state reaches both of my devices (a group I make on one device does not reach the other: that is the new device's
+    // link package, LIME-341+).
+    let chat = bob.store.create_group("Team".into(), None, vec!["alice".into(), "carol".into()]).unwrap();
+    deliver(&bob, &transport);
+    for p in [&alice, &alice2, &carol] {
+        sync(p, &transport);
+    }
+    for p in [&alice, &alice2] {
+        p.store.accept_request(chat.clone()).unwrap();
+    }
+    // Others' messages reach both of my devices.
+    say_in(&bob, &transport, &chat, "from Bob");
+    sync(&alice, &transport);
+    sync(&alice2, &transport);
+    assert_eq!(group_texts(&alice, &chat), vec!["from Bob"]);
+    assert_eq!(group_texts(&alice2, &chat), vec!["from Bob"]);
+    // Mine on the first device lands as mine on the second.
+    say_in(&alice, &transport, &chat, "from Alice's phone");
+    sync(&alice2, &transport);
+    let on_two: Vec<_> = alice2.store.list_messages(chat.clone()).unwrap().into_iter().filter(|m| m.local_state != "system").map(|m| (m.sender_id, m.text)).collect();
+    assert_eq!(on_two, vec![(Some("bob".to_owned()), "from Bob".to_owned()), (None, "from Alice's phone".to_owned())], "the second one is mine");
+    sync(&bob, &transport);
+    assert_eq!(group_texts(&bob, &chat), vec!["from Bob", "from Alice's phone"], "the group got it once");
+    // An edit in the group follows too.
+    let id = alice.store.list_messages(chat.clone()).unwrap().into_iter().find(|m| m.text == "from Alice's phone").unwrap().id;
+    alice.store.edit_message(chat.clone(), id, "from Alice, edited".into()).unwrap();
+    deliver(&alice, &transport);
+    sync(&alice2, &transport);
+    assert_eq!(group_texts(&alice2, &chat), vec!["from Bob", "from Alice, edited"]);
+}
+
+#[test]
+fn a_note_to_myself_reaches_my_other_device() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let alice2 = second_device(&server, &alice, 3);
+    know_each_other(&transport, [&alice, &alice2]);
+    let notes = format!("dm:{}", alice.user);
+    say(&alice, &alice, &transport, "remember the field trip forms");
+    sync(&alice2, &transport);
+    let on_two: Vec<_> = alice2.store.list_messages(notes).unwrap().into_iter().map(|m| (m.sender_id, m.text)).collect();
+    assert_eq!(on_two, vec![(None, "remember the field trip forms".to_owned())], "my note, as mine");
+}
+
+#[test]
+fn only_a_copy_from_a_device_my_own_master_key_vouches_for_is_accepted() {
+    let server = FakeServer::new();
+    let (alice, _) = party(&server, "alice", 1);
+    let alice2 = second_device(&server, &alice, 3);
+    let (stranger, _) = party(&server, "mallory", 9);
+    let mine_state = alice.store.load_or_create_account().unwrap();
+    let other = alice2.store.load_or_create_account().unwrap().cert();
+    let master = mine_state.master_key();
+    assert!(crate::client::own_devices_certifies(&other, &master, &mine_state.device_id), "my second device");
+    assert!(!crate::client::own_devices_certifies(&mine_state.cert(), &master, &mine_state.device_id), "not this device");
+    let foreign = stranger.store.load_or_create_account().unwrap().cert();
+    assert!(!crate::client::own_devices_certifies(&foreign, &master, &mine_state.device_id), "a device another master key signed");
+    let mut forged = other.clone();
+    forged.master_key = foreign.master_key.clone();
+    assert!(!crate::client::own_devices_certifies(&forged, &master, &mine_state.device_id), "my device's cert under someone else's master");
+    let mut resigned = other;
+    resigned.master_signature = foreign.master_signature.clone();
+    assert!(!crate::client::own_devices_certifies(&resigned, &master, &mine_state.device_id), "a signature that does not verify");
+}
+
+#[test]
+fn a_contact_cannot_send_me_a_copy_that_claims_to_be_mine() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    say(&bob, &alice, &transport, "hi");
+    sync(&alice, &transport);
+    // Bob dresses a message as one of my own copies.
+    let op = crate::protocol::Op {
+        op_id: "forged-1".into(),
+        op_type: "message.send".into(),
+        conversation_id: "dm:bob".into(),
+        hlc: crate::protocol::Hlc::default().render(),
+        parents: vec![],
+        payload: serde_json::json!({ "text": "I never wrote this" }),
+        sig: String::new(),
+    };
+    let payload = serde_json::json!({ "kind": "op", "to": "dm:bob", "op": op.to_json() });
+    let mut state = bob.store.load_or_create_account().unwrap();
+    bob.store.send_control_op(&transport, &bob.token, &mut state, &bob.user, &alice.user, "own.copy", payload).unwrap();
+    sync(&alice, &transport);
+    assert_eq!(texts(&alice, &bob), vec!["hi"], "Bob's dressed-up message was not stored");
+}

@@ -55,6 +55,17 @@ pub(crate) mod mention_rules;
 pub(crate) mod link_preview_rules;
 pub(crate) mod jam;
 mod handover;
+mod own_devices;
+
+/// Queues something for my other devices (a no-op with one device): for the store-level actions (a chat read, a person blocked).
+#[cfg(test)]
+pub(crate) fn own_devices_certifies(cert: &SenderCert, my_master: &str, my_device: &str) -> bool {
+    own_devices::certifies_my_other_device(cert, my_master, my_device)
+}
+
+pub(crate) fn own_devices_enqueue(conn: &Connection, payload: &Value) -> Result<(), StoreError> {
+    own_devices::enqueue(conn, payload)
+}
 pub(crate) mod open;
 mod community;
 mod org;
@@ -288,6 +299,8 @@ impl LimeStore {
             // A message to myself never leaves this phone: it is "sent" the moment it is written.
             if message.peer == me {
                 self.with_conn(|conn| set_state(conn, &message.id, "sent"))?;
+                // Notes to myself reach my other devices (LIME-340); with one device this does nothing.
+                self.enqueue_own_message(&state, &message);
                 sent += 1;
                 continue;
             }
@@ -312,6 +325,7 @@ impl LimeStore {
                         // Kept for the mesh (no internet): "Waiting for signal", not "Sent".
                         let parked = self.last_send_parked.swap(false, std::sync::atomic::Ordering::Relaxed);
                         self.with_conn(|conn| set_state(conn, &message.id, if parked { "waiting" } else { "sent" }))?;
+                        self.enqueue_own_message(&state, &message);
                         if !parked {
                             sent += 1;
                         }
@@ -339,6 +353,7 @@ impl LimeStore {
                 Ok(()) => {
                     let parked = self.last_send_parked.swap(false, std::sync::atomic::Ordering::Relaxed);
                     self.with_conn(|conn| set_state(conn, &message.id, if parked { "waiting" } else { "sent" }))?;
+                    self.enqueue_own_message(&state, &message);
                     if !parked {
                         sent += 1;
                     }
@@ -352,6 +367,8 @@ impl LimeStore {
         }
         // Edits, deletes and reactions go after the messages they are about.
         self.deliver_message_ops(&transport, &auth_token, &mut state, &me);
+        // What I did here is owed to my other devices (nothing with one device).
+        self.deliver_own_copies(&transport, &auth_token, &mut state, &me);
         // A group history queued while sending (a member's new phone found out of date, LIME-270) goes in this pass, not the next.
         self.deliver_group_outbox(&transport, &auth_token, &mut state, &me);
         Ok(sent)
@@ -1525,7 +1542,9 @@ impl LimeStore {
         } else {
             match row.sender_user.clone() {
                 Some(sender) if sender != me => Some(sender),
-                _ => return Ok(Outcome::Keep(pending::INVALID)),
+                // From one of my own devices: only a copy of what I did there is accepted (checked below); anything else is invalid, as before.
+                Some(_) => Some(me.to_owned()),
+                None => return Ok(Outcome::Keep(pending::INVALID)),
             }
         };
         let Ok(wire) = vodozemac::base64_decode(&row.ciphertext) else {
@@ -1616,6 +1635,28 @@ impl LimeStore {
         let cert = &inner.sender_cert;
         // The sender: the server's word (identified), or the envelope's (sealed, checked below).
         let sender = known_sender.clone().unwrap_or_else(|| inner.sender_user.clone());
+        if sender == me {
+            // Me, from another device (LIME-340): identified only, an `own.copy` signed by a device my own master key vouches for, and not this device.
+            let acceptable = !sealed
+                && inner.op.op_type == own_devices::OWN_COPY
+                && inner.sender_user == me
+                && inner.sender_device == cert.device_id
+                && cert.identity_key == peer_identity
+                && inner.op.verify(&cert.signing_key)
+                && own_devices::certifies_my_other_device(cert, &state.master_key(), &state.device_id);
+            let Some(remote_hlc) = Hlc::parse(&inner.op.hlc).filter(|_| acceptable) else {
+                return Ok(Outcome::Keep(pending::INVALID));
+            };
+            self.with_conn(|conn| {
+                if let Some(session) = &session {
+                    save_session(conn, &self.pickle_key, &sender, &cert.device_id, &peer_identity, session, true, now)?;
+                }
+                own_devices::apply_own_copy(conn, me, cert, &inner.op.payload, now).map(|_| ())
+            })?;
+            self.with_conn(|conn| observe_hlc(conn, remote_hlc, now).map(|_| ()))?;
+            // Not a message for anyone to be told about: it is what I did myself.
+            return Ok(Outcome::Duplicate);
+        }
         let is_share = inner.op.op_type == DELIVERY_KEY_SHARE;
         let is_changed = inner.op.op_type == PROFILE_CHANGED;
         let is_key_request = inner.op.op_type == PROFILE_KEY_REQUEST;

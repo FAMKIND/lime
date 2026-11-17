@@ -1002,6 +1002,13 @@ const MIGRATIONS: &[&str] = &[
     // on request, kept here and never sent; it goes with the row when the message is deleted).
     "ALTER TABLE message_attachments ADD COLUMN alt TEXT;
      ALTER TABLE message_attachments ADD COLUMN transcript TEXT;",
+    // (LIME-340) What I do on this device that my other devices are owed a copy of (a message, an edit, a delete, a reaction, a read mark, a block), in
+    // the order it happened. Filled only while the account has more than one device; emptied as the copies are sent.
+    "CREATE TABLE IF NOT EXISTS own_copy_outbox (
+         id         TEXT PRIMARY KEY NOT NULL,
+         payload    TEXT NOT NULL,
+         created_at INTEGER NOT NULL
+     );",
 ];
 
 /// The schema version this build writes.

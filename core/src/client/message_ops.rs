@@ -162,6 +162,8 @@ impl LimeStore {
                 true
             };
             if sent {
+                // My other devices get a copy (LIME-340; nothing with one device).
+                self.enqueue_own_message_op(state, &op.id, &op.op_type, &op.conversation_id, &op.payload);
                 let _ = self.with_conn(|conn| ops::dequeue(conn, &op.id));
             }
         }
