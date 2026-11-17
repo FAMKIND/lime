@@ -30,9 +30,15 @@ Every number or finding on the page is here with the exact words of its source. 
 - "This study draws upon survey and administrative data on over 9,000 teachers in 336 Miami-Dade County public schools over 2 years..." → page: **over 9,000 teachers, 336 Miami-Dade schools**
 - "Teachers and schools that engage in better quality collaboration have better achievement gains in math and reading. Moreover, teachers improve at greater rates when they work in schools with better collaboration quality." → page: **better-quality collaboration, better gains in math and reading; teachers improve at greater rates**
 
+## 6. University of Oxford Wellbeing Research Centre with the IB, 2024: relationships
+*Wellbeing for Schoolteachers* (Report No. 2), Taylor, L., Zhou, W., Boyle, L., Funk, S., & De Neve, J-E. (2024), International Baccalaureate Organization (as printed on the report's p. 2). Report pointer: https://wellbeing.hmc.ox.ac.uk/schools/ (answers 200; `/schools` redirects to it). The PDF is not in this repository and is not hosted by the site (the report is "© Copyright Wellbeing Research Centre and International Baccalaureate Organization 2024. All rights reserved"); the page only links to the centre's page.
+
+- **Key Finding 12, report p. vii** (the PDF's 11th page, the right-hand page of the spread vi–vii): "Research shows that relationships and feeling socially supported are the most important drivers of workplace wellbeing and job satisfaction." → page: the card's sentence, word for word (the first sentence of the finding; in the report it is the bold lead of finding 12).
+- *Runner-up, not used:* Key Finding 2, report p. v: "When teachers feel positive about the school in which they work, research has found they suffer from less burnout, establish stronger parent-school bonds, and have lower rates of attrition."
+
 ## The real people on the page (the user's word, 2026-11-17: both are joining lime's board)
 - **Rich Calton**, *The Legacy of HarlemLIVE: Empowering Youth Through Journalism and Experiential Learning*, third edition (2026); the publisher's own words: "From 1996 to 2011, teenagers in Harlem ran a real newsroom." https://www.harlemlive.net/publications/ (authorship confirmed by the user from the book's listing).
 - **Dr. Mojúbàolú Olúfúnké Okome**, editor of *Ìrìnkèrindò: a Journal of African Migration*; one of its pieces: "Women, Water, and Migration In Africa". https://africamigration.com/
 
 ## Not on the page
-- *Well-being for schoolteachers* (2024), Dr Laura Taylor and others, Wellbeing Research Centre, University of Oxford, for the IB: https://www.ibo.org/globalassets/new-structure/research/pdfs/wellbeing-for-schoolteachers-final-report.pdf — the server answered 403 to every automated read, so nothing from it is quoted.
+- Nothing is left out now. (Before LIME-348b the Oxford/IB report was missing because its server refused automated reads; it was read from the PDF the user saved.)

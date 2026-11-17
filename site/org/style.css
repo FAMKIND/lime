@@ -71,6 +71,7 @@ header.top nav a.btn:hover { text-decoration: none; }
 .stat { background: var(--surface); border-radius: 22px; padding: 28px 26px 26px; display: flex; flex-direction: column; }
 .stat .n { font: 600 clamp(52px, 6vw, 76px)/1 var(--serif); color: var(--text); }
 .stat .n.long { font-size: clamp(40px, 4.4vw, 56px); }
+.stat .n.word { font-size: clamp(32px, 3.4vw, 44px); line-height: 1.15; overflow-wrap: anywhere; }
 .stat .n small { font: 600 .36em var(--sans); letter-spacing: .02em; }
 .stat p { margin: 14px 0 18px; font-size: 18px; }
 .stat cite { font-style: normal; font-size: 15px; color: var(--muted); margin-top: auto; }

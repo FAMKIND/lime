@@ -11216,3 +11216,14 @@ Debug build of main installed on the **13 mini, the iPad (4) and Jean's 12 mini:
 - **Verification:** "Okome" and "Calton" now appear in `site/com/index.html` only in the jam-phone note (line 158), never in `.chips`; served with `python3 -m http.server 8284 -d site/com`, Chrome at 1280 and 390: the rotator shows the three chips in turn (Mrs Flowers, Ms Park, High Desert Teachers), every chip image loads, no horizontal overflow, no broken image (the two empty `img.sp` slots are the demo player's placeholders). Screenshots: `docs/qa-shots/347b/`. No deploy.
 - **Gate (you):** http://localhost:8284/ (run `cd ~/Sites/lime && python3 -m http.server 8284 -d site/com`), also deciding the join card.
 - **For plot:** the old chip files `avatar.*`, `chip-park.webp`, `chip-desert*` are used again; `group.*` is still unused on the page.
+
+## LIME-348b
+
+**Brief:** the Oxford/IB card on limemessenger.org.
+
+**Finding chosen:** Key Finding 12, report **p. vii** (the PDF's 11th page; the spread vi–vii): "Research shows that relationships and feeling socially supported are the most important drivers of workplace wellbeing and job satisfaction." It is the card's sentence **word for word** (checked against the PDF page image and its extracted text), under a big label "Support", sourced "University of Oxford Wellbeing Research Centre with the IB, 2024", linking to `https://wellbeing.hmc.ox.ac.uk/schools/` (`/schools` redirects there with a 301; the final URL answers 200). The report is cited as printed on its p. 2 in `docs/org-sources.md` (new entry 6; the "not on the page" note is now "nothing is left out"). **The PDF is not copied into the repo or hosted: link only** (it is © all rights reserved).
+**Runner-up (not used):** Key Finding 2, p. v: "When teachers feel positive about the school in which they work, research has found they suffer from less burnout, establish stronger parent-school bonds, and have lower rates of attrition."
+**Layout:** six cards in two rows of three at 1280 and one column at 390, light and dark (the first label I tried, "Relationships", was too wide for the card, so it is "Support"). No CSS change beyond the `long` size class that already existed.
+- **Verification:** no horizontal overflow at 1280 or 390, no broken image, one `h1`; greps for "501(c)", "tax-deductible", "FAM" and "famkind" find nothing; every number on the page is still in `org-sources.md`; first load 136 KB. Screenshots: `docs/qa-shots/348b/`. No deploy.
+- **Gate (you):** `cd ~/Sites/lime && python3 -m http.server 8285 -d site/org`, http://localhost:8285/.
+- **For plot:** the card is a finding as the report states it (one sentence), not a number; if you would rather show a number, the report's stats are in its body, not in the Key Findings. The Oxford link goes to the centre's page, not the PDF.
