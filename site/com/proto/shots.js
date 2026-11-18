@@ -37,6 +37,7 @@
     function overlays(s) {
       ov.innerHTML = "";
       if (s.nosignal) ov.appendChild(h("span", "nosig", "No service"));
+      if (s.zoom) { var zb = h("div", "zbar"); zb.style.backgroundImage = "url(" + URL + s.img + ".webp)"; ov.appendChild(zb); }   /* LIME-349c: the status bar stays at its size above the zoomed bubble */
       if (s.overlay === "mesh") { var c = h("div", "meshcard", MESH + "<p>No signal. Nearby phones pass it on, sealed.</p>"); ov.appendChild(c); }
       if (s.looks) {
         var row = h("div", "looks"); row.setAttribute("role", "group"); row.setAttribute("aria-label", "Looks");
@@ -55,7 +56,8 @@
       back.alt = s.alt; back.removeAttribute("aria-hidden"); front.alt = ""; front.setAttribute("aria-hidden", "true");
       var fin = function () { back.classList.toggle("slide", !!s.slide && !first); back.classList.add("on"); front.classList.remove("on"); var t = front; front = back; back = t; };
       back.onload = fin; back.src = URL + s.img + ".webp"; if (back.complete && back.naturalWidth) { back.onload = null; fin(); }
-      mark(s); overlays(s); hotspots(s); preload(s); if (byHand) live.textContent = s.alt;
+      if (s.zoom) { back.style.transformOrigin = s.zoom.x * 100 + "% " + s.zoom.y * 100 + "%"; back.style.transform = "scale(" + s.zoom.s + ")"; } else { back.style.transform = ""; back.style.transformOrigin = ""; }   /* a static crop: no animation, so Reduce Motion needs nothing */
+            mark(s); overlays(s); hotspots(s); preload(s); if (byHand) live.textContent = s.alt;
     }
     function next() { var s = all[(all.indexOf(cur) + 1) % all.length]; go(s.id); schedule(); }
     function schedule() { clearTimeout(timer); if (paused || !visible || reduce) return; timer = setTimeout(next, cur.ms); }

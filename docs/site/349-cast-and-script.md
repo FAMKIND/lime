@@ -26,7 +26,7 @@ Dr. Okome and Rich Calton stay exactly as in 347 (jam demo only, their own portr
 
 | Cast | Pexels photo | Author | URL |
 | --- | --- | --- | --- |
-| Talia Brooks | 1181519 (kept) | divinetechygirl | https://www.pexels.com/photo/1181519/ |
+| Talia Brooks | **13871734 (new, LIME-349c)** | Matheus Bertelli | https://www.pexels.com/photo/13871734/ |
 | Luis Ortega | **16633997 (new, Phase B)** | Nino Sanger | https://www.pexels.com/photo/16633997/ |
 | Kofi Mensah | 7055896 (kept) | kema | https://www.pexels.com/photo/7055896/ |
 | Adaeze Nwosu | 773371 | Tarzine Jackson | https://www.pexels.com/photo/773371/ |

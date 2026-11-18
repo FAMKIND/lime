@@ -1189,9 +1189,14 @@ final class ConversationStore {
         case "request-chat": path.append(MessagesRoute.requests); path.append("dm:ada")
         case "chat": path.append("dm:sam")
         case "site-jam", "site-jam-band": demoSiteJam(screen: screen ?? "site-jam")   // LIME-286r2: the website's jam phone
-        case "site-call":   // LIME-286r: a four-person video call for the website
+        case "site-call", "site-call-mini":   // LIME-286r: a four-person video call for the website; `-mini`: the same call minimised over the Robotics regional chat (LIME-349c)
             demoSiteLink(screen: "site-link")
-            groupCalls.demoCall(people: 4, title: "Maya, Walt, Mrs Lindgren, Danny", conversationID: conversations.first?.id ?? "grp:demo", customName: true, cast: ["Maya Ortiz", "Walt Brennan", "Mrs Lindgren", "Danny Cruz"])
+            groupCalls.demoCall(people: 4, title: "Maya, Walt, Mrs Lindgren, Danny", conversationID: conversations.first?.id ?? "grp:demo", customName: true, cast: ["Maya Ortiz", "Walt Brennan", "Mrs Lindgren", "Danny Cruz"],
+                                userIDs: [meProvider().id, "walt", "lindgren", "danny"], stills: true, grid: true)
+            if screen == "site-call-mini", let team = conversations.first?.id {
+                groupCalls.minimize()
+                path.append(team)
+            }
         case let name? where name.hasPrefix("site-") && ["site-link", "site-chat", "site-group", "site-offline-waiting", "site-offline-passed", "site-offline-sent", "site-offline-internet"].contains(name): demoSiteLink(screen: name)   // LIME-286r
         case "chat-deleted-person":
             // Sam deleted his account (LIME-113c): the chat looks like any old chat; sending shows one quiet line.

@@ -43,7 +43,7 @@ The link and jam phones were re-shot again for LIME-349 (the cast, with every ag
 
 | Cast member (age by look) | Pexels photo | Author | Source |
 | --- | --- | --- | --- |
-| Talia Brooks (late 20s) | `pexels-divinetechygirl-1181519.jpg` | divinetechygirl | https://www.pexels.com/photo/1181519/ |
+| Talia Brooks (late 20s) | 13871734 (LIME-349c; square crop on the face) | Matheus Bertelli | https://www.pexels.com/photo/13871734/ |
 | Luis Ortega (mid 20s) | 16633997 | Nino Sanger | https://www.pexels.com/photo/16633997/ |
 | Kofi Mensah (mid 30s) | `pexels-kema-7055896.jpg` | kema | https://www.pexels.com/photo/7055896/ |
 | Adaeze Nwosu (mid 40s) | 773371 | Tarzine Jackson | https://www.pexels.com/photo/773371/ |
@@ -62,6 +62,7 @@ Covers and card pictures in the jam screenshots (cropped to 3:2):
 | Science Corner, "Moon phases with a lamp" | `pexels-rethaferguson-3825567.jpg` | rethaferguson | https://www.pexels.com/photo/3825567/ |
 | Science Corner, members-only post "The lab we almost didn't do" | `pexels-visoesdomundo-23939187.jpg` | visoesdomundo | https://www.pexels.com/photo/23939187/ |
 | Science Corner, band cover and picture | `pexels-jeremy-bishop-1260133-2765872.jpg`, `pexels-domleroy-3567673.jpg` | jeremy-bishop, domleroy | https://www.pexels.com/photo/2765872/ , https://www.pexels.com/photo/3567673/ |
+| Robotics regional group cover (LIME-349c; the group's details header) | 35652404 | Tanha Tamanna Syed | https://www.pexels.com/photo/35652404/ |
 | Walt Brennan, series "Build it twice" (and its first article "Cardboard first") | 7508794 | cottonbro studio | https://www.pexels.com/photo/7508794/ |
 | Walt Brennan, podcast "The robot that lost to a pool noodle" | 6790031 | Tima Miroshnichenko | https://www.pexels.com/photo/6790031/ |
 | Luis Ortega, series "Local Government Lab" | `pexels-silverkblack-36729918.jpg` | silverkblack | https://www.pexels.com/photo/36729918/ |
@@ -70,4 +71,4 @@ Covers and card pictures in the jam screenshots (cropped to 3:2):
 | Link card: "African Immigrant Innovation in 21st Century Giving" | `pexels-silverkblack-36729886.jpg` | silverkblack | https://www.pexels.com/photo/36729886/ |
 | Link card: "African Diaspora Families & Changing Gender Relations" | `pexels-kindelmedia-7148445.jpg` | kindelmedia | https://www.pexels.com/photo/7148445/ |
 
-No longer used in the demos (credits removed): `pexels-edwardutra-1813922.jpg` (Luis's earlier photo), `pexels-cottonbro 6923485` (the earlier late-50s teacher), `pexels-zelch-12491759.jpg` (Adaeze's podcast cover; the podcast left), and the earlier set (`pexels-gabby-k-5384445.jpg`, `pexels-margarida-da-mota-14398455.jpg`).
+No longer used in the demos (credits removed): `pexels-divinetechygirl-1181519.jpg` (Talia's earlier photo), `pexels-edwardutra-1813922.jpg` (Luis's earlier photo), `pexels-cottonbro 6923485` (the earlier late-50s teacher), `pexels-zelch-12491759.jpg` (Adaeze's podcast cover; the podcast left), and the earlier set (`pexels-gabby-k-5384445.jpg`, `pexels-margarida-da-mota-14398455.jpg`).

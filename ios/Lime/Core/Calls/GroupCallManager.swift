@@ -991,10 +991,10 @@ extension GroupCallManager {
         systemRinging = systemRings; answerFallback = !systemRings
     }
 
-    func demoCall(people: Int, video: Bool = true, title: String = "Grade 4 Team", conversationID: String = "grp:demo", customName: Bool = false, cast: [String]? = nil) {
+    func demoCall(people: Int, video: Bool = true, title: String = "Grade 4 Team", conversationID: String = "grp:demo", customName: Bool = false, cast: [String]? = nil, userIDs: [String]? = nil, stills: Bool = false, grid: Bool = false) {
         let names = cast ?? ["Shem Chung", "Jean Park", "Lee Wong", "Sam Park", "Priya Nair", "Dee Ito", "Max Roy", "Ana Cruz", "Tom Lee", "Uma Das", "Vic Hale", "Wen Xu", "Yan Zhu"]
         // The demo starts from the default layout (the person's remembered choice would make tests and screenshots depend on the last run).
-        chosenLayout = nil
+        chosenLayout = grid ? .grid : nil   // `grid`: 2 x 2 tiles (the website's call, LIME-349c)
         layoutDefaults.removeObject(forKey: Self.layoutKey)
         groupNameIsCustom = customName
         phase = .active
@@ -1005,7 +1005,7 @@ extension GroupCallManager {
         startedAt = Date().addingTimeInterval(-83)
         verificationEmoji = groupCallEmoji(callId: "demo", participants: (0..<min(people, names.count)).map { GroupCallKey(participant: String(format: "%032x", $0), key: Data(repeating: UInt8($0 + 1), count: 32)) })
         tiles = (0..<min(people, names.count)).map {
-            Tile(id: "demo-\($0)", userID: "demo-user-\($0)", name: names[$0], isMe: $0 == 0, muted: $0 == 2, cameraOn: false, speaking: $0 == 1, secured: true)
+            Tile(id: "demo-\($0)", userID: userIDs?[$0] ?? "demo-user-\($0)", name: names[$0], isMe: $0 == 0, muted: $0 == 2, cameraOn: stills, speaking: $0 == 1, secured: true)
         }
     }
 }

@@ -50,6 +50,10 @@ extension ConversationStore {
         }
         let team = demoMakeGroup(name: "Robotics regional", emoji: "🤖", memberIDs: ["walt", "danny", "talia"], owner: true)
         named(team)
+        // The group's cover: a photo for the header (the chat and the group's details), from `-lime-demo-covers <dir>/robotics.jpg` (LIME-349c).
+        if let i = args.firstIndex(of: "-lime-demo-covers"), i + 1 < args.count, let cover = FileManager.default.contents(atPath: args[i + 1] + "/robotics.jpg") {
+            AvatarCache.shared.set(cover, for: Self.groupCoverKey(team))
+        }
         demoAddMessages(to: team, [("walt", "Regional is Saturday the 14th. Bus leaves the library at 6:45."), ("danny", "I’ve got the permission slips and a cooler of orange slices 🍊"), ("talia", "I can drive the second van. Who has the extra batteries?"), ("walt", "Me. And the spare gears. Don’t tell the kids I packed a spare robot.")])
         if let t = conversations.firstIndex(where: { $0.id == team }) {
             conversations[t].messages[conversations[t].messages.count - 2].reactions = [ReactionChip(emoji: "👍", count: 3, mine: false, people: ["Walt Brennan", "Danny Cruz", "Maya Ortiz"])]

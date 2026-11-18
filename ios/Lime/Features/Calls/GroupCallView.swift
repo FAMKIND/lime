@@ -366,6 +366,22 @@ struct GroupTileView: View {
     }
 
     @ViewBuilder private var picture: some View {
+        #if DEBUG
+        // The website's call (LIME-349c): a still photo of the person as their "video" (debug demo only: `demoCall(stills:)` and `-lime-demo-avatars`), over a blurred copy of itself.
+        if store.groupCalls.callID == "demo", tile.cameraOn, tile.secured, let still = AvatarCache.shared.image(for: tile.userID) {
+            ZStack {
+                Color.clear.overlay { Image(uiImage: still).resizable().scaledToFill().blur(radius: 22) }.clipped()
+                Image(uiImage: still).resizable().scaledToFit()
+            }
+        } else {
+            basePicture
+        }
+        #else
+        basePicture
+        #endif
+    }
+
+    @ViewBuilder private var basePicture: some View {
         if !tile.secured {
             VStack(spacing: 6) {
                 ProgressView().tint(.white)

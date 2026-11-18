@@ -36,9 +36,12 @@ final class SiteShots: XCTestCase {
         let title = a.staticTexts["Robotics regional"].firstMatch; if title.exists { title.tap(); sleep(2); snap("link-group-info") }
     }
     func testCall() { _ = app("site-call"); sleep(3); snap("link-call") }
-    func testOffline() {
-        for s in ["waiting", "passed", "sent"] { _ = app("site-offline-\(s)"); sleep(2); snap("link-offline-\(s)"); XCUIApplication().terminate() }
+    func testCallMini() { _ = app("site-call-mini"); sleep(4); snap("link-call-mini") }
+    /// LIME-349c: the offline story is told by the status bar (Wi-Fi off, no service: site-shots.sh sets it for this test) and the bubble's own status line.
+    func testOfflineNoSignal() {
+        for s in ["waiting", "passed"] { _ = app("site-offline-\(s)"); sleep(2); snap("link-offline-\(s)"); XCUIApplication().terminate() }
     }
+    func testOfflineSent() { _ = app("site-offline-sent"); sleep(2); snap("link-offline-sent"); XCUIApplication().terminate() }
     func testThemes() {
         for (name, bg, acc) in [("paper-pink", "paper", "0"), ("chalkboard-lime", "chalkboard", "5"), ("bulletin-blue", "bulletin", "4"), ("living-lavender", "living", "6"), ("dots-orange", "dots", "2")] {
             let a = app("site-chat", theme: (bg, acc)); sleep(2); snap("yours-\(name)"); a.terminate()
