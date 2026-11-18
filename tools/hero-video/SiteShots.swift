@@ -15,20 +15,20 @@ final class SiteShots: XCTestCase {
     private func row(_ a: XCUIApplication, _ id: String) { let r = a.buttons["conversation-row-\(id)"]; XCTAssertTrue(r.waitForExistence(timeout: 10)); r.tap(); sleep(2) }
 
     func testChats() {
-        let a = app("site-link", extra: ["-lime-demo-autoreply", "Sending it now. Thanks for asking!"])
+        let a = app("site-link", extra: ["-lime-demo-autoreply", "YES. I’ll trade you my poem-of-the-week list 😄"])
         snap("link-list")
         row(a, "dm:talia"); snap("link-chat")
         let field = a.textViews["composer-field"]; XCTAssertTrue(field.waitForExistence(timeout: 8)); field.tap(); sleep(1)
-        field.typeText("Can you share the poem"); sleep(1); snap("link-typing-1")
-        field.typeText(" of the week list?"); sleep(1); snap("link-typing")
+        field.typeText("That’s the whole trick."); sleep(1); snap("link-typing-1")
+        field.typeText(" Want my lab sheet for tomorrow?"); sleep(1); snap("link-typing")
         a.buttons["send-button"].tap(); sleep(1); snap("link-sent")
         sleep(3); snap("link-reply")
-        let reply = a.staticTexts["Sending it now. Thanks for asking!"]; if reply.waitForExistence(timeout: 5) { reply.press(forDuration: 0.9); sleep(2); snap("link-bar"); let heart = a.buttons["react-❤️"]; if heart.waitForExistence(timeout: 3) { heart.tap(); sleep(1); snap("link-reacted") } }
+        let reply = a.staticTexts["YES. I’ll trade you my poem-of-the-week list 😄"]; if reply.waitForExistence(timeout: 5) { reply.press(forDuration: 0.9); sleep(2); snap("link-bar"); let heart = a.buttons["react-❤️"]; if heart.waitForExistence(timeout: 3) { heart.tap(); sleep(1); snap("link-reacted") } }
     }
     func testGroup() {
         let a = app("site-link", extra: [])
         row(a, "grp:demo1"); snap("link-group")
-        let title = a.staticTexts["8th Grade Team"].firstMatch; if title.exists { title.tap(); sleep(2); snap("link-group-info") }
+        let title = a.staticTexts["Robotics regional"].firstMatch; if title.exists { title.tap(); sleep(2); snap("link-group-info") }
     }
     func testCall() { _ = app("site-call"); sleep(3); snap("link-call") }
     func testOffline() {
@@ -55,6 +55,7 @@ final class SiteShots: XCTestCase {
         a.swipeUp(); sleep(1); snap("jam-feed2")
         a.swipeUp(); sleep(1); snap("jam-feed3")
         a.swipeUp(); sleep(1); snap("jam-feed4")
+        a.swipeUp(); sleep(1); snap("jam-feed5")
     }
     func testJamArticle() {
         let a = app("site-jam"); sleep(2)
@@ -64,11 +65,11 @@ final class SiteShots: XCTestCase {
     func testJamPodcasts() {
         let a = app("site-jam"); sleep(2)
         tap(a, "jam-segment-Podcasts"); snap("jam-podcasts")
-        tap(a, "jam-audio-play-site-adaeze-pod-audio"); sleep(1); snap("jam-podcast-playing"); ids(a, "ids-playing")
+        tap(a, "jam-audio-play-site-walt-pod-audio"); sleep(1); snap("jam-podcast-playing"); ids(a, "ids-playing")
     }
     func testJamSeries() {
         let a = app("site-jam"); sleep(2)
-        reveal(a, "jam-card-series-site-luis-2"); snap("jam-series"); ids(a, "ids-series")
+        reveal(a, "jam-card-series-site-walt-1"); snap("jam-series"); ids(a, "ids-series")
     }
     func testJamBand() {
         let a = app("site-jam"); sleep(2)

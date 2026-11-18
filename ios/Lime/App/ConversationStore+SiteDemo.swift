@@ -2,8 +2,8 @@
 import Foundation
 import UIKit
 
-/// Demo mode (the website's screenshots, LIME-286r, 347): an invented cast (Talia Brooks, Luis Ortega, Adaeze Nwosu, Kofi Mensah) and six chats, with profile photos for some of them.
-/// The photos are read from a folder named by `-lime-demo-avatars <dir>` (`<dir>/<user id>.jpg`); the rest keep their initials.
+/// Demo mode (the website's screenshots, LIME-286r, 347, 349): an invented cast of every age (Talia Brooks, Mrs Lindgren, Walt Brennan, Danny Cruz, Adaeze Nwosu, Kofi Mensah ...) and six chats, with profile photos.
+/// The photos are read from a folder named by `-lime-demo-avatars <dir>` (`<dir>/<user id>.jpg`); a person without one keeps their initials.
 extension ConversationStore {
     func demoSiteLink(screen: String) {
         let now = Date()
@@ -11,38 +11,49 @@ extension ConversationStore {
         meProvider = { maya }   // "MO", not "TT", on the profile button
         let args = ProcessInfo.processInfo.arguments
         if let i = args.firstIndex(of: "-lime-demo-avatars"), i + 1 < args.count {
-            for id in ["talia", "luis", "kofi", "okome", "calton"] {
+            for id in ["talia", "luis", "kofi", "adaeze", "danny", "tran", "lindgren", "walt", "okome", "calton"] {
                 AvatarCache.shared.set(FileManager.default.contents(atPath: args[i + 1] + "/" + id + ".jpg"), for: id)
             }
         }
-        let talia = Person(id: "talia", name: "Talia Brooks"), luis = Person(id: "luis", name: "Luis Ortega"), adaeze = Person(id: "adaeze", name: "Adaeze Nwosu"), kofi = Person(id: "kofi", name: "Kofi Mensah")
+        let talia = Person(id: "talia", name: "Talia Brooks"), lindgren = Person(id: "lindgren", name: "Mrs Lindgren"), adaeze = Person(id: "adaeze", name: "Adaeze Nwosu"), kofi = Person(id: "kofi", name: "Kofi Mensah")
         func mine(_ id: String, _ text: String, _ ago: Double, _ state: DeliveryState = .sent) -> Message { Message(id: id, senderID: nil, text: text, date: now.addingTimeInterval(-ago), state: state) }
         func theirs(_ id: String, _ who: String, _ text: String, _ ago: Double) -> Message { Message(id: id, senderID: who, text: text, date: now.addingTimeInterval(-ago)) }
         var taliaMessages = [
-            theirs("m1", "talia", "Are you coming to Thursday's planning meeting?", 3_000),
-            mine("m2", "Yes, see you there", 2_900),
-            theirs("m3", "talia", "I'll bring the poetry unit", 2_800),
+            theirs("m1", "talia", "Okay, THE EXIT TICKET WORKED on third period 🙌", 3_000),
+            mine("m2", "Told you! What was the question?", 2_900),
+            theirs("m3", "talia", "“What’s one thing that confused you?” Half of them wrote the same thing, so I know exactly what to reteach tomorrow.", 2_800),
         ]
         if screen.hasPrefix("site-offline") {
             let state: DeliveryState = screen.hasSuffix("waiting") ? .waiting : screen.hasSuffix("passed") ? .passed : screen.hasSuffix("internet") ? .offline : .sent
-            taliaMessages.append(mine("m4", "Running late: start without me. Notes are in the shared folder.", 20, state))
+            taliaMessages.append(mine("m4", "Running late, start the warm-up without me. Plan’s in the folder.", 20, state))
         }
         conversations = [
             Conversation(id: "dm:talia", title: talia.name, members: [talia], messages: taliaMessages),
-            Conversation(id: "dm:luis", title: luis.name, members: [luis], messages: [theirs("s1", "luis", "The Local Government Lab handout is in the folder", 93_000)], unread: 1),
-            Conversation(id: "dm:adaeze", title: adaeze.name, members: [adaeze], messages: [theirs("p1", "adaeze", "Thank you! The lab went well.", 170_000)]),
-            Conversation(id: "dm:kofi", title: kofi.name, members: [kofi], messages: [theirs("l1", "kofi", "I'll send the flyer for literacy night in the morning.", 350_000)]),
+            Conversation(id: "dm:lindgren", title: lindgren.name, members: [lindgren], messages: [theirs("s1", "lindgren", "My last first day is Monday. 41 of them and I still lay out the pencils the night before ✏️", 93_000)], unread: 1),
+            Conversation(id: "dm:adaeze", title: adaeze.name, members: [adaeze], messages: [theirs("p1", "adaeze", "Nobody turned the titration pink this time 🧪", 170_000)]),
+            Conversation(id: "dm:kofi", title: kofi.name, members: [kofi], messages: [theirs("l1", "kofi", "Families asked for more Spanish picture books. Twelve are in the cart.", 350_000)]),
         ]
-        let team = demoMakeGroup(name: "8th Grade Team", emoji: "📚", memberIDs: ["talia", "luis", "adaeze"], owner: true)
-        demoAddMessages(to: team, [("luis", "Can we plan the field trip on Friday?"), ("adaeze", "I can bring the permission forms"), ("talia", "I'll book the bus. Who wants to take the first aid kit?"), ("luis", "Me! I also have the map.")])
+        // Walt and Danny are only in the groups: their names are set here (a group looks a name up among the one-to-one chats).
+        let names = ["walt": "Walt Brennan", "danny": "Danny Cruz", "talia": "Talia Brooks", "kofi": "Kofi Mensah", "adaeze": "Adaeze Nwosu"]
+        func named(_ id: Conversation.ID) {
+            if var group = demoGroups[id] {
+                group.people = group.people.map { ($0.id, names[$0.id] ?? $0.name, $0.role) }
+                demoGroups[id] = group
+            }
+            if let c = conversations.firstIndex(where: { $0.id == id }) { conversations[c].members = conversations[c].members.map { Person(id: $0.id, name: names[$0.id] ?? $0.name, username: $0.username) } }
+        }
+        let team = demoMakeGroup(name: "Robotics regional", emoji: "🤖", memberIDs: ["walt", "danny", "talia"], owner: true)
+        named(team)
+        demoAddMessages(to: team, [("walt", "Regional is Saturday the 14th. Bus leaves the library at 6:45."), ("danny", "I’ve got the permission slips and a cooler of orange slices 🍊"), ("talia", "I can drive the second van. Who has the extra batteries?"), ("walt", "Me. And the spare gears. Don’t tell the kids I packed a spare robot.")])
         if let t = conversations.firstIndex(where: { $0.id == team }) {
-            conversations[t].messages[conversations[t].messages.count - 2].reactions = [ReactionChip(emoji: "👍", count: 3, mine: false, people: ["Luis Ortega", "Adaeze Nwosu", "Talia Brooks"])]
+            conversations[t].messages[conversations[t].messages.count - 2].reactions = [ReactionChip(emoji: "👍", count: 3, mine: false, people: ["Walt Brennan", "Danny Cruz", "Maya Ortiz"])]
             conversations[t].unread = 2
         }
         let staff = demoMakeGroup(name: "Staff room", emoji: "🏫", memberIDs: ["kofi", "adaeze"], owner: false)
-        demoAddMessages(to: staff, [("kofi", "The photocopier is fixed.")])
+        named(staff)
+        demoAddMessages(to: staff, [("kofi", "Whoever fixed the copier: I love you.")])
         // Newest chat first, as the list orders them: the team, Talia, then the rest by age.
-        let order = [team, "dm:talia", "dm:luis", "dm:adaeze", "dm:kofi", staff]
+        let order = [team, "dm:talia", "dm:lindgren", "dm:adaeze", "dm:kofi", staff]
         conversations.sort { (order.firstIndex(of: $0.id) ?? 99) < (order.firstIndex(of: $1.id) ?? 99) }
         // The screens are captured at any hour; the times they show are pinned to 8:04 AM today (the message times then read 7:14 AM … Yesterday, Nov 5, Nov 3).
         if let pinned = Calendar.current.date(bySettingHour: 8, minute: 4, second: 0, of: now) {

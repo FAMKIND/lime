@@ -2,7 +2,7 @@
 import Foundation
 import UIKit
 
-/// Demo mode (the website's jam phone, LIME-286r2, 347): Maya follows invented teachers, two real board members (as the authors of their own real work only) and a band, with covers, a series, two podcasts and a members-only post.
+/// Demo mode (the website's jam phone, LIME-286r2, 347, 349): Maya follows invented teachers of every age, two real board members (as the authors of their own real work only) and a band, with covers, series, two podcasts and a members-only post.
 /// Cover photos are read from a folder named by `-lime-demo-covers <dir>` (`<dir>/<name>.jpg`); without it the posts have no cover.
 extension ConversationStore {
     func demoSiteJam(screen: String) {
@@ -60,20 +60,21 @@ extension ConversationStore {
         add("site-calton-1", "site-calton-jam", "calton", "quick", "", "", "The Legacy of HarlemLIVE: Empowering Youth Through Journalism and Experiential Learning, third edition (2026)\n\nFrom 1996 to 2011, teenagers in Harlem ran a real newsroom.", ago: 70)
         demoJamAttachments["site-calton-1"] = [link("site-calton-1", 1, title: "The Legacy of HarlemLIVE: Empowering Youth Through Journalism and Experiential Learning", url: "https://www.harlemlive.net/publications/", site: "harlemlive.net", poster: nil)]
 
-        // Ms Park: three articles of a series.
-        let park = jam("site-park-jam", writer: "park", "Fractions that stick", "Short lessons for grades 3 to 5", ["Maths", "Grade 4"])
-        demoJamPages["park"] = park
-        publicProfiles["park"] = PublicProfile(userId: "park", displayName: "Ms Park", username: "ms.park", school: nil, aboutEmoji: nil, aboutText: nil, since: nil, hasJam: false)
-        add("site-park-1", "site-park-jam", "park", "article", "Fold, cut, compare", "Part 1: halves and quarters", "We started with a strip of paper. **Fold it in half**, then in half again, and ask: what do you notice?\n\nBy the end of the lesson every pair could say why two quarters make a half.", ago: 3_000, cover: "fold", series: fractions(1))
-        add("site-park-2", "site-park-jam", "park", "article", "Fraction walls", "Part 2: bricks that match", "Build a wall of bricks, one row for each fraction, and slide them side by side.\n\nThe question that does the teaching: *which rows line up?*", ago: 320, cover: "walls", series: fractions(2))
-        add("site-park-3", "site-park-jam", "park", "article", "Comparing with benchmarks", "Part 3: more or less than a half?", "Is it more or less than a half? Start there, then ask how you know.", ago: 5_000, series: fractions(3))
+        // Ms Tran: three articles of a series.
+        let tran = jam("site-tran-jam", writer: "tran", "Fractions that stick", "Short lessons for grades 3 to 5", ["Maths", "Grade 4"])
+        demoJamPages["tran"] = tran
+        publicProfiles["tran"] = PublicProfile(userId: "tran", displayName: "Ms Tran", username: "ms.tran", school: nil, aboutEmoji: nil, aboutText: nil, since: nil, hasJam: false)
+        add("site-tran-1", "site-tran-jam", "tran", "article", "Fold, cut, compare", "Part 1: halves and quarters", "We started with a strip of paper. **Fold it in half**, then in half again, and ask: what do you notice?\n\nBy the end of the lesson every pair could say why two quarters make a half.", ago: 3_000, cover: "fold", series: fractions(1))
+        add("site-tran-2", "site-tran-jam", "tran", "article", "Fraction walls", "Part 2: bricks that match", "Build a wall of bricks, one row for each fraction, and slide them side by side.\n\nThe question that does the teaching: *which rows line up?*", ago: 320, cover: "walls", series: fractions(2))
+        add("site-tran-3", "site-tran-jam", "tran", "article", "Comparing with benchmarks", "Part 3: more or less than a half?", "Is it more or less than a half? Start there, then ask how you know.", ago: 5_000, series: fractions(3))
         let seriesCover = photo("walls")
-        seriesMetas["site-series-fractions"] = SeriesMeta(seriesId: "site-series-fractions", title: "Fractions that stick", description: "Short lessons on fractions, one idea each. Fold paper, build a wall of bricks, and see why one half is bigger than one third. Written for grades 3 to 5, and good to read aloud.", cover: seriesCover)
+        seriesMetas["site-series-fractions"] = SeriesMeta(seriesId: "site-series-fractions", title: "Fractions that stick", description: "Paper strips, brick walls and one question: which rows line up? Written for grades 3 to 5, and good to read aloud.", cover: seriesCover)
         seriesCovers["site-series-fractions"] = seriesCover
 
         // Luis Ortega: a three-part series, "Local Government Lab".
         func lab(_ part: UInt32) -> SeriesInfo { SeriesInfo(id: "site-series-lab", title: "Local Government Lab", part: part, of: 3) }
         _ = jam("site-luis-jam", writer: "luis", "Local Government Lab", "Civics you can try in town", ["Civics", "Grade 11"])
+        publicProfiles["luis"] = PublicProfile(userId: "luis", displayName: "Luis Ortega", username: "luis.ortega", school: nil, aboutEmoji: nil, aboutText: nil, since: nil, hasJam: false)
         add("site-luis-1", "site-luis-jam", "luis", "article", "Who runs your town?", "Part 1: find the offices", "Start with a map and a phone. Ask each pair to find **three offices** in their town and what each one decides.\n\nThe question that does the teaching: *who could fix this pothole?*", ago: 1_400, cover: "civics", series: lab(1))
         add("site-luis-2", "site-luis-jam", "luis", "article", "Reading a city budget", "Part 2: where the money goes", "Give every group one page of the budget and one colour pen. **Circle what surprises you.**\n\nThen compare: which line would you cut, and who would feel it?", ago: 200, cover: "civics", series: lab(2))
         add("site-luis-3", "site-luis-jam", "luis", "article", "Going to a council meeting", "Part 3: speak for two minutes", "Two minutes at the microphone is a skill. Practise it in class first.", ago: 6_000, series: lab(3))
@@ -81,20 +82,29 @@ extension ConversationStore {
         seriesMetas["site-series-lab"] = SeriesMeta(seriesId: "site-series-lab", title: "Local Government Lab", description: "Three lessons that send students out of the classroom and into their town hall. Written for high-school civics.", cover: labCover)
         seriesCovers["site-series-lab"] = labCover
 
-        // Mrs Flowers, Dr Nwosu's podcast and Kofi Mensah.
-        _ = jam("site-flowers-jam", writer: "flowers", "Practice, not homework", "Ten minutes a child chooses", ["Practice"])
-        publicProfiles["flowers"] = PublicProfile(userId: "flowers", displayName: "Mrs Flowers", username: "mrs.flowers", school: nil, aboutEmoji: nil, aboutText: nil, since: nil, hasJam: false)
-        add("site-flowers-1", "site-flowers-jam", "flowers", "quick", "", "", "An exit ticket that takes a minute: ask one question at the door, *which pieces are equal?*", ago: 110)
-        add("site-flowers-2", "site-flowers-jam", "flowers", "article", "Why we stopped giving homework", "What we do instead", "We swapped it for ten minutes of practice a child chooses.\n\nThe rule that helped most: **everyone picks their own**.", ago: 700, cover: "circles")
-        _ = jam("site-adaeze-jam", writer: "adaeze", "Lab Notes", "Chemistry for first-year students", ["Chemistry"])
-        add("site-adaeze-pod", "site-adaeze-jam", "adaeze", "record", "Why the balloon shrinks", "Gas laws in 14 minutes", "How I teach the gas laws in a community-college lab.", ago: 400, cover: "labnotes", audioMs: 840_000)
+        // Mrs Lindgren, Walt Brennan, Kofi Mensah.
+        _ = jam("site-lindgren-jam", writer: "lindgren", "Practice, not homework", "Ten minutes a child chooses", ["Practice"])
+        publicProfiles["lindgren"] = PublicProfile(userId: "lindgren", displayName: "Mrs Lindgren", username: "mrs.lindgren", school: nil, aboutEmoji: nil, aboutText: nil, since: nil, hasJam: false)
+        add("site-lindgren-1", "site-lindgren-jam", "lindgren", "quick", "", "", "Last year. I’m keeping a list of what I’d tell my first-year self. Number one: the pencils can wait, the child can’t.", ago: 110)
+        add("site-lindgren-2", "site-lindgren-jam", "lindgren", "article", "Why we stopped giving homework", "What we do instead", "We swapped it for ten minutes of practice a child chooses.\n\nThe rule that helped most: **everyone picks their own**.", ago: 700, cover: "circles")
         _ = jam("site-kofi-jam", writer: "kofi", "Read-aloud night", "What families asked for", ["Literacy"])
-        add("site-kofi-pod", "site-kofi-jam", "kofi", "record", "Ten books families asked for", "Family literacy night", "Three minutes on the books that went home with the most families.", ago: 900, cover: "readaloud", audioMs: 190_000)
+        add("site-kofi-pod", "site-kofi-jam", "kofi", "record", "The ten books that never stay on the shelf", "What families asked for at read-aloud night", "Four minutes on the books that went home with the most families.", ago: 900, cover: "readaloud", audioMs: 240_000)
+        // Walt Brennan: a retired shop teacher who coaches the library's robotics team: a series and a podcast.
+        func build(_ part: UInt32) -> SeriesInfo { SeriesInfo(id: "site-series-build", title: "Build it twice", part: part, of: 3) }
+        _ = jam("site-walt-jam", writer: "walt", "Build it twice", "Cardboard first, then metal", ["Robotics", "Making"])
+        publicProfiles["walt"] = PublicProfile(userId: "walt", displayName: "Walt Brennan", username: "walt.brennan", school: nil, aboutEmoji: nil, aboutText: nil, since: nil, hasJam: false)
+        add("site-walt-1", "site-walt-jam", "walt", "article", "Cardboard first", "Part 1: before any metal", "Before any metal, a robot made of cardboard and tape. It’s ugly. It’s also where every good idea shows up.\n\nThe rule: **nothing gets built twice until it has been built once in cardboard.**", ago: 150, cover: "cardboard", series: build(1))
+        add("site-walt-2", "site-walt-jam", "walt", "article", "The robot that walked into a wall", "Part 2: what the first test showed", "It drove straight into the wall, three times. Then someone asked what the sensor could actually see.", ago: 4_000, series: build(2))
+        add("site-walt-3", "site-walt-jam", "walt", "article", "Judging day", "Part 3: explain it in two minutes", "Judges ask one question: why did you choose that? Practise the answer out loud.", ago: 7_000, series: build(3))
+        let buildCover = photo("cardboard")
+        seriesMetas["site-series-build"] = SeriesMeta(seriesId: "site-series-build", title: "Build it twice", description: "Three short lessons from a robotics team that builds everything in cardboard first. Written for coaches and makers of any age.", cover: buildCover)
+        seriesCovers["site-series-build"] = buildCover
+        add("site-walt-pod", "site-walt-jam", "walt", "record", "The robot that lost to a pool noodle", "What our worst regional taught the team", "Twenty-one minutes on the robot that lost to a pool noodle, and what we changed on Monday.", ago: 300, cover: "workshop", audioMs: 1_260_000)
 
         // The band: Science Corner, written by Dr Nwosu, with a cover photo, a picture and members.
         let science = jam("site-sci-band", writer: "adaeze", "Science Corner", "Experiments and ideas from teachers who love science", ["Science"], band: true)
-        add("site-sci-1", "site-sci-band", "adaeze", "article", "Moon phases with a lamp", "A twenty-minute model", "A lamp, a ball and a dark room: ten minutes to **see why the moon changes**.\n\nLet every pair hold the ball once.", ago: 20, cover: "science", figure: "fold", displayAs: "jam")
-        add("site-sci-2", "site-sci-band", "adaeze", "article", "Our term plan", "Lab sheets, for members", "The full term plan, with the lab sheets.", ago: 240, cover: "members", members: true, displayAs: "jam")
+        add("site-sci-1", "site-sci-band", "adaeze", "article", "Moon phases with a lamp", "A twenty-minute model", "A lamp, a ball and a dark room: ten minutes to **see why the moon changes**.\n\nLet every pair hold the ball once. The groan when the lamp goes off is the whole lesson.", ago: 20, cover: "science", figure: "fold", displayAs: "jam")
+        add("site-sci-2", "site-sci-band", "adaeze", "article", "The lab we almost didn’t do", "Lab sheet and what went wrong, for members", "Members only: the full term plan, the lab sheets, and the one experiment that flooded the bench. Here is how we fixed it before Thursday.", ago: 240, cover: "members", members: true, displayAs: "jam")
         add("site-sci-3", "site-sci-band", "adaeze", "quick", "", "", "Thursday lab: bring the magnets.", ago: 500, displayAs: "jam")
         AvatarCache.shared.set(photo("band"), for: Self.jamCoverKey("site-sci-band"))
         AvatarCache.shared.set(photo("bandpic"), for: Self.jamPictureKey("site-sci-band"))
@@ -105,7 +115,7 @@ extension ConversationStore {
             OrgMemberInfo(userId: "talia", name: "Talia Brooks", tone: tone("talia"), role: "writer", isMe: false, canManage: false),
             OrgMemberInfo(userId: meProvider().id, name: "Maya Ortiz", tone: 6, role: "member", isMe: true, canManage: false),
             OrgMemberInfo(userId: "kofi", name: "Kofi Mensah", tone: tone("kofi"), role: "member", isMe: false, canManage: false),
-            OrgMemberInfo(userId: "park", name: "Ms Park", tone: tone("park"), role: "member", isMe: false, canManage: false),
+            OrgMemberInfo(userId: "tran", name: "Ms Tran", tone: tone("tran"), role: "member", isMe: false, canManage: false),
         ]
         orgGroupsByJam["site-sci-band"] = [OrgGroupInfo(conversationId: "grp:site-science", name: "Lab ideas", open: true, joined: false, mine: false)]
         publicProfiles["adaeze"] = PublicProfile(userId: "adaeze", displayName: "Adaeze Nwosu", username: "adaeze.nwosu", school: nil, aboutEmoji: nil, aboutText: nil, since: nil, hasJam: false)

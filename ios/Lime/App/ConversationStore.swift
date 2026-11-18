@@ -1191,7 +1191,7 @@ final class ConversationStore {
         case "site-jam", "site-jam-band": demoSiteJam(screen: screen ?? "site-jam")   // LIME-286r2: the website's jam phone
         case "site-call":   // LIME-286r: a four-person video call for the website
             demoSiteLink(screen: "site-link")
-            groupCalls.demoCall(people: 4, conversationID: conversations.first?.id ?? "grp:demo", cast: ["Maya Ortiz", "Talia Brooks", "Luis Ortega", "Adaeze Nwosu"])
+            groupCalls.demoCall(people: 4, conversationID: conversations.first?.id ?? "grp:demo", cast: ["Maya Ortiz", "Walt Brennan", "Mrs Lindgren", "Danny Cruz"])
         case let name? where name.hasPrefix("site-") && ["site-link", "site-chat", "site-group", "site-offline-waiting", "site-offline-passed", "site-offline-sent", "site-offline-internet"].contains(name): demoSiteLink(screen: name)   // LIME-286r
         case "chat-deleted-person":
             // Sam deleted his account (LIME-113c): the chat looks like any old chat; sending shows one quiet line.
