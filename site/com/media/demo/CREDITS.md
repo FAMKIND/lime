@@ -43,6 +43,7 @@ The link and jam phones were re-shot again for LIME-349 (the cast, with every ag
 
 | Cast member (age by look) | Pexels photo | Author | Source |
 | --- | --- | --- | --- |
+| Maya Ortiz (you, early 40s; LIME-349d: the top bar, the call's own tile) | 16837811 (square crop on the face) | Israel Torres | https://www.pexels.com/photo/16837811/ |
 | Talia Brooks (late 20s) | 13871734 (LIME-349c; square crop on the face) | Matheus Bertelli | https://www.pexels.com/photo/13871734/ |
 | Luis Ortega (mid 20s) | 16633997 | Nino Sanger | https://www.pexels.com/photo/16633997/ |
 | Kofi Mensah (mid 30s) | `pexels-kema-7055896.jpg` | kema | https://www.pexels.com/photo/7055896/ |
@@ -64,7 +65,7 @@ Covers and card pictures in the jam screenshots (cropped to 3:2):
 | Science Corner, band cover and picture | `pexels-jeremy-bishop-1260133-2765872.jpg`, `pexels-domleroy-3567673.jpg` | jeremy-bishop, domleroy | https://www.pexels.com/photo/2765872/ , https://www.pexels.com/photo/3567673/ |
 | Robotics regional group cover (LIME-349c; the group's details header) | 35652404 | Tanha Tamanna Syed | https://www.pexels.com/photo/35652404/ |
 | Walt Brennan, series "Build it twice" (and its first article "Cardboard first") | 7508794 | cottonbro studio | https://www.pexels.com/photo/7508794/ |
-| Walt Brennan, podcast "The robot that lost to a pool noodle" | 6790031 | Tima Miroshnichenko | https://www.pexels.com/photo/6790031/ |
+| Walt Brennan, podcast "The robot that lost to a pool noodle" (a video podcast since LIME-349d: the still frame of its video is the same photo) | 6790031 | Tima Miroshnichenko | https://www.pexels.com/photo/6790031/ |
 | Luis Ortega, series "Local Government Lab" | `pexels-silverkblack-36729918.jpg` | silverkblack | https://www.pexels.com/photo/36729918/ |
 | Kofi Mensah, podcast "The ten books that never stay on the shelf" | `pexels-nappy-3514805.jpg` | nappy | https://www.pexels.com/photo/3514805/ |
 | Link card: "Women, Water, and Migration In Africa" | `pexels-pit-860728972-19606498.jpg` | pit | https://www.pexels.com/photo/19606498/ |

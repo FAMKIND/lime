@@ -16,7 +16,25 @@
   function Flow(root, def, list) {
     var A = h("img", "sp on"), B = h("img", "sp"), ov = h("div", "sp-ov"), box = h("div", "sp-hs"), live = h("div", "sp-live"); live.setAttribute("aria-live", "polite");
     A.decoding = B.decoding = "async"; B.alt = ""; B.setAttribute("aria-hidden", "true"); live.style.cssText = "position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden";
-    root.appendChild(A); root.appendChild(B); root.appendChild(ov); root.appendChild(box); root.appendChild(live);
+    /* LIME-349d: an article is one tall picture the phone scrolls (wheel, touch, keyboard); a gentle hint says so, and with Reduce Motion nothing scrolls by itself */
+    var sc = h("div", "sp-scroll"), tallImg = h("img", "tall"), hint = h("div", "sp-hint", "Scroll"), autoRaf = 0, autoOff = false;
+    tallImg.alt = ""; tallImg.decoding = "async"; sc.appendChild(tallImg); sc.hidden = true; hint.hidden = true; hint.setAttribute("aria-hidden", "true");
+    sc.tabIndex = 0; sc.setAttribute("role", "region");
+    root.appendChild(A); root.appendChild(B); root.appendChild(sc); root.appendChild(ov); root.appendChild(box); root.appendChild(hint); root.appendChild(live);
+    function stopAuto() { autoOff = true; if (autoRaf) cancelAnimationFrame(autoRaf); autoRaf = 0; }
+    function startAuto(ms) {
+      autoOff = false; if (autoRaf) cancelAnimationFrame(autoRaf); autoRaf = 0; if (reduce) return;
+      var t0 = null, dur = Math.max(1200, ms - 1400);
+      var step = function (t) {
+        if (autoOff || sc.hidden) return; if (t0 === null) t0 = t;
+        var max = sc.scrollHeight - sc.clientHeight, k = Math.min(1, (t - t0) / dur), e = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+        sc.scrollTop = Math.min(max, max * 0.42) * e; if (k < 1) autoRaf = requestAnimationFrame(step); else autoRaf = 0;
+      };
+      autoRaf = requestAnimationFrame(step);
+    }
+    ["wheel", "touchstart", "pointerdown", "keydown"].forEach(function (e) { sc.addEventListener(e, function () { stopAuto(); }, { passive: true }); });
+    sc.addEventListener("scroll", function () { if (sc.scrollTop > 8) hint.hidden = true; }, { passive: true });
+    sc.addEventListener("wheel", function () { if (!reduce) touched(); }, { passive: true });
     var all = [], byId = {}; def.workflows.forEach(function (w, wi) { w.states.forEach(function (s, si) { s.w = wi; s.i = si; all.push(s); byId[s.id] = s; }); w.total = w.states.reduce(function (a, s) { return a + s.ms; }, 0); });
     var cur = null, front = A, back = B, timer = null, paused = true, visible = false, idle = null, manual = false, activeW = -1, items = [];
     if (list) {   /* five small dots under the phone, one per workflow: the playing one stretches and fills (a thin progress line); a click jumps to it */
@@ -57,6 +75,10 @@
       var fin = function () { back.classList.toggle("slide", !!s.slide && !first); back.classList.add("on"); front.classList.remove("on"); var t = front; front = back; back = t; };
       back.onload = fin; back.src = URL + s.img + ".webp"; if (back.complete && back.naturalWidth) { back.onload = null; fin(); }
       if (s.zoom) { back.style.transformOrigin = s.zoom.x * 100 + "% " + s.zoom.y * 100 + "%"; back.style.transform = "scale(" + s.zoom.s + ")"; } else { back.style.transform = ""; back.style.transformOrigin = ""; }   /* a static crop: no animation, so Reduce Motion needs nothing */
+      if (s.tall) {
+        tallImg.src = URL + s.tall + ".webp"; sc.scrollTop = 0; sc.hidden = false; hint.hidden = false; sc.setAttribute("aria-label", s.alt + " This screen scrolls.");
+        startAuto(s.ms);
+      } else { stopAuto(); sc.hidden = true; hint.hidden = true; }
             mark(s); overlays(s); hotspots(s); preload(s); if (byHand) live.textContent = s.alt;
     }
     function next() { var s = all[(all.indexOf(cur) + 1) % all.length]; go(s.id); schedule(); }

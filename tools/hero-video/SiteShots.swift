@@ -68,12 +68,25 @@ final class SiteShots: XCTestCase {
     func testJamArticle() {
         let a = app("site-jam"); sleep(2)
         tap(a, "jam-post-site-sci-1"); snap("jam-article")
+        // LIME-349d: the whole article as frames, scrolled by a fixed drag; `tools/hero-video/stitch.py` joins them into one tall picture.
+        for n in 1...5 {
+            let from = a.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.78)), to = a.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.34))
+            from.press(forDuration: 0.1, thenDragTo: to); sleep(2); snap("jam-article-s\(n)")
+        }
         a.swipeUp(); sleep(1); snap("jam-article2")
     }
     func testJamPodcasts() {
         let a = app("site-jam"); sleep(2)
-        tap(a, "jam-segment-Podcasts"); snap("jam-podcasts")
-        tap(a, "jam-audio-play-site-walt-pod-audio"); sleep(1); snap("jam-podcast-playing"); ids(a, "ids-playing")
+        tap(a, "jam-segment-Podcasts"); snap("jam-podcasts"); ids(a, "ids-podcasts")
+        // Walt's is a video podcast (LIME-349d): tapping its video opens the full-screen video player.
+        let video = a.descendants(matching: .any).matching(identifier: "jam-video").firstMatch
+        if video.waitForExistence(timeout: 8) { video.tap() }
+        sleep(4); snap("jam-podcast-video"); ids(a, "ids-video")
+        a.terminate()
+        // Kofi's is audio: its own player.
+        let b = app("site-jam"); sleep(2)
+        tap(b, "jam-segment-Podcasts")
+        tap(b, "jam-audio-play-site-kofi-pod-audio"); sleep(1); snap("jam-podcast-playing"); ids(b, "ids-playing")
     }
     func testJamSeries() {
         let a = app("site-jam"); sleep(2)
@@ -90,6 +103,11 @@ final class SiteShots: XCTestCase {
         a.swipeUp(); sleep(1); snap("jam-band-posts2")
         a.swipeDown(); sleep(1)
         tap(a, "profile-tab-Members"); snap("jam-band-members"); ids(a, "ids-bandpage")
+    }
+    /// LIME-349d: what someone who has not subscribed sees: the band's page with Subscribe, and the Posts tab saying so.
+    func testJamLocked() {
+        let a = app("site-jam-locked"); sleep(2)
+        tap(a, "profile-tab-Posts"); snap("jam-members-locked"); ids(a, "ids-locked")
     }
     func testJamMembers() {
         let a = app("site-jam"); sleep(2)

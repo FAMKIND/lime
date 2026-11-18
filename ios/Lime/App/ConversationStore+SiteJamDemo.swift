@@ -20,11 +20,17 @@ extension ConversationStore {
             return JamPageInfo(jamId: id, writerId: writer, title: title, about: about, topics: topics, postCount: 4, subscriberCount: 128, hasCommunity: false, pictureVersion: nil)
         }
         func add(_ id: String, _ jamID: String, _ author: String, _ kind: String, _ title: String, _ subtitle: String, _ markdown: String, ago: Int64, cover: String? = nil, audioMs: UInt32? = nil,
-                 series: SeriesInfo? = nil, figure: String? = nil, members: Bool = false, displayAs: String = "person") {
+                 series: SeriesInfo? = nil, figure: String? = nil, members: Bool = false, displayAs: String = "person", video: String? = nil, videoMs: UInt32? = nil) {
             var files: [JamAttachmentInfo] = []
             if let audioMs {
                 files.append(JamAttachmentInfo(attachmentId: "\(id)-audio", name: "Recording.m4a", mime: "audio/mp4", kind: "audio", size: 90_000, width: nil, height: nil, durationMs: audioMs,
                                                thumb: Data((0..<64).map { UInt8(40 + (($0 * 37) % 200)) }), poster: Data(), available: true))
+            }
+            // A video podcast (LIME-349d): a real (still-image) mp4 from `-lime-demo-covers <dir>/<video>.mp4`, with the cover as its poster.
+            if let video, let dir, let bytes = FileManager.default.contents(atPath: dir + "/" + video + ".mp4") {
+                Self.demoJamBlobs["\(id)-video"] = bytes
+                files.append(JamAttachmentInfo(attachmentId: "\(id)-video", name: "Recording.mp4", mime: "video/mp4", kind: "video", size: UInt64(bytes.count), width: 1280, height: 720, durationMs: videoMs,
+                                               thumb: Data(), poster: cover.flatMap(photo) ?? Data(), available: true))
             }
             if let cover, let bytes = photo(cover) {
                 Self.demoJamBlobs["\(id)-cover"] = bytes
@@ -99,11 +105,11 @@ extension ConversationStore {
         let buildCover = photo("cardboard")
         seriesMetas["site-series-build"] = SeriesMeta(seriesId: "site-series-build", title: "Build it twice", description: "Three short lessons from a robotics team that builds everything in cardboard first. Written for coaches and makers of any age.", cover: buildCover)
         seriesCovers["site-series-build"] = buildCover
-        add("site-walt-pod", "site-walt-jam", "walt", "record", "The robot that lost to a pool noodle", "What our worst regional taught the team", "Twenty-one minutes on the robot that lost to a pool noodle, and what we changed on Monday.", ago: 300, cover: "workshop", audioMs: 1_260_000)
+        add("site-walt-pod", "site-walt-jam", "walt", "record", "The robot that lost to a pool noodle", "What our worst regional taught the team", "Twenty-one minutes on the robot that lost to a pool noodle, and what we changed on Monday.", ago: 300, cover: "workshop", video: "walt", videoMs: 1_260_000)
 
         // The band: Science Corner, written by Dr Nwosu, with a cover photo, a picture and members.
         let science = jam("site-sci-band", writer: "adaeze", "Science Corner", "Experiments and ideas from teachers who love science", ["Science"], band: true)
-        add("site-sci-1", "site-sci-band", "adaeze", "article", "Moon phases with a lamp", "A twenty-minute model", "A lamp, a ball and a dark room: ten minutes to **see why the moon changes**.\n\nLet every pair hold the ball once. The groan when the lamp goes off is the whole lesson.", ago: 20, cover: "science", figure: "fold", displayAs: "jam")
+        add("site-sci-1", "site-sci-band", "adaeze", "article", "Moon phases with a lamp", "A twenty-minute model", "A lamp, a ball and a dark room: ten minutes to **see why the moon changes**.\n\nLet every pair hold the ball once. The groan when the lamp goes off is the whole lesson.\n\n**What you need.** One bright lamp with no shade, one foam ball on a pencil for every pair, and a room you can darken. Nothing else.\n\n**Set it up.** One student stands holding the ball at arm\u{2019}s length, facing the lamp. Everyone else watches the ball, not the lamp. Turn slowly, a quarter at a time, and ask at each stop: *what do you see now?*\n\n**The moment it clicks.** Somewhere around the third quarter someone says \u{201C}wait, the moon is always half lit.\u{201D} That is the whole idea, and a student said it, not you.\n\n**Before the lights come back on,** ask everyone to draw what they saw from the ball\u{2019}s point of view. Collect the drawings. They are the best exit ticket I know.", ago: 20, cover: "science", figure: "fold", displayAs: "jam")
         add("site-sci-2", "site-sci-band", "adaeze", "article", "The lab we almost didn’t do", "Lab sheet and what went wrong, for members", "Members only: the full term plan, the lab sheets, and the one experiment that flooded the bench. Here is how we fixed it before Thursday.", ago: 240, cover: "members", members: true, displayAs: "jam")
         add("site-sci-3", "site-sci-band", "adaeze", "quick", "", "", "Thursday lab: bring the magnets.", ago: 500, displayAs: "jam")
         AvatarCache.shared.set(photo("band"), for: Self.jamCoverKey("site-sci-band"))
@@ -121,6 +127,12 @@ extension ConversationStore {
         publicProfiles["adaeze"] = PublicProfile(userId: "adaeze", displayName: "Adaeze Nwosu", username: "adaeze.nwosu", school: nil, aboutEmoji: nil, aboutText: nil, since: nil, hasJam: false)
         discoverItems = []
         switch screen {
+        case "site-jam-locked":
+            // What someone who has not subscribed yet sees of the Science Corner band (LIME-349d): the band's page, with Subscribe; no post is readable (the app has no
+            // screen for a members-only post of its own: a post never reaches a person who cannot read it).
+            jamSubscriptions.removeAll { $0.jamId == "site-sci-band" }
+            orgs = []
+            jamPath.append(OrgRoute(page: science, isMe: false))
         case "site-jam-band": jamPath.append(OrgRoute(page: science, isMe: false))
         default: break
         }

@@ -14,6 +14,8 @@ extension ConversationStore {
             for id in ["talia", "luis", "kofi", "adaeze", "danny", "tran", "lindgren", "walt", "okome", "calton"] {
                 AvatarCache.shared.set(FileManager.default.contents(atPath: args[i + 1] + "/" + id + ".jpg"), for: id)
             }
+            // Maya (you) has a photo too (LIME-349d): the top bar, the call's own tile and the minimised call all show it.
+            AvatarCache.shared.set(FileManager.default.contents(atPath: args[i + 1] + "/maya.jpg"), for: maya.id)
         }
         let talia = Person(id: "talia", name: "Talia Brooks"), lindgren = Person(id: "lindgren", name: "Mrs Lindgren"), adaeze = Person(id: "adaeze", name: "Adaeze Nwosu"), kofi = Person(id: "kofi", name: "Kofi Mensah")
         func mine(_ id: String, _ text: String, _ ago: Double, _ state: DeliveryState = .sent) -> Message { Message(id: id, senderID: nil, text: text, date: now.addingTimeInterval(-ago), state: state) }
