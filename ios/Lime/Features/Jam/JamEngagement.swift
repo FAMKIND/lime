@@ -306,16 +306,48 @@ struct JamActivityList: View {
 struct DraftRoute: Identifiable { let id: String }
 
 
-/// The row at the foot of every card (LIME-212b): ♥ · 💬 in two equal columns, the same on posts, articles and podcasts. Remix and share are not shown
-/// until they exist (LIME-326).
+/// The row at the foot of every card (LIME-212b, 350): ♥ · 💬 · Share in three equal columns, the same on posts, articles and podcasts. Remix is not shown
+/// until it exists (LIME-326, 350). **Share is not shown on a members-only post** (see `JamShare`).
 struct JamActionRow: View {
     let postID: String
     let comment: () -> Void
+    @Environment(ConversationStore.self) private var store
+    @State private var sharing = false
 
     var body: some View {
         HStack(spacing: 0) {
             JamHeartButton(postID: postID)
             JamCommentCount(postID: postID, action: comment)
+            if let post = store.jamPost(postID), JamShare.allowed(post) {
+                JamShareButton(postID: postID) { sharing = true }
+                    .sheet(isPresented: $sharing) { JamShareSheet(post: post) }
+            }
         }
+    }
+}
+
+/// What may be shared (LIME-350). A post is end-to-end encrypted: there is **no link to a post** (only the writer's invite link exists), so sharing means "Send in
+/// lime" (`JamShareSheet`: the writer, the title and the first words, into a chat). A **members-only** post is never shared: its title and words would reach
+/// people in the chat who may not be members, and lime cannot tell who in a chat can read it.
+enum JamShare {
+    static func allowed(_ post: JamPostInfo) -> Bool { post.tier != "members" && post.state == "ready" }
+}
+
+/// Share, the third column of a card's row (the same look as ♥ and 💬; 44 pt, VoiceOver "Share").
+struct JamShareButton: View {
+    let postID: String
+    var size: CGFloat = 18
+    var dark = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "square.and.arrow.up").font(.system(size: size)).foregroundStyle((dark ? Color.white : Theme.text).opacity(0.7))
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Share").accessibilityHint("Sends the post to a chat")
+        .accessibilityIdentifier("jam-card-share-\(postID)")
     }
 }

@@ -34,7 +34,7 @@ struct JamPostMenu: View {
             Section {
                 if let draft = store.sharedDraft(forPost: post) { Button { openDraft = DraftRoute(id: draft) } label: { Label("Open draft", systemImage: "doc.text") }.accessibilityIdentifier("card-open-draft") }
                 if mine { Button { editing = post } label: { Label("Edit", systemImage: "pencil") }.accessibilityIdentifier("card-edit") }
-                Button { sharing = true } label: { Label("Share in lime\u{2026}", systemImage: "square.and.arrow.up") }.accessibilityIdentifier("card-share")
+                if JamShare.allowed(post) { Button { sharing = true } label: { Label("Share in lime\u{2026}", systemImage: "square.and.arrow.up") }.accessibilityIdentifier("card-share") }
             }
             if playable {
                 Section {

@@ -39,10 +39,12 @@ struct JamCardStop: ViewModifier {
     let saved: Bool
     let author: () -> Void
     let series: (() -> Void)?
+    /// "Share" (LIME-350): nil on a members-only post, which is never shared.
+    var share: (() -> Void)? = nil
 
-    func body(content: Content) -> some View {
+    @ViewBuilder func body(content: Content) -> some View {
         if active {
-            content
+            content.modifier(JamShareAction(share: share))
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(label)
                 .accessibilityHint(hint)
@@ -54,6 +56,14 @@ struct JamCardStop: ViewModifier {
                 .accessibilityAction(named: "Open author") { author() }
                 .accessibilityAction(named: "Open series") { series?() }
         } else { content }
+    }
+}
+
+/// VoiceOver's "Share" action on a card, only when the post may be shared.
+private struct JamShareAction: ViewModifier {
+    let share: (() -> Void)?
+    @ViewBuilder func body(content: Content) -> some View {
+        if let share { content.accessibilityAction(named: "Share") { share() } } else { content }
     }
 }
 

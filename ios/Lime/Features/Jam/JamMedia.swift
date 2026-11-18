@@ -427,7 +427,7 @@ struct JamVideoScreen: View {
                     }
                 }
                 Section {
-                    Button { sharing = true } label: { Label("Share in lime\u{2026}", systemImage: "square.and.arrow.up") }.accessibilityIdentifier("jam-video-share")
+                    if let post, JamShare.allowed(post) { Button { sharing = true } label: { Label("Share in lime\u{2026}", systemImage: "square.and.arrow.up") }.accessibilityIdentifier("jam-video-share") }
                     // The post's own page (description, captions, files, comments) is reached from here (LIME-204).
                     Button { viewPost() } label: { Label("View post", systemImage: "doc.text") }.accessibilityIdentifier("jam-video-viewpost")
                 }
@@ -756,6 +756,7 @@ private struct TextOver: View {
 
 /// ♥ · comment · share. Share only when it has somewhere to go; Remix is not shown until it exists (LIME-328).
 struct JamActionPill: View {
+    @Environment(ConversationStore.self) private var store
     var dark = false
     var share: (() -> Void)? = nil
     /// With a post, the heart and the comment count are live (LIME-189c).
@@ -768,7 +769,8 @@ struct JamActionPill: View {
                 JamHeartButton(postID: postID, size: 20, dark: dark)
                 JamCommentCount(postID: postID, size: 20, dark: dark) { comment?() }
             }
-            if let share {
+            // Never on a members-only post (LIME-350: `JamShare`).
+            if let share, postID.flatMap({ store.jamPost($0) }).map(JamShare.allowed) ?? true {
                 Button(action: share) {
                     Image(systemName: "square.and.arrow.up").font(.system(size: 20)).frame(maxWidth: .infinity, minHeight: 44)
                 }
@@ -815,6 +817,11 @@ struct JamShareSheet: View {
 
     var body: some View {
         NavigationStack {
+            // A members-only post is never sent to a chat (LIME-350): every entry point hides Share for it; this is the last guard.
+            if !JamShare.allowed(post) {
+                Text("This post is for members only, so it can\u{2019}t be shared.").font(Theme.body).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center).padding(24)
+                    .accessibilityIdentifier("jam-share-members-only")
+            } else {
             List(store.forwardTargets, id: \.id) { conversation in
                 Button { send(to: conversation) } label: {
                     Text(conversation.id == store.selfChatID ? "Note to self" : conversation.title).font(Theme.body).foregroundStyle(Theme.text).frame(minHeight: 44, alignment: .leading)
@@ -824,11 +831,13 @@ struct JamShareSheet: View {
             .listStyle(.plain)
             .navigationTitle("Share in lime").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            }
         }
         .presentationDetents([.medium, .large])
     }
 
     private func send(to conversation: Conversation) {
+        guard JamShare.allowed(post) else { return }
         let writer = store.authorName(post)
         let words = [post.title, String(post.plain.prefix(200))].filter { !$0.isEmpty }.joined(separator: "\n")
         let text = "\(writer)\u{2019}s post on jam: \(words)"

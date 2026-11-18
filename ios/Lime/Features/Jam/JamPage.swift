@@ -204,6 +204,8 @@ struct JamPostCard: View {
     /// A long quick post is cut at 8 lines; "more" opens it here.
     @State private var expanded = false
     @State private var cut = false
+    /// VoiceOver's "Share" action opens the same sheet as the Share button (LIME-350).
+    @State private var sharing = false
     /// Redraws the card (and what VoiceOver reads) when Save changes.
     @AppStorage(JamSaved.key) private var savedList = ""
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -239,6 +241,7 @@ struct JamPostCard: View {
             actions
         }
         .modifier(oneStop(writer))
+        .sheet(isPresented: $sharing) { JamShareSheet(post: post) }
         .padding(.horizontal, 20).padding(.vertical, 14)
         .overlay(alignment: .topTrailing) {
             HStack(spacing: 0) {
@@ -275,7 +278,8 @@ struct JamPostCard: View {
             comment: { if style == .videoPodcast { openPlayerWithComments() } else { openPost(toComments: true) } },
             save: { _ in JamSaved.toggle(post.postId) }, saved: saved,
             author: { openWriter(writer) },
-            series: post.series.map { series in { store.jamPath.append(SeriesRoute(seriesID: series.id)) } })
+            series: post.series.map { series in { store.jamPath.append(SeriesRoute(seriesID: series.id)) } },
+            share: JamShare.allowed(post) ? { sharing = true } : nil)
     }
 
     /// The row every card starts with (a post, an article, a video podcast): the byline avatar, the name or org, one detail line. **Taps (LIME-215):**

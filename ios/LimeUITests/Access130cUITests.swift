@@ -61,7 +61,7 @@ final class Access130cUITests: LimeUITestCase {
     /// The button on the message ("Says why") opens the explanation on every iOS (on iOS 26 it opened nothing before 130-3a).
     func testTheWaitingForInternetExplanationOpens() {
         let app = launch("site-offline-internet", voiceOver: false)
-        app.buttons["conversation-row-dm:mei"].tap()
+        app.buttons["conversation-row-dm:talia"].tap()   // the website demo's chat with the unsent line (LIME-347/349 replaced its earlier cast)
         let why = any(app, "delivery-offline")
         XCTAssertTrue(why.waitForExistence(timeout: 10))
         why.tap()
