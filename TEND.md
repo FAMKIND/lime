@@ -11271,3 +11271,13 @@ Debug build of main installed on the **13 mini, the iPad (4) and Jean's 12 mini:
 - **Peer devices:** the new device starts with no cache of my contacts' devices; it fetches them on first send. Worth a look in 341c if first sends feel slow.
 - **A removed device** (342) leaves the master secret on any tablet it was linked to: unlink must rotate or at least tell the others.
 - 341c can reuse `LinkOld`/`LinkNew` (same session, a second package kind for history) or add chunks of kind `history` after the final digest.
+
+## LIME-349 Phase A
+
+**Done:** the cast and script for review, no re-shoot, nothing deployed. `docs/site/349-cast-and-script.md` (cast table with ages, photo credits, every line state by state for both phones) and `docs/qa-shots/349/cast.jpg` (the eight faces with name and age range). Working copies of the eight photos are in `/tmp/349/avatars/` (360 px; not committed).
+
+**Cast:** Talia Brooks (late 20s), Luis Ortega (mid 20s), Kofi Mensah (mid 30s), Adaeze Nwosu (mid 40s), Danny Cruz (early 50s), Ms Park (late 50s), Mrs Flowers (late 60s), Walt Brennan (mid 60s); Maya Ortiz stays "you". Three photos are the existing ones (Talia, Luis, Kofi); five are new (Pexels 773371, 36298150, 6923485, 12644996, 10223585).
+
+**Stops for the user:** (1) Pexels' photo pages answer "Just a moment…" to automated requests, so five authors are not read yet (the images themselves download fine from the image server); they are listed in the doc as "not read yet" and are filled in Phase B or by the user opening the five URLs. (2) Luis's photo reads very young; Ms Park's reads fair-haired (name from the hero chip). (3) The group changes from "8th Grade Team" to "Robotics regional 🤖" and the call tiles from Mei/Lee/Sam to Walt/Mrs Flowers/Danny; the podcast view swaps Adaeze's episode for Walt's; the series screen shows Ms Park's "Fractions that stick". New covers (✚) are chosen in Phase B.
+
+**For plot:** Phase B waits for the user's "go" with their changes. The shooter needs `/tmp/286r/{avatars,covers}` rebuilt (avatars are now by user id: add `walt`, `danny`, `park`, `flowers`, `adaeze` jpgs); the seeds' avatar id list is `["talia","luis","kofi","okome","calton"]` and must grow.
