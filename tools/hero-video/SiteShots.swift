@@ -15,15 +15,20 @@ final class SiteShots: XCTestCase {
     private func row(_ a: XCUIApplication, _ id: String) { let r = a.buttons["conversation-row-\(id)"]; XCTAssertTrue(r.waitForExistence(timeout: 10)); r.tap(); sleep(2) }
 
     func testChats() {
-        let a = app("site-link", extra: ["-lime-demo-autoreply", "YES. I’ll trade you my poem-of-the-week list 😄"])
+        let a = app("site-link")
         snap("link-list")
         row(a, "dm:talia"); snap("link-chat")
         let field = a.textViews["composer-field"]; XCTAssertTrue(field.waitForExistence(timeout: 8)); field.tap(); sleep(1)
         field.typeText("That’s the whole trick."); sleep(1); snap("link-typing-1")
         field.typeText(" Want my lab sheet for tomorrow?"); sleep(1); snap("link-typing")
-        a.buttons["send-button"].tap(); sleep(1); snap("link-sent")
-        sleep(3); snap("link-reply")
-        let reply = a.staticTexts["YES. I’ll trade you my poem-of-the-week list 😄"]; if reply.waitForExistence(timeout: 5) { reply.press(forDuration: 0.9); sleep(2); snap("link-bar"); let heart = a.buttons["react-❤️"]; if heart.waitForExistence(timeout: 3) { heart.tap(); sleep(1); snap("link-reacted") } }
+        a.terminate()
+        // LIME-349b: "sent" and "reply" are seeded (the seed's `-lime-demo-thread`), not sent for real: a real send stamps the shoot's own clock and catches "Sending…".
+        let b = app("site-chat", extra: ["-lime-demo-thread", "sent"])
+        let f2 = b.textViews["composer-field"]; if f2.waitForExistence(timeout: 8) { f2.tap(); sleep(1) }; snap("link-sent")
+        b.terminate()
+        let c = app("site-chat", extra: ["-lime-demo-thread", "reply"])
+        let f3 = c.textViews["composer-field"]; if f3.waitForExistence(timeout: 8) { f3.tap(); sleep(1) }; snap("link-reply")
+        let reply = c.staticTexts["YES. I’ll trade you my poem-of-the-week list 😄"]; if reply.waitForExistence(timeout: 5) { reply.press(forDuration: 0.9); sleep(2); snap("link-bar"); let heart = c.buttons["react-❤️"]; if heart.waitForExistence(timeout: 3) { heart.tap(); sleep(1); snap("link-reacted") } }
     }
     func testGroup() {
         let a = app("site-link", extra: [])

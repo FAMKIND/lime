@@ -23,6 +23,12 @@ extension ConversationStore {
             mine("m2", "Told you! What was the question?", 2_900),
             theirs("m3", "talia", "“What’s one thing that confused you?” Half of them wrote the same thing, so I know exactly what to reteach tomorrow.", 2_800),
         ]
+        // The website's "sent" and "reply" screens (LIME-349b): the two lines the person would have just sent and got back, seeded at ~7:18 and ~7:19 AM (after the pin below) instead of
+        // being sent for real, which stamps the shoot's own clock (11:33 PM) and catches "Sending…". `-lime-demo-thread sent|reply`.
+        if let at = args.firstIndex(of: "-lime-demo-thread"), at + 1 < args.count, ["sent", "reply"].contains(args[at + 1]) {
+            taliaMessages.append(mine("m5", "That’s the whole trick. Want my lab sheet for tomorrow?", 2_720))
+            if args[at + 1] == "reply" { taliaMessages.append(theirs("m6", "talia", "YES. I’ll trade you my poem-of-the-week list 😄", 2_660)) }
+        }
         if screen.hasPrefix("site-offline") {
             let state: DeliveryState = screen.hasSuffix("waiting") ? .waiting : screen.hasSuffix("passed") ? .passed : screen.hasSuffix("internet") ? .offline : .sent
             taliaMessages.append(mine("m4", "Running late, start the warm-up without me. Plan’s in the folder.", 20, state))
