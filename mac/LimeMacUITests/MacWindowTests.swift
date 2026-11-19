@@ -32,7 +32,7 @@ final class MacWindowTests: XCTestCase {
 
         // The message is one VoiceOver stop with its words, and Ben's echo comes back within 60 s.
         XCTAssertTrue(app.staticTexts[words.prefix(1).uppercased() + words.dropFirst()].waitForExistence(timeout: 15) || app.staticTexts[words].waitForExistence(timeout: 1), "the sent message is not in the chat")
-        let echo = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "Ben here: got")).matching(NSPredicate(format: "label CONTAINS[c] %@", String(words.prefix(20)))).firstMatch
+        let echo = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "Ben here: got")).matching(NSPredicate(format: "label CONTAINS[c] %@", words)).firstMatch   // the whole message (the echo quotes its first 40 characters), so only this run's echo counts
         XCTAssertTrue(echo.waitForExistence(timeout: 60), "no echo from Ben within 60 s (is `partner --as b echo` running?)")
     }
 }
