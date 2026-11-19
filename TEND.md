@@ -11418,3 +11418,36 @@ Debug build of main on the **13 mini** (sequence 4812): installed. **iPad (4): u
 - **LIME-342a:** two commits, `df1cbb77` (server) and `b712a640` (core), pushed. Server tests, `cargo test --workspace`, `check-android.sh`, iOS Release and warnings 0 and unit tests all passed. **Nothing deployed**; the migration `20261119000000_device_limit_and_revoke.sql` and three functions need your go for staging. One server test ("public avatars", `blobs_test.ts:73`) fails on the baseline too.
 - **LIME-343a:** `ddafd90f`, pushed. Full suite: unit 792 run, 0 failed; UI 564 run, 0 failed. Staging e2e passed with one throwaway account (in one process, not two simulators; see the 343a record).
 - **For you:** (1) the device-table check in the 343a record (13 mini + iPad, staging test account only; the iPad was unavailable overnight). (2) Say go if you want 342a deployed to staging. (3) Untracked files in the tree that are not mine and were left alone: `public/assets/Logomark-outline.svg`, `public/assets/signin-teachers.mp4`, `site/pitch/`, `tests/.shoot-tmp.mjs`.
+
+## LIME-343a gate (simulators)
+
+**Set up (2026-11-19, main at `da850e6e`, Debug build on both; your phones were not touched, signed out or into anything).** Staging, **one new test account** (`ios-gate-…@example.invalid`, "Gate Teacher", username in `~/.lime/ios-gate-account.json`, mode 600, not in the repo). No partner, no other account. Nothing deployed (staging has no 342a server yet, so the 5-device limit and Unlink are not on staging).
+
+- **iPhone 17 simulator** (`8AC7DD22-E8CE-4925-9441-E22973B8198E`, booted): already **signed in** as Gate Teacher; it is the account's first device and holds the master key. Face ID is enrolled on it (if the Face ID sheet never appears, or the screen says "Couldn't confirm it's you": Simulator → Features → Face ID → Enrolled, then Matching Face when the sheet shows).
+- **iPad Pro 11-inch (M4) simulator** (`79094EFB-D659-4037-B436-61AFD4FC0F29`, booted): fresh install, at the **welcome screen** (Continue), no session.
+- The emailed sign-in code goes to `example.invalid` and can't be read. `~/.lime/ios-gate-verify.sh` (outside the repo, touches only this account's proof rows) marks the iPad's session verified, then the server takes any 6 digits: type `000000`.
+
+**Steps:**
+
+| # | Where | Do | Expect |
+|---|---|---|---|
+| 1 | Mac Terminal | `python3 -c "import json;d=json.load(open('$HOME/.lime/ios-gate-account.json'));print(d['username'],d['password'])"` | the username and the password to type on the iPad (copy: add `\| pbcopy` after printing only the password if you prefer) |
+| 2 | iPad sim | Continue → sign in with the username and password | the code screen (6 digits) |
+| 3 | Mac Terminal | `sh ~/.lime/ios-gate-verify.sh` | "marked 1 session(s) …" |
+| 4 | iPad sim | type `000000` | **"Move from your old phone?"** with Transfer, **Link to your phone**, Start fresh. Do **not** tap Start fresh or Transfer |
+| 5 | iPad sim | tap **Link to your phone** | a QR, "Scan this with your phone", and "Can't scan? Use the code" |
+| 6 | iPad sim | open "Can't scan? Use the code" → **Copy the code** | "Code copied" |
+| 7 | Mac Terminal | `xcrun simctl pbpaste 79094EFB-D659-4037-B436-61AFD4FC0F29 \| xcrun simctl pbcopy 8AC7DD22-E8CE-4925-9441-E22973B8198E` | nothing printed (moves the code between the simulators; the sims may already share the Mac clipboard, then skip) |
+| 8 | iPhone sim | Settings (your picture, top right) → Linked Devices | a list: "Gate Teacher's iPhone"-style name (or "iPhone"), "This device · Active now", and **Link a device** |
+| 9 | iPhone sim | **Enter the code** (not the camera) → long-press the field → Paste → **Continue** | "Looking for the new device…", then **6 digits** |
+| 10 | iPad sim | the same screen | the **same 6 digits** |
+| 11 | iPhone sim | **They match** | the Face ID sheet (system); Simulator → Features → Face ID → **Matching Face**. Nothing is sent before this |
+| 12 | iPad sim | **They match** | "Getting your chats", then "Getting the last 45 days" (a brand-new account has no chats, so both go fast), then lime opens |
+| 13 | iPhone sim | the screen after | "Sending your chats", "Sending the last 45 days", **"Device linked"** → Done |
+| 14 | iPhone sim | Linked Devices | **2 devices**: this iPhone first, then the iPad (name, tablet icon, added today). The iPad row says "Unlink from that device" (a tablet can't be unlinked from here) |
+| 15 | iPad sim | Settings → Linked Devices | 2 devices, this iPad first |
+| 16 | both | find each other (Find teachers by username only if you make a second account; not needed) | the point of the gate is steps 5 to 15 |
+
+**Look for:** the words are short; nothing is sent before Face ID (step 11: tap **They don't match** or cancel Face ID once to see "Couldn't confirm it's you"); Cancel on the iPad mid-way returns to the choice. **Limits of this setup:** the two simulators share this Mac's network, so the local connection is Wi-Fi-style Bonjour on one machine (it worked in the Move tests; if "Couldn't connect" shows, tap Try again once). The camera scan, Bluetooth and the real devices are not covered here. 5 of 5 and Unlink need 4 more devices and the 342a server, so they are covered by the UI tests only. To start over: delete the app from the iPad sim (`xcrun simctl uninstall 79094EFB-D659-4037-B436-61AFD4FC0F29 com.famkind.lime`, then install `$TMPDIR/dd343i/Build/Products/Debug-iphonesimulator/Lime.app`), and re-link; the iPhone sim stays signed in.
+
+**Cleanup when you are done:** delete the staging test account (its id is in the note file; an admin delete as in `run-e2e-staging.sh`'s `deleteUser`) and `~/.lime/ios-gate-account.json`, `~/.lime/ios-gate-verify.sh`.
