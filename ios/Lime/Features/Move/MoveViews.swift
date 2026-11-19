@@ -4,7 +4,7 @@ import UIKit
 // MARK: Shared steps
 
 /// The 6 digits both phones show. The person compares them and says whether they match.
-private struct MoveCodeStep: View {
+struct MoveCodeStep: View {
     let code: String
     let onMatch: () -> Void
     let onMismatch: () -> Void
@@ -35,7 +35,7 @@ private struct MoveCodeStep: View {
 }
 
 /// Bytes, items, a time estimate; announced to VoiceOver every tenth.
-private struct MoveProgressStep: View {
+struct MoveProgressStep: View {
     let title: String
     let info: MoveProgressInfo
     let onCancel: () -> Void
@@ -117,6 +117,7 @@ private struct MoveFailureStep: View {
 struct MoveOfferView: View {
     @Environment(AccountSession.self) private var session
     @State private var model: MoveToNewPhone?
+    @State private var linkModel: LinkToThisDevice?
     @State private var failedToStart = false
 
     var body: some View {
@@ -133,7 +134,9 @@ struct MoveOfferView: View {
 
             ScrollView {
                 VStack(spacing: 22) {
-                    if let model {
+                    if let linkModel {
+                        LinkNewDeviceView(model: linkModel, onRetry: { beginLink() }, onClose: { closeLink() })
+                    } else if let model {
                         MoveNewPhoneView(model: model, onRetry: { begin() }, onClose: { close() })
                     } else {
                         offer
@@ -157,6 +160,9 @@ struct MoveOfferView: View {
             if failedToStart {
                 Text("Couldn't start. Try again, or start fresh.").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
             }
+            Button("Link to your phone") { beginLink() }
+                .font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text).frame(minHeight: 48)
+                .accessibilityIdentifier("link-to-phone")
             Button("Start fresh") { Task { await session.startFresh() } }
                 .font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text).frame(minHeight: 48)
                 .accessibilityIdentifier("move-start-fresh")
@@ -178,6 +184,23 @@ struct MoveOfferView: View {
     private func close() {
         model?.cancel()
         model = nil
+        UIApplication.shared.isIdleTimerDisabled = false
+    }
+
+    /// Link to the phone instead of replacing it (LIME-343a): this device joins the account and the phone stays.
+    private func beginLink() {
+        linkModel?.cancel()
+        linkModel = nil
+        guard let made = try? LinkFactory.newDevice(session: session) else { failedToStart = true; return }
+        failedToStart = false
+        linkModel = made
+        made.start()
+        UIApplication.shared.isIdleTimerDisabled = true
+    }
+
+    private func closeLink() {
+        linkModel?.cancel()
+        linkModel = nil
         UIApplication.shared.isIdleTimerDisabled = false
     }
 }

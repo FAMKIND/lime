@@ -221,6 +221,10 @@ final class ConversationStore {
     /// Demo mode (`-lime-demo-chat`, debug builds only): made-up conversations that live in memory, for screenshots and UI tests. Never set in a release build.
     private(set) var isDemo = false
     #if DEBUG
+    /// Demo devices unlinked in this launch (LIME-343a).
+    var demoUnlinked: Set<String> = []
+    #endif
+    #if DEBUG
     /// Debug demo: a message that "arrives" in a chat that is open (LIME-134: a reload right after the chat opened).
     func demoReceive(_ conversationID: String, text: String) {
         guard let index = conversations.firstIndex(where: { $0.id == conversationID }) else { return }

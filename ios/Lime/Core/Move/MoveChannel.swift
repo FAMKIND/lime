@@ -16,6 +16,10 @@ enum MoveMessage: Equatable, Sendable {
     case proof(Data)
     /// Either side: stop.
     case cancel
+    /// Linking a device (LIME-343a), new device to phone: this device joined the account.
+    case registered
+    /// Linking a device, new device to phone: it holds the last 45 days too.
+    case done
 
     private var tag: UInt8 {
         switch self {
@@ -25,13 +29,15 @@ enum MoveMessage: Equatable, Sendable {
         case .finished: 4
         case .proof: 5
         case .cancel: 6
+        case .registered: 7
+        case .done: 8
         }
     }
 
     private var payload: Data {
         switch self {
         case .hello(let d), .chunk(let d), .proof(let d): d
-        case .ready, .finished, .cancel: Data()
+        case .ready, .finished, .cancel, .registered, .done: Data()
         }
     }
 
@@ -56,6 +62,8 @@ enum MoveMessage: Equatable, Sendable {
         case 4: .finished
         case 5: .proof(payload)
         case 6: .cancel
+        case 7: .registered
+        case 8: .done
         default: nil
         }
     }

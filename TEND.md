@@ -11384,3 +11384,28 @@ Debug build of main on the **13 mini** (sequence 4780) and the **iPad (4)** (420
 **Deploy (NOT run, your go):** apply the migration, then deploy `devices-register`, `devices-revoke` and the `_shared` change to staging (`supabase/deploy-staging.sh`). A new function folder on the local stack needed `supabase stop && supabase start`.
 
 **For plot:** (1) the server can't check `kind: computer` (see survey); a stolen phone session could ask to revoke any device **only with the master signature**, which a phone holds anyway, so no new power. DESIGN-M2 is where this gets stronger. (2) Unlinking a phone/tablet is refused until M2. (3) The old 403 for a revoked device is now 401 `revoked`: the Android and Mac lanes should treat it as "wipe".
+
+## LIME-343a
+
+**Brief:** Link a device on iOS (the phone side and the new-device side) over Move's local connection. Committed `feat(ios): link a device`. Core, server, mac and android untouched.
+
+**What changed (ios/Lime):**
+- **New device** (sign-in, when the account already has a phone): the offer screen has a **"Link to your phone"** button between Transfer and Start fresh (the existing start-fresh reset warning is unchanged). It shows the QR and a "Can't scan? Use the code" fallback, then the 6-digit check, then **"Getting your chats"** → **"Getting the last 45 days"**, then opens lime. If the 45 days fail, it says so once and still links ("Couldn't get the last 45 days").
+- **Phone** (Settings → Linked Devices): the list shows this device first, then the others, each with name, kind icon and added date (from `my_devices`); **Link a device** (scan or type the code), the 6-digit compare, **Face ID or the passcode before the code is confirmed** (`LinkOld.confirm_code` is only called after it passes), progress "Sending your chats" / "Sending the last 45 days". At 5 devices: "5 of 5 devices. Unlink one first." A computer has **Unlink** (confirm dialog, then Face ID); phones and tablets show "Unlink from that device".
+- Files: `Core/Move/LinkSessions.swift` (engines, `LinkToThisDevice`, `LinkFromPhone`), `Core/Move/LinkFactory.swift` (real wiring and the DEBUG demo fakes), `Features/LinkDevice/LinkViews.swift`, `App/ConversationStore+Devices.swift`; edits to `MoveChannel.swift` (two new message tags: 7 `registered`, 8 `done`), `MoveViews.swift` (button; Step views no longer private), `AccountSession.swift` (`linkContext()`), `AccountScreens.swift` (old placeholder removed), `ConversationStore.swift` (demo state). Order of steps as 341c recorded: package chunks → `import_finish` → `register_device` → `link_refresh_devices` on both → `history_chunk` (pointer) → `import_history`.
+- The phone names itself the first time the list opens (`UIDevice.name`, `set_device_name`; stays in encryption).
+
+**Tests:** unit `Link343aTests` (7: message framing, full flow, Face ID refusal sends nothing, full account stops both sides, history failure still links, cancel, list rules); UI `Link343aUITests` (6, demo with scripted other device); the old Linked Devices UI test updated for the new screen ("This iPhone" → the name; "coming soon" note gone). Staging e2e `testLinkingASecondDeviceOnStaging` (also added to `run-e2e-staging.sh`): **passed on staging with one throwaway account**, real core, transport and server. **It is not two simulators:** both ends run in one test process over an in-memory channel (the real local connection is covered by the Move tests; two simulators cannot share Bonjour reliably in this setup). `check-warnings.sh` 0 (after one fix), Release build OK, none of the demo names in the Release binary.
+
+**Full UI suite:** `ios/test-full.sh`: unit 792 run, 11 skipped, 0 failed; UI 564 run, 8 skipped, 0 failed (72 min).
+
+**Gate (you, morning):** device table, **staging test account only**, never your real account:
+
+| Device | Internet | Bluetooth | lime |
+|---|---|---|---|
+| 13 mini (existing phone, signed in to the test account) | on | on | Settings → Linked Devices → Link a device |
+| iPad (new device) | on | on | sign in as the test account → Link to your phone |
+
+Steps: 1. iPad: sign in, choose Link to your phone, QR shows. 2. 13 mini: Link a device, scan. 3. Both show the same 6 digits; tap They match on both; Face ID on the 13 mini. 4. iPad shows Getting your chats, then Getting the last 45 days, then opens with the chats. 5. 13 mini list shows 2 devices with names. 6. Send a message each way.
+
+**For plot:** (1) Unlinking a phone/tablet is refused until M2; the row says "Unlink from that device". (2) **For plot-Mac:** the Mac (Catalyst) wraps `LinkNewDeviceView`/`LinkToThisDevice` for its sign-in path (`isComputer` is already true under Catalyst in `LinkFactory`); `LinkedDevicesScreen` shows the list on a Mac but Link a device is for phones/tablets only (it needs the master secret). (3) The camera scan and "Looking for the new device" use the same local connection as Move; Personal Hotspot advice is the same. (4) Staging does not have the 342a server yet (not deployed), so the 5-device limit and unlink were only tested against the fake and the local stack.

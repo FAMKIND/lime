@@ -343,26 +343,6 @@ struct KeysScreen: View {
     }
 }
 
-struct LinkedDevicesScreen: View {
-    var body: some View {
-        SettingsPage(title: "Linked Devices") {
-            SettingsCard {
-                HStack(spacing: 14) {
-                    Image(systemName: "iphone").font(.system(size: 24)).frame(width: 32).foregroundStyle(Theme.text).accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("This iPhone").font(Theme.title).foregroundStyle(Theme.text).accessibilityIdentifier("devices-this")
-                        Text("Active now").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
-                    }
-                    Spacer()
-                }
-                .padding(18).modifier(OneStopRow())
-            }
-            SettingsFootnote(text: "Using lime on more than one device is coming soon.")
-                .accessibilityIdentifier("devices-note")
-        }
-    }
-}
-
 // MARK: Customize
 
 struct CustomizeScreen: View {

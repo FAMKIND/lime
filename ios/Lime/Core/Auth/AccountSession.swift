@@ -223,6 +223,22 @@ final class AccountSession {
         await finishSignIn(tokens: pending.tokens, profile: pending.profile, maskedEmail: pending.maskedEmail)
     }
 
+    /// What a new device needs to link to the person's phone (LIME-343a): the account, the transport and a way to get a fresh token. `nil` without a backend.
+    struct LinkContext: Sendable {
+        let userID: String
+        let transport: Transport
+        let token: @Sendable () async throws -> String
+    }
+
+    func linkContext() -> LinkContext? {
+        guard let config, let pending = pendingMove else { return nil }
+        let transport = URLSessionTransport(baseURL: config.url, apiKey: config.apiKey)
+        return LinkContext(userID: pending.tokens.userID, transport: transport, token: { [weak self] in
+            guard let self else { throw AuthError.network }
+            return try await self.accessToken()
+        })
+    }
+
     /// The account a move for the person signing in is for.
     var pendingMoveUserID: String? { pendingMove?.tokens.userID }
 

@@ -300,6 +300,44 @@ final class LocalBackendE2ETests: XCTestCase {
         try await converse(ada, bob)
     }
 
+    /// LIME-343a: a second device joins the account through the real link steps (the QR, the code, the package, registering, the last 45 days), against
+    /// STAGING with ONE throwaway account made and deleted through the admin API. The two ends talk over an in-memory channel (the local connection itself
+    /// is tested by the Move tests); everything else is the real core, the real transport and the real server.
+    func testLinkingASecondDeviceOnStaging() async throws {
+        let stack = try stack()
+        guard stack.serviceKey != nil else { throw XCTSkip("The staging run (./ios/run-e2e-staging.sh).") }
+        let ada = try await makeAdminPhone(stack, name: "Ada Lovelace")
+        let oldCore = try XCTUnwrap(ada.store.core)
+        let transport = URLSessionTransport(baseURL: stack.config.url, apiKey: stack.config.apiKey)
+        let session = ada.session
+        let token: @Sendable () async throws -> String = { try await session.accessToken() }
+
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("lime-e2e-link-\(UUID().uuidString)", isDirectory: true)
+        let location = StorageBootstrap.Location(directory: directory, keychainService: "app.lime.tests.link.\(UUID().uuidString)")
+        addTeardownBlock { StorageKeychain.deleteKey(service: location.keychainService); try? FileManager.default.removeItem(at: directory) }
+        let opened = try StorageBootstrap.open(at: location)
+        let newCore = try LinkNew.offer(store: opened.store, isComputer: false, userId: ada.userID)
+
+        let (newEnd, oldEnd) = LoopbackMoveChannel.pair()
+        let newSide = LinkToThisDevice(engine: RealLinkNew(core: newCore, store: opened.store, transport: transport, token: token), accept: { newEnd })
+        let phone = LinkFromPhone(engine: RealLinkOld(core: try LinkOld.accept(store: oldCore, qr: newCore.qr()), store: oldCore, transport: transport, token: token),
+                                  connect: { oldEnd }, authenticate: { true })
+        newSide.start(); phone.start()
+        let end = Date().addingTimeInterval(120)
+        while !(newSide.phase == .done && phone.phase == .done) {
+            if case .failed = newSide.phase { return XCTFail("new device failed: \(newSide.phase)") }
+            if case .failed = phone.phase { return XCTFail("phone failed: \(phone.phase)") }
+            if case .compare = newSide.phase, case .compare = phone.phase { newSide.matches(); phone.matches() }
+            if Date() > end { return XCTFail("timed out: \(newSide.phase) / \(phone.phase)") }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        let seenByNew = try opened.store.myDevices()
+        let seenByOld = try oldCore.myDevices()
+        XCTAssertEqual(seenByNew.count, 2, "the new device sees both devices")
+        XCTAssertEqual(seenByOld.count, 2, "the phone sees both devices")
+        XCTAssertTrue(seenByNew.contains { $0.isThisDevice })
+    }
+
     /// Bob signs out (the phone forgets its keys) while Ada writes to him, then signs in again: new
     /// keys replace his old ones, Ada hears her message was not delivered, accepts his new key and
     /// resends, and they chat again. Runs locally (mail catcher) or on staging (admin API).

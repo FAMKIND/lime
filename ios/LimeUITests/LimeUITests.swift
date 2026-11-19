@@ -2131,8 +2131,8 @@ final class LimeUITestsSettings: LimeUITestCase {
         goBack(app); goBack(app)
         app.buttons["settings-devices"].tap()
         XCTAssertTrue(app.staticTexts["devices-this"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.staticTexts["devices-this"].label, "This iPhone")
-        XCTAssertTrue(app.staticTexts["devices-note"].label.contains("coming soon"))
+        XCTAssertEqual(app.staticTexts["devices-this"].label, "Test Teacher's iPhone")   // LIME-343a: the list shows names
+        XCTAssertTrue(app.staticTexts["devices-note"].label.contains("unlink"))
     }
 
     func testChangingThePasswordWithTheStandInBackend() {
