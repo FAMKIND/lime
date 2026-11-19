@@ -179,7 +179,7 @@ Deno.test("a verified session with new keys replaces the account's keys: old dev
     assertEquals(listed.body.devices.map((d: { device_id: string }) => d.device_id), [newDevice.deviceId]);
 
     // The old device is refused everywhere, and nothing can be sent to it.
-    assertEquals((await call("mailbox-fetch", owner.token, { device_id: oldDevice.deviceId, after: 0 })).status, 403);
+    assertEquals((await call("mailbox-fetch", owner.token, { device_id: oldDevice.deviceId, after: 0 })).status, 401, "told it was removed (LIME-342a)");
     assertEquals((await call("send", sender.token, { ciphertext: ciphertext(70), recipients: [{ to_device: oldDevice.deviceId, access: { identified: true } }] })).status, 404);
     // Its waiting mail is gone (nobody holds the keys to read it).
     const { data: left } = await admin.from("mailbox_items").select("cursor").eq("to_device", oldDevice.deviceId);

@@ -81,6 +81,10 @@ Deno.serve(handler(async (req) => {
       existing.signing_key === signingKey && existing.master_signature === body.master_signature;
     if (!same) throw new HttpError(409, "device_exists", "That device id is already registered.");
   } else {
+    // At most 5 active devices (LIME-342a): a re-registration of a known device (above) is not a new one. The database trigger `devices_limit` is the
+    // race-proof guard; this count only gives the friendly answer first.
+    const { count } = await db.from("devices").select("device_id", { count: "exact", head: true }).eq("user_id", userId).is("revoked_at", null);
+    if ((count ?? 0) >= 5) throw new HttpError(409, "too_many_devices", "This account already has 5 devices. Unlink one first.");
     const { error } = await db.from("devices").insert({
       device_id: deviceId,
       user_id: userId,
@@ -89,6 +93,7 @@ Deno.serve(handler(async (req) => {
       master_signature: body.master_signature,
     });
     if (error) {
+      if (String(error.message ?? "").includes("too_many_devices")) throw new HttpError(409, "too_many_devices", "This account already has 5 devices. Unlink one first.");
       console.error("devices insert failed", error.code);
       throw new HttpError(500, "internal");
     }

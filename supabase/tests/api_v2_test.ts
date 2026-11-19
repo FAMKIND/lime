@@ -223,7 +223,11 @@ Deno.test("rate limits trip: sends, claims and registrations", opts, async () =>
 
     // 10 registrations per hour per user.
     const master = await newMasterKey();
-    for (let i = 0; i < 10; i++) await registerDevice(registrant, master);
+    // (An account holds at most 5 active devices, LIME-342a: the earlier ones are revoked as the loop goes, so only the hourly limit trips.)
+    for (let i = 0; i < 10; i++) {
+      await registerDevice(registrant, master);
+      if (i % 4 === 3) await admin.from("devices").update({ revoked_at: new Date().toISOString() }).eq("user_id", registrant.id);
+    }
     const eleventh = await call("devices-register", registrant.token, {
       device_id: crypto.randomUUID(), identity_key: toBase64(randomBytes(32)), signing_key: toBase64(randomBytes(32)),
       master_key: master.publicKey, master_signature: toBase64(randomBytes(64)),
@@ -319,8 +323,10 @@ Deno.test("a revoked device can neither fetch nor be sent to", opts, async () =>
     const key = await setAccessKey(bob);
     assertEquals((await fetchItems(bob, device.deviceId)).status, 200);
     await admin.from("devices").update({ revoked_at: new Date().toISOString() }).eq("device_id", device.deviceId);
-    assertEquals((await fetchItems(bob, device.deviceId)).status, 403);
-    assertEquals((await call("mailbox-ack", bob.token, { device_id: device.deviceId, up_to_cursor: 1 })).status, 403);
+    // A removed device is told so (401 `revoked`, LIME-342a: it wipes itself); a send to it is still refused.
+    const gone = await fetchItems(bob, device.deviceId);
+    assertEquals([gone.status, gone.body.error], [401, "revoked"]);
+    assertEquals((await call("mailbox-ack", bob.token, { device_id: device.deviceId, up_to_cursor: 1 })).status, 401);
     assertEquals((await sendSigned(key, device.deviceId)).status, 403);
     assertEquals((await call("users-devices", bob.token, { user_id: bob.id })).body.devices.length, 0, "a revoked device is not listed");
   });

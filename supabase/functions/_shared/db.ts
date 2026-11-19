@@ -85,8 +85,12 @@ export async function requireDevice(userId: string, deviceId: unknown) {
     .eq("device_id", deviceId)
     .maybeSingle();
   if (error) throw new HttpError(500, "internal");
-  if (!data || data.user_id !== userId || data.revoked_at !== null) {
-    throw new HttpError(403, "forbidden", "That device is not yours, or it was revoked.");
+  // A device the account removed (LIME-342a) is told so, so it can wipe itself: 401 `revoked` (a stranger's or unknown device id stays 403).
+  if (data && data.user_id === userId && data.revoked_at !== null) {
+    throw new HttpError(401, "revoked", "This device was removed from the account.");
+  }
+  if (!data || data.user_id !== userId) {
+    throw new HttpError(403, "forbidden", "That device is not yours.");
   }
   return data;
 }

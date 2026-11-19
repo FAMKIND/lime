@@ -158,12 +158,12 @@ Deno.test("RLS: signed-in users read the jams table, only the writer changes a r
 });
 
 Deno.test("a fan-out send (50 devices or more) has its own budget; small sends keep the limit they had", opts, async () => {
-  await withUsers(15, async ([sender, ...receivers]) => {
-    // 14 teachers with ten phones each: 140 devices.
+  await withUsers(29, async ([sender, ...receivers]) => {
+    // 28 teachers with five devices each (an account holds at most five, LIME-342a): 140 devices.
     const devices: string[] = [];
     for (const receiver of receivers) {
       const master = await newMasterKey();
-      for (let i = 0; i < 10; i++) devices.push((await registerDevice(receiver, master)).deviceId);
+      for (let i = 0; i < 5; i++) devices.push((await registerDevice(receiver, master)).deviceId);
     }
     const ciphertext = toBase64(randomBytes(300));
     const send = (ids: string[]) => call("send", sender.token, { ciphertext, recipients: ids.map((to_device) => ({ to_device, access: { identified: true } })) });
