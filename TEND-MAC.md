@@ -172,3 +172,15 @@ For plot: **no chevron survived that I saw, so no ask 8.** The partner registers
 **Checks:** 0 warnings (Debug build). `mac/test.sh` not re-run (it starts a partner; the start limit is spent; the change is one environment value).
 
 For plot: ask 8(6) can be closed as not reproduced on the Mac. Ask 11 (split `RequestsRow`'s look from its link) is yours; `MacRequestsRow` stays until a sync brings it. The UI test's echo assertion is too weak (it can pass with no partner): a small later brief should make it match the exact text.
+
+## LIME-610 (2026-11-18): the UI test passes only on this run's echo
+
+**Survey:** the partner quotes the first 40 characters of the message (`main.swift:176`, `:235`: `Ben here: got "<words>"`); the test's message is `hello from the Mac <n>` (24 characters), so the whole message is inside the quote, and the echo's label holds it (the bubble is one static text). The composer capitalises the first letter, so the match stays case-insensitive.
+
+**Two commits:** (1) `MacWindowTests.swift`: the echo is matched by `"Ben here: got"` AND the whole `words` (was: the first 20 characters, which is the number's first digit only, so an older echo could satisfy it). (2) `mac/test.sh`: after the `sleep 6`, `kill -0 $ECHO`; if the partner has exited it prints the last 5 lines of the echo log to stderr and exits 1 before `xcodebuild`.
+
+**Verification:** *failure path, no partner running, no partner start:* `xcodebuild test … -only-testing:LimeMacUITests` directly: failed with `no echo from Ben within 60 s` (`MacWindowTests.swift:36`). *Pass path, one partner start:* `mac/test.sh` exit 0, `TEST SUCCEEDED`, the partner log shows `answered a message in Ada Mac`. **Not exercised for real:** `test.sh`'s dead-partner branch (staging was not rate-limited, so the partner started; `sh -n` passes). One partner start used.
+
+**One more thing seen:** the **first** `xcodebuild test` after a fresh `handover.sh` failed earlier, at `MacWindowTests.swift:30-31` (`send-button` not found / "Failed to click"), the same flake as the first run after LIME-SYNC-M1. The next run passed that step. Both times it came straight after `handover.sh` made fresh sessions. Not investigated (out of scope).
+
+For plot: the echo check is strict now and `test.sh` stops with the partner's reason. The `send-button` flake after a fresh hand-over is real (twice); a later brief could make the test wait for the composer to be ready (e.g. wait for the text view to be hittable and for the button's enabled state) instead of a fixed timeout.
