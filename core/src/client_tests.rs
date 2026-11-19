@@ -10136,3 +10136,174 @@ fn how_big_45_days_is_for_a_busy_account() {
     eprintln!("HISTORY SIZE (busy account, 45 days): {count} messages: {} KB plain, {} KB compressed, {} KB sealed", plain / 1024, compressed / 1024, sealed / 1024);
     assert!(sealed < 24 * 1024 * 1024, "a busy account's 45 days fit in one file ({} KB)", sealed / 1024);
 }
+
+// ------------------------------------------------------------------------------------- LIME-342a: device names, unlinking a computer, a removed device
+
+#[test]
+fn devices_have_names_only_my_devices_know_and_the_package_carries_the_existing_ones() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    // The phone names itself first; a computer linked afterwards knows that name from the package.
+    alice.store.set_device_name("Alice's iPhone".into(), "phone".into()).unwrap();
+    let computer = link(&server, &alice, true, 7);
+    let tablet = link(&server, &alice, false, 8);
+    all_know_each_other(&transport, &[&alice, &computer, &tablet]);
+    let names = |p: &Party| p.store.my_devices().unwrap().into_iter().map(|d| (d.name, d.kind, d.is_this_device)).collect::<Vec<_>>();
+    assert!(names(&computer).contains(&("Alice's iPhone".to_owned(), "phone".to_owned(), false)), "the package carried the phone's name: {:?}", names(&computer));
+    // The others announce themselves by own.copy.
+    computer.store.set_device_name("Alice's MacBook Air".into(), "computer".into()).unwrap();
+    tablet.store.set_device_name("Alice's iPad".into(), "tablet".into()).unwrap();
+    for p in [&computer, &tablet, &alice] {
+        deliver(p, &transport);
+    }
+    for p in [&alice, &computer, &tablet] {
+        sync(p, &transport);
+    }
+    let on_phone = alice.store.my_devices().unwrap();
+    assert_eq!(on_phone.len(), 3);
+    assert!(on_phone[0].is_this_device && on_phone[0].name == "Alice's iPhone" && on_phone[0].kind == "phone", "this device first: {on_phone:?}");
+    let by_name = |n: &str| on_phone.iter().find(|d| d.name == n).unwrap_or_else(|| panic!("no {n}: {on_phone:?}")).clone();
+    assert_eq!(by_name("Alice's MacBook Air").kind, "computer");
+    assert_eq!(by_name("Alice's iPad").kind, "tablet");
+    assert!(on_phone.iter().all(|d| d.added_at > 0));
+    // The kinds are honest: a computer cannot call itself a phone, a phone cannot call itself a computer; bad names are refused.
+    assert!(matches!(computer.store.set_device_name("x".into(), "phone".into()), Err(crate::store::StoreError::Rejected)));
+    assert!(matches!(alice.store.set_device_name("x".into(), "computer".into()), Err(crate::store::StoreError::Rejected)));
+    assert!(alice.store.set_device_name("   ".into(), "phone".into()).is_err());
+    assert!(alice.store.set_device_name("a".repeat(61), "phone".into()).is_err());
+    // No name and no kind ever left a device in the clear: none is in any request body.
+    let bodies = server.state.lock().unwrap().request_bodies.join("\n");
+    for secret in ["MacBook Air", "Alice's iPad", "Alice's iPhone", "\"computer\"", "device_name"] {
+        assert!(!bodies.contains(secret), "{secret} never reaches the server");
+    }
+}
+
+#[test]
+fn unlinking_a_computer_cuts_it_off_and_rotates_everything_while_my_other_devices_carry_on() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    befriend(&alice, &bob, &transport);
+    let group = bob.store.create_group("Staff".into(), None, vec!["alice".into(), "carol".into()]).unwrap();
+    deliver(&bob, &transport);
+    sync(&alice, &transport);
+    sync(&carol, &transport);
+    alice.store.accept_request(group.clone()).unwrap();
+    let jam = new_jam(&carol);
+    join_jam(&carol, &alice, &jam, &transport);
+    alice.store.set_device_name("Alice's iPhone".into(), "phone".into()).unwrap();
+    let computer = link(&server, &alice, true, 7);
+    let tablet = link(&server, &alice, false, 8);
+    let other_computer = link(&server, &alice, true, 9);
+    all_know_each_other(&transport, &[&alice, &computer, &tablet, &other_computer]);
+    for (p, name, kind) in [(&computer, "Computer one", "computer"), (&tablet, "The iPad", "tablet"), (&other_computer, "Computer two", "computer")] {
+        p.store.set_device_name(name.into(), kind.into()).unwrap();
+        deliver(p, &transport);
+    }
+    for p in [&alice, &computer, &tablet, &other_computer] {
+        sync(p, &transport);
+    }
+    let old_key = alice.store.test_delivery_key();
+    // The computer reads a 1:1 before.
+    say(&bob, &alice, &transport, "before the unlink");
+    sync(&computer, &transport);
+    assert!(texts(&computer, &bob).contains(&"before the unlink".to_owned()));
+
+    // Refusals first: a tablet or phone is never unlinked, not itself, not a computer's call, not a stranger's id.
+    assert!(matches!(alice.store.unlink_device(transport.clone(), alice.token.clone(), tablet.device.clone()), Err(crate::store::StoreError::Rejected)), "a tablet holds the master secret");
+    assert!(matches!(alice.store.unlink_device(transport.clone(), alice.token.clone(), alice.device.clone()), Err(crate::store::StoreError::Rejected)), "not itself");
+    assert!(matches!(other_computer.store.unlink_device(transport.clone(), other_computer.token.clone(), computer.device.clone()), Err(crate::store::StoreError::MasterKeyNotOnDevice)), "a computer cannot unlink");
+    assert!(matches!(alice.store.unlink_device(transport.clone(), alice.token.clone(), "no-such-device".into()), Err(crate::store::StoreError::NotFound)));
+
+    // The unlink.
+    alice.store.unlink_device(transport.clone(), alice.token.clone(), computer.device.clone()).unwrap();
+    assert_eq!(alice.store.my_devices().unwrap().len(), 3, "this device, the tablet and the other computer");
+    assert!(alice.store.my_devices().unwrap().iter().all(|d| d.device_id != computer.device));
+    // My other devices are told (own.copy) and learn the new delivery key; the tablet and the other computer drop it from their lists.
+    deliver(&alice, &transport);
+    for p in [&tablet, &other_computer] {
+        sync(p, &transport);
+        assert_eq!(p.store.my_devices().unwrap().len(), 3, "{} dropped it", p.device);
+        assert_ne!(p.store.test_delivery_key(), old_key, "{} has the new delivery key", p.device);
+        assert_eq!(p.store.test_delivery_key(), alice.store.test_delivery_key(), "the one key of the account");
+    }
+    assert_ne!(alice.store.test_delivery_key(), old_key);
+
+    // The removed computer reads nothing new: its next sync says it was removed, and it remembers it.
+    say(&bob, &alice, &transport, "after the unlink");
+    say_in(&bob, &transport, &group, "group after the unlink");
+    let post = publish(&carol, &jam, "After the unlink", "free");
+    let _ = post;
+    for _ in 0..3 {
+        sync(&carol, &transport);
+        deliver(&carol, &transport);
+        sync(&alice, &transport);
+        deliver(&alice, &transport);
+        sync(&tablet, &transport);
+        deliver(&tablet, &transport);
+    }
+    assert!(matches!(computer.store.sync(transport.clone(), computer.token.clone()), Err(crate::store::StoreError::DeviceRevoked)), "told it was removed");
+    assert!(computer.store.was_revoked());
+    assert!(!texts(&computer, &bob).contains(&"after the unlink".to_owned()), "it read nothing new");
+    assert!(!group_texts(&computer, &group).contains(&"group after the unlink".to_owned()));
+    assert!(!jam_posts_of(&computer, &jam).contains(&"After the unlink".to_owned()));
+    // My other devices still read all of it (1:1, group, jam).
+    for p in [&alice, &tablet, &other_computer] {
+        sync(p, &transport);
+        assert!(texts(p, &bob).contains(&"after the unlink".to_owned()), "{} reads the 1:1", p.device);
+    }
+    assert!(group_texts(&alice, &group).contains(&"group after the unlink".to_owned()));
+    assert!(jam_posts_of(&alice, &jam).contains(&"After the unlink".to_owned()), "the jam post reaches the phone: {:?}", jam_posts_of(&alice, &jam));
+    // Contacts' sealed sends still work: Alice's contacts get the new key (the share), then a sealed send is accepted.
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    let before = server.state.lock().unwrap().sends_with_token;
+    say(&bob, &alice, &transport, "sealed after the rotation");
+    assert_eq!(server.state.lock().unwrap().sends_with_token, before, "Bob's send is sealed (no token)");
+    sync(&alice, &transport);
+    assert!(texts(&alice, &bob).contains(&"sealed after the rotation".to_owned()));
+    // My outbound group sessions were marked for rotation (a new one at the next send, not shared with the removed device).
+    let rotated: i64 = alice.store.with_conn(|c| Ok(c.query_row("SELECT COUNT(*) FROM group_outbound_sessions WHERE rotate = 1", [], |r| r.get(0)).unwrap_or(0))).unwrap();
+    let sessions: i64 = alice.store.with_conn(|c| Ok(c.query_row("SELECT COUNT(*) FROM group_outbound_sessions", [], |r| r.get(0)).unwrap_or(0))).unwrap();
+    assert_eq!(rotated, sessions, "every outbound group session is marked to rotate");
+
+    // The removed computer wipes at its next open.
+    let path = computer._dir.path().join("lime.db").to_string_lossy().into_owned();
+    drop(computer.store);
+    let reopened = LimeStore::open(path, vec![7u8; 32]).unwrap();
+    assert!(!account_row_exists(&reopened), "the account is gone from the removed device");
+    let (messages, devices): (i64, i64) = reopened.with_conn(|c| Ok((c.query_row("SELECT COUNT(*) FROM messages", [], |r| r.get(0)).unwrap(), c.query_row("SELECT COUNT(*) FROM peer_devices", [], |r| r.get(0)).unwrap()))).unwrap();
+    assert_eq!((messages, devices), (0, 0), "nothing of the account stays");
+    assert!(!reopened.was_revoked(), "and the flag went with it");
+}
+
+#[test]
+fn a_sixth_device_is_refused_and_unlinking_one_makes_room() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    // The phone plus four more: five.
+    let mut linked = Vec::new();
+    for key in 10..14u8 {
+        linked.push(link(&server, &alice, true, key));
+    }
+    // The sixth: the package lands but the registration is refused with a clear error.
+    let (new, old, store, _dir) = pair(&alice, true, 30);
+    for chunk in stream(&new, &old) {
+        new.import_chunk(chunk).unwrap();
+    }
+    new.import_finish().unwrap();
+    assert!(matches!(store.register_device(transport.clone(), alice.token.clone()), Err(crate::store::StoreError::TooManyDevices)), "a sixth device is refused");
+    // Name the computers so one can be unlinked; refresh so the phone knows all.
+    for (i, c) in linked.iter().enumerate() {
+        c.store.set_device_name(format!("Computer {i}"), "computer".into()).unwrap();
+        deliver(c, &transport);
+    }
+    let mut everyone = vec![&alice];
+    everyone.extend(linked.iter());
+    all_know_each_other(&transport, &everyone);
+    sync(&alice, &transport);
+    alice.store.unlink_device(transport.clone(), alice.token.clone(), linked[0].device.clone()).unwrap();
+    // Now there is room: the same new device registers.
+    assert!(store.register_device(transport.clone(), alice.token.clone()).is_ok(), "room after unlinking one");
+}

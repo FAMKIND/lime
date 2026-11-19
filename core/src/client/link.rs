@@ -64,6 +64,8 @@ pub(crate) const TABLES: &[&str] = &[
     "group_ops",
     "emergency_settings",
     "jam_follow_off",
+    // The names and kinds of my devices (LIME-342a): a new device knows them from the start.
+    "own_device_info",
 ];
 
 #[derive(Serialize, Deserialize, Default)]

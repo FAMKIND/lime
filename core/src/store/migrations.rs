@@ -1014,6 +1014,10 @@ const MIGRATIONS: &[&str] = &[
      ALTER TABLE account ADD COLUMN device_signature TEXT;",
     // (LIME-341b) The secrets of link QR codes this phone has scanned (their hashes): a QR works once.
     "CREATE TABLE IF NOT EXISTS link_used (secret_hash TEXT PRIMARY KEY NOT NULL, used_at INTEGER NOT NULL);",
+    // (LIME-342a) `device_state`: small flags of this device (`revoked`: the server said this device was removed from the account, so the next open wipes the store).
+    // `own_device_info`: the name and kind of each of my devices, which only my devices know (they travel by `own.copy`, never to the server).
+    "CREATE TABLE IF NOT EXISTS device_state (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL);
+     CREATE TABLE IF NOT EXISTS own_device_info (device_id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL, added_at INTEGER NOT NULL);",
 ];
 
 /// The schema version this build writes.

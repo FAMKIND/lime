@@ -57,6 +57,8 @@ pub(crate) struct ServerState {
     pub blob_rows: HashMap<String, (String, Option<i64>)>,
     /// The expiry a blob was put with, in days (`expires_in_days`; LIME-341c: the history file asks for one).
     pub blob_expiry_days: HashMap<String, f64>,
+    /// Every request body, as text (lossy for bytes), in order: a test that something (a device name) never leaves the phone (LIME-342a).
+    pub request_bodies: Vec<String>,
     /// jam post blob id to its jam id (LIME-187)
     pub jam_blobs: HashMap<String, String>,
     /// jam id to (writer, title, post_count, ended): the public pages
@@ -162,6 +164,7 @@ fn respond(status: u16, body: Value) -> Result<TransportResponse, TransportError
 impl Transport for FakeServer {
     fn request(&self, method: String, path: String, headers: Vec<HeaderPair>, body: Vec<u8>) -> Result<TransportResponse, TransportError> {
         let is_send = path.ends_with("/send");
+        self.state.lock().unwrap().request_bodies.push(String::from_utf8_lossy(&body).into_owned());
         let answer = self.handle(method, path, headers, body);
         if is_send {
             let mut state = self.state.lock().unwrap();
@@ -259,6 +262,10 @@ impl FakeServer {
                         state.one_time_keys.remove(id);
                     }
                 }
+                // At most 5 active devices (LIME-342a): a known device registering again is not a new one.
+                if !state.devices.contains_key(&device) && state.devices.values().filter(|d| d.0 == user).count() >= 5 {
+                    return respond(409, json!({ "error": "too_many_devices", "message": "This account already has 5 devices. Unlink one first." }));
+                }
                 state.masters.insert(user.clone(), text("master_key"));
                 state.devices.insert(
                     device.clone(),
@@ -269,6 +276,42 @@ impl FakeServer {
                     201,
                     json!({ "device_id": device, "user_id": user, "remaining_one_time_keys": remaining }),
                 )
+            }
+            // LIME-342a: unlink a computer: a master-key signature over `lime-revoke-v1\n<user>\n<device>\n<at>\n<kind>`, from another of the account's own devices.
+            "devices-revoke" => {
+                let (target, from, kind) = (text("device_id"), text("from_device"), text("kind"));
+                let at = body.get("at").and_then(Value::as_i64).unwrap_or(0);
+                if kind != "computer" || target == from {
+                    return respond(400, json!({ "error": "bad_request" }));
+                }
+                if state.revoked.get(&from) == Some(&user) {
+                    return respond(401, json!({ "error": "revoked" }));
+                }
+                let Some(master) = state.masters.get(&user).cloned() else { return respond(404, json!({ "error": "not_found" })) };
+                let message = format!("lime-revoke-v1\n{user}\n{target}\n{at}\n{kind}");
+                let verified = vodozemac::Ed25519PublicKey::from_base64(&master)
+                    .ok()
+                    .zip(vodozemac::Ed25519Signature::from_base64(&text("master_signature")).ok())
+                    .is_some_and(|(key, sig)| key.verify(message.as_bytes(), &sig).is_ok());
+                if !verified {
+                    return respond(400, json!({ "error": "bad_signature" }));
+                }
+                if state.devices.get(&target).is_none_or(|d| d.0 != user) {
+                    return respond(404, json!({ "error": "not_found" }));
+                }
+                state.revoked.insert(target.clone(), user.clone());
+                let gone: Vec<_> = state.mailbox.iter().filter(|m| m.1 == target).cloned().collect();
+                for item in gone {
+                    if let (true, Some(sender)) = (item.3, item.4.clone()) {
+                        let wire = vodozemac::base64_decode(&item.2).unwrap();
+                        let hash = sha2::Sha256::digest(&wire).iter().map(|b| format!("{b:02x}")).collect();
+                        state.undelivered.entry(sender).or_default().push(hash);
+                    }
+                }
+                state.mailbox.retain(|m| m.1 != target);
+                state.devices.remove(&target);
+                state.one_time_keys.remove(&target);
+                respond(200, json!({ "device_id": target, "revoked": true }))
             }
             "keys-upload" => {
                 let device = text("device_id");
@@ -850,6 +893,10 @@ impl FakeServer {
             }
             "mailbox-fetch" => {
                 let device = text("device_id");
+                // A device its account removed is told so (LIME-342a).
+                if state.revoked.get(&device) == Some(&user) {
+                    return respond(401, json!({ "error": "revoked" }));
+                }
                 let after = body.get("after").and_then(Value::as_i64).unwrap_or(0);
                 let items: Vec<Value> = state
                     .mailbox

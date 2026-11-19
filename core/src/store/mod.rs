@@ -86,6 +86,10 @@ pub enum StoreError {
     Unauthorized,
     /// This device does not hold the account's master key (a computer linked to the account): what was asked needs a phone or tablet (LIME-341a).
     MasterKeyNotOnDevice,
+    /// The account removed this device (LIME-342a: the server said 401 `revoked`): it can read nothing new, and the next open wipes its store.
+    DeviceRevoked,
+    /// The account already has 5 devices (LIME-342a: the server answered 409 `too_many_devices`): unlink one first.
+    TooManyDevices,
 }
 
 impl std::fmt::Display for StoreError {
@@ -108,6 +112,8 @@ impl std::fmt::Display for StoreError {
             StoreError::RateLimited => "too many requests; try again shortly",
             StoreError::Unauthorized => "the session ended; sign in again",
             StoreError::MasterKeyNotOnDevice => "this device does not hold the account's master key",
+            StoreError::DeviceRevoked => "this device was removed from the account",
+            StoreError::TooManyDevices => "this account already has 5 devices; unlink one first",
         };
         f.write_str(text)
     }
@@ -845,6 +851,10 @@ impl LimeStore {
         migrations::run(&conn)?;
         // Calls recorded before they were chat messages (LIME-123) become messages.
         calls::backfill_call_messages(&conn)?;
+        // A device the account removed (LIME-342a) is wiped at its next open: nothing of the account stays on it.
+        if conn.query_row("SELECT value FROM device_state WHERE key = 'revoked'", [], |r| r.get::<_, String>(0)).optional().map_err(db_err)?.is_some() {
+            crate::client::wipe_all(&conn)?;
+        }
         Ok(Self {
             conn: Mutex::new(conn),
             pickle_key: crate::keys::derive_pickle_key(key),

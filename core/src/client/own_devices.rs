@@ -307,7 +307,7 @@ impl LimeStore {
             }
             // The settings that follow me. (Themes, chat looks, drafts, my private labels and the like are never copied.)
             Some("setting") => {
-                apply_setting(conn, payload, now)?;
+                apply_setting(conn, payload, now, &cert.device_id, me)?;
                 Ok(false)
             }
             _ => apply_basic_copy(conn, me, cert, payload, now),
@@ -315,7 +315,7 @@ impl LimeStore {
     }
 }
 
-fn apply_setting(conn: &Connection, payload: &Value, now: i64) -> Result<(), StoreError> {
+fn apply_setting(conn: &Connection, payload: &Value, now: i64, from_device: &str, me: &str) -> Result<(), StoreError> {
     let conversation = payload.get("conversation").and_then(Value::as_str).filter(|c| conversation_ok(c));
     let on = payload.get("on").and_then(Value::as_bool);
     match payload.get("name").and_then(Value::as_str) {
@@ -332,6 +332,27 @@ fn apply_setting(conn: &Connection, payload: &Value, now: i64) -> Result<(), Sto
         Some("status") => {
             if let Some(status) = payload.get("status").and_then(crate::store::status::parse) {
                 crate::store::status::store_mine(conn, &status, now)?;
+            }
+        }
+        // A device told me its name and kind (LIME-342a): only from that very device (the certificate's device id is the proof), never to the server.
+        Some("device_name") => {
+            let text = |k: &str| payload.get(k).and_then(Value::as_str).unwrap_or("");
+            if text("device_id") == from_device && super::devices::valid_name(text("device_name")) && super::devices::valid_kind(text("device_kind")) {
+                let added = payload.get("added_at").and_then(Value::as_i64).unwrap_or(now);
+                conn.execute(
+                    "INSERT INTO own_device_info (device_id, name, kind, added_at) VALUES (?1, ?2, ?3, ?4)
+                     ON CONFLICT (device_id) DO UPDATE SET name = ?2, kind = ?3",
+                    params![from_device, text("device_name"), text("device_kind"), added],
+                )
+                .map_err(db_err)?;
+            }
+        }
+        // A computer was unlinked on my other device (LIME-342a): it is dropped from my devices and my outbound sessions rotate (the removed device is not
+        // sent the new ones). The removed device cannot be the sender of this.
+        Some("device_unlinked") => {
+            if let Some(gone) = payload.get("device_id").and_then(Value::as_str).filter(|id| *id != from_device) {
+                super::devices::forget_device(conn, me, gone)?;
+                super::devices::rotate_outbound(conn)?;
             }
         }
         // My delivery key was rotated on my other device (a block): the one key of the account (LIME-341a).

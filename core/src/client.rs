@@ -57,6 +57,8 @@ pub(crate) mod jam;
 mod handover;
 mod own_devices;
 mod linked_device;
+pub(crate) mod devices;
+pub(crate) use devices::wipe_all;
 pub(crate) mod link;
 
 /// Queues something for my other devices (a no-op with one device): for the store-level actions (a chat read, a person blocked).
@@ -153,55 +155,9 @@ impl LimeStore {
         transport: Arc<dyn Transport>,
         auth_token: String,
     ) -> Result<DeviceInfo, StoreError> {
-        let _guard = self.protocol_lock.lock().unwrap_or_else(|e| e.into_inner());
-        let mut state = self.load_or_create_account()?;
-        // A computer registers only once a phone has certified its keys (LIME-341a): without that the server would take it for a new account's keys.
-        if !state.is_certified() {
-            return Err(StoreError::MasterKeyNotOnDevice);
-        }
-        let cert = state.cert();
-
-        let (status, body) = call(
-            &transport,
-            Some(&auth_token),
-            "devices-register",
-            &json!({
-                "device_id": cert.device_id,
-                "identity_key": cert.identity_key,
-                "signing_key": cert.signing_key,
-                "master_key": cert.master_key,
-                "master_signature": cert.master_signature,
-            }),
-        )?;
-        check(status)?;
-        let user_id = body
-            .get("user_id")
-            .and_then(Value::as_str)
-            .ok_or(StoreError::BadMessage)?
-            .to_owned();
-        let mut remaining = body
-            .get("remaining_one_time_keys")
-            .and_then(Value::as_u64)
-            .unwrap_or(0) as u32;
-        state.user_id = Some(user_id.clone());
-        state.registered = true;
-        self.save(&state)?;
-
-        if remaining < POOL_LOW {
-            remaining =
-                self.top_up_one_time_keys(&transport, &auth_token, &mut state, remaining)?;
-        }
-        // The delivery key (made here the first time) and its hash on the server. If this fails now it is
-        // tried again before the next send.
-        let _ = self.ensure_delivery_access(&transport, &auth_token);
-        Ok(DeviceInfo {
-            device_id: state.device_id.clone(),
-            user_id,
-            identity_key: state.identity_key(),
-            signing_key: state.signing_key(),
-            master_key: state.master_key(),
-            remaining_one_time_keys: remaining,
-        })
+        let result = self.register_device_unwatched(transport, auth_token);
+        self.note_revoked(&result);
+        result
     }
 
     /// Writes a text into a 1:1 conversation as `sending` and returns it at once (nothing is sent
@@ -274,110 +230,9 @@ impl LimeStore {
         transport: Arc<dyn Transport>,
         auth_token: String,
     ) -> Result<u32, StoreError> {
-        let _guard = self.protocol_lock.lock().unwrap_or_else(|e| e.into_inner());
-        let mut state = self.load_or_create_account()?;
-        let me = state
-            .user_id
-            .clone()
-            .filter(|_| state.registered)
-            .ok_or(StoreError::NotRegistered)?;
-        // My delivery key's hash has to be on the server before anyone is given the key: then the people
-        // who hold it can send sealed. Both are best effort here; they are tried again next time.
-        if self.ensure_delivery_access(&transport, &auth_token).is_ok() {
-            self.deliver_shares(&transport, &auth_token, &mut state, &me);
-            self.heal_contacts(&transport, &auth_token, &mut state, &me);
-            self.refresh_my_photo_if_stale(&transport, &auth_token);
-            self.reconcile_my_pictures(&transport, &auth_token);
-            self.deliver_photo_notices(&transport, &auth_token, &mut state, &me);
-            self.deliver_status_notices(&transport, &auth_token, &mut state, &me);
-            self.deliver_drafts(&transport, &auth_token, &mut state, &me, now_ms());
-            self.deliver_username_notices(&transport, &auth_token, &mut state, &me);
-            // What was kept for the mesh while offline goes now, as it was made.
-            let _ = self.flush_mesh_outbox_locked(&transport, &auth_token);
-        }
-        // Group state ops (a new group, someone added or removed...) go out before the messages that follow them.
-        self.deliver_group_outbox(&transport, &auth_token, &mut state, &me);
-        // A jam's posts to its subscribers, a chunk at a time (LIME-186).
-        self.deliver_jam(&transport, &auth_token, &mut state, &me);
-        let queued = self.with_conn(queued_messages)?;
-        let mut sent = 0;
-        for message in queued {
-            // A message to myself never leaves this phone: it is "sent" the moment it is written.
-            if message.peer == me {
-                self.with_conn(|conn| set_state(conn, &message.id, "sent"))?;
-                // Notes to myself reach my other devices (LIME-340); with one device this does nothing.
-                self.enqueue_own_message(&state, &message);
-                sent += 1;
-                continue;
-            }
-            if !message.attachments.is_empty() || message.preview.as_ref().is_some_and(|(_, image)| image.is_some()) {
-                // The files go up first (resuming if an earlier try was interrupted); then the message that carries their keys.
-                let recipients = self.attachment_recipients(&message.conversation_id);
-                if let Err(error) = self.upload_message_attachments(&transport, &auth_token, &message, recipients) {
-                    // No internet is not a failure: it waits for the connection and resumes by itself ("Waiting for internet").
-                    self.with_conn(|conn| set_state(conn, &message.id, failure_state(conn, &message.id, &error)))?;
-                    // A file that is gone for good (nothing to send it from) fails this message only: the ones behind it still go.
-                    // Anything else (no network, a refusal) stops here, as before, and the rest wait in order.
-                    if matches!(error, StoreError::NotFound | StoreError::Rejected) {
-                        continue;
-                    }
-                    return Err(error);
-                }
-            }
-            self.last_send_parked.store(false, std::sync::atomic::Ordering::Relaxed);
-            if message.conversation_id.starts_with("grp:") {
-                match self.deliver_group_message(&transport, &auth_token, &mut state, &me, &message) {
-                    Ok(()) => {
-                        // Kept for the mesh (no internet): "Waiting for signal", not "Sent".
-                        let parked = self.last_send_parked.swap(false, std::sync::atomic::Ordering::Relaxed);
-                        self.with_conn(|conn| set_state(conn, &message.id, if parked { "waiting" } else { "sent" }))?;
-                        self.enqueue_own_message(&state, &message);
-                        if !parked {
-                            sent += 1;
-                        }
-                    }
-                    Err(error) => {
-                        self.with_conn(|conn| set_state(conn, &message.id, failure_state(conn, &message.id, &error)))?;
-                        return Err(error);
-                    }
-                }
-                continue;
-            }
-            // Sealed when the contact shared their key and has not refused it; identified otherwise.
-            let contact = self.with_conn(|conn| delivery::contact_key(conn, &message.peer))?;
-            let sealed_key = contact.and_then(|(key, denied)| (!denied).then_some(key));
-            let mut outcome = self.deliver_one(&transport, &auth_token, &mut state, &me, &message, sealed_key);
-            if matches!(outcome, Err(SendError::Denied)) {
-                // The contact's delivery key is no longer the one we hold (they blocked us, or replaced their
-                // keys). Like Signal, say nothing: stop using sealed for them until they share a new key, send
-                // this message identified straight away (once), and show "Sent". A person who blocked us learns
-                // nothing, and one who changed phones still gets it.
-                self.with_conn(|conn| delivery::mark_denied(conn, &message.peer))?;
-                outcome = self.deliver_one(&transport, &auth_token, &mut state, &me, &message, None);
-            }
-            match outcome {
-                Ok(()) => {
-                    let parked = self.last_send_parked.swap(false, std::sync::atomic::Ordering::Relaxed);
-                    self.with_conn(|conn| set_state(conn, &message.id, if parked { "waiting" } else { "sent" }))?;
-                    self.enqueue_own_message(&state, &message);
-                    if !parked {
-                        sent += 1;
-                    }
-                }
-                Err(error) => {
-                    let error = error.into_store();
-                    self.with_conn(|conn| set_state(conn, &message.id, failure_state(conn, &message.id, &error)))?;
-                    return Err(error);
-                }
-            }
-        }
-        // Edits, deletes and reactions go after the messages they are about.
-        self.deliver_message_ops(&transport, &auth_token, &mut state, &me);
-        // What I did here is owed to my other devices (nothing with one device).
-        self.deliver_own_copies(&transport, &auth_token, &mut state, &me);
-        // A group history queued while sending (a member's new phone found out of date, LIME-270) goes in this pass, not the next.
-        self.deliver_group_outbox(&transport, &auth_token, &mut state, &me);
-        Ok(sent)
+        let result = self.deliver_queued_unwatched(transport, auth_token);
+        self.note_revoked(&result);
+        result
     }
 
     /// Queues a text for `recipient_user_id` and delivers it now (the conversation is created if
@@ -403,43 +258,9 @@ impl LimeStore {
         transport: Arc<dyn Transport>,
         auth_token: String,
     ) -> Result<SyncReport, StoreError> {
-        let device_id = {
-            let _guard = self.lock_protocol();
-            let state = self.load_or_create_account()?;
-            state.user_id.as_ref().filter(|_| state.registered).ok_or(StoreError::NotRegistered)?;
-            state.device_id.clone()
-        };
-        self.fetch_mailbox(&transport, &auth_token, &device_id)?;
-
-        let _guard = self.lock_protocol();
-        let mut state = self.load_or_create_account()?;
-        let me = state
-            .user_id
-            .clone()
-            .filter(|_| state.registered)
-            .ok_or(StoreError::NotRegistered)?;
-        // The delivery key's hash may still be waiting to go up (a block rotated it): send it, then the shares.
-        if self.ensure_delivery_access(&transport, &auth_token).is_ok() {
-            self.deliver_shares(&transport, &auth_token, &mut state, &me);
-            let _ = self.flush_mesh_outbox_locked(&transport, &auth_token);
-        }
-        // Turn what is waiting into messages (and retry what failed before). A new session can make
-        // an earlier item readable, so go round again while anything makes progress.
-        let received = self.retry_pending(&mut state, &me)?;
-        // Anything still unreadable after the retries may mean a session that stopped working: start a fresh one, and ask for missing profile keys.
-        self.heal_contacts(&transport, &auth_token, &mut state, &me);
-        self.deliver_drafts(&transport, &auth_token, &mut state, &me, now_ms());
-        if received > 0 {
-            self.refresh_names(&transport, &auth_token);
-        }
-        // Contacts follow each other's jams (LIME-210e): a paced batch, quiet.
-        self.follow_contacts_jams(&transport, &auth_token, &me);
-        self.take_undelivered(&transport, &auth_token);
-        let waiting = self.with_conn(pending::count)?;
-        Ok(SyncReport {
-            received,
-            pending: waiting,
-        })
+        let result = self.sync_unwatched(transport, auth_token);
+        self.note_revoked(&result);
+        result
     }
 
     /// A light fetch for a call that is ringing or connecting: the mailbox is downloaded outside the lock and decrypted, and
@@ -2322,6 +2143,13 @@ fn call(
     } else {
         serde_json::from_slice(&response.body).unwrap_or(Value::Null)
     };
+    // The account removed this device (LIME-342a): not "sign in again" but "you are gone".
+    if response.status == 401 && value.get("error").and_then(Value::as_str) == Some("revoked") {
+        return Err(StoreError::DeviceRevoked);
+    }
+    if response.status == 409 && value.get("error").and_then(Value::as_str) == Some("too_many_devices") {
+        return Err(StoreError::TooManyDevices);
+    }
     Ok((response.status, value))
 }
 
@@ -2385,5 +2213,228 @@ impl LimeStore {
             }
         }
         Ok(())
+    }
+}
+
+
+// ---------------------------------------------------------------- a device the account removed (LIME-342a)
+
+impl LimeStore {
+    pub(crate) fn sync_unwatched(
+        &self,
+        transport: Arc<dyn Transport>,
+        auth_token: String,
+    ) -> Result<SyncReport, StoreError> {
+        let device_id = {
+            let _guard = self.lock_protocol();
+            let state = self.load_or_create_account()?;
+            state.user_id.as_ref().filter(|_| state.registered).ok_or(StoreError::NotRegistered)?;
+            state.device_id.clone()
+        };
+        self.fetch_mailbox(&transport, &auth_token, &device_id)?;
+
+        let _guard = self.lock_protocol();
+        let mut state = self.load_or_create_account()?;
+        let me = state
+            .user_id
+            .clone()
+            .filter(|_| state.registered)
+            .ok_or(StoreError::NotRegistered)?;
+        // The delivery key's hash may still be waiting to go up (a block rotated it): send it, then the shares.
+        if self.ensure_delivery_access(&transport, &auth_token).is_ok() {
+            self.deliver_shares(&transport, &auth_token, &mut state, &me);
+            let _ = self.flush_mesh_outbox_locked(&transport, &auth_token);
+        }
+        // Turn what is waiting into messages (and retry what failed before). A new session can make
+        // an earlier item readable, so go round again while anything makes progress.
+        let received = self.retry_pending(&mut state, &me)?;
+        // Anything still unreadable after the retries may mean a session that stopped working: start a fresh one, and ask for missing profile keys.
+        self.heal_contacts(&transport, &auth_token, &mut state, &me);
+        self.deliver_drafts(&transport, &auth_token, &mut state, &me, now_ms());
+        if received > 0 {
+            self.refresh_names(&transport, &auth_token);
+        }
+        // Contacts follow each other's jams (LIME-210e): a paced batch, quiet.
+        self.follow_contacts_jams(&transport, &auth_token, &me);
+        self.take_undelivered(&transport, &auth_token);
+        let waiting = self.with_conn(pending::count)?;
+        Ok(SyncReport {
+            received,
+            pending: waiting,
+        })
+    }
+
+    pub(crate) fn deliver_queued_unwatched(
+        &self,
+        transport: Arc<dyn Transport>,
+        auth_token: String,
+    ) -> Result<u32, StoreError> {
+        let _guard = self.protocol_lock.lock().unwrap_or_else(|e| e.into_inner());
+        let mut state = self.load_or_create_account()?;
+        let me = state
+            .user_id
+            .clone()
+            .filter(|_| state.registered)
+            .ok_or(StoreError::NotRegistered)?;
+        // My delivery key's hash has to be on the server before anyone is given the key: then the people
+        // who hold it can send sealed. Both are best effort here; they are tried again next time.
+        if self.ensure_delivery_access(&transport, &auth_token).is_ok() {
+            self.deliver_shares(&transport, &auth_token, &mut state, &me);
+            self.heal_contacts(&transport, &auth_token, &mut state, &me);
+            self.refresh_my_photo_if_stale(&transport, &auth_token);
+            self.reconcile_my_pictures(&transport, &auth_token);
+            self.deliver_photo_notices(&transport, &auth_token, &mut state, &me);
+            self.deliver_status_notices(&transport, &auth_token, &mut state, &me);
+            self.deliver_drafts(&transport, &auth_token, &mut state, &me, now_ms());
+            self.deliver_username_notices(&transport, &auth_token, &mut state, &me);
+            // What was kept for the mesh while offline goes now, as it was made.
+            let _ = self.flush_mesh_outbox_locked(&transport, &auth_token);
+        }
+        // Group state ops (a new group, someone added or removed...) go out before the messages that follow them.
+        self.deliver_group_outbox(&transport, &auth_token, &mut state, &me);
+        // A jam's posts to its subscribers, a chunk at a time (LIME-186).
+        self.deliver_jam(&transport, &auth_token, &mut state, &me);
+        let queued = self.with_conn(queued_messages)?;
+        let mut sent = 0;
+        for message in queued {
+            // A message to myself never leaves this phone: it is "sent" the moment it is written.
+            if message.peer == me {
+                self.with_conn(|conn| set_state(conn, &message.id, "sent"))?;
+                // Notes to myself reach my other devices (LIME-340); with one device this does nothing.
+                self.enqueue_own_message(&state, &message);
+                sent += 1;
+                continue;
+            }
+            if !message.attachments.is_empty() || message.preview.as_ref().is_some_and(|(_, image)| image.is_some()) {
+                // The files go up first (resuming if an earlier try was interrupted); then the message that carries their keys.
+                let recipients = self.attachment_recipients(&message.conversation_id);
+                if let Err(error) = self.upload_message_attachments(&transport, &auth_token, &message, recipients) {
+                    // No internet is not a failure: it waits for the connection and resumes by itself ("Waiting for internet").
+                    self.with_conn(|conn| set_state(conn, &message.id, failure_state(conn, &message.id, &error)))?;
+                    // A file that is gone for good (nothing to send it from) fails this message only: the ones behind it still go.
+                    // Anything else (no network, a refusal) stops here, as before, and the rest wait in order.
+                    if matches!(error, StoreError::NotFound | StoreError::Rejected) {
+                        continue;
+                    }
+                    return Err(error);
+                }
+            }
+            self.last_send_parked.store(false, std::sync::atomic::Ordering::Relaxed);
+            if message.conversation_id.starts_with("grp:") {
+                match self.deliver_group_message(&transport, &auth_token, &mut state, &me, &message) {
+                    Ok(()) => {
+                        // Kept for the mesh (no internet): "Waiting for signal", not "Sent".
+                        let parked = self.last_send_parked.swap(false, std::sync::atomic::Ordering::Relaxed);
+                        self.with_conn(|conn| set_state(conn, &message.id, if parked { "waiting" } else { "sent" }))?;
+                        self.enqueue_own_message(&state, &message);
+                        if !parked {
+                            sent += 1;
+                        }
+                    }
+                    Err(error) => {
+                        self.with_conn(|conn| set_state(conn, &message.id, failure_state(conn, &message.id, &error)))?;
+                        return Err(error);
+                    }
+                }
+                continue;
+            }
+            // Sealed when the contact shared their key and has not refused it; identified otherwise.
+            let contact = self.with_conn(|conn| delivery::contact_key(conn, &message.peer))?;
+            let sealed_key = contact.and_then(|(key, denied)| (!denied).then_some(key));
+            let mut outcome = self.deliver_one(&transport, &auth_token, &mut state, &me, &message, sealed_key);
+            if matches!(outcome, Err(SendError::Denied)) {
+                // The contact's delivery key is no longer the one we hold (they blocked us, or replaced their
+                // keys). Like Signal, say nothing: stop using sealed for them until they share a new key, send
+                // this message identified straight away (once), and show "Sent". A person who blocked us learns
+                // nothing, and one who changed phones still gets it.
+                self.with_conn(|conn| delivery::mark_denied(conn, &message.peer))?;
+                outcome = self.deliver_one(&transport, &auth_token, &mut state, &me, &message, None);
+            }
+            match outcome {
+                Ok(()) => {
+                    let parked = self.last_send_parked.swap(false, std::sync::atomic::Ordering::Relaxed);
+                    self.with_conn(|conn| set_state(conn, &message.id, if parked { "waiting" } else { "sent" }))?;
+                    self.enqueue_own_message(&state, &message);
+                    if !parked {
+                        sent += 1;
+                    }
+                }
+                Err(error) => {
+                    let error = error.into_store();
+                    self.with_conn(|conn| set_state(conn, &message.id, failure_state(conn, &message.id, &error)))?;
+                    return Err(error);
+                }
+            }
+        }
+        // Edits, deletes and reactions go after the messages they are about.
+        self.deliver_message_ops(&transport, &auth_token, &mut state, &me);
+        // What I did here is owed to my other devices (nothing with one device).
+        self.deliver_own_copies(&transport, &auth_token, &mut state, &me);
+        // A group history queued while sending (a member's new phone found out of date, LIME-270) goes in this pass, not the next.
+        self.deliver_group_outbox(&transport, &auth_token, &mut state, &me);
+        Ok(sent)
+    }
+
+    pub(crate) fn register_device_unwatched(
+        &self,
+        transport: Arc<dyn Transport>,
+        auth_token: String,
+    ) -> Result<DeviceInfo, StoreError> {
+        let _guard = self.protocol_lock.lock().unwrap_or_else(|e| e.into_inner());
+        let mut state = self.load_or_create_account()?;
+        // A computer registers only once a phone has certified its keys (LIME-341a): without that the server would take it for a new account's keys.
+        if !state.is_certified() {
+            return Err(StoreError::MasterKeyNotOnDevice);
+        }
+        let cert = state.cert();
+
+        let (status, body) = call(
+            &transport,
+            Some(&auth_token),
+            "devices-register",
+            &json!({
+                "device_id": cert.device_id,
+                "identity_key": cert.identity_key,
+                "signing_key": cert.signing_key,
+                "master_key": cert.master_key,
+                "master_signature": cert.master_signature,
+            }),
+        )?;
+        check(status)?;
+        let user_id = body
+            .get("user_id")
+            .and_then(Value::as_str)
+            .ok_or(StoreError::BadMessage)?
+            .to_owned();
+        let mut remaining = body
+            .get("remaining_one_time_keys")
+            .and_then(Value::as_u64)
+            .unwrap_or(0) as u32;
+        state.user_id = Some(user_id.clone());
+        state.registered = true;
+        self.save(&state)?;
+
+        if remaining < POOL_LOW {
+            remaining =
+                self.top_up_one_time_keys(&transport, &auth_token, &mut state, remaining)?;
+        }
+        // The delivery key (made here the first time) and its hash on the server. If this fails now it is
+        // tried again before the next send.
+        let _ = self.ensure_delivery_access(&transport, &auth_token);
+        Ok(DeviceInfo {
+            device_id: state.device_id.clone(),
+            user_id,
+            identity_key: state.identity_key(),
+            signing_key: state.signing_key(),
+            master_key: state.master_key(),
+            remaining_one_time_keys: remaining,
+        })
+    }
+
+    /// Remembers that the server said this device was removed from the account (401 `revoked`): the next open wipes the store.
+    pub(crate) fn note_revoked<T>(&self, result: &Result<T, StoreError>) {
+        if matches!(result, Err(StoreError::DeviceRevoked)) {
+            let _ = self.with_conn(|conn| conn.execute("INSERT OR REPLACE INTO device_state (key, value) VALUES ('revoked', '1')", []).map(|_| ()).map_err(db_err));
+        }
     }
 }
