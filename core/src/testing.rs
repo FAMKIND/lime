@@ -55,6 +55,8 @@ pub(crate) struct ServerState {
     pub avatar_visibility: HashMap<String, String>,
     /// blob id to (owner, committed version)
     pub blob_rows: HashMap<String, (String, Option<i64>)>,
+    /// The expiry a blob was put with, in days (`expires_in_days`; LIME-341c: the history file asks for one).
+    pub blob_expiry_days: HashMap<String, f64>,
     /// jam post blob id to its jam id (LIME-187)
     pub jam_blobs: HashMap<String, String>,
     /// jam id to (writer, title, post_count, ended): the public pages
@@ -549,6 +551,9 @@ impl FakeServer {
                             state.jam_blobs.insert(id.clone(), text("jam_id"));
                         }
                         state.blob_rows.insert(id.clone(), (user.clone(), None));
+                        if let Some(days) = body.get("expires_in_days").and_then(Value::as_f64) {
+                            state.blob_expiry_days.insert(id.clone(), days);
+                        }
                         respond(200, json!({ "url": format!("/storage/v1/object/upload/sign/blobs/{id}?token=t") }))
                     }
                     "commit" => {

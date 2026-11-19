@@ -39,7 +39,11 @@ const TTL_MS: i64 = 10 * 60 * 1000;
 /// The largest package taken (a photo and a few hundred contacts are far below).
 const MAX_PACKAGE: u64 = 16 * 1024 * 1024;
 
+/// The history pointer (LIME-341c): sealed in the same session after the package, so the blob id and key never travel in the clear or to the server.
+const KIND_HISTORY: u8 = 4;
 const KIND_FULL: u8 = 1;
+
+pub(crate) mod history;
 const KIND_COMPUTER: u8 = 0;
 
 /// The tables a package fills, in the order they are filled, with the rows taken. Nothing else is ever in it.
@@ -312,6 +316,9 @@ struct OldState {
     full: bool,
     request: Option<DeviceRequest>,
     user_id: String,
+    /// The history step has been made (LIME-341c): once.
+    history_sent: bool,
+    history_progress: history::HistoryProgress,
 }
 
 /// The phone's (or tablet's) side of a link: it holds the master secret and gives the new device what it needs.
@@ -445,6 +452,8 @@ impl LinkOld {
                 full: parts.kind == KIND_FULL,
                 request: parts.extra.request,
                 user_id,
+                history_sent: false,
+                history_progress: history::HistoryProgress::idle(),
             }),
         }))
     }
@@ -467,6 +476,10 @@ struct NewState {
     pending: Option<AccountState>,
     applied: bool,
     failed: bool,
+    /// Where the last 45 days of history wait on the server and how to open them (LIME-341c); arrives after the package.
+    history: Option<history::Pointer>,
+    /// Progress of the history step (this device's side).
+    history_progress: history::HistoryProgress,
 }
 
 /// The new device's side of a link: a computer, tablet or phone with an empty store.
@@ -590,17 +603,24 @@ impl LinkNew {
             created,
             extra_bytes,
             qr,
-            state: Mutex::new(NewState { secret, ours, session: None, confirmed: false, manifest: None, counter: 0, data: Vec::new(), data_chunks: 0, hasher: Sha256::new(), digest: None, pending, applied: false, failed: false }),
+            state: Mutex::new(NewState { secret, ours, session: None, confirmed: false, manifest: None, counter: 0, data: Vec::new(), data_chunks: 0, hasher: Sha256::new(), digest: None, pending, applied: false, failed: false, history: None, history_progress: history::HistoryProgress::idle() }),
         }))
     }
 
     fn take_chunk(&self, st: &mut NewState, chunk: &[u8]) -> Result<(), StoreError> {
-        if st.failed || st.applied || !st.confirmed {
+        if st.failed || !st.confirmed {
             return Err(StoreError::Rejected);
         }
         let key = st.session.as_ref().ok_or(StoreError::Rejected)?.data;
         let (kind, payload) = open_chunk(LABEL, &key, st.counter, chunk)?;
+        // Once the package is applied only the history pointer may still come (LIME-341c).
+        if st.applied && kind != KIND_HISTORY {
+            return Err(StoreError::Rejected);
+        }
         match (st.counter, kind) {
+            (n, KIND_HISTORY) if n > 0 && st.digest.is_some() && st.history.is_none() => {
+                st.history = Some(history::Pointer::from_bytes(&payload)?);
+            }
             (0, KIND_MANIFEST) => {
                 let manifest: Manifest = serde_json::from_slice(&payload).map_err(|_| StoreError::BadMessage)?;
                 if manifest.v != VERSION || manifest.kind != self.kind || manifest.size > MAX_PACKAGE || manifest.chunks != manifest.size.div_ceil(CHUNK as u64) || self.user_id.as_ref().is_some_and(|id| *id != manifest.user_id) {

@@ -9875,3 +9875,264 @@ fn the_package_holds_only_what_it_should_and_never_a_session_or_the_pickled_acco
     // The tables hold no one's messages and no sessions: spot-check the people table has only names.
     assert!(sessions.iter().all(|s| !s.is_empty()));
 }
+
+// ------------------------------------------------------------------------------------- LIME-341c: the last 45 days of history to a new device
+
+const DAY_MS: i64 = 86_400_000;
+
+/// Moves a message to `days` days ago on this phone only (the way a long-lived account's older messages sit in its store).
+fn age_message(p: &Party, chat: &str, text: &str, days: i64) {
+    let id = p.store.list_messages(chat.to_owned()).unwrap().into_iter().find(|m| m.text == text).unwrap_or_else(|| panic!("no message {text}")).id;
+    p.store.with_conn(|c| { c.execute("UPDATE messages SET sent_at = ?2 WHERE id = ?1", params![id, crate::store::now_ms() - days * DAY_MS - 5_000]).unwrap(); Ok(()) }).unwrap();
+}
+
+struct History {
+    server: Arc<FakeServer>,
+    transport: Arc<dyn Transport>,
+    alice: Party,
+    bob: Party,
+    group: String,
+    attachment: String,
+}
+
+/// Alice's phone with 60 days of 1:1 and group messages: edits, a deletion, a reaction, a photo, and unread counts.
+fn sixty_days() -> History {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    befriend(&alice, &bob, &transport);
+    let group = bob.store.create_group("Staff".into(), None, vec!["alice".into(), "carol".into()]).unwrap();
+    deliver(&bob, &transport);
+    sync(&alice, &transport);
+    sync(&carol, &transport);
+    alice.store.accept_request(group.clone()).unwrap();
+    for text in ["bob sixty days", "bob forty-six days", "bob ten days", "oops wrong chat"] {
+        say(&bob, &alice, &transport, text);
+    }
+    sync(&alice, &transport);
+    for text in ["mine fifty days", "mine forty-four days", "mine yesterday"] {
+        say(&alice, &bob, &transport, text);
+    }
+    sync(&bob, &transport);
+    for text in ["group sixty days", "group thirty days", "group last week"] {
+        say_in(&bob, &transport, &group, text);
+    }
+    sync(&alice, &transport);
+    // An edit, a deletion for everyone, a reaction, a photo.
+    let ten = bob.store.list_messages("dm:alice".into()).unwrap().into_iter().find(|m| m.text == "bob ten days").unwrap();
+    bob.store.edit_message("dm:alice".into(), ten.id.clone(), "bob ten days, edited".into()).unwrap();
+    let oops = bob.store.list_messages("dm:alice".into()).unwrap().into_iter().find(|m| m.text == "oops wrong chat").unwrap();
+    bob.store.delete_message_for_everyone("dm:alice".into(), oops.id).unwrap();
+    deliver(&bob, &transport);
+    sync(&alice, &transport);
+    let theirs = alice.store.list_messages("dm:bob".into()).unwrap().into_iter().find(|m| m.text == "bob ten days, edited").unwrap();
+    alice.store.react("dm:bob".into(), theirs.id, "👍".into(), true).unwrap();
+    let photo = crate::OutgoingAttachment { bytes: vec![7; 3000], name: "board.jpg".into(), mime: "image/jpeg".into(), width: Some(30), height: Some(20), duration_ms: None, thumb: vec![1, 2, 3], poster: vec![], alt: "the board".into(), transcript: String::new() };
+    alice.store.send_attachments("dm:bob".into(), "a photo of the board".into(), vec![photo], None).unwrap();
+    deliver(&alice, &transport);
+    let attachment = alice.store.list_messages("dm:bob".into()).unwrap().into_iter().find(|m| !m.attachments.is_empty()).unwrap().attachments[0].id.clone();
+    // The ages (this phone's copy): 60, 50, 46 and 44 days ago, 30 days, ten days, a week, yesterday; the deleted one 20 days ago; the photo 5 days ago.
+    for (chat, text, days) in [("dm:bob", "bob sixty days", 60), ("dm:bob", "mine fifty days", 50), ("dm:bob", "bob forty-six days", 46), ("dm:bob", "mine forty-four days", 44), ("dm:bob", "bob ten days, edited", 10), ("dm:bob", "mine yesterday", 1), ("dm:bob", "a photo of the board", 5)] {
+        age_message(&alice, chat, text, days);
+    }
+    for (text, days) in [("group sixty days", 60), ("group thirty days", 30), ("group last week", 7)] {
+        age_message(&alice, &group, text, days);
+    }
+    alice.store.with_conn(|c| {
+        c.execute("UPDATE messages SET sent_at = ?1 WHERE conversation_id = 'dm:bob' AND deleted = 1", params![crate::store::now_ms() - 20 * DAY_MS]).unwrap();
+        c.execute("UPDATE conversations SET unread = 3 WHERE id = 'dm:bob'", []).unwrap();
+        c.execute("UPDATE conversations SET unread = 2 WHERE id = ?1", params![group.clone()]).unwrap();
+        Ok(())
+    })
+    .unwrap();
+    History { server, transport, alice, bob, group, attachment }
+}
+
+/// A link with the history step: returns the new device, what the import said, and the blob's id.
+fn link_with_history(h: &History, is_computer: bool, key: u8, tamper: Option<&dyn Fn(&mut Vec<u8>)>) -> (Party, Result<crate::client::link::history::HistoryImported, crate::store::StoreError>, String) {
+    let (new, old, store, dir) = pair(&h.alice, is_computer, key);
+    for chunk in stream(&new, &old) {
+        new.import_chunk(chunk).unwrap();
+    }
+    new.import_finish().unwrap();
+    let info = store.register_device(h.transport.clone(), h.alice.token.clone()).unwrap();
+    store.link_refresh_devices(h.transport.clone(), h.alice.token.clone()).unwrap();
+    h.alice.store.link_refresh_devices(h.transport.clone(), h.alice.token.clone()).unwrap();
+    // The history step: the phone builds and uploads, its chunk goes to the new device, which imports.
+    let chunk = old.history_chunk(h.transport.clone(), h.alice.token.clone()).unwrap();
+    assert!(old.history_progress().step == "done");
+    let blob = { let s = h.server.state.lock().unwrap(); assert_eq!(s.blob_rows.len(), 1, "one blob"); s.blob_rows.keys().next().unwrap().clone() };
+    assert_eq!(h.server.state.lock().unwrap().blob_expiry_days.get(&blob).copied(), Some(1.0), "a 24-hour expiry");
+    if let Some(tamper) = tamper {
+        let mut s = h.server.state.lock().unwrap();
+        let bytes = s.objects.get_mut(&format!("blobs/{blob}")).unwrap();
+        tamper(bytes);
+    }
+    new.import_chunk(chunk).unwrap();
+    assert!(new.history_pending());
+    let result = new.import_history(h.transport.clone(), h.alice.token.clone());
+    let party = Party { store, user: h.alice.user.clone(), token: h.alice.token.clone(), device: info.device_id, _dir: dir };
+    (party, result, blob)
+}
+
+#[test]
+fn a_linked_computer_shows_the_last_45_days_of_history_exactly_and_nothing_older() {
+    let h = sixty_days();
+    let (computer, imported, blob) = link_with_history(&h, true, 7, None);
+    let imported = imported.unwrap();
+    assert!(!imported.truncated);
+    let dm = computer.store.list_messages("dm:bob".into()).unwrap();
+    let texts: Vec<&str> = dm.iter().map(|m| m.text.as_str()).collect();
+    // Exactly the last 45 days: 44 days yes, 46 days no; nothing older, anywhere.
+    for there in ["mine forty-four days", "bob ten days, edited", "mine yesterday", "a photo of the board"] {
+        assert!(texts.contains(&there), "{there} is on the computer: {texts:?}");
+    }
+    for gone in ["bob sixty days", "mine fifty days", "bob forty-six days"] {
+        assert!(!texts.contains(&gone), "{gone} is older than 45 days: {texts:?}");
+    }
+    let cutoff = crate::store::now_ms() - 45 * DAY_MS - 3_600_000;
+    let oldest = computer.store.with_conn(|c| Ok(c.query_row("SELECT MIN(sent_at) FROM messages WHERE conversation_id IN ('dm:bob') OR conversation_id LIKE 'grp:%'", [], |r| r.get::<_, i64>(0)).unwrap())).unwrap();
+    assert!(oldest >= cutoff, "nothing older than 45 days");
+    // Mine are mine; an edit is applied; a deletion is a tombstone; a reaction is there.
+    assert!(dm.iter().find(|m| m.text == "mine yesterday").unwrap().sender_id.is_none(), "my message is mine");
+    assert!(dm.iter().find(|m| m.text == "bob ten days, edited").unwrap().edited, "the edit is applied");
+    assert!(dm.iter().any(|m| m.deleted), "the deletion is a tombstone");
+    let ten = dm.iter().find(|m| m.text == "bob ten days, edited").unwrap();
+    assert!(ten.reactions.iter().any(|r| r.emoji == "👍" && r.mine), "my reaction is on it: {:?}", ten.reactions);
+    // The group: the last 45 days of it (the 60-day message is not).
+    let group = computer.store.list_messages(h.group.clone()).unwrap();
+    let words: Vec<&str> = group.iter().map(|m| m.text.as_str()).collect();
+    assert!(words.contains(&"group thirty days") && words.contains(&"group last week"), "{words:?}");
+    assert!(!words.contains(&"group sixty days"), "{words:?}");
+    // The unread counts are the phone's.
+    let unread = |p: &Party, id: &str| p.store.list_conversations().unwrap().into_iter().find(|c| c.id == id).unwrap().unread;
+    assert_eq!((unread(&computer, "dm:bob"), unread(&computer, &h.group)), (3, 2), "unread as on the phone");
+    // The attachment is downloadable (the key and the descriptor came; the file is still on the server).
+    let att = dm.iter().find(|m| !m.attachments.is_empty()).unwrap().attachments[0].clone();
+    assert_eq!(att.id, h.attachment);
+    assert!(computer.store.attachment_data(att.id.clone()).unwrap().is_none(), "the file itself did not travel");
+    computer.store.download_attachment(h.transport.clone(), h.alice.token.clone(), att.id.clone()).unwrap();
+    assert_eq!(computer.store.attachment_data(att.id).unwrap().unwrap(), vec![7; 3000]);
+    // No notification: nothing arrived (an import is not an arrival), and the blob is gone from the server.
+    let report = sync(&computer, &h.transport);
+    assert_eq!(report.received, 0, "no imported message is an arrival");
+    let s = h.server.state.lock().unwrap();
+    assert!(!s.blob_rows.contains_key(&blob) && !s.objects.contains_key(&format!("blobs/{blob}")), "the file is deleted after the import");
+    drop(s);
+    // The device's live messages land after the imported ones, and it works (it sends and the phone gets it).
+    say(&h.bob, &h.alice, &h.transport, "live after the link");
+    sync(&computer, &h.transport);
+    let after = computer.store.list_messages("dm:bob".into()).unwrap();
+    assert_eq!(after.last().unwrap().text, "live after the link", "the live message is last");
+    say(&computer, &h.bob, &h.transport, "sent from the computer");
+    sync(&h.bob, &h.transport);
+    assert!(texts_of(&h.bob, "alice").contains(&"sent from the computer".to_owned()));
+}
+
+fn texts_of(p: &Party, peer: &str) -> Vec<String> {
+    p.store.list_messages(format!("dm:{peer}")).unwrap().into_iter().map(|m| m.text).collect()
+}
+
+#[test]
+fn the_history_file_holds_no_session_no_pickle_and_no_file_bytes() {
+    let h = sixty_days();
+    let (json, count) = h.alice.store.with_conn(|c| crate::client::link::history::build(c, crate::store::now_ms() - 45 * DAY_MS, false)).unwrap();
+    let text = String::from_utf8(json).unwrap();
+    let value: Value = serde_json::from_str(&text).unwrap();
+    let keys: Vec<&str> = value.as_object().unwrap().keys().map(String::as_str).collect();
+    for k in &keys {
+        assert!(["v", "cutoff_ms", "truncated", "conversations", "messages", "attachments", "reactions", "threads"].contains(k), "unexpected part {k}");
+    }
+    assert!(count > 0);
+    let pickle: String = h.alice.store.with_conn(|c| c.query_row("SELECT olm_pickle FROM account", [], |r| r.get(0)).map_err(crate::store::db_err)).unwrap();
+    let sessions: Vec<String> = h.alice.store.with_conn(|c| {
+        let mut out = Vec::new();
+        for (table, col) in [("olm_sessions", "session_pickle"), ("group_inbound_sessions", "pickle"), ("group_outbound_sessions", "pickle")] {
+            let mut stmt = c.prepare(&format!("SELECT {col} FROM {table}")).map_err(crate::store::db_err)?;
+            out.extend(stmt.query_map([], |r| r.get::<_, String>(0)).map_err(crate::store::db_err)?.collect::<Result<Vec<_>, _>>().map_err(crate::store::db_err)?);
+        }
+        Ok(out)
+    }).unwrap();
+    assert!(!sessions.is_empty());
+    for secret in sessions.iter().chain(std::iter::once(&pickle)) {
+        assert!(!text.contains(secret.as_str()), "no session or pickled account in the history");
+    }
+    // The photo's bytes (3000 sevens) are not in it, only its descriptor.
+    assert!(value["attachments"].as_array().unwrap().iter().all(|a| a.get("bytes").is_none()), "no file bytes");
+    for never in ["olm_sessions", "group_inbound_sessions", "draft", "contact_labels", "mesh_"] {
+        assert!(!text.contains(never), "{never} is not part of a history");
+    }
+}
+
+#[test]
+fn a_tampered_or_cut_history_file_imports_nothing_and_the_device_still_works() {
+    for (name, tamper) in [("a changed byte", Box::new(|b: &mut Vec<u8>| { let i = b.len() / 2; b[i] ^= 1; }) as Box<dyn Fn(&mut Vec<u8>)>), ("a cut file", Box::new(|b: &mut Vec<u8>| b.truncate(b.len() - 200))), ("a dropped front", Box::new(|b: &mut Vec<u8>| { b.drain(..50); }))] {
+        let h = sixty_days();
+        let (computer, imported, _) = link_with_history(&h, true, 9, Some(&*tamper));
+        assert!(imported.is_err(), "{name} is refused");
+        let count: i64 = computer.store.with_conn(|c| Ok(c.query_row("SELECT COUNT(*) FROM messages", [], |r| r.get(0)).unwrap())).unwrap();
+        assert_eq!(count, 0, "{name}: nothing was imported");
+        // The package landed: the device is a device of the account and works.
+        say(&h.bob, &h.alice, &h.transport, "after a bad history");
+        sync(&computer, &h.transport);
+        assert!(texts_of(&computer, "bob").contains(&"after a bad history".to_owned()), "{name}: the device still receives");
+    }
+}
+
+#[test]
+fn a_history_cannot_be_asked_for_twice_or_before_the_package_and_an_old_message_is_refused_by_the_new_device() {
+    let h = sixty_days();
+    let (new, old, store, _dir) = pair(&h.alice, true, 21);
+    // Before the package has gone: no history step (the phone says so).
+    assert!(old.history_chunk(h.transport.clone(), h.alice.token.clone()).is_err(), "not before the package");
+    for chunk in stream(&new, &old) {
+        new.import_chunk(chunk).unwrap();
+    }
+    new.import_finish().unwrap();
+    store.register_device(h.transport.clone(), h.alice.token.clone()).unwrap();
+    let chunk = old.history_chunk(h.transport.clone(), h.alice.token.clone()).unwrap();
+    assert!(old.history_chunk(h.transport.clone(), h.alice.token.clone()).is_err(), "once only");
+    // A replayed pointer is not taken twice.
+    new.import_chunk(chunk.clone()).unwrap();
+    assert!(new.import_chunk(chunk).is_err(), "a second pointer is refused");
+    // Importing without a pointer is refused.
+    let (other_new, _o, _s, _d) = pair(&h.alice, true, 22);
+    assert!(other_new.import_history(h.transport.clone(), h.alice.token.clone()).is_err());
+}
+
+#[test]
+fn how_big_45_days_is_for_a_busy_account() {
+    let server = FakeServer::new();
+    let (alice, _transport) = party(&server, "alice", 1);
+    // A busy teacher: 20 chats, 200 messages a day for 60 days (about 12,000), one in six with a photo's descriptor and a 2 KB preview, reactions on some.
+    let now = crate::store::now_ms();
+    alice.store.with_conn(|c| {
+        c.execute("INSERT OR IGNORE INTO people (id, name, tone) VALUES ('me', 'Me', 0)", []).unwrap();
+        for chat in 0..20 {
+            c.execute("INSERT OR IGNORE INTO people (id, name, tone) VALUES (?1, ?1, 1)", params![format!("p{chat}")]).unwrap();
+            c.execute("INSERT OR IGNORE INTO conversations (id, title, is_group, is_pinned, unread) VALUES (?1, ?2, 0, 0, 0)", params![format!("dm:p{chat}"), format!("p{chat}")]).unwrap();
+        }
+        for i in 0..12_000i64 {
+            let chat = i % 20;
+            let id = format!("m{i}");
+            let sent = now - (i * 60 * DAY_MS / 12_000) * 1; // 60 days spread
+            let body = format!("Message {i}: thanks for the {} plan, the bus is at {}:{:02} and the {} are in the {}. Could you also bring the {}? 😀", ["lesson", "unit", "field trip", "lab"][(i % 4) as usize], 6 + i % 5, (i * 7) % 60, ["permission forms", "photos", "slides", "samples"][(i % 3) as usize], ["folder", "bag", "van", "closet"][(i % 5 % 4) as usize], ["batteries", "markers", "glue", "chargers"][(i % 7 % 4) as usize]);
+            c.execute("INSERT INTO messages (id, conversation_id, sender_id, body, sent_at, local_state, op_id, hlc) VALUES (?1, ?2, ?3, ?4, ?5, 'received', ?1, ?6)",
+                params![id, format!("dm:p{chat}"), if i % 2 == 0 { "me".to_string() } else { format!("p{chat}") }, body, sent, format!("{:016x}-0001", sent)]).unwrap();
+            if i % 6 == 0 {
+                // A JPEG preview does not compress: pseudo-random bytes (2 KB), and a video's sharp poster (30 KB) on one in ten.
+                let mut x = (i as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+                let mut noise = |n: usize| -> Vec<u8> { (0..n).map(|_| { x ^= x << 13; x ^= x >> 7; x ^= x << 17; (x >> 24) as u8 }).collect() };
+                let thumb = noise(2000);
+                let poster = if (i / 6) % 10 == 0 { noise(30_000) } else { Vec::new() };
+                c.execute("INSERT INTO message_attachments (attachment_id, message_id, position, key, digest, size, mime, name, thumb, poster, role) VALUES (?1, ?2, 0, 'k', 'd', 100000, 'image/jpeg', 'photo.jpg', ?3, ?4, 'file')",
+                    params![format!("a{i}"), id, thumb, poster]).unwrap();
+            }
+        }
+        Ok(())
+    }).unwrap();
+    let (plain, compressed, sealed, count) = alice.store.with_conn(|c| crate::client::link::history::sizes(c, now - 45 * DAY_MS)).unwrap();
+    eprintln!("HISTORY SIZE (busy account, 45 days): {count} messages: {} KB plain, {} KB compressed, {} KB sealed", plain / 1024, compressed / 1024, sealed / 1024);
+    assert!(sealed < 24 * 1024 * 1024, "a busy account's 45 days fit in one file ({} KB)", sealed / 1024);
+}
