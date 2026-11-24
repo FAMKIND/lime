@@ -11451,3 +11451,15 @@ Debug build of main on the **13 mini** (sequence 4812): installed. **iPad (4): u
 **Look for:** the words are short; nothing is sent before Face ID (step 11: tap **They don't match** or cancel Face ID once to see "Couldn't confirm it's you"); Cancel on the iPad mid-way returns to the choice. **Limits of this setup:** the two simulators share this Mac's network, so the local connection is Wi-Fi-style Bonjour on one machine (it worked in the Move tests; if "Couldn't connect" shows, tap Try again once). The camera scan, Bluetooth and the real devices are not covered here. 5 of 5 and Unlink need 4 more devices and the 342a server, so they are covered by the UI tests only. To start over: delete the app from the iPad sim (`xcrun simctl uninstall 79094EFB-D659-4037-B436-61AFD4FC0F29 com.famkind.lime`, then install `$TMPDIR/dd343i/Build/Products/Debug-iphonesimulator/Lime.app`), and re-link; the iPhone sim stays signed in.
 
 **Cleanup when you are done:** delete the staging test account (its id is in the note file; an admin delete as in `run-e2e-staging.sh`'s `deleteUser`) and `~/.lime/ios-gate-account.json`, `~/.lime/ios-gate-verify.sh`.
+
+## Install: fresh provisioning profile (2026-11-24, main at `2cedcd3e`)
+Debug build for device with automatic signing and `-allowProvisioningUpdates`: Xcode fetched a **new profile** ("iOS Team Provisioning Profile: com.famkind.lime", team `CZH2QUHB3Y`, same bundle id, same signing certificate `Apple Development: shem@chungrajoon.com`). **It expires Tue 2026-12-01 10:28 EST** (created 2026-11-24 10:28; free team, 7 days). It covers the 13 mini, the iPad (4) and Jean's 12 mini.
+
+Installed **over** the existing app (no uninstall, nobody signed out):
+- **13 mini** (`…651D23647801E`): installed. Its data is still there (`lime/accounts/a91aae66-…/lime.db`, 271.9 MB).
+- **iPad (4)**: installed on the second try (first try: connection reset). Data still there (`dff90f84-…/lime.db`, 39 MB).
+- **Jean's 12 mini: NOT installed.** Locked/unreachable: first "connection reset", then "developer disk image could not be mounted" (it requires a passcode), then "device disconnected immediately after connecting". Nothing was changed on it; unlock it, keep it awake and on the cable or Wi-Fi, and re-run: `xcrun devicectl device install app --device 00008101-000348EC0E51003A <the Lime.app from the build>`.
+
+**Not confirmed:** whether lime opens signed in. Launching from here is refused on both phones that took the install: *"invalid code signature, inadequate entitlements or its profile has not been explicitly trusted by the user"*. **You need to trust it once on each phone:** Settings → General → VPN & Device Management → Apple Development: shem@chungrajoon.com → Trust, then open lime. The data was not touched, so it should open signed in to the same account; I could not see the screens from here, so please look.
+
+**For plot:** the profile lasts 7 days: the next expiry is **2026-12-01**. Rebuilding with `-allowProvisioningUpdates` and installing over the app each week keeps the data; a paid developer team or TestFlight (LIME-… the TestFlight brief) ends this.
